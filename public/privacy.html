@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>healthOS Privacy Policy</title>
+    <meta name="description" content="How healthOS, a personal health dashboard, handles WHOOP and Apple Health data." />
+    <style>
+      :root {
+        color-scheme: light;
+        --page: #f3f3f1;
+        --surface: #ffffff;
+        --border: rgba(11, 11, 11, 0.07);
+        --ink: #0b0b0b;
+        --ink-2: #52514e;
+        --ink-3: #898781;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          color-scheme: dark;
+          --page: #0d0d0d;
+          --surface: #1a1a19;
+          --border: rgba(255, 255, 255, 0.08);
+          --ink: #f0efec;
+          --ink-2: #c3c2b7;
+          --ink-3: #898781;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--page);
+        color: var(--ink);
+        font: 15px/1.6 system-ui, -apple-system, 'Segoe UI', sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      main {
+        max-width: 720px;
+        margin: 0 auto;
+        padding: 48px 16px 64px;
+      }
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        padding: 32px 28px;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-weight: 600;
+        font-size: 17px;
+        margin-bottom: 28px;
+      }
+      h1 {
+        font-size: 30px;
+        line-height: 1.15;
+        letter-spacing: -0.02em;
+        margin: 0 0 6px;
+      }
+      h2 {
+        font-size: 17px;
+        margin: 28px 0 6px;
+      }
+      p,
+      li {
+        color: var(--ink-2);
+      }
+      p {
+        margin: 0 0 10px;
+      }
+      ul {
+        margin: 0 0 10px;
+        padding-left: 20px;
+      }
+      li {
+        margin: 4px 0;
+      }
+      strong {
+        color: var(--ink);
+        font-weight: 600;
+      }
+      .updated {
+        color: var(--ink-3);
+        font-size: 13px;
+        margin-bottom: 20px;
+      }
+      a {
+        color: inherit;
+        text-underline-offset: 2px;
+      }
+      @media (max-width: 560px) {
+        main {
+          padding-top: 24px;
+        }
+        .card {
+          padding: 24px 20px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <article class="card">
+        <div class="brand">
+          <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true">
+            <circle cx="16" cy="16" r="2.4" fill="currentColor" />
+            <circle cx="16" cy="16" r="11" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2 3" />
+          </svg>
+          healthOS
+        </div>
+
+        <h1>Privacy Policy</h1>
+        <p class="updated">Last updated October 16, 2026</p>
+
+        <p>
+          healthOS is a personal health dashboard at <strong>health.mcfly.bot</strong>. It is run by Ricky Mantilla for his own use. It is not
+          offered to the public, and it has no other users.
+        </p>
+
+        <h2>What data it uses</h2>
+        <ul>
+          <li>
+            <strong>WHOOP</strong>, read through WHOOP's official API only after the owner signs in to WHOOP and approves access. healthOS reads
+            recovery, sleep, physiological cycles and strain, workouts, basic profile details (first name) and body measurements. It never writes to
+            WHOOP.
+          </li>
+          <li><strong>Apple Health</strong>, from the owner's own Health export or from the healthOS iPhone app, which sends daily summaries.</li>
+          <li>An optional profile photo, processed on the owner's own Mac.</li>
+        </ul>
+
+        <h2>How it is used</h2>
+        <p>
+          The data is used only to show the owner their own charts, trends and summaries. healthOS has no advertising, no analytics or tracking,
+          and no profiling. It does not sell, rent or share data with anyone.
+        </p>
+
+        <h2>Where it is stored</h2>
+        <ul>
+          <li>The app is hosted on Vercel. Data is stored in a Postgres database run by Neon in the United States (US East).</li>
+          <li>All traffic is encrypted in transit (HTTPS).</li>
+          <li>Reading any data requires the owner's password.</li>
+          <li>The only cookie is a sign-in session cookie, which is strictly necessary.</li>
+          <li>WHOOP access tokens are stored server-side and are never exposed to the browser.</li>
+        </ul>
+
+        <h2>Service providers</h2>
+        <p>
+          These providers handle data only to run the service: <strong>WHOOP</strong> (the data source), <strong>Vercel</strong> (hosting) and
+          <strong>Neon</strong> (database). Their own privacy policies apply to their services.
+        </p>
+
+        <h2>Keeping and deleting data</h2>
+        <ul>
+          <li>Data is kept until the owner deletes it.</li>
+          <li>Disconnecting WHOOP in healthOS revokes the app's access with WHOOP and deletes the stored tokens.</li>
+          <li>WHOOP access can also be revoked at any time from WHOOP's own account settings.</li>
+          <li>The owner can delete imported data from the app, or remove the database entirely.</li>
+        </ul>
+
+        <h2>Contact</h2>
+        <p>Questions about this policy: <a href="https://rickymantilla.com">rickymantilla.com</a>.</p>
+      </article>
+    </main>
+  </body>
+</html>

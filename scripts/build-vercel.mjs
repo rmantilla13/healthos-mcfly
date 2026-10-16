@@ -52,6 +52,8 @@ fs.writeFileSync(
         { src: '^/assets/(.*)$', headers: { 'cache-control': 'public, max-age=31536000, immutable' }, continue: true },
         { src: '^/api(/.*)?$', dest: '/api' },
         { handle: 'filesystem' },
+        // Public, data-free pages (the WHOOP developer app needs a privacy policy URL).
+        { src: '^/privacy/?$', dest: '/privacy.html' },
         { src: '/(.*)', dest: '/index.html' },
       ],
       // WHOOP sync every 6 hours (also keeps the rotating refresh token fresh).

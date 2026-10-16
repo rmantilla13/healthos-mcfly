@@ -47,6 +47,7 @@ How the hosted copy works:
 - WHOOP syncs every 6 hours from a Vercel cron.
 - The iPhone app posts to `/api/apple/ingest` with its own token.
 - Your photo is served from the database, behind the same sign-in.
+- The only public page is the privacy policy at `/privacy` (`public/privacy.html`), which the WHOOP developer app requires. It holds no data.
 
 ## Apple Health
 
@@ -68,9 +69,12 @@ How the export is interpreted:
 - **Steps, energy and distance:** when both iPhone and Watch log the same walk, the day uses the larger source rather than adding them together.
 - **Sleep counts toward the day you wake up.** When several apps log the same night, the source with the most sleep wins.
 
-### Automatic sync with the iPhone app
+### The iPhone app
 
-`ios/` holds **healthOS Sync**, a small iPhone app that reads HealthKit and pushes changes to this server, so you don't have to export by hand. It applies the same rules as the export import, on the phone, and sends only the days that changed. The first sync uploads your history; after that, Health wakes the app when new data arrives.
+`ios/` holds **healthOS for iPhone**, which does two jobs:
+
+- It shows the full dashboard natively: Today, Trends and workouts, read from the same API as the website.
+- It pushes HealthKit data to this server, so you don't have to export by hand. It applies the same rules as the export import, on the phone, and sends only the days that changed. The first sync uploads your history; after that, Health wakes the app when new data arrives.
 
 1. Set `HEALTHOS_INGEST_TOKEN` on the server (create one with `openssl rand -hex 24`). Without it the endpoint is off.
 2. Build the app onto your iPhone (see [ios/README.md](ios/README.md)). It posts to `https://health.mcfly.bot/api/apple/ingest` by default.
