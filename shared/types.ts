@@ -1,0 +1,115 @@
+// API shapes shared by the server and the dashboard.
+
+export type Point = { date: string; value: number };
+export type Latest = { date: string; value: number; source: string };
+export type RangeStatus = 'low' | 'normal' | 'high';
+
+export type Vital = {
+  label: string;
+  latest: Latest | null;
+  /** Where the latest value sits against the previous 30 days. */
+  status: RangeStatus | null;
+};
+
+export type TimelineEvent = {
+  id: string;
+  kind: 'sleep' | 'nap' | 'mindful' | 'workout';
+  title: string;
+  start: string;
+  end: string;
+  detail?: string;
+};
+
+export type Insight = {
+  id: string;
+  icon: 'trend-up' | 'trend-down' | 'moon' | 'shield' | 'sun' | 'steps' | 'heart';
+  text: string;
+  date: string;
+  /** Page the insight links to. */
+  page: Page;
+};
+
+export type Page = 'home' | 'vitals' | 'sleep' | 'activity' | 'body' | 'integrations' | 'settings';
+
+export type Summary = {
+  date: string;
+  today: string;
+  latestDataDate: string | null;
+  name: string;
+  demo: boolean;
+  stepGoal: number;
+  vitals: { heart: Vital; breathing: Vital; temp: Vital };
+  readiness:
+    | { kind: 'recovery'; latest: Latest; average: number | null; zone: 'red' | 'yellow' | 'green' }
+    | { kind: 'vo2max'; latest: Latest; previous: number | null }
+    | null;
+  spo2: { latest: Latest | null; series: Point[]; status: RangeStatus | null };
+  hrv: { metric: 'hrv_rmssd' | 'hrv_sdnn'; latest: Latest | null; series: Point[]; baseline: number | null; status: 'optimal' | 'normal' | 'low' | null };
+  sleep: { latest: Latest | null; series: Point[]; change: number | null };
+  load:
+    | { kind: 'strain'; latest: Latest; average: number | null; series: Point[] }
+    | { kind: 'energy'; latest: Latest; average: number | null; series: Point[] }
+    | null;
+  activity: { latest: Latest | null; series: Point[] };
+  timeline: { date: string; events: TimelineEvent[] };
+  insights: Insight[];
+};
+
+export type Workout = {
+  id: string;
+  source: string;
+  sport: string;
+  start: string;
+  end: string;
+  date: string;
+  duration_min: number;
+  energy_kcal: number | null;
+  distance_m: number | null;
+  avg_hr: number | null;
+  max_hr: number | null;
+  strain: number | null;
+};
+
+export type Trends = Record<string, Point[]>;
+
+export type Units = 'metric' | 'imperial';
+
+export type Settings = { name: string; stepGoal: number; units: Units; demo: 'auto' | 'on' | 'off' };
+
+export type PhotoMeta = {
+  version: number;
+  width: number;
+  height: number;
+  /** Face box [x, y, w, h], 0–1 within the cut-out. */
+  face: [number, number, number, number];
+  shoulderY: number;
+  /** Silhouette per row (100 rows, top to bottom): [left, right] edge, 0–1 of the width; [1, 0] where empty. */
+  outline?: [number, number][];
+  dots: { temp: [number, number]; breathing: [number, number]; heart: [number, number] };
+};
+
+export type Status = {
+  demo: boolean;
+  settings: Settings;
+  photo: PhotoMeta | null;
+  apple: {
+    lastImport: { records: number; days: number; workouts: number; firstDate: string | null; lastDate: string | null; importedAt: string } | null;
+    /** Last push from the iOS companion app (POST /api/apple/ingest). */
+    lastSync: { daily: number; workouts: number; events: number; syncedAt: string } | null;
+    job: ImportJob;
+  };
+  whoop: {
+    configured: boolean;
+    connected: boolean;
+    redirectUri: string;
+    syncing: boolean;
+    lastSync: string | null;
+    lastError: string | null;
+  };
+};
+
+export type ImportJob =
+  | { state: 'idle' }
+  | { state: 'uploading' | 'parsing'; bytesRead: number; totalBytes: number; records: number }
+  | { state: 'done'; records: number; days: number }
+  | { state: 'error'; error: string };

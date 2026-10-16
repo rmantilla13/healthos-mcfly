@@ -1,0 +1,46 @@
+# Regenerate the Xcode project after editing this file: `xcodegen generate` (brew install xcodegen).
+name: HealthOSSync
+options:
+  bundleIdPrefix: dev.healthos
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  HealthOSSync:
+    type: application
+    platform: iOS
+    sources:
+      - path: HealthOSSync
+        excludes:
+          - Info.plist
+          - HealthOSSync.entitlements
+    info:
+      path: HealthOSSync/Info.plist
+      properties:
+        CFBundleDisplayName: healthOS Sync
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        NSHealthShareUsageDescription: healthOS Sync reads your Health data and sends daily summaries to the healthOS dashboard running on your own Mac.
+        NSHealthUpdateUsageDescription: In the simulator, healthOS Sync can write sample Health data so the sync can be tried end to end.
+        NSLocalNetworkUsageDescription: healthOS Sync sends your Health data to the healthOS dashboard on your Mac over your local network.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+    entitlements:
+      path: HealthOSSync/HealthOSSync.entitlements
+      properties:
+        com.apple.developer.healthkit: true
+        com.apple.developer.healthkit.access: []
+        com.apple.developer.healthkit.background-delivery: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.healthos.sync
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGN_STYLE: Automatic
+        # Set your team to install on an iPhone (or pick it in Xcode > Signing & Capabilities).
+        DEVELOPMENT_TEAM: ""
+        ENABLE_PREVIEWS: YES

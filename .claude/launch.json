@@ -1,0 +1,29 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "healthos",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
+      "port": 8787
+    },
+    {
+      "name": "healthos-ios-e2e",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "HEALTHOS_DATA_DIR=/private/tmp/claude-501/-Users-ricky-Developer-healthOS/e970620f-5ce8-46f1-b21b-1056378be700/scratchpad/e2e-data",
+        "PORT=8790",
+        "HEALTHOS_LAN=1",
+        "HEALTHOS_LAN_PORT=8791",
+        "HEALTHOS_INGEST_TOKEN=f76ca7a17be34b66a2253febf70f0dc3cfdfeea5542d5b73",
+        "npm",
+        "run",
+        "dev"
+      ],
+      "port": 8790
+    }
+  ]
+}
