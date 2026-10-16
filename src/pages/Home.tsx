@@ -17,7 +17,7 @@ export function Home({ date, onDate, photo }: { date: string | null; onDate: (d:
       <div className="home-left">
         <header className="greeting">
           <p className="greeting-hello">Hello,</p>
-          <h1>{s.name}.</h1>
+          <h1>{s.name || 'there'}.</h1>
           <p className="greeting-sub">{isToday ? "Here's your health today." : `Here's your health on ${fmtDate(s.date, { weekday: 'long', month: 'long', day: 'numeric' })}.`}</p>
         </header>
         <Figure vitals={s.vitals} asOf={s.date} photo={photo} />
@@ -52,7 +52,7 @@ export function Home({ date, onDate, photo }: { date: string | null; onDate: (d:
             </button>
           </div>
           <a className="avatar" href={href('settings')} aria-label="Settings">
-            {photo ? <img src={`/api/profile/avatar.png?v=${photo.version}`} alt="" /> : s.name.slice(0, 1).toUpperCase()}
+            {photo ? <img src={`/api/profile/avatar.png?v=${photo.version}`} alt="" /> : (s.name || '·').slice(0, 1).toUpperCase()}
           </a>
         </div>
 
