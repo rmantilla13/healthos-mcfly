@@ -44,6 +44,13 @@ export function createApp({ db, hosted, ingestToken }: AppOptions) {
   const api = express.Router();
   const auth = authRoutes(async () => db);
 
+  // Health data and sign-in state must not sit in browser or proxy caches (and a cached
+  // "signed out" answer must never be reused). Photo assets set their own, versioned, private caching.
+  api.use((_req, res, next) => {
+    res.setHeader('Cache-Control', 'private, no-store');
+    next();
+  });
+
   // These authenticate themselves (bearer token, cron secret), so they come before the session gate.
   api.use(ingestRouter(db, ingestToken));
   api.get('/cron/whoop', async (req, res) => {
