@@ -1557,3 +1557,40 @@ td {
     min-width: 0;
   }
 }
+
+/* ---------- sign-in ---------- */
+.login {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+  background: radial-gradient(60% 60% at 50% 35%, var(--page-glow) 0%, var(--page) 70%);
+}
+.login-card {
+  width: min(100%, 360px);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 28px;
+}
+.login-brand {
+  padding: 0 0 4px;
+}
+.login label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-weight: 500;
+}
+.login input {
+  font: inherit;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.login .btn-primary {
+  align-self: stretch;
+  padding: 10px 14px;
+}
