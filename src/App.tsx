@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { Page, Status } from '../shared/types.ts';
 import { Icon, type IconName } from './components/Icon.tsx';
-import { UnitsContext, fmtDate, href, useApi, useRoute } from './lib.ts';
+import { UnitsContext, fmtDate, href, notifyDataChanged, sendJson, useApi, useRoute } from './lib.ts';
 import { Activity, Body, Sleep, Vitals } from './pages/Detail.tsx';
 import { Home } from './pages/Home.tsx';
 import { Integrations, SettingsPage } from './pages/Integrations.tsx';
+import { Login } from './pages/Login.tsx';
 
 const NAV: { page: Page; label: string; icon: IconName }[] = [
   { page: 'home', label: 'Home', icon: 'home' },
@@ -19,10 +20,44 @@ const DATA_NAV: { page: Page; label: string; icon: IconName }[] = [
   { page: 'settings', label: 'Settings', icon: 'settings' },
 ];
 
+type AuthState = 'checking' | 'open' | 'signin' | 'misconfigured';
+
+/** The hosted app asks for the password first; locally (no password configured) it opens straight away. */
 export function App() {
+  const [auth, setAuth] = useState<AuthState>('checking');
+
+  useEffect(() => {
+    fetch('/api/auth/me')
+      .then((r) => r.json() as Promise<{ mode: 'open' | 'required' | 'misconfigured'; authenticated: boolean }>)
+      .then((me) => setAuth(me.mode === 'misconfigured' ? 'misconfigured' : me.authenticated ? 'open' : 'signin'))
+      .catch(() => setAuth('open'));
+    // Any API call that comes back 401 (e.g. the session expired) returns to the sign-in screen.
+    const onSignin = () => setAuth('signin');
+    window.addEventListener('healthos:signin', onSignin);
+    return () => window.removeEventListener('healthos:signin', onSignin);
+  }, []);
+
+  if (auth === 'checking') return null;
+  if (auth !== 'open') return <Login misconfigured={auth === 'misconfigured'} onSignedIn={() => setAuth('open')} />;
+  return <Dashboard />;
+}
+
+function Dashboard() {
   const { page, params } = useRoute();
   const { data: status, reload } = useApi<Status>('/status');
   const [date, setDate] = useState<string | null>(null);
+
+  // The hosted server runs in UTC; tell it this browser's time zone so "today" is your today.
+  useEffect(() => {
+    if (!status) return;
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (tz && status.settings.timeZone !== tz) {
+      sendJson('PUT', '/settings', { timeZone: tz }).then(() => {
+        reload();
+        notifyDataChanged();
+      });
+    }
+  }, [status, reload]);
 
   return (
     <UnitsContext.Provider value={status?.settings.units ?? 'metric'}>
@@ -66,6 +101,7 @@ export function App() {
 
 function SourceCard({ status }: { status: Status }) {
   const apple = status.apple.lastImport;
+  const synced = status.apple.lastSync && new Date(status.apple.lastSync.syncedAt).toLocaleDateString('en-CA');
   return (
     <a className="source-card" href={href('integrations')}>
       {status.demo ? (
@@ -76,8 +112,8 @@ function SourceCard({ status }: { status: Status }) {
       ) : (
         <>
           <span className="source-row">
-            <i className={apple ? 'on' : ''} /> Apple Health
-            <small>{apple?.lastDate ? fmtDate(apple.lastDate) : 'off'}</small>
+            <i className={apple || synced ? 'on' : ''} /> Apple Health
+            <small>{synced ? fmtDate(synced) : apple?.lastDate ? fmtDate(apple.lastDate) : 'off'}</small>
           </span>
           <span className="source-row">
             <i className={status.whoop.connected ? 'on' : ''} /> WHOOP

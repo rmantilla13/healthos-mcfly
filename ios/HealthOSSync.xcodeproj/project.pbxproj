@@ -8,31 +8,66 @@
 
 /* Begin PBXBuildFile section */
 		0AB6C70226753CBD962957B0 /* SampleData.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7E250115D08EBBAA0A6C1BF /* SampleData.swift */; };
+		0BDF60A216902A26A4A8FE46 /* DayAggregatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF3AD1F8E32A8E71A82AA62D /* DayAggregatorTests.swift */; };
+		0FB626BE268BECC37DF88D1F /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B00CB598628622D59B7DB55 /* Theme.swift */; };
 		283EC6884105A448351592AD /* SyncEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53251687CBD17661351787AD /* SyncEngine.swift */; };
 		3ED3502AFD6545094B506F89 /* DayAggregator.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBD579D9FB433BBE4FFDD20C /* DayAggregator.swift */; };
+		463BE90AB15F967AAF2EAF68 /* DashboardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2F31692BC3B154539132A48 /* DashboardTests.swift */; };
+		4CF714997DAE31577EA67475 /* status.json in Resources */ = {isa = PBXBuildFile; fileRef = D6C87B5E93B970D98B02681C /* status.json */; };
+		63B6AAB9023DBD50EA3F3451 /* trends-vitals.json in Resources */ = {isa = PBXBuildFile; fileRef = 41E8DC4A31DF21C96757841B /* trends-vitals.json */; };
+		650E57D3C25FE4211FC6FFCF /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79FA1E20BC3BE0C5269F578D /* APIClient.swift */; };
 		93553A1B60FAEDD38F663A33 /* HealthOSSyncApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA10EABB4D8994CA0CEDBA4C /* HealthOSSyncApp.swift */; };
 		9922FA689E8C8465ECA64B8E /* Health.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FEC96C3667D657317BC171A /* Health.swift */; };
+		A0849F5F657D3908C00A67BB /* Format.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53180FBA0C9ADCF282A00B6B /* Format.swift */; };
+		A4E1421B23C83B82983298F7 /* workouts.json in Resources */ = {isa = PBXBuildFile; fileRef = 4C3921ACCFB6D34E0458FEA9 /* workouts.json */; };
 		A5F546035830721B2F77D542 /* HealthTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFF903C401BAB3E580094868 /* HealthTypes.swift */; };
+		AD8BC8E5F3940A7E1B24AEB9 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC1AF0514C3E330ABEA1FF41 /* Models.swift */; };
 		B850D34258977AB1B8FE0181 /* Config.swift in Sources */ = {isa = PBXBuildFile; fileRef = B479E2FF3ECF8F9266A6F82C /* Config.swift */; };
 		CE7AD1CD1A055DE6AE28ECFB /* LocalTime.swift in Sources */ = {isa = PBXBuildFile; fileRef = D32EDE48EFEC42FFCB4C13F5 /* LocalTime.swift */; };
+		D30B29BE559677E5D6DF1F1F /* DashboardModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B66D0CED8B26758004DE595 /* DashboardModel.swift */; };
+		D578AC38FFF23101381DF82B /* trends-sleep.json in Resources */ = {isa = PBXBuildFile; fileRef = BCA618E51A2853EE3FA69588 /* trends-sleep.json */; };
 		DFC0773636A151C6D53E2158 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB55A994E61CAB3C2519D395 /* ContentView.swift */; };
 		F2CF3049F540CE571BFB4FEB /* IngestClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3775E6E7872E65E05A16415F /* IngestClient.swift */; };
+		F46DEAD6BB2AD61A09947B46 /* summary.json in Resources */ = {isa = PBXBuildFile; fileRef = 3B5343DD7A76AF3586052896 /* summary.json */; };
 		FB1865DBB690F3EF8386BA77 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63C3960DE078C3D0C9951540 /* AppModel.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		0187098C1D24E6EAE0FF4386 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 95365F09EC6474E292BC31D6 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AF431CE8081826AF2D61D376;
+			remoteInfo = HealthOSSync;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
+		045F7E53F085B6900928E38B /* HealthOSSyncTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = HealthOSSyncTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		3775E6E7872E65E05A16415F /* IngestClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IngestClient.swift; sourceTree = "<group>"; };
+		3B5343DD7A76AF3586052896 /* summary.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = summary.json; sourceTree = "<group>"; };
+		41E8DC4A31DF21C96757841B /* trends-vitals.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "trends-vitals.json"; sourceTree = "<group>"; };
+		4C3921ACCFB6D34E0458FEA9 /* workouts.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = workouts.json; sourceTree = "<group>"; };
+		53180FBA0C9ADCF282A00B6B /* Format.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Format.swift; sourceTree = "<group>"; };
 		53251687CBD17661351787AD /* SyncEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncEngine.swift; sourceTree = "<group>"; };
 		63C3960DE078C3D0C9951540 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		79FA1E20BC3BE0C5269F578D /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
+		7B66D0CED8B26758004DE595 /* DashboardModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardModel.swift; sourceTree = "<group>"; };
 		8FEC96C3667D657317BC171A /* Health.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Health.swift; sourceTree = "<group>"; };
+		9B00CB598628622D59B7DB55 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		A2F31692BC3B154539132A48 /* DashboardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardTests.swift; sourceTree = "<group>"; };
 		A7E250115D08EBBAA0A6C1BF /* SampleData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleData.swift; sourceTree = "<group>"; };
 		B479E2FF3ECF8F9266A6F82C /* Config.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Config.swift; sourceTree = "<group>"; };
 		BB55A994E61CAB3C2519D395 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		BCA618E51A2853EE3FA69588 /* trends-sleep.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "trends-sleep.json"; sourceTree = "<group>"; };
 		D32EDE48EFEC42FFCB4C13F5 /* LocalTime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalTime.swift; sourceTree = "<group>"; };
+		D6C87B5E93B970D98B02681C /* status.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = status.json; sourceTree = "<group>"; };
 		EBD579D9FB433BBE4FFDD20C /* DayAggregator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayAggregator.swift; sourceTree = "<group>"; };
 		EFF903C401BAB3E580094868 /* HealthTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthTypes.swift; sourceTree = "<group>"; };
 		F008DF762D744EBDC6621FF1 /* HealthOSSync.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = HealthOSSync.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		FA10EABB4D8994CA0CEDBA4C /* HealthOSSyncApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthOSSyncApp.swift; sourceTree = "<group>"; };
+		FC1AF0514C3E330ABEA1FF41 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		FF3AD1F8E32A8E71A82AA62D /* DayAggregatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayAggregatorTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -50,14 +85,38 @@
 				D32EDE48EFEC42FFCB4C13F5 /* LocalTime.swift */,
 				A7E250115D08EBBAA0A6C1BF /* SampleData.swift */,
 				53251687CBD17661351787AD /* SyncEngine.swift */,
+				D66D9FAF81958C65ED74EFC8 /* Dashboard */,
 			);
 			path = HealthOSSync;
+			sourceTree = "<group>";
+		};
+		29F1E9D037E057F27EB4436A /* HealthOSSyncTests */ = {
+			isa = PBXGroup;
+			children = (
+				A2F31692BC3B154539132A48 /* DashboardTests.swift */,
+				FF3AD1F8E32A8E71A82AA62D /* DayAggregatorTests.swift */,
+				79BD7CA7671A5F04D1C985A9 /* Fixtures */,
+			);
+			path = HealthOSSyncTests;
+			sourceTree = "<group>";
+		};
+		79BD7CA7671A5F04D1C985A9 /* Fixtures */ = {
+			isa = PBXGroup;
+			children = (
+				D6C87B5E93B970D98B02681C /* status.json */,
+				3B5343DD7A76AF3586052896 /* summary.json */,
+				BCA618E51A2853EE3FA69588 /* trends-sleep.json */,
+				41E8DC4A31DF21C96757841B /* trends-vitals.json */,
+				4C3921ACCFB6D34E0458FEA9 /* workouts.json */,
+			);
+			path = Fixtures;
 			sourceTree = "<group>";
 		};
 		A5F368055A73EDBFBDBEF347 = {
 			isa = PBXGroup;
 			children = (
 				1153969A0FA055B2F8719500 /* HealthOSSync */,
+				29F1E9D037E057F27EB4436A /* HealthOSSyncTests */,
 				C80DB1F4A80AF27F4E6AB31E /* Products */,
 			);
 			sourceTree = "<group>";
@@ -66,13 +125,45 @@
 			isa = PBXGroup;
 			children = (
 				F008DF762D744EBDC6621FF1 /* HealthOSSync.app */,
+				045F7E53F085B6900928E38B /* HealthOSSyncTests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		D66D9FAF81958C65ED74EFC8 /* Dashboard */ = {
+			isa = PBXGroup;
+			children = (
+				79FA1E20BC3BE0C5269F578D /* APIClient.swift */,
+				7B66D0CED8B26758004DE595 /* DashboardModel.swift */,
+				53180FBA0C9ADCF282A00B6B /* Format.swift */,
+				FC1AF0514C3E330ABEA1FF41 /* Models.swift */,
+				9B00CB598628622D59B7DB55 /* Theme.swift */,
+			);
+			path = Dashboard;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		476A562EC84234DB3A720E91 /* HealthOSSyncTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = FD9E2624641DCAE0D82CD145 /* Build configuration list for PBXNativeTarget "HealthOSSyncTests" */;
+			buildPhases = (
+				7C52FAF9B5FBAC742591CD08 /* Sources */,
+				A2D25EB87958F81E546A69CA /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				7BB355369C4CBCEFB09AE035 /* PBXTargetDependency */,
+			);
+			name = HealthOSSyncTests;
+			packageProductDependencies = (
+			);
+			productName = HealthOSSyncTests;
+			productReference = 045F7E53F085B6900928E38B /* HealthOSSyncTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		AF431CE8081826AF2D61D376 /* HealthOSSync */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 1EB2D646DB0E73F1B18521B5 /* Build configuration list for PBXNativeTarget "HealthOSSync" */;
@@ -120,32 +211,87 @@
 			projectRoot = "";
 			targets = (
 				AF431CE8081826AF2D61D376 /* HealthOSSync */,
+				476A562EC84234DB3A720E91 /* HealthOSSyncTests */,
 			);
 		};
 /* End PBXProject section */
 
+/* Begin PBXResourcesBuildPhase section */
+		A2D25EB87958F81E546A69CA /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4CF714997DAE31577EA67475 /* status.json in Resources */,
+				F46DEAD6BB2AD61A09947B46 /* summary.json in Resources */,
+				D578AC38FFF23101381DF82B /* trends-sleep.json in Resources */,
+				63B6AAB9023DBD50EA3F3451 /* trends-vitals.json in Resources */,
+				A4E1421B23C83B82983298F7 /* workouts.json in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
+		7C52FAF9B5FBAC742591CD08 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				463BE90AB15F967AAF2EAF68 /* DashboardTests.swift in Sources */,
+				0BDF60A216902A26A4A8FE46 /* DayAggregatorTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		C0813A9459703CE9739E28B5 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				650E57D3C25FE4211FC6FFCF /* APIClient.swift in Sources */,
 				FB1865DBB690F3EF8386BA77 /* AppModel.swift in Sources */,
 				B850D34258977AB1B8FE0181 /* Config.swift in Sources */,
 				DFC0773636A151C6D53E2158 /* ContentView.swift in Sources */,
+				D30B29BE559677E5D6DF1F1F /* DashboardModel.swift in Sources */,
 				3ED3502AFD6545094B506F89 /* DayAggregator.swift in Sources */,
+				A0849F5F657D3908C00A67BB /* Format.swift in Sources */,
 				9922FA689E8C8465ECA64B8E /* Health.swift in Sources */,
 				93553A1B60FAEDD38F663A33 /* HealthOSSyncApp.swift in Sources */,
 				A5F546035830721B2F77D542 /* HealthTypes.swift in Sources */,
 				F2CF3049F540CE571BFB4FEB /* IngestClient.swift in Sources */,
 				CE7AD1CD1A055DE6AE28ECFB /* LocalTime.swift in Sources */,
+				AD8BC8E5F3940A7E1B24AEB9 /* Models.swift in Sources */,
 				0AB6C70226753CBD962957B0 /* SampleData.swift in Sources */,
 				283EC6884105A448351592AD /* SyncEngine.swift in Sources */,
+				0FB626BE268BECC37DF88D1F /* Theme.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		7BB355369C4CBCEFB09AE035 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AF431CE8081826AF2D61D376 /* HealthOSSync */;
+			targetProxy = 0187098C1D24E6EAE0FF4386 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		6E767F908D943527D62C0609 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = health.mcfly.sync.tests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/HealthOSSync.app/HealthOSSync";
+			};
+			name = Release;
+		};
 		98717FAF5A888650231F1F88 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -160,7 +306,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = dev.healthos.sync;
+				PRODUCT_BUNDLE_IDENTIFIER = health.mcfly.sync;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;
 			};
@@ -245,7 +391,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = dev.healthos.sync;
+				PRODUCT_BUNDLE_IDENTIFIER = health.mcfly.sync;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;
 			};
@@ -309,6 +455,23 @@
 			};
 			name = Release;
 		};
+		F3FE3C60C4B1C59D75EDB77C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = health.mcfly.sync.tests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/HealthOSSync.app/HealthOSSync";
+			};
+			name = Debug;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -326,6 +489,15 @@
 			buildConfigurations = (
 				C2552D9CE2697C81D9C09E71 /* Debug */,
 				E9A427B6D1CFF6CF6E1165FF /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		FD9E2624641DCAE0D82CD145 /* Build configuration list for PBXNativeTarget "HealthOSSyncTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F3FE3C60C4B1C59D75EDB77C /* Debug */,
+				6E767F908D943527D62C0609 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

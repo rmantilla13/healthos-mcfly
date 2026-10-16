@@ -71,7 +71,11 @@ export function Integrations({ status, params, refresh }: { status: Status; para
         </div>
       </header>
 
-      {whoopParam === 'connected' && <div className="banner banner-good"><Icon name="check" size={16} /> WHOOP connected. Your last year is syncing now.</div>}
+      {whoopParam === 'connected' && (
+        <div className="banner banner-good">
+          <Icon name="check" size={16} /> WHOOP connected. Your last year is syncing now.
+        </div>
+      )}
       {whoopParam === 'error' && (
         <div className="banner banner-bad">
           <Icon name="alert" size={16} /> WHOOP connection failed: {params.get('message')}
@@ -92,67 +96,81 @@ export function Integrations({ status, params, refresh }: { status: Status; para
             <div>
               <h2>Apple Health</h2>
               <p className="muted">
+                {status.apple.lastSync && `Synced from iPhone ${ago(status.apple.lastSync.syncedAt)}${status.apple.lastImport ? ' · ' : ''}`}
                 {status.apple.lastImport
                   ? `Imported ${ago(status.apple.lastImport.importedAt)} · ${fmt(status.apple.lastImport.records)} records · ${fmtDate(status.apple.lastImport.firstDate ?? '', { month: 'short', year: 'numeric' })} – ${fmtDate(status.apple.lastImport.lastDate ?? '', { month: 'short', day: 'numeric', year: 'numeric' })}`
-                  : 'Not imported yet'}
+                  : !status.apple.lastSync && 'Not imported yet'}
               </p>
             </div>
           </div>
-          <ol className="steps">
-            <li>On your iPhone, open <b>Health</b>, tap your profile picture, then <b>Export All Health Data</b>.</li>
-            <li>AirDrop or save the <b>export.zip</b> to this Mac.</li>
-            <li>Drop it below. A new import replaces the previous one.</li>
-          </ol>
-          <div
-            className={`dropzone ${drag ? 'is-drag' : ''} ${busy || uploadPct !== null ? 'is-busy' : ''}`}
-            onDragOver={(e) => {
-              e.preventDefault();
-              setDrag(true);
-            }}
-            onDragLeave={() => setDrag(false)}
-            onDrop={(e) => {
-              e.preventDefault();
-              setDrag(false);
-              const f = e.dataTransfer.files[0];
-              if (f && !busy) upload(f);
-            }}
-          >
-            {appleProgress ? (
-              <div className="progress">
-                <div className="progress-label">{appleProgress.label}</div>
-                <div className="goal-track">
-                  <div className="goal-fill" style={{ width: `${Math.round(appleProgress.pct * 100)}%` }} />
-                </div>
-                {job.state === 'parsing' && job.totalBytes > 0 && (
-                  <div className="muted small">
-                    {mb(job.bytesRead)} of {mb(job.totalBytes)}
+          {status.hosted ? (
+            <p className="muted">
+              Apple Health arrives here from the healthOS iPhone app, which syncs on its own. To import a full export.zip, run healthOS on your Mac against this
+              database (<code>vercel env pull .env.local</code>, then <code>npm run import:apple -- ~/Downloads/export.zip</code>).
+            </p>
+          ) : (
+            <>
+              <ol className="steps">
+                <li>
+                  On your iPhone, open <b>Health</b>, tap your profile picture, then <b>Export All Health Data</b>.
+                </li>
+                <li>
+                  AirDrop or save the <b>export.zip</b> to this Mac.
+                </li>
+                <li>Drop it below. A new import replaces the previous one.</li>
+              </ol>
+              <div
+                className={`dropzone ${drag ? 'is-drag' : ''} ${busy || uploadPct !== null ? 'is-busy' : ''}`}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDrag(true);
+                }}
+                onDragLeave={() => setDrag(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setDrag(false);
+                  const f = e.dataTransfer.files[0];
+                  if (f && !busy) upload(f);
+                }}
+              >
+                {appleProgress ? (
+                  <div className="progress">
+                    <div className="progress-label">{appleProgress.label}</div>
+                    <div className="goal-track">
+                      <div className="goal-fill" style={{ width: `${Math.round(appleProgress.pct * 100)}%` }} />
+                    </div>
+                    {job.state === 'parsing' && job.totalBytes > 0 && (
+                      <div className="muted small">
+                        {mb(job.bytesRead)} of {mb(job.totalBytes)}
+                      </div>
+                    )}
                   </div>
+                ) : (
+                  <>
+                    <Icon name="upload" size={22} />
+                    <span>Drop export.zip here</span>
+                    <button className="btn" onClick={() => fileInput.current?.click()}>
+                      Choose file
+                    </button>
+                  </>
                 )}
+                <input ref={fileInput} type="file" accept=".zip,.xml" hidden onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
               </div>
-            ) : (
-              <>
-                <Icon name="upload" size={22} />
-                <span>Drop export.zip here</span>
-                <button className="btn" onClick={() => fileInput.current?.click()}>
-                  Choose file
-                </button>
-              </>
-            )}
-            <input ref={fileInput} type="file" accept=".zip,.xml" hidden onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
-          </div>
-          {job.state === 'done' && uploadPct === null && (
-            <p className="note-good">
-              <Icon name="check" size={15} /> Imported {fmt(job.records)} records across {fmt(job.days)} days.
-            </p>
+              {job.state === 'done' && uploadPct === null && (
+                <p className="note-good">
+                  <Icon name="check" size={15} /> Imported {fmt(job.records)} records across {fmt(job.days)} days.
+                </p>
+              )}
+              {(uploadError || job.state === 'error') && (
+                <p className="note-bad">
+                  <Icon name="alert" size={15} /> {uploadError ?? (job.state === 'error' ? job.error : '')}
+                </p>
+              )}
+              <p className="muted small">
+                Very large exports (several GB) are quicker from the terminal: <code>npm run import:apple -- ~/Downloads/export.zip</code>
+              </p>
+            </>
           )}
-          {(uploadError || job.state === 'error') && (
-            <p className="note-bad">
-              <Icon name="alert" size={15} /> {uploadError ?? (job.state === 'error' ? job.error : '')}
-            </p>
-          )}
-          <p className="muted small">
-            Very large exports (several GB) are quicker from the terminal: <code>npm run import:apple -- ~/Downloads/export.zip</code>
-          </p>
           {status.apple.lastImport && !busy && (
             <button
               className="btn btn-quiet"
@@ -190,7 +208,11 @@ export function Integrations({ status, params, refresh }: { status: Status; para
           {!status.whoop.configured && (
             <ol className="steps">
               <li>
-                Sign in at <a href="https://developer.whoop.com" target="_blank" rel="noreferrer">developer.whoop.com</a> with your WHOOP account and create an app.
+                Sign in at{' '}
+                <a href="https://developer.whoop.com" target="_blank" rel="noreferrer">
+                  developer.whoop.com
+                </a>{' '}
+                with your WHOOP account and create an app.
               </li>
               <li>
                 Add this redirect URL to the app:
@@ -318,38 +340,42 @@ function PhotoSettings({ status, refresh }: { status: Status; refresh: () => voi
       <div>
         <h2>Profile photo</h2>
         <p className="muted small">
-          Used for the figure on Home, your avatar and the 3D view. It's cut out and analyzed on this Mac with Apple's Vision framework, and stored only in data/profile.
+          {status.hosted
+            ? 'Used for the figure on Home and your avatar. Photos are cut out with Apple Vision on your Mac: add or replace one from healthOS running there, and it shows up here.'
+            : "Used for the figure on Home and your avatar. It's cut out and analyzed on this Mac with Apple's Vision framework, then saved to your healthOS database."}
         </p>
       </div>
       <div className="photo-row">
         {photo && <img className="photo-preview" src={`/api/profile/cutout.png?v=${photo.version}`} alt="Your cut-out photo" />}
-        <div
-          className={`dropzone photo-drop ${drag ? 'is-drag' : ''}`}
-          onDragOver={(e) => {
-            e.preventDefault();
-            setDrag(true);
-          }}
-          onDragLeave={() => setDrag(false)}
-          onDrop={(e) => {
-            e.preventDefault();
-            setDrag(false);
-            const f = e.dataTransfer.files[0];
-            if (f && !busy) upload(f);
-          }}
-        >
-          {busy ? (
-            <span className="progress-label">Cutting out and measuring… (the first run compiles the tool, about 15s)</span>
-          ) : (
-            <>
-              <Icon name="upload" size={22} />
-              <span>{photo ? 'Drop a new photo to replace it' : 'Drop a photo of yourself here'}</span>
-              <button className="btn" onClick={() => input.current?.click()}>
-                Choose photo
-              </button>
-            </>
-          )}
-          <input ref={input} type="file" accept="image/*,.heic,.heif" hidden onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
-        </div>
+        {!status.hosted && (
+          <div
+            className={`dropzone photo-drop ${drag ? 'is-drag' : ''}`}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDrag(true);
+            }}
+            onDragLeave={() => setDrag(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDrag(false);
+              const f = e.dataTransfer.files[0];
+              if (f && !busy) upload(f);
+            }}
+          >
+            {busy ? (
+              <span className="progress-label">Cutting out and measuring… (the first run compiles the tool, about 15s)</span>
+            ) : (
+              <>
+                <Icon name="upload" size={22} />
+                <span>{photo ? 'Drop a new photo to replace it' : 'Drop a photo of yourself here'}</span>
+                <button className="btn" onClick={() => input.current?.click()}>
+                  Choose photo
+                </button>
+              </>
+            )}
+            <input ref={input} type="file" accept="image/*,.heic,.heif" hidden onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
+          </div>
+        )}
       </div>
       {error && (
         <p className="note-bad">
@@ -389,8 +415,19 @@ export function SettingsPage({ status, refresh }: { status: Status; refresh: () 
       <header className="page-head">
         <div>
           <h1>Settings</h1>
-          <p>Stored locally with your data.</p>
+          <p>{status.hosted ? 'Saved to your healthOS database.' : 'Stored locally with your data.'}</p>
         </div>
+        {status.hosted && (
+          <button
+            className="btn"
+            onClick={async () => {
+              await sendJson('POST', '/auth/logout');
+              window.location.reload();
+            }}
+          >
+            Sign out
+          </button>
+        )}
       </header>
       <section className="card settings">
         <label>
@@ -399,7 +436,12 @@ export function SettingsPage({ status, refresh }: { status: Status; refresh: () 
         </label>
         <label>
           <span>Daily step goal</span>
-          <input inputMode="numeric" value={goal} onChange={(e) => setGoal(e.target.value.replace(/\D/g, ''))} onBlur={() => Number(goal) !== status.settings.stepGoal && save({ stepGoal: Number(goal) })} />
+          <input
+            inputMode="numeric"
+            value={goal}
+            onChange={(e) => setGoal(e.target.value.replace(/\D/g, ''))}
+            onBlur={() => Number(goal) !== status.settings.stepGoal && save({ stepGoal: Number(goal) })}
+          />
         </label>
         <div className="settings-row">
           <span>Units</span>

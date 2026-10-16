@@ -17,6 +17,8 @@ final class Health: @unchecked Sendable {
     struct Changes {
         var dates: Set<String> = []
         var sawDeletions = false
+        /// Ingest ids ("hk-<uuid>") of deleted workouts and mindful sessions, which are keyed by UUID on the server.
+        var deletedIDs: [String] = []
         var anchor: HKQueryAnchor?
         var samples = 0
     }
@@ -34,6 +36,9 @@ final class Health: @unchecked Sendable {
             for sample in page.addedSamples { out.dates.insert(Self.day(of: sample)) }
             out.samples += page.addedSamples.count
             if !page.deletedObjects.isEmpty { out.sawDeletions = true }
+            if type == HealthTypes.workout || type == HealthTypes.mindful {
+                out.deletedIDs += page.deletedObjects.map { "hk-" + $0.uuid.uuidString.lowercased() }
+            }
             out.anchor = page.newAnchor
             if page.addedSamples.count + page.deletedObjects.count < pageSize { return out }
         }

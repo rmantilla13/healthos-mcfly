@@ -31,9 +31,10 @@ enum Config {
         get {
             if let saved = defaults.string(forKey: "serverURL") { return saved }
             #if targetEnvironment(simulator)
-            return "http://localhost:8787" // the simulator shares the Mac's network, so the localhost-only server works
+            // Simulator builds can write fake sample data to Health, so they point at a local dev server, not the live one.
+            return "http://localhost:8787"
             #else
-            return ""
+            return "https://health.mcfly.bot"
             #endif
         }
         set { defaults.set(newValue, forKey: "serverURL") }
@@ -59,11 +60,16 @@ enum Config {
         set { defaults.set(newValue, forKey: "healthRequested") }
     }
 
-    /// "192.168.1.20:8788" -> http://192.168.1.20:8788. Nil if it isn't a usable http(s) URL.
+    /// "health.mcfly.bot" -> https://health.mcfly.bot; "192.168.1.20:8788" -> http://192.168.1.20:8788.
+    /// Nil if it isn't a usable http(s) URL.
     static func serverURL(_ text: String = serverText) -> URL? {
         var s = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if s.isEmpty { return nil }
-        if !s.contains("://") { s = "http://" + s }
+        if !s.contains("://") {
+            // Without a scheme, assume TLS, except for local addresses, which a dev server serves over plain HTTP.
+            let local = s.hasPrefix("localhost") || s.contains(".local") || s.range(of: #"^\d+\.\d+\.\d+\.\d+"#, options: .regularExpression) != nil
+            s = (local ? "http://" : "https://") + s
+        }
         while s.hasSuffix("/") { s.removeLast() }
         guard let url = URL(string: s), let scheme = url.scheme, ["http", "https"].contains(scheme), url.host != nil else { return nil }
         return url
@@ -71,24 +77,25 @@ enum Config {
 }
 
 enum Keychain {
-    private static let query: [String: Any] = [
-        kSecClass as String: kSecClassGenericPassword,
-        kSecAttrService as String: "healthos.ingest-token",
-        kSecAttrAccount as String: "default",
-    ]
+    static let ingestToken = "healthos.ingest-token"
 
-    static func read() -> String? {
-        var q = query
+    private static func query(_ service: String) -> [String: Any] {
+        [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: "default"]
+    }
+
+    static func read(service: String = ingestToken) -> String? {
+        var q = query(service)
         q[kSecReturnData as String] = true
         var out: CFTypeRef?
         guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess, let data = out as? Data else { return nil }
         return String(data: data, encoding: .utf8)
     }
 
-    static func write(_ value: String) {
-        SecItemDelete(query as CFDictionary)
+    /// An empty value deletes the item.
+    static func write(_ value: String, service: String = ingestToken) {
+        SecItemDelete(query(service) as CFDictionary)
         guard !value.isEmpty else { return }
-        var q = query
+        var q = query(service)
         q[kSecValueData as String] = Data(value.utf8)
         // Background deliveries can arrive while the phone is locked; the token must stay readable after first unlock.
         q[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly

@@ -6,6 +6,7 @@ import type { Page, Units } from '../shared/types.ts';
 const WRITE_HEADERS = { 'X-HealthOS': '1', 'Content-Type': 'application/json' };
 
 async function parse<T>(res: Response): Promise<T> {
+  if (res.status === 401) window.dispatchEvent(new Event('healthos:signin'));
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { error?: string } | null;
     throw new Error(body?.error ?? res.statusText);

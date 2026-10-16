@@ -14,7 +14,27 @@ struct SyncState: Codable {
     var since: Date?
     var anchors: [String: Data] = [:]
     var pending: [String] = []
+    var deletedWorkouts: [String] = []
+    var deletedEvents: [String] = []
     var last: SyncReport?
+
+    init(server: String = "", since: Date? = nil, last: SyncReport? = nil) {
+        self.server = server
+        self.since = since
+        self.last = last
+    }
+
+    // Tolerates state files written by older builds that lack newer fields.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        server = try c.decodeIfPresent(String.self, forKey: .server) ?? ""
+        since = try c.decodeIfPresent(Date.self, forKey: .since)
+        anchors = try c.decodeIfPresent([String: Data].self, forKey: .anchors) ?? [:]
+        pending = try c.decodeIfPresent([String].self, forKey: .pending) ?? []
+        deletedWorkouts = try c.decodeIfPresent([String].self, forKey: .deletedWorkouts) ?? []
+        deletedEvents = try c.decodeIfPresent([String].self, forKey: .deletedEvents) ?? []
+        last = try c.decodeIfPresent(SyncReport.self, forKey: .last)
+    }
 
     private static var file: URL {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -101,6 +121,7 @@ actor SyncEngine {
             // 1. Which days changed since the last sync.
             var dirty = Set<String>()
             var anchors = state.anchors
+            var deletedWorkouts = state.deletedWorkouts, deletedEvents = state.deletedEvents
             let types = HealthTypes.sampleTypes
             for (i, type) in types.enumerated() {
                 await emit("Checking \(HealthTypes.label(type)) (\(i + 1)/\(types.count))")
@@ -109,6 +130,8 @@ actor SyncEngine {
                 }
                 let changes = try await Health.shared.changes(for: type, after: anchor, since: state.since)
                 dirty.formUnion(changes.dates)
+                if type == HealthTypes.workout { deletedWorkouts += changes.deletedIDs }
+                if type == HealthTypes.mindful { deletedEvents += changes.deletedIDs }
                 // Deleted samples don't say which day they were on. Recheck the last month; older edits need "Upload all history".
                 if changes.sawDeletions, anchor != nil {
                     dirty.formUnion((0..<30).map { Day.add(Day.today(), -$0) })
@@ -122,10 +145,19 @@ actor SyncEngine {
             dirty = dirty.filter { $0 <= latest && (floor == nil || $0 >= floor!) }
             state.anchors = anchors
             state.pending = Set(state.pending).union(dirty).sorted()
+            state.deletedWorkouts = deletedWorkouts
+            state.deletedEvents = deletedEvents
             try state.save()
 
             // 2. Re-read each pending day in full and upload it, a week at a time.
             let client = IngestClient(base: base, token: token)
+            if !state.deletedWorkouts.isEmpty || !state.deletedEvents.isEmpty {
+                await emit("Removing deleted workouts and sessions")
+                try await client.send(IngestPayload(deleted: .init(workouts: state.deletedWorkouts, events: state.deletedEvents)))
+                state.deletedWorkouts = []
+                state.deletedEvents = []
+                try state.save()
+            }
             let windows = Self.windows(state.pending)
             var days = 0, rows = 0
             for (i, window) in windows.enumerated() {

@@ -40,6 +40,13 @@ struct IngestPayload: Codable {
     var daily: [DailyRow] = []
     var workouts: [WorkoutRow] = []
     var events: [EventRow] = []
+    var deleted: Deleted?
+
+    /// Workouts and mindful sessions sent earlier that were since deleted in Health.
+    struct Deleted: Codable {
+        var workouts: [String]
+        var events: [String]
+    }
 
     var rowCount: Int { daily.count + workouts.count + events.count }
 }
@@ -124,7 +131,7 @@ final class DayAggregator {
             let date = start.localDate()
             guard dates.contains(date) else { continue }
             mindful.append(EventRow(
-                id: hashId("apple", "mindful", s.sourceName, Day.exportString(s.startDate)),
+                id: "hk-" + s.uuid.uuidString.lowercased(),
                 kind: "mindful", title: "Mindfulness", start: start.localIso, end: s.endStamp.localIso, date: date))
         }
     }
@@ -146,8 +153,8 @@ final class DayAggregator {
             let hr = w.statistics(for: HKQuantityType(.heartRate))
 
             workouts.append(WorkoutRow(
-                // Same id the export importer gives this workout, so an earlier export.zip import isn't duplicated.
-                id: hashId("apple", "workout", w.sourceName, Day.exportString(w.startDate), "HKWorkoutActivityType" + name),
+                // Stable across syncs. The server replaces the same workout from an earlier export.zip import.
+                id: "hk-" + w.uuid.uuidString.lowercased(),
                 sport: WorkoutNames.sport(name),
                 start: start.localIso,
                 end: w.endStamp.localIso,

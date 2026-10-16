@@ -1,0 +1,1 @@
+{"hosted":false,"demo":true,"settings":{"name":"Sam","stepGoal":10000,"units":"metric","demo":"auto","timeZone":"America/New_York"},"photo":null,"apple":{"lastImport":null,"lastSync":null,"job":{"state":"idle"}},"whoop":{"configured":false,"connected":false,"redirectUri":"http://localhost:8790/api/whoop/callback","syncing":false,"lastSync":null,"lastError":null}}

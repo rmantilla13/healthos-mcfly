@@ -5,57 +5,56 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
-import { openDb } from '../server/db.ts';
+import { type Db } from '../server/db.ts';
+import { openStore } from '../server/store.ts';
 import { importAppleHealth, parseStream, sportName } from '../server/apple/import.ts';
 
 const FIXTURE = path.join(import.meta.dirname, 'fixtures', 'export.xml');
 
-function value(db: ReturnType<typeof openDb>, date: string, metric: string) {
-  const row = db.prepare("SELECT value FROM daily WHERE date = ? AND metric = ? AND source = 'apple'").get(date, metric) as
-    | { value: number }
-    | undefined;
+async function value(db: Db, date: string, metric: string) {
+  const [row] = await db.query<{ value: number }>("SELECT value FROM daily WHERE date = $1 AND metric = $2 AND source = 'apple'", [date, metric]);
   return row?.value;
 }
 
 test('imports export.xml into per-day values', async () => {
-  const db = openDb(':memory:');
+  const db = await openStore();
   const result = await importAppleHealth(db, FIXTURE);
   assert.equal(result.workouts, 2);
 
   // iPhone 5000 vs Watch 5500 for the same walks: keep the larger source, not 10,500.
-  assert.equal(value(db, '2026-10-13', 'steps'), 5500);
-  assert.equal(value(db, '2026-10-14', 'steps'), undefined);
+  assert.equal(await value(db, '2026-10-13', 'steps'), 5500);
+  assert.equal(await value(db, '2026-10-14', 'steps'), undefined);
 
-  assert.equal(value(db, '2026-10-13', 'hr_avg'), 75);
-  assert.equal(value(db, '2026-10-13', 'hr_min'), 60);
-  assert.equal(value(db, '2026-10-13', 'hr_max'), 90);
-  assert.equal(value(db, '2026-10-13', 'resting_hr'), 54);
-  assert.equal(value(db, '2026-10-13', 'hrv_sdnn'), 60);
-  assert.equal(value(db, '2026-10-13', 'spo2'), 97);
-  assert.equal(Math.round(value(db, '2026-10-13', 'active_energy')!), 100);
-  assert.equal(Math.round(value(db, '2026-10-13', 'weight')! * 10) / 10, 82.6); // last reading of the day (182 lb)
-  assert.equal(value(db, '2026-10-13', 'wrist_temp'), 36);
+  assert.equal(await value(db, '2026-10-13', 'hr_avg'), 75);
+  assert.equal(await value(db, '2026-10-13', 'hr_min'), 60);
+  assert.equal(await value(db, '2026-10-13', 'hr_max'), 90);
+  assert.equal(await value(db, '2026-10-13', 'resting_hr'), 54);
+  assert.equal(await value(db, '2026-10-13', 'hrv_sdnn'), 60);
+  assert.equal(await value(db, '2026-10-13', 'spo2'), 97);
+  assert.equal(Math.round((await value(db, '2026-10-13', 'active_energy'))!), 100);
+  assert.equal(Math.round((await value(db, '2026-10-13', 'weight'))! * 10) / 10, 82.6); // last reading of the day (182 lb)
+  assert.equal(await value(db, '2026-10-13', 'wrist_temp'), 36);
 });
 
 test('assigns a night that crosses midnight to the wake day and picks one source', async () => {
-  const db = openDb(':memory:');
+  const db = await openStore();
   await importAppleHealth(db, FIXTURE);
   // Watch: core 2h + deep 1.5h + REM 1.5h + core 2.5h = 7.5h asleep; awake 15m is not sleep.
-  assert.equal(value(db, '2026-10-14', 'sleep_hours'), 7.5);
-  assert.equal(value(db, '2026-10-14', 'sleep_deep'), 1.5);
-  assert.equal(value(db, '2026-10-14', 'sleep_rem'), 1.5);
-  assert.equal(value(db, '2026-10-14', 'sleep_light'), 4.5);
-  assert.equal(value(db, '2026-10-14', 'sleep_awake'), 0.25);
-  assert.equal(value(db, '2026-10-13', 'sleep_hours'), undefined);
+  assert.equal(await value(db, '2026-10-14', 'sleep_hours'), 7.5);
+  assert.equal(await value(db, '2026-10-14', 'sleep_deep'), 1.5);
+  assert.equal(await value(db, '2026-10-14', 'sleep_rem'), 1.5);
+  assert.equal(await value(db, '2026-10-14', 'sleep_light'), 4.5);
+  assert.equal(await value(db, '2026-10-14', 'sleep_awake'), 0.25);
+  assert.equal(await value(db, '2026-10-13', 'sleep_hours'), undefined);
 
-  const sleep = db.prepare("SELECT start, end FROM events WHERE kind = 'sleep'").all().map((r) => ({ ...r }));
+  const sleep = await db.query(`SELECT start, "end" FROM events WHERE kind = 'sleep'`);
   assert.deepEqual(sleep, [{ start: '2026-10-13T23:00:00-07:00', end: '2026-10-14T06:45:00-07:00' }]);
 });
 
 test('reads workouts in both the old and new export formats', async () => {
-  const db = openDb(':memory:');
+  const db = await openStore();
   await importAppleHealth(db, FIXTURE);
-  const rows = db.prepare('SELECT sport, date, duration_min, energy_kcal, distance_m, avg_hr FROM workouts ORDER BY start').all() as any[];
+  const rows = await db.query<any>('SELECT sport, date, duration_min, energy_kcal, distance_m, avg_hr FROM workouts ORDER BY start');
   assert.equal(rows[0].sport, 'Running');
   assert.equal(rows[0].duration_min, 30);
   assert.equal(Math.round(rows[0].distance_m), 4989);
@@ -66,11 +65,11 @@ test('reads workouts in both the old and new export formats', async () => {
 });
 
 test('re-importing replaces the earlier import instead of doubling it', async () => {
-  const db = openDb(':memory:');
+  const db = await openStore();
   await importAppleHealth(db, FIXTURE);
   await importAppleHealth(db, FIXTURE);
-  assert.equal(value(db, '2026-10-13', 'steps'), 5500);
-  assert.equal((db.prepare('SELECT COUNT(*) n FROM workouts').get() as { n: number }).n, 2);
+  assert.equal(await value(db, '2026-10-13', 'steps'), 5500);
+  assert.equal((await db.query<{ n: number }>('SELECT COUNT(*)::int AS n FROM workouts'))[0].n, 2);
 });
 
 test('reads export.xml out of the export.zip, ignoring export_cda.xml', async () => {
@@ -81,10 +80,10 @@ test('reads export.xml out of the export.zip, ignoring export_cda.xml', async ()
   fs.writeFileSync(path.join(inner, 'export_cda.xml'), '<ClinicalDocument/>');
   execFileSync('zip', ['-qr', 'export.zip', 'apple_health_export'], { cwd: dir });
 
-  const db = openDb(':memory:');
+  const db = await openStore();
   const result = await importAppleHealth(db, path.join(dir, 'export.zip'));
   assert.equal(result.workouts, 2);
-  assert.equal(value(db, '2026-10-13', 'steps'), 5500);
+  assert.equal(await value(db, '2026-10-13', 'steps'), 5500);
   fs.rmSync(dir, { recursive: true });
 });
 

@@ -4,7 +4,7 @@
 
 import { createHash, timingSafeEqual } from 'node:crypto';
 import express, { type NextFunction, type Request, type Response } from 'express';
-import { type Db, type DailyRow, type EventRow, type WorkoutRow, setSetting, transaction, upsertDaily, upsertEvents, upsertWorkouts } from '../db.ts';
+import { type Db, type DailyRow, type EventRow, type WorkoutRow, setSetting, upsertDaily, upsertEvents, upsertWorkouts } from '../db.ts';
 import { SOURCE } from './import.ts';
 
 /** Daily metrics the importer produces (server/apple/import.ts). Anything else is a client bug. */
@@ -39,8 +39,14 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/;
 const EVENT_KINDS = new Set(['sleep', 'nap', 'mindful']);
 
-export type IngestPayload = { daily: DailyRow[]; workouts: WorkoutRow[]; events: EventRow[] };
-export type IngestResult = { daily: number; workouts: number; events: number };
+export type IngestPayload = {
+  daily: DailyRow[];
+  workouts: WorkoutRow[];
+  events: EventRow[];
+  /** Ids of workouts and mindful sessions the app sent earlier that were since deleted in Health. */
+  deleted: { workouts: string[]; events: string[] };
+};
+export type IngestResult = { daily: number; workouts: number; events: number; deleted: number };
 
 export class IngestError extends Error {}
 
@@ -131,22 +137,51 @@ export function parseIngest(body: unknown): IngestPayload {
       date: date(r.date, `${p}.date`),
     };
   });
-  return { daily, workouts, events };
+  const gone = b.deleted === undefined ? {} : record(b.deleted, 'deleted');
+  const deletedIds = (key: 'workouts' | 'events') =>
+    list(gone, key).map((raw, i) => {
+      const id = text(raw, `deleted.${key}[${i}]`);
+      // The app can only remove what it sent itself, never imported or WHOOP rows.
+      if (!id.startsWith('hk-')) fail(`deleted.${key}[${i}]`, 'only ids starting with hk- can be deleted');
+      return id;
+    });
+  return { daily, workouts, events, deleted: { workouts: deletedIds('workouts'), events: deletedIds('events') } };
 }
 
 /** Upserts a validated push. Each daily row is a complete recomputed day, so it replaces the stored value. */
-export function ingestApple(db: Db, p: IngestPayload): IngestResult {
-  transaction(db, () => {
-    upsertDaily(db, p.daily);
-    upsertWorkouts(db, p.workouts);
-    // Like the importer, keep one Apple sleep event per night: if another source now wins the night, drop the old one.
-    const dropSleep = db.prepare("DELETE FROM events WHERE source = ? AND kind = 'sleep' AND date = ? AND id <> ?");
-    for (const e of p.events) if (e.kind === 'sleep') dropSleep.run(SOURCE, e.date, e.id);
-    upsertEvents(db, p.events);
+export async function ingestApple(db: Db, p: IngestPayload): Promise<IngestResult> {
+  // The app ids workouts and mindful sessions by HealthKit UUID ("hk-..."). The same record from an
+  // earlier export.zip import has a hashed id instead, so match it by start instant and replace it.
+  // Compare instants, not text: the export writes every date with one fixed UTC offset.
+  const sameInstant = 'abs(extract(epoch from (start::timestamptz - $2::timestamptz))) < 1';
+
+  let deleted = 0;
+  await db.tx(async (q) => {
+    for (const id of p.deleted.workouts) {
+      deleted += (await q.query('DELETE FROM workouts WHERE source = $1 AND id = $2 RETURNING 1', [SOURCE, id])).length;
+    }
+    for (const id of p.deleted.events) {
+      deleted += (await q.query('DELETE FROM events WHERE source = $1 AND id = $2 RETURNING 1', [SOURCE, id])).length;
+    }
+    await upsertDaily(q, p.daily);
+    for (const w of p.workouts) {
+      if (w.id.startsWith('hk-')) {
+        await q.query(`DELETE FROM workouts WHERE source = $1 AND id NOT LIKE 'hk-%' AND sport = $3 AND ${sameInstant}`, [SOURCE, w.start, w.sport]);
+      }
+    }
+    await upsertWorkouts(q, p.workouts);
+    for (const e of p.events) {
+      // Like the importer, keep one Apple sleep event per night: if another source now wins the night, drop the old one.
+      if (e.kind === 'sleep') await q.query("DELETE FROM events WHERE source = $1 AND kind = 'sleep' AND date = $2 AND id <> $3", [SOURCE, e.date, e.id]);
+      else if (e.kind === 'mindful' && e.id.startsWith('hk-')) {
+        await q.query(`DELETE FROM events WHERE source = $1 AND kind = 'mindful' AND id NOT LIKE 'hk-%' AND ${sameInstant}`, [SOURCE, e.start]);
+      }
+    }
+    await upsertEvents(q, p.events);
   });
-  const result = { daily: p.daily.length, workouts: p.workouts.length, events: p.events.length };
-  if (result.daily + result.workouts + result.events > 0) {
-    setSetting(db, 'apple_last_sync', JSON.stringify({ ...result, syncedAt: new Date().toISOString() }));
+  const result = { daily: p.daily.length, workouts: p.workouts.length, events: p.events.length, deleted };
+  if (result.daily + result.workouts + result.events + deleted > 0) {
+    await setSetting(db, 'apple_last_sync', JSON.stringify({ ...result, syncedAt: new Date().toISOString() }));
   }
   return result;
 }
@@ -166,7 +201,7 @@ export function ingestRouter(db: Db, token: string | undefined) {
   const router = express.Router();
 
   const auth = (req: Request, res: Response, next: NextFunction) => {
-    if (!token) return void res.status(503).json({ error: 'Ingest is off. Set HEALTHOS_INGEST_TOKEN in .env and restart the server.' });
+    if (!token) return void res.status(503).json({ error: 'Ingest is off. Set HEALTHOS_INGEST_TOKEN (scripts/setup-vercel.sh does this for the hosted app).' });
     const m = /^Bearer (.+)$/.exec(req.headers.authorization ?? '');
     if (!m || !tokenMatches(m[1].trim(), token)) {
       return void res.status(401).set('WWW-Authenticate', 'Bearer').json({ error: 'Missing or wrong ingest token' });
@@ -175,7 +210,7 @@ export function ingestRouter(db: Db, token: string | undefined) {
   };
 
   // A first sync sends years of history in chunks; each chunk can be well over express.json's 100 kB default.
-  router.post('/apple/ingest', auth, express.json({ limit: '25mb' }), (req, res) => {
+  router.post('/apple/ingest', auth, express.json({ limit: '25mb' }), async (req, res) => {
     let payload: IngestPayload;
     try {
       payload = parseIngest(req.body);
@@ -183,7 +218,7 @@ export function ingestRouter(db: Db, token: string | undefined) {
       if (err instanceof IngestError) return void res.status(400).json({ error: err.message });
       throw err;
     }
-    res.json({ ok: true, ...ingestApple(db, payload) });
+    res.json({ ok: true, ...(await ingestApple(db, payload)) });
   });
 
   router.use((err: Error & { status?: number }, _req: Request, res: Response, _next: NextFunction) => {

@@ -5,20 +5,25 @@
   "type": "module",
   "description": "Personal health dashboard for Apple Health and WHOOP data, running locally.",
   "scripts": {
-    "dev": "node --env-file-if-exists=.env server/index.ts",
+    "dev": "node --env-file-if-exists=.env --env-file-if-exists=.env.local server/index.ts",
     "build": "vite build",
-    "start": "NODE_ENV=production node --env-file-if-exists=.env server/index.ts",
-    "import:apple": "node --env-file-if-exists=.env server/cli/import-apple.ts",
-    "sync:whoop": "node --env-file-if-exists=.env server/cli/sync-whoop.ts",
+    "start": "NODE_ENV=production node --env-file-if-exists=.env --env-file-if-exists=.env.local server/index.ts",
+    "import:apple": "node --env-file-if-exists=.env --env-file-if-exists=.env.local server/cli/import-apple.ts",
+    "sync:whoop": "node --env-file-if-exists=.env --env-file-if-exists=.env.local server/cli/sync-whoop.ts",
     "test": "node --test test/*.test.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:vercel": "node scripts/build-vercel.mjs",
+    "deploy": "node scripts/build-vercel.mjs && vercel deploy --prebuilt --prod --scope rickymantilla",
+    "migrate:sqlite": "node --env-file-if-exists=.env --env-file-if-exists=.env.local server/cli/migrate-sqlite.ts"
   },
   "dependencies": {
+    "@electric-sql/pglite": "^0.5.10",
+    "@neondatabase/serverless": "^1.2.0",
+    "@vercel/functions": "^3.10.1",
     "express": "^5.3.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "saxes": "^6.0.0",
-    "three": "^0.186.1",
     "yauzl": "^3.4.0"
   },
   "devDependencies": {
@@ -26,9 +31,9 @@
     "@types/node": "^26.6.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "@types/three": "^0.186.0",
     "@types/yauzl": "^3.4.0",
     "@vitejs/plugin-react": "^6.1.2",
+    "esbuild": "^0.28.2",
     "typescript": "^7.0.2",
     "vite": "^8.3.4"
   },

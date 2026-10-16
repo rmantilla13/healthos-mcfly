@@ -8,7 +8,7 @@ struct ContentView: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("http://192.168.1.20:8788", text: $model.serverText)
+                    TextField("https://health.mcfly.bot", text: $model.serverText)
                         .keyboardType(.URL)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
@@ -22,7 +22,7 @@ struct ContentView: View {
                 } header: {
                     Text("Server")
                 } footer: {
-                    Text("Run healthOS on your Mac with HEALTHOS_LAN=1 and HEALTHOS_INGEST_TOKEN set, then use the LAN address it prints and the same token.")
+                    Text("Your healthOS address and its ingest token (HEALTHOS_INGEST_TOKEN on the server).")
                 }
 
                 Section {

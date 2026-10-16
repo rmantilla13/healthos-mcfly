@@ -1,16 +1,12 @@
-import { lazy, Suspense, useState } from 'react';
-import type { Insight, PhotoMeta, Summary, TimelineEvent } from '../../shared/types.ts';
+import type { ReactNode } from 'react';
+import type { Insight, PhotoMeta, Summary, TimelineEvent, WeekSummary } from '../../shared/types.ts';
 import { Gauge, MiniBars, MiniDots, MiniLine, RangeScale } from '../charts/Mini.tsx';
 import { Figure } from '../components/Figure.tsx';
 import { Icon, type IconName } from '../components/Icon.tsx';
-import { clock, compact, fmt, fmtDate, hoursMinutes, href, minutesOfDay, relativeDay, shiftDate, useApi } from '../lib.ts';
-
-// three.js is only fetched when the 3D view is opened.
-const Body3D = lazy(() => import('../components/Body3D.tsx'));
+import { clock, compact, duration, fmt, fmtDate, hoursMinutes, href, minutesOfDay, relativeDay, shiftDate, useApi } from '../lib.ts';
 
 export function Home({ date, onDate, photo }: { date: string | null; onDate: (d: string | null) => void; photo: PhotoMeta | null }) {
   const { data, error, loading } = useApi<Summary>(`/summary${date ? `?date=${date}` : ''}`);
-  const [show3d, setShow3d] = useState(false);
   if (error && !data) return <div className="page-message">Couldn't load your data: {error.message}</div>;
   if (!data) return <div className="page-message">Loading…</div>;
   const s = data;
@@ -26,22 +22,17 @@ export function Home({ date, onDate, photo }: { date: string | null; onDate: (d:
         </header>
         <Figure vitals={s.vitals} asOf={s.date} photo={photo} />
         <div className="figure-caption">
-          <p>Vitals from your latest night, compared with your own last 30 days.</p>
-          {photo ? (
-            <button className="pill pill-3d" onClick={() => setShow3d(true)}>
-              View in 3D
-            </button>
+          {s.week ? (
+            <WeekSummaryText week={s.week} stepGoal={s.stepGoal} />
           ) : (
-            <a className="pill pill-3d" href={href('settings')}>
+            <p className="week-summary">Vitals from your latest night, compared with your own last 30 days.</p>
+          )}
+          {!photo && (
+            <a className="pill pill-photo" href={href('settings')}>
               Add your photo
             </a>
           )}
         </div>
-        {show3d && photo && (
-          <Suspense fallback={<div className="viewer"><div className="viewer-note">Loading 3D…</div></div>}>
-            <Body3D photo={photo} onClose={() => setShow3d(false)} />
-          </Suspense>
-        )}
       </div>
 
       <div className="home-right">
@@ -79,6 +70,120 @@ export function Home({ date, onDate, photo }: { date: string | null; onDate: (d:
           <InsightsCard insights={s.insights} today={s.today} />
         </div>
       </div>
+    </div>
+  );
+}
+
+// ---------- week so far ----------
+
+/** Two or three plain sentences about Monday-to-date, each figure against the same days last week. */
+function WeekSummaryText({ week, stepGoal }: { week: WeekSummary; stepGoal: number }) {
+  const sentences: ReactNode[] = [];
+  const pct = (a: number, b: number) => Math.round(((a - b) / b) * 100);
+
+  const { sleep, steps, workouts, hrv, restingHr, recovery } = week;
+  if (sleep.avg !== null) {
+    const diff = sleep.prev !== null ? Math.round((sleep.avg - sleep.prev) * 60) : null;
+    sentences.push(
+      <>
+        You're sleeping <b>{hoursMinutes(sleep.avg)}</b> a night
+        {diff === null ? '' : Math.abs(diff) < 5 ? ', about the same as last week' : (
+          <>
+            , <b>{Math.abs(diff)} min {diff > 0 ? 'more' : 'less'}</b> than last week
+          </>
+        )}
+        .
+      </>,
+    );
+  }
+
+  const activity: ReactNode[] = [];
+  if (steps.avg !== null) {
+    const change = steps.prev ? pct(steps.avg, steps.prev) : null;
+    activity.push(
+      <>
+        Steps average <b>{fmt(Math.round(steps.avg / 10) * 10)}</b> a day
+        {change !== null && Math.abs(change) >= 5 ? ` (${change > 0 ? 'up' : 'down'} ${Math.abs(change)}%)` : ''}
+        {steps.goalDays > 0 ? (
+          <>
+            , with your goal met on <b>{steps.goalDays} of {steps.daysWithData}</b> days
+          </>
+        ) : (
+          `, under your ${compact(stepGoal)} goal`
+        )}
+      </>,
+    );
+  }
+  activity.push(
+    workouts.count > 0 ? (
+      <>
+        <b>
+          {workouts.count} workout{workouts.count === 1 ? '' : 's'}
+        </b>{' '}
+        logged ({duration(workouts.minutes)})
+      </>
+    ) : (
+      'no workouts logged yet'
+    ),
+  );
+  sentences.push(
+    <>
+      {activity.map((a, i) => (
+        <span key={i}>
+          {i > 0 ? '; ' : ''}
+          {a}
+        </span>
+      ))}
+      .
+    </>,
+  );
+
+  // Heart clauses are a lead-in plus an optional emphasized value, so the first one can be capitalized.
+  const heart: { lead: string; value?: string }[] = [];
+  if (restingHr.avg !== null && restingHr.prev !== null) {
+    const d = restingHr.avg - restingHr.prev;
+    heart.push(Math.abs(d) < 1 ? { lead: 'resting heart rate is steady' } : { lead: 'resting heart rate is ', value: `${d < 0 ? 'down' : 'up'} ${fmt(Math.abs(d), 1)} bpm` });
+  }
+  if (hrv.avg !== null && hrv.prev) {
+    const c = pct(hrv.avg, hrv.prev);
+    heart.push(Math.abs(c) < 3 ? { lead: 'HRV is holding steady' } : { lead: 'HRV is ', value: `${c > 0 ? 'up' : 'down'} ${Math.abs(c)}%` });
+  }
+  if (recovery.avg !== null) heart.push({ lead: 'recovery averages ', value: `${fmt(recovery.avg)}%` });
+  if (heart.length) {
+    sentences.push(
+      <>
+        {heart.map((h, i) => (
+          <span key={i}>
+            {i === 0 ? '' : i === heart.length - 1 ? ' and ' : ', '}
+            {i === 0 ? h.lead[0].toUpperCase() + h.lead.slice(1) : h.lead}
+            {h.value && <b>{h.value}</b>}
+          </span>
+        ))}
+        .
+      </>,
+    );
+  }
+
+  const nothing = sleep.avg === null && steps.avg === null && workouts.count === 0 && !heart.length;
+  const range =
+    week.days === 1
+      ? fmtDate(week.start, { weekday: 'long' })
+      : `${fmtDate(week.start, { weekday: 'short' })}–${fmtDate(week.end, { weekday: 'short' })}`;
+  return (
+    <div className="week-summary">
+      <div className="week-summary-title">Week so far · {range}</div>
+      {nothing ? (
+        <p>Nothing recorded yet this week.</p>
+      ) : (
+        <p>
+          {sentences.map((x, i) => (
+            <span key={i}>
+              {i > 0 ? ' ' : ''}
+              {x}
+            </span>
+          ))}
+        </p>
+      )}
     </div>
   );
 }

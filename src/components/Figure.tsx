@@ -57,7 +57,7 @@ function CalloutLabel({
       <div className="callout-value">
         {d.value} <span>{d.unit}</span>
       </div>
-      <div className="callout-status">
+      <div className="callout-status" title="From your latest night, compared with your own previous 30 days">
         {v.status ? STATUS_TEXT[v.status] : v.latest ? 'Building baseline' : 'No data'}
         {stale && v.latest ? ` · ${fmtDate(v.latest.date)}` : ''}
       </div>
@@ -166,17 +166,20 @@ function PhotoFigure({ vitals, asOf, photo }: { vitals: Summary['vitals']; asOf:
 
   return (
     <div className="figure figure-photo-wrap" ref={wrapRef} style={{ aspectRatio: `${photo.width} / ${photo.height}` }}>
+      <PhotoToneFilters />
       <div className="figure-glow" />
       <img className="figure-photo" src={`/api/profile/cutout.png?v=${photo.version}`} alt="" />
       <svg className="figure-svg" viewBox={`0 0 1000 ${1000 * ratio}`} preserveAspectRatio="none" aria-hidden="true">
         {labels.map((l) => {
           const [dx, dy] = photo.dots[l.key];
           const [ex, ey] = lineEnd(l);
+          // The viewBox scales with the photo; keep dots the same on-screen size as on the silhouette.
+          const px = 1000 / width;
           return (
             <g key={l.key}>
               <line x1={dx * 1000} y1={dy * 1000 * ratio} x2={ex * 1000} y2={ey * 1000 * ratio} className="callout-line" />
-              <circle cx={dx * 1000} cy={dy * 1000 * ratio} r={15} className="callout-halo" />
-              <circle cx={dx * 1000} cy={dy * 1000 * ratio} r={5} className="callout-dot" />
+              <circle cx={dx * 1000} cy={dy * 1000 * ratio} r={13 * px} className="callout-halo" />
+              <circle cx={dx * 1000} cy={dy * 1000 * ratio} r={5 * px} className="callout-dot" />
             </g>
           );
         })}
@@ -202,6 +205,33 @@ function PhotoFigure({ vitals, asOf, photo }: { vitals: Summary['vitals']; asOf:
         );
       })}
     </div>
+  );
+}
+
+/**
+ * Black-and-white grade for the profile photo: fully desaturated, with blacks lifted to the UI's warm ink
+ * in the light theme (kept deep in the dark theme) so the photo sits softly on the page.
+ */
+function PhotoToneFilters() {
+  return (
+    <svg width="0" height="0" className="svg-defs" aria-hidden="true" focusable="false">
+      <filter id="photo-tone-light" colorInterpolationFilters="sRGB">
+        <feColorMatrix type="saturate" values="0" />
+        <feComponentTransfer>
+          <feFuncR type="table" tableValues="0.2 0.97" />
+          <feFuncG type="table" tableValues="0.2 0.97" />
+          <feFuncB type="table" tableValues="0.2 0.97" />
+        </feComponentTransfer>
+      </filter>
+      <filter id="photo-tone-dark" colorInterpolationFilters="sRGB">
+        <feColorMatrix type="saturate" values="0" />
+        <feComponentTransfer>
+          <feFuncR type="table" tableValues="0.06 0.93" />
+          <feFuncG type="table" tableValues="0.06 0.93" />
+          <feFuncB type="table" tableValues="0.06 0.93" />
+        </feComponentTransfer>
+      </filter>
+    </svg>
   );
 }
 

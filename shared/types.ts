@@ -53,6 +53,21 @@ export type Summary = {
   activity: { latest: Latest | null; series: Point[] };
   timeline: { date: string; events: TimelineEvent[] };
   insights: Insight[];
+  /** Missing from servers older than this field. */
+  week?: WeekSummary;
+};
+
+/** Monday through the summary's date, each figure next to the same weekdays of the week before. */
+export type WeekSummary = {
+  start: string;
+  end: string;
+  days: number;
+  sleep: { avg: number | null; prev: number | null };
+  steps: { avg: number | null; prev: number | null; goalDays: number; daysWithData: number };
+  workouts: { count: number; minutes: number };
+  hrv: { avg: number | null; prev: number | null };
+  restingHr: { avg: number | null; prev: number | null };
+  recovery: { avg: number | null; prev: number | null };
 };
 
 export type Workout = {
@@ -74,7 +89,7 @@ export type Trends = Record<string, Point[]>;
 
 export type Units = 'metric' | 'imperial';
 
-export type Settings = { name: string; stepGoal: number; units: Units; demo: 'auto' | 'on' | 'off' };
+export type Settings = { name: string; stepGoal: number; units: Units; demo: 'auto' | 'on' | 'off'; timeZone: string | null };
 
 export type PhotoMeta = {
   version: number;
@@ -89,6 +104,8 @@ export type PhotoMeta = {
 };
 
 export type Status = {
+  /** Running on Vercel: uploads that need the Mac (export import, photo processing) are off. */
+  hosted: boolean;
   demo: boolean;
   settings: Settings;
   photo: PhotoMeta | null;

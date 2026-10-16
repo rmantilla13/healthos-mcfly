@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import type { AddressInfo } from 'node:net';
 import express from 'express';
 import { lanIngestApp, ingestRouter } from '../server/apple/ingest.ts';
-import { type Db, getSetting, openDb, upsertDaily } from '../server/db.ts';
+import { type Db, getSetting, upsertDaily, upsertEvents, upsertWorkouts } from '../server/db.ts';
+import { openStore } from '../server/store.ts';
 
 const TOKEN = 'test-token-0123456789abcdef';
 
@@ -31,9 +32,9 @@ function post(url: string, body: unknown, token: string | null = TOKEN) {
   });
 }
 
-const count = (db: Db, table: string) => (db.prepare(`SELECT COUNT(*) n FROM ${table}`).get() as { n: number }).n;
+const count = async (db: Db, table: string) => (await db.query<{ n: number }>(`SELECT COUNT(*)::int AS n FROM ${table}`))[0].n;
 const daily = (db: Db, date: string, metric: string) =>
-  db.prepare('SELECT source, value FROM daily WHERE date = ? AND metric = ? ORDER BY source').all(date, metric).map((r) => ({ ...r }));
+  db.query('SELECT source, value FROM daily WHERE date = $1 AND metric = $2 ORDER BY source', [date, metric]);
 
 const workout = {
   id: 'w1',
@@ -60,7 +61,7 @@ const sleep = (id: string) => ({
 });
 
 test('ingest needs a configured token and the right bearer', async () => {
-  const db = openDb(':memory:');
+  const db = await openStore();
   await serve(appFor(db, undefined), async (url) => {
     assert.equal((await post(url, { daily: [] })).status, 503);
   });
@@ -68,14 +69,14 @@ test('ingest needs a configured token and the right bearer', async () => {
     const row = { daily: [{ date: '2026-10-13', metric: 'steps', value: 1 }] };
     assert.equal((await post(url, row, null)).status, 401);
     assert.equal((await post(url, row, 'wrong-token')).status, 401);
-    assert.equal(count(db, 'daily'), 0);
+    assert.equal(await count(db, 'daily'), 0);
     assert.equal((await post(url, row)).status, 200);
   });
 });
 
 test('ingest upserts rows as source apple and replaces a day on re-send', async () => {
-  const db = openDb(':memory:');
-  upsertDaily(db, [{ date: '2026-10-13', metric: 'steps', source: 'whoop', value: 42 }]);
+  const db = await openStore();
+  await upsertDaily(db, [{ date: '2026-10-13', metric: 'steps', source: 'whoop', value: 42 }]);
   await serve(appFor(db, TOKEN), async (url) => {
     const res = await post(url, {
       daily: [
@@ -87,33 +88,62 @@ test('ingest upserts rows as source apple and replaces a day on re-send', async 
       events: [sleep('s1')],
     });
     assert.equal(res.status, 200);
-    assert.deepEqual(await res.json(), { ok: true, daily: 2, workouts: 1, events: 1 });
-    assert.deepEqual(daily(db, '2026-10-13', 'steps'), [
+    assert.deepEqual(await res.json(), { ok: true, daily: 2, workouts: 1, events: 1, deleted: 0 });
+    assert.deepEqual(await daily(db, '2026-10-13', 'steps'), [
       { source: 'apple', value: 8000 },
       { source: 'whoop', value: 42 },
     ]);
 
     // The same day again with more steps: one row, new value. Same workout id: no duplicate.
     await post(url, { daily: [{ date: '2026-10-13', metric: 'steps', value: 9100 }], workouts: [{ ...workout, energy_kcal: 310 }] });
-    assert.deepEqual(daily(db, '2026-10-13', 'steps'), [
+    assert.deepEqual(await daily(db, '2026-10-13', 'steps'), [
       { source: 'apple', value: 9100 },
       { source: 'whoop', value: 42 },
     ]);
-    assert.equal(count(db, 'workouts'), 1);
-    assert.equal((db.prepare('SELECT energy_kcal FROM workouts').get() as { energy_kcal: number }).energy_kcal, 310);
+    assert.equal(await count(db, 'workouts'), 1);
+    assert.equal((await db.query<{ energy_kcal: number }>('SELECT energy_kcal FROM workouts'))[0].energy_kcal, 310);
 
     // A different source now wins the night: its sleep event replaces the old one for that date.
     await post(url, { events: [sleep('s2')] });
     assert.deepEqual(
-      db.prepare("SELECT id, source FROM events WHERE kind = 'sleep'").all().map((r) => ({ ...r })),
+      await db.query("SELECT id, source FROM events WHERE kind = 'sleep'"),
       [{ id: 's2', source: 'apple' }],
     );
-    assert.equal(JSON.parse(getSetting(db, 'apple_last_sync')!).events, 1);
+    assert.equal(JSON.parse((await getSetting(db, 'apple_last_sync'))!).events, 1);
   });
 });
 
+test('a workout or mindful session from the app replaces the same one from an export import', async () => {
+  const db = await openStore();
+  // export.zip writes every date with the offset in effect at export time, so a January run reads -05:00.
+  await upsertWorkouts(db, [{ ...workout, id: '0123456789abcdef0123', start: '2026-01-10T18:00:00-05:00', end: '2026-01-10T18:30:00-05:00', date: '2026-01-10' }]);
+  await upsertEvents(db, [{ ...sleep('x'), id: 'fedcba98765432100000', kind: 'mindful', start: '2026-01-10T12:30:00-05:00', end: '2026-01-10T12:40:00-05:00', date: '2026-01-10' }]);
+  const run = (id: string, sport = 'Running') => ({ ...workout, id, sport, start: '2026-01-10T17:00:00-06:00', end: '2026-01-10T17:30:00-06:00', date: '2026-01-10' });
+  await serve(appFor(db, TOKEN), async (url) => {
+    await post(url, {
+      // Same instant as the imported rows, in the time zone it was recorded in.
+      workouts: [run('hk-a'), run('hk-b'), run('hk-c', 'Yoga')],
+      events: [{ ...sleep('x'), id: 'hk-m', kind: 'mindful', start: '2026-01-10T11:30:00-06:00', end: '2026-01-10T11:40:00-06:00', date: '2026-01-10' }],
+    });
+  });
+  // The imported copies are gone; two app workouts at the same moment (say Watch and Strava) both stay.
+  assert.deepEqual((await db.query<{ id: string }>('SELECT id FROM workouts ORDER BY id')).map((r) => r.id), ['hk-a', 'hk-b', 'hk-c']);
+  assert.deepEqual((await db.query<{ id: string }>('SELECT id FROM events')).map((r) => r.id), ['hk-m']);
+});
+
+test('workouts and mindful sessions deleted in Health are removed, but only ones the app sent', async () => {
+  const db = await openStore();
+  await serve(appFor(db, TOKEN), async (url) => {
+    await post(url, { workouts: [{ ...workout, id: 'hk-a' }, { ...workout, id: 'hk-b', start: '2026-10-13T07:00:00-07:00' }] });
+    const res = await post(url, { deleted: { workouts: ['hk-a', 'hk-missing'] } });
+    assert.equal(((await res.json()) as { deleted: number }).deleted, 1);
+    assert.equal((await post(url, { deleted: { workouts: ['0123456789abcdef0123'] } })).status, 400);
+  });
+  assert.deepEqual((await db.query<{ id: string }>('SELECT id FROM workouts')).map((r) => r.id), ['hk-b']);
+});
+
 test('ingest rejects malformed rows and writes nothing from that request', async () => {
-  const db = openDb(':memory:');
+  const db = await openStore();
   const good = { date: '2026-10-13', metric: 'steps', value: 100 };
   const bad: [unknown, RegExp][] = [
     ['not json', /JSON|Unexpected/i],
@@ -133,11 +163,11 @@ test('ingest rejects malformed rows and writes nothing from that request', async
       assert.match(((await res.json()) as { error: string }).error, message);
     }
   });
-  assert.equal(count(db, 'daily'), 0);
+  assert.equal(await count(db, 'daily'), 0);
 });
 
 test('ingest takes a large first-sync chunk', async () => {
-  const db = openDb(':memory:');
+  const db = await openStore();
   const rows = Array.from({ length: 5000 }, (_, i) => ({
     date: new Date(Date.UTC(2015, 0, 1) + i * 86_400_000).toISOString().slice(0, 10),
     metric: 'steps',
@@ -147,11 +177,11 @@ test('ingest takes a large first-sync chunk', async () => {
     const res = await post(url, { daily: rows });
     assert.equal(res.status, 200);
   });
-  assert.equal(count(db, 'daily'), 5000);
+  assert.equal(await count(db, 'daily'), 5000);
 });
 
 test('the LAN listener serves ingest and nothing else', async () => {
-  const db = openDb(':memory:');
+  const db = await openStore();
   await serve(lanIngestApp(db, TOKEN), async (url) => {
     assert.equal((await post(url, { daily: [{ date: '2026-10-13', metric: 'steps', value: 5 }] })).status, 200);
     for (const path of ['/api/summary', '/api/status', '/']) {

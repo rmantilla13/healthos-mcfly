@@ -1,16 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import {
-  type Db,
-  type DailyRow,
-  type EventRow,
-  type WorkoutRow,
-  getSetting,
-  setSetting,
-  transaction,
-  upsertDaily,
-  upsertEvents,
-  upsertWorkouts,
-} from './db.ts';
+import { type Db, type EventRow, type Queryable, type WorkoutRow, type DailyRow, getSetting, setSetting, upsertDaily, upsertEvents, upsertWorkouts } from './db.ts';
 import { DAY_MS, DAY_ROLLOVER_MS, localDate, stampFromIso, toLocalIso, todayLocal } from './dates.ts';
 
 export const SOURCE = 'whoop';
@@ -33,31 +22,34 @@ export function whoopConfig() {
 
 export const isConfigured = () => Boolean(whoopConfig().clientId && whoopConfig().clientSecret);
 
-export function isConnected(db: Db) {
-  return Boolean(db.prepare("SELECT 1 FROM tokens WHERE provider = 'whoop'").get());
+export async function isConnected(q: Queryable) {
+  const [row] = await q.query<{ any: boolean }>("SELECT EXISTS (SELECT 1 FROM tokens WHERE provider = 'whoop') AS any");
+  return Boolean(row?.any);
 }
 
 // ---------- OAuth ----------
+// The connect and callback requests can land on different serverless instances, so the pending
+// state lives in the database rather than in memory.
 
-const pendingStates = new Map<string, number>();
-
-export function authorizeUrl(): string {
+export async function authorizeUrl(q: Queryable): Promise<string> {
   const { clientId, redirectUri } = whoopConfig();
   // WHOOP requires an 8-character state.
   const state = randomBytes(6).toString('base64url').slice(0, 8);
-  pendingStates.set(state, Date.now() + 10 * 60_000);
+  await setSetting(q, 'whoop_oauth_state', JSON.stringify({ state, expires: Date.now() + 10 * 60_000 }));
   const params = new URLSearchParams({ response_type: 'code', client_id: clientId, redirect_uri: redirectUri, scope: SCOPES.join(' '), state });
   return `${AUTH_URL}?${params}`;
 }
 
-export function consumeState(state: string | undefined): boolean {
-  if (!state) return false;
-  const expires = pendingStates.get(state);
-  pendingStates.delete(state);
-  return expires !== undefined && expires > Date.now();
+export async function consumeState(q: Queryable, state: string | undefined): Promise<boolean> {
+  const raw = await getSetting(q, 'whoop_oauth_state');
+  await setSetting(q, 'whoop_oauth_state', null);
+  if (!raw || !state) return false;
+  const pending = JSON.parse(raw) as { state: string; expires: number };
+  return pending.state === state && pending.expires > Date.now();
 }
 
 type TokenResponse = { access_token: string; refresh_token?: string; expires_in: number; scope?: string };
+type TokenRow = { access_token: string; refresh_token: string | null; expires_at: number };
 
 async function tokenRequest(body: Record<string, string>): Promise<TokenResponse> {
   const { clientId, clientSecret } = whoopConfig();
@@ -70,38 +62,36 @@ async function tokenRequest(body: Record<string, string>): Promise<TokenResponse
   return (await res.json()) as TokenResponse;
 }
 
-function saveTokens(db: Db, t: TokenResponse, previousRefresh?: string | null) {
-  db.prepare(
-    `INSERT INTO tokens (provider, access_token, refresh_token, expires_at, scope) VALUES ('whoop', ?, ?, ?, ?)
+async function saveTokens(q: Queryable, t: TokenResponse, previousRefresh?: string | null) {
+  await q.query(
+    `INSERT INTO tokens (provider, access_token, refresh_token, expires_at, scope) VALUES ('whoop', $1, $2, $3, $4)
      ON CONFLICT (provider) DO UPDATE SET access_token = excluded.access_token, refresh_token = excluded.refresh_token,
      expires_at = excluded.expires_at, scope = excluded.scope`,
-  ).run(t.access_token, t.refresh_token ?? previousRefresh ?? null, Date.now() + t.expires_in * 1000, t.scope ?? null);
+    [t.access_token, t.refresh_token ?? previousRefresh ?? null, Date.now() + t.expires_in * 1000, t.scope ?? null],
+  );
 }
 
-export async function exchangeCode(db: Db, code: string) {
+export async function exchangeCode(q: Queryable, code: string) {
   const t = await tokenRequest({ grant_type: 'authorization_code', code, redirect_uri: whoopConfig().redirectUri });
-  saveTokens(db, t);
+  await saveTokens(q, t);
 }
-
-let refreshing: Promise<string> | null = null;
 
 async function accessToken(db: Db, force = false): Promise<string> {
-  const row = db.prepare("SELECT access_token, refresh_token, expires_at FROM tokens WHERE provider = 'whoop'").get() as
-    | { access_token: string; refresh_token: string | null; expires_at: number }
-    | undefined;
+  const [row] = await db.query<TokenRow>("SELECT access_token, refresh_token, expires_at FROM tokens WHERE provider = 'whoop'");
   if (!row) throw new Error('WHOOP is not connected');
-  if (!force && row.expires_at - 120_000 > Date.now()) return row.access_token;
-  if (!row.refresh_token) throw new Error('WHOOP session expired. Reconnect WHOOP.');
-  // WHOOP rotates refresh tokens and rejects concurrent refreshes, so only one may run at a time.
-  refreshing ??= tokenRequest({ grant_type: 'refresh_token', refresh_token: row.refresh_token, scope: 'offline' })
-    .then((t) => {
-      saveTokens(db, t, row.refresh_token);
-      return t.access_token;
-    })
-    .finally(() => {
-      refreshing = null;
-    });
-  return refreshing;
+  if (!force && Number(row.expires_at) - 120_000 > Date.now()) return row.access_token;
+  // WHOOP rotates refresh tokens and rejects concurrent refreshes, and the cron and a manual sync can run
+  // on different instances at once. Lock the token row, then re-read it: if someone else refreshed while
+  // we waited, use their token instead of spending the (now invalid) old refresh token.
+  return db.tx(async (q) => {
+    const [locked] = await q.query<TokenRow>("SELECT access_token, refresh_token, expires_at FROM tokens WHERE provider = 'whoop' FOR UPDATE");
+    if (!locked) throw new Error('WHOOP is not connected');
+    if (locked.access_token !== row.access_token && Number(locked.expires_at) - 120_000 > Date.now()) return locked.access_token;
+    if (!locked.refresh_token) throw new Error('WHOOP session expired. Reconnect WHOOP.');
+    const t = await tokenRequest({ grant_type: 'refresh_token', refresh_token: locked.refresh_token, scope: 'offline' });
+    await saveTokens(q, t, locked.refresh_token);
+    return t.access_token;
+  });
 }
 
 export async function disconnect(db: Db) {
@@ -111,7 +101,7 @@ export async function disconnect(db: Db) {
   } catch {
     // Revoking is best effort; local tokens are removed either way.
   }
-  db.prepare("DELETE FROM tokens WHERE provider = 'whoop'").run();
+  await db.query("DELETE FROM tokens WHERE provider = 'whoop'");
 }
 
 async function api<T>(db: Db, path: string, params: Record<string, string> = {}): Promise<T> {
@@ -296,16 +286,29 @@ function titleCase(s: string) {
 }
 
 // ---------- Sync ----------
+// Sync status is kept in the database so every instance (and the dashboard) sees the same thing.
 
-export type SyncState = { running: boolean; lastSync?: string; lastError?: string; lastCounts?: Record<string, number> };
-export const syncState: SyncState = { running: false };
+export type SyncState = { running: boolean; startedAt?: string; lastSync?: string; lastError?: string; lastCounts?: Record<string, number> };
+const STALE_RUN_MS = 10 * 60_000;
 
-export async function syncWhoop(db: Db, opts: { full?: boolean } = {}) {
-  if (syncState.running) return;
-  syncState.running = true;
-  syncState.lastError = undefined;
+export async function syncState(q: Queryable): Promise<SyncState> {
+  const raw = await getSetting(q, 'whoop_sync');
+  const s: SyncState = raw ? JSON.parse(raw) : { running: false };
+  // A run whose function was cut off never clears its flag; treat it as finished after a while.
+  if (s.running && (!s.startedAt || Date.now() - Date.parse(s.startedAt) > STALE_RUN_MS)) s.running = false;
+  return s;
+}
+
+async function saveSyncState(q: Queryable, s: SyncState) {
+  await setSetting(q, 'whoop_sync', JSON.stringify(s));
+}
+
+export async function syncWhoop(db: Db, opts: { full?: boolean; timeZone?: string } = {}) {
+  const prev = await syncState(db);
+  if (prev.running) return;
+  await saveSyncState(db, { ...prev, running: true, startedAt: new Date().toISOString(), lastError: undefined });
   try {
-    const last = getSetting(db, 'whoop_last_sync');
+    const last = await getSetting(db, 'whoop_last_sync');
     // Re-read a few days on each sync: WHOOP rescores recent sleep and recovery after the fact.
     const since = !last || opts.full ? Date.now() - BACKFILL_DAYS * DAY_MS : Date.parse(last) - 4 * DAY_MS;
     const start = new Date(since).toISOString();
@@ -320,22 +323,26 @@ export async function syncWhoop(db: Db, opts: { full?: boolean } = {}) {
     const workouts = await collect<WhoopWorkout>(db, '/activity/workout', start);
 
     const mapped = mapWhoop({ cycles, sleeps, recoveries, workouts });
-    transaction(db, () => {
-      upsertDaily(db, mapped.daily);
-      if (body?.weight_kilogram) upsertDaily(db, [{ date: todayLocal(), metric: 'weight', source: SOURCE, value: body.weight_kilogram }]);
-      upsertEvents(db, mapped.events);
-      upsertWorkouts(db, mapped.workouts);
+    await db.tx(async (q) => {
+      await upsertDaily(q, mapped.daily);
+      if (body?.weight_kilogram) {
+        await upsertDaily(q, [{ date: todayLocal(opts.timeZone), metric: 'weight', source: SOURCE, value: body.weight_kilogram }]);
+      }
+      await upsertEvents(q, mapped.events);
+      await upsertWorkouts(q, mapped.workouts);
     });
-    if (profile?.first_name) setSetting(db, 'whoop_first_name', profile.first_name);
-    if (body?.max_heart_rate) setSetting(db, 'whoop_max_hr', String(body.max_heart_rate));
+    if (profile?.first_name) await setSetting(db, 'whoop_first_name', profile.first_name);
+    if (body?.max_heart_rate) await setSetting(db, 'whoop_max_hr', String(body.max_heart_rate));
 
-    syncState.lastSync = new Date().toISOString();
-    syncState.lastCounts = { cycles: cycles.length, sleeps: sleeps.length, recoveries: recoveries.length, workouts: workouts.length };
-    setSetting(db, 'whoop_last_sync', syncState.lastSync);
+    const lastSync = new Date().toISOString();
+    await setSetting(db, 'whoop_last_sync', lastSync);
+    await saveSyncState(db, {
+      running: false,
+      lastSync,
+      lastCounts: { cycles: cycles.length, sleeps: sleeps.length, recoveries: recoveries.length, workouts: workouts.length },
+    });
   } catch (err) {
-    syncState.lastError = err instanceof Error ? err.message : String(err);
+    await saveSyncState(db, { ...prev, running: false, lastError: err instanceof Error ? err.message : String(err) });
     throw err;
-  } finally {
-    syncState.running = false;
   }
 }

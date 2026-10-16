@@ -1,7 +1,7 @@
 # Regenerate the Xcode project after editing this file: `xcodegen generate` (brew install xcodegen).
 name: HealthOSSync
 options:
-  bundleIdPrefix: dev.healthos
+  bundleIdPrefix: health.mcfly
   deploymentTarget:
     iOS: "17.0"
   createIntermediateGroups: true
@@ -38,9 +38,21 @@ targets:
         com.apple.developer.healthkit.background-delivery: true
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: dev.healthos.sync
+        PRODUCT_BUNDLE_IDENTIFIER: health.mcfly.sync
         TARGETED_DEVICE_FAMILY: "1"
         CODE_SIGN_STYLE: Automatic
         # Set your team to install on an iPhone (or pick it in Xcode > Signing & Capabilities).
         DEVELOPMENT_TEAM: ""
         ENABLE_PREVIEWS: YES
+    scheme:
+      testTargets: [HealthOSSyncTests]
+  HealthOSSyncTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [HealthOSSyncTests]
+    dependencies:
+      - target: HealthOSSync
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: health.mcfly.sync.tests

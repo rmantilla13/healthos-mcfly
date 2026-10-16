@@ -51,23 +51,10 @@ enum Day {
         return f
     }()
 
-    /// Same date string format as Apple's export.xml ("2024-01-15 07:30:00 -0800"), in the device time zone.
-    /// Only used to build record ids that match the ones the export importer gives the same record.
-    private static let exportFormat: DateFormatter = {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "yyyy-MM-dd HH:mm:ss Z"
-        return f
-    }()
-
     static func midnightUTC(_ day: String) -> Date { parser.date(from: day)! }
     static func add(_ day: String, _ days: Int) -> String { parser.string(from: midnightUTC(day).addingTimeInterval(TimeInterval(days) * 86_400)) }
     static func today() -> String { Stamp(Date(), timeZone: .current).localDate() }
     static func of(_ date: Date) -> String { Stamp(date, timeZone: .current).localDate() }
-    static func exportString(_ date: Date) -> String {
-        exportFormat.timeZone = .current
-        return exportFormat.string(from: date)
-    }
 }
 
 extension HKSample {

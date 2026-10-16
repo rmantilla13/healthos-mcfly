@@ -10,3 +10,6 @@ data/
 xcuserdata/
 DerivedData/
 ios/build/
+.vercel
+.env*
+!.env.example

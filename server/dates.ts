@@ -52,7 +52,19 @@ export function addDays(date: string, days: number): string {
   return new Date(Date.parse(date + 'T00:00:00Z') + days * DAY_MS).toISOString().slice(0, 10);
 }
 
-export function todayLocal(): string {
+/**
+ * Today's date in the user's time zone. The hosted server runs in UTC, so "today" must come from the
+ * zone the dashboard reports (stored as a setting), not the server clock. Falls back to the machine's zone.
+ */
+export function todayLocal(timeZone?: string): string {
+  if (timeZone) {
+    try {
+      // en-CA formats as YYYY-MM-DD.
+      return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+    } catch {
+      // Unknown zone name: fall through to the machine's zone.
+    }
+  }
   const now = new Date();
   return localDate({ ms: now.getTime(), offsetMin: -now.getTimezoneOffset() });
 }

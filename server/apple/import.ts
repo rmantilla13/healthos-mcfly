@@ -3,18 +3,7 @@ import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { SaxesParser, type SaxesTagPlain } from 'saxes';
 import yauzl from 'yauzl';
-import {
-  type Db,
-  type DailyRow,
-  type EventRow,
-  type WorkoutRow,
-  deleteSource,
-  setSetting,
-  transaction,
-  upsertDaily,
-  upsertEvents,
-  upsertWorkouts,
-} from '../db.ts';
+import { type Db, type DailyRow, type EventRow, type WorkoutRow, deleteSource, setSetting, upsertDaily, upsertEvents, upsertWorkouts } from '../db.ts';
 import { DAY_ROLLOVER_MS, localDate, parseAppleDate, toLocalIso, type Stamp } from '../dates.ts';
 
 export const SOURCE = 'apple';
@@ -419,14 +408,12 @@ export async function importAppleHealth(db: Db, file: string, onProgress?: (p: I
   });
   const { daily, workouts, events } = agg.finish();
 
-  transaction(db, () => {
-    deleteSource(db, SOURCE);
-    upsertDaily(db, daily);
-    upsertWorkouts(db, workouts);
-    upsertEvents(db, events);
+  await db.tx(async (q) => {
+    await deleteSource(q, SOURCE);
+    await upsertDaily(q, daily);
+    await upsertWorkouts(q, workouts);
+    await upsertEvents(q, events);
   });
-  // Replacing years of data leaves a large write-ahead log behind; fold it back into the database.
-  db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
 
   const dates = [...new Set(daily.map((d) => d.date))].sort();
   const result: ImportResult = {
@@ -436,7 +423,7 @@ export async function importAppleHealth(db: Db, file: string, onProgress?: (p: I
     firstDate: dates[0] ?? null,
     lastDate: dates.at(-1) ?? null,
   };
-  setSetting(db, 'apple_last_import', JSON.stringify({ ...result, importedAt: new Date().toISOString() }));
+  await setSetting(db, 'apple_last_import', JSON.stringify({ ...result, importedAt: new Date().toISOString() }));
   return result;
 }
 

@@ -15,7 +15,7 @@ struct HealthOSSyncApp: App {
 final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         #if targetEnvironment(simulator)
-        // Scripted runs: `xcrun simctl launch booted dev.healthos.sync -healthosToken <token>`.
+        // Scripted runs: `xcrun simctl launch booted health.mcfly.sync -healthosToken <token>`.
         if let token = UserDefaults.standard.string(forKey: "healthosToken") { Config.token = token }
         #endif
         // HealthKit relaunches the app in the background for new data; the observer queries have to be
