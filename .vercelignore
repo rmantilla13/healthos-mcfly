@@ -1,0 +1,8 @@
+# Never upload local health data, secrets or build leftovers in a CLI deploy.
+data/
+.env
+.env.*
+!.env.example
+dist/
+*.zip
+ios/build/
