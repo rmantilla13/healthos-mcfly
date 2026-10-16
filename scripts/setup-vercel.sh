@@ -39,11 +39,11 @@ fi
 
 cat <<EOF
 
-Done. Two more things:
-  1. In the Vercel dashboard, open project "healthos" → Storage → Create Database → Neon (Postgres),
-     and connect it to Production. That adds DATABASE_URL to the project.
-  2. iOS companion app token (paste it into the app's settings; it's shown only now):
-     $INGEST
+Done. Secrets are set on the healthos project (production).
 
-Then deploy:  npm run deploy
+iOS companion app token (paste it into the app's settings; it's shown only now):
+  $INGEST
+
+Vercel applies new environment variables on the next deployment: push to main,
+or ask Claude to redeploy health.mcfly.bot. Then sign in with the password you just chose.
 EOF
