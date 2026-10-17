@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { Settings, Status } from '../../shared/types.ts';
+import type { Settings, Status, SyncResult } from '../../shared/types.ts';
 import { Icon } from '../components/Icon.tsx';
 import { copyText, fmt, fmtDate, notifyDataChanged, sendJson, uploadFile } from '../lib.ts';
 
@@ -24,15 +24,16 @@ export function Integrations({ status, params, refresh, signedIn }: { status: St
   const fileInput = useRef<HTMLInputElement>(null);
   const wasBusy = useRef(false);
 
-  // Poll while something is running, and tell the dashboard when it finishes.
+  // Poll while an Apple Health import runs here, and tell the dashboard when it finishes. (A WHOOP sync is
+  // watched by the dashboard itself, on every page.)
   useEffect(() => {
-    const running = busy || uploadPct !== null || status.whoop.syncing;
+    const running = busy || uploadPct !== null;
     if (wasBusy.current && !running) notifyDataChanged();
     wasBusy.current = running;
     if (!running) return;
     const t = setInterval(refresh, 1000);
     return () => clearInterval(t);
-  }, [busy, uploadPct, status.whoop.syncing, refresh]);
+  }, [busy, uploadPct, refresh]);
 
   async function upload(file: File) {
     setUploadError(null);
@@ -70,6 +71,7 @@ export function Integrations({ status, params, refresh, signedIn }: { status: St
           <h1>Integrations</h1>
           <p>{status.hosted ? 'Your data is stored privately in your own healthOS account.' : 'Everything stays on this Mac, in a local database under data/.'}</p>
         </div>
+        <SyncNow status={status} refresh={refresh} />
       </header>
 
       {whoopParam === 'connected' && (
@@ -251,9 +253,6 @@ export function Integrations({ status, params, refresh, signedIn }: { status: St
                 Syncs every 6 hours{status.hosted ? '' : ' while the app is running'}. Each sync rechecks the last few days, since WHOOP rescores recent nights.
               </p>
               <div className="btn-row">
-                <button className="btn btn-primary" disabled={status.whoop.syncing} onClick={() => whoopAction('/whoop/sync')}>
-                  <Icon name="refresh" size={15} /> {status.whoop.syncing ? 'Syncing…' : 'Sync now'}
-                </button>
                 <button className="btn" disabled={status.whoop.syncing} onClick={() => whoopAction('/whoop/sync', { full: true })}>
                   Re-sync full year
                 </button>
@@ -274,6 +273,48 @@ export function Integrations({ status, params, refresh, signedIn }: { status: St
       {signedIn && <IphoneToken status={status} refresh={refresh} />}
       {/* Demo rows are seeded only in a local database, for the owner. */}
       {!status.hosted && status.user.id === 'owner' && <DemoCard status={status} refresh={refresh} />}
+    </div>
+  );
+}
+
+/**
+ * The one sync control: WHOOP syncs on the server (also every 6 hours, and when the dashboard opens with
+ * stale data); Apple Health comes from the iPhone app on its own, so here it's a status line.
+ */
+function SyncNow({ status, refresh }: { status: Status; refresh: () => void }) {
+  const [error, setError] = useState<string | null>(null);
+  const w = status.whoop;
+  const apple = status.apple.lastSync?.syncedAt ?? status.apple.lastImport?.importedAt ?? null;
+  const appleStale = status.hosted && (!apple || Date.now() - Date.parse(apple) > 86_400_000);
+  return (
+    <div className="sync-now">
+      {w.connected && (
+        <button
+          className="btn btn-primary"
+          disabled={w.syncing}
+          onClick={async () => {
+            setError(null);
+            try {
+              await sendJson<SyncResult>('POST', '/sync');
+            } catch (e) {
+              setError((e as Error).message);
+            }
+            refresh();
+          }}
+        >
+          <Icon name="refresh" size={15} /> {w.syncing ? 'Syncing…' : 'Sync now'}
+        </button>
+      )}
+      <p className="muted small">
+        Apple Health {apple ? `synced ${ago(apple)}` : 'not synced yet'}
+        {w.connected ? ` · WHOOP ${w.syncing ? 'syncing…' : w.lastSync ? `synced ${ago(w.lastSync)}` : 'not synced yet'}` : ''}
+      </p>
+      {appleStale && <p className="muted small">Open the healthOS app on your iPhone to send Apple Health.</p>}
+      {error && (
+        <p className="note-bad">
+          <Icon name="alert" size={15} /> {error}
+        </p>
+      )}
     </div>
   );
 }

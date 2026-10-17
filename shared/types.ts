@@ -131,6 +131,9 @@ export type Status = {
   };
 };
 
+/** POST /api/sync: the status, and whether a WHOOP sync was started by this call. */
+export type SyncResult = Status & { whoopStarted: boolean };
+
 export type ImportJob =
   | { state: 'idle' }
   | { state: 'uploading' | 'parsing'; bytesRead: number; totalBytes: number; records: number }

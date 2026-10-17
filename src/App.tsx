@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import type { AuthMe, Page, Status } from '../shared/types.ts';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { AuthMe, Page, Status, SyncResult } from '../shared/types.ts';
 import { Icon, type IconName } from './components/Icon.tsx';
 import { UnitsContext, fmtDate, href, notifyDataChanged, sendJson, useAccountLink, useApi, useRoute } from './lib.ts';
 import { Admin } from './pages/Admin.tsx';
@@ -48,6 +48,15 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    // On phones, close the keyboard once a form is sent (tapping elsewhere already does).
+    const onSubmit = () => {
+      if (matchMedia('(pointer: coarse)').matches) (document.activeElement as HTMLElement | null)?.blur();
+    };
+    document.addEventListener('submit', onSubmit, true);
+    return () => document.removeEventListener('submit', onSubmit, true);
+  }, []);
+
+  useEffect(() => {
     check();
     // Any API call that comes back 401 (e.g. the session expired) returns to the sign-in screen.
     const onSignin = () => setAuth({ state: 'signin', setup: false });
@@ -81,6 +90,7 @@ function Dashboard({ signedIn }: { signedIn: boolean }) {
   const [date, setDate] = useState<string | null>(null);
   // Only meaningful when sign-in is on; the server enforces it either way.
   const isAdmin = signedIn && status?.user.role === 'admin';
+  useAutoSync(status, reload);
 
   // The hosted server runs in UTC; tell it this browser's time zone so "today" is your today.
   useEffect(() => {
@@ -140,6 +150,38 @@ function Dashboard({ signedIn }: { signedIn: boolean }) {
       </div>
     </UnitsContext.Provider>
   );
+}
+
+/** How old WHOOP data may get before opening the dashboard syncs it. */
+const STALE_MS = 30 * 60_000;
+
+/**
+ * Keeps WHOOP fresh without a button press: opening the dashboard syncs it when the last sync is over
+ * half an hour old, and while any sync runs (from here, Integrations or the iPhone app) the status is
+ * re-read until it finishes, then every view refetches. Apple Health arrives on its own from the iPhone.
+ */
+function useAutoSync(status: Status | undefined, reload: () => void) {
+  const tried = useRef(false);
+  const wasSyncing = useRef(false);
+  useEffect(() => {
+    if (!status || tried.current) return;
+    tried.current = true;
+    const w = status.whoop;
+    const last = w.lastSync ? Date.parse(w.lastSync) : 0;
+    if (w.connected && !w.syncing && Date.now() - last > STALE_MS) {
+      sendJson<SyncResult>('POST', '/sync')
+        .then(reload)
+        .catch(() => {});
+    }
+  }, [status, reload]);
+  const syncing = Boolean(status?.whoop.syncing);
+  useEffect(() => {
+    if (wasSyncing.current && !syncing) notifyDataChanged();
+    wasSyncing.current = syncing;
+    if (!syncing) return;
+    const t = setInterval(reload, 3000);
+    return () => clearInterval(t);
+  }, [syncing, reload]);
 }
 
 const noSources = (s: Status) => !s.demo && !s.apple.lastImport && !s.apple.lastSync && !s.whoop.connected;

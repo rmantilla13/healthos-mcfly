@@ -1608,6 +1608,25 @@ td {
   font-size: 12px;
 }
 
+.sync-now {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  text-align: right;
+}
+.sync-now .btn-primary {
+  align-self: flex-end;
+}
+@media (max-width: 820px) {
+  .sync-now {
+    align-items: flex-start;
+    text-align: left;
+  }
+  .sync-now .btn-primary {
+    align-self: flex-start;
+  }
+}
 .banner-start {
   margin-bottom: 16px;
   background: var(--surface);

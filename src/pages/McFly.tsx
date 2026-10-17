@@ -16,6 +16,7 @@ const SUGGESTIONS = [
 ];
 
 const storageKey = (userId: string) => `healthos-mcfly:${userId}`;
+const touch = () => matchMedia('(pointer: coarse)').matches;
 
 function load(userId: string): Msg[] {
   try {
@@ -87,6 +88,8 @@ export function McFly({ me }: { me: SessionUser }) {
     setDraft('');
     setBusy(true);
     following.current = true;
+    // On phones, put the keyboard away while the answer comes in.
+    if (touch()) input.current?.blur();
     setMsgs((ms) => [...ms, { role: 'user', content: q }, { role: 'assistant', content: '', steps: [], pending: true }]);
     const controller = new AbortController();
     abort.current = controller;
@@ -132,7 +135,8 @@ export function McFly({ me }: { me: SessionUser }) {
       abort.current = null;
       setBusy(false);
       reload();
-      input.current?.focus();
+      // Ready for a follow-up on a computer; on a phone, don't pop the keyboard back up uninvited.
+      if (!touch()) input.current?.focus();
     }
   }
 

@@ -20,6 +20,8 @@ import { readSettings, requestContext, summary, trends, workouts } from './query
 import * as whoop from './whoop.ts';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
+/** How soon a WHOOP sync may run again from POST /api/sync. */
+const SYNC_COOLDOWN_MS = 2 * 60_000;
 
 export type AppOptions = {
   db: Db;
@@ -318,6 +320,28 @@ export function createApp({ db, hosted, ingestToken, mcflyClient }: AppOptions) 
     if (!(await whoop.isConnected(scope))) return void res.status(400).json({ error: 'WHOOP is not connected' });
     inBackground('sync', whoop.syncWhoop(scope, { full: Boolean(req.body?.full) }));
     res.json(await status(res));
+  });
+
+  /**
+   * One sync for everything the server can fetch, used by the web's Sync now, the dashboard when it opens,
+   * and the iPhone app after it pushes Apple Health. Today that's WHOOP, in the background. A sync that
+   * is running or finished in the last two minutes isn't repeated, so opening several tabs doesn't pile up.
+   */
+  api.post('/sync', async (_req, res) => {
+    const scope = scopeOf(res);
+    let started = false;
+    if (await whoop.isConnected(scope)) {
+      const s = await whoop.syncState(scope);
+      const recent = s.lastSync && Date.now() - Date.parse(s.lastSync) < SYNC_COOLDOWN_MS;
+      if (!s.running && !recent) {
+        inBackground('sync', whoop.syncWhoop(scope));
+        started = true;
+      }
+    }
+    const out = await status(res);
+    // The background run hasn't marked itself running yet; say so, so callers know to watch /status.
+    if (started) out.whoop.syncing = true;
+    res.json({ ...out, whoopStarted: started });
   });
 
   api.post('/whoop/disconnect', async (_req, res) => {
