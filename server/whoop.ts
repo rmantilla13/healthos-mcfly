@@ -218,11 +218,23 @@ export type WhoopWorkout = {
 
 const H = 3_600_000;
 
-/** A cycle longer than this covers more than one waking day (the strap was off overnight): its steps can't be split. */
-const MAX_STEP_CYCLE_MS = 28 * H;
+/**
+ * A finished cycle longer than this covers two waking days (the strap was off overnight, so no sleep ended
+ * it): its steps can't be split. A late night out is shorter; a missed night is about 40 hours or more.
+ */
+const MAX_STEP_CYCLE_MS = 36 * H;
+/**
+ * WHOOP keeps a cycle open until it has processed the next sleep, after you wake. Past this, an open cycle's
+ * count may already include the next morning's walking (if no sleep is found), so what's stored is kept.
+ */
+const OPEN_STEP_CYCLE_MS = 28 * H;
 
-/** One cycle's steps and the day they belong to; steps null when the cycle's count can't be used. */
-export type CycleSteps = { cycleId: number; date: string; steps: number | null };
+/**
+ * One cycle's steps and the day they belong to. `woke` says the date comes from the wake-up (otherwise it's
+ * worked out from the start: this batch has the cycle but not its sleep). steps is null when the count can't
+ * be used; `hold` means the stored count, if any, stays as it is for now.
+ */
+export type CycleSteps = { cycleId: number; start: number; date: string; woke: boolean; steps: number | null; hold?: boolean };
 
 export function mapWhoop(
   data: { cycles: WhoopCycle[]; sleeps: WhoopSleep[]; recoveries: WhoopRecovery[]; workouts: WhoopWorkout[] },
@@ -249,10 +261,13 @@ export function mapWhoop(
     const day = localDate(stampFromIso(c.start, c.timezone_offset), DAY_ROLLOVER_MS);
     cycleDay.set(c.id, day);
     // Steps (also on the current, unscored cycle: steps so far) are dated by the wake-up when it's known,
-    // which handles an early bedtime; a cycle over 28 hours spans two waking days and is left out.
-    const length = (c.end ? Date.parse(c.end) : now) - Date.parse(c.start);
-    const usable = typeof c.step_count === 'number' && c.step_count >= 0 && length <= MAX_STEP_CYCLE_MS;
-    cycleSteps.push({ cycleId: c.id, date: wokeOn.get(c.id) ?? day, steps: usable ? (c.step_count as number) : null });
+    // which handles an early bedtime; a finished cycle that spans two waking days is left out.
+    const start = Date.parse(c.start);
+    const woke = wokeOn.get(c.id);
+    const counted = typeof c.step_count === 'number' && c.step_count >= 0;
+    const usable = counted && (!c.end || Date.parse(c.end) - start <= MAX_STEP_CYCLE_MS);
+    const hold = !c.end && now - start > OPEN_STEP_CYCLE_MS;
+    cycleSteps.push({ cycleId: c.id, start, date: woke ?? day, woke: woke !== undefined, steps: usable ? (c.step_count as number) : null, ...(hold ? { hold } : {}) });
     if (c.score_state !== 'SCORED' || !c.score) continue;
     add(day, 'strain', c.score.strain);
     add(day, 'whoop_kcal', c.score.kilojoule / 4.184);
@@ -342,15 +357,35 @@ async function saveSyncState(scope: Scope, s: SyncState) {
  * Keep each cycle's steps, then rebuild the WHOOP step count of every day those cycles touch (now or before
  * a re-date) from all of that day's stored cycles. A batch that holds only some of a day's cycles (the
  * sync window slides forward) therefore never replaces the day's total with part of it.
+ *
+ * `range` is the window the batch was read for (ms; no end means up to now). WHOOP returns every cycle that
+ * overlaps it, so a stored cycle that began inside it and wasn't returned is gone (a sleep was deleted and
+ * its cycle merged into the one before) and is removed. Not when nothing came back at all, so an empty
+ * answer can't wipe a window.
  */
-export async function storeCycleSteps(q: Queryable, userId: string, cycles: CycleSteps[]) {
+export async function storeCycleSteps(q: Queryable, userId: string, cycles: CycleSteps[], range?: { start: number; end?: number }) {
   if (!cycles.length) return;
   const ids = cycles.map((c) => c.cycleId);
-  const before = await q.query<{ date: string }>('SELECT date FROM whoop_cycle_steps WHERE user_id = $1 AND cycle_id = ANY($2)', [userId, ids]);
-  const dates = new Set([...before.map((r) => r.date), ...cycles.map((c) => c.date)]);
-  await q.query('DELETE FROM whoop_cycle_steps WHERE user_id = $1 AND cycle_id = ANY($2)', [userId, ids]);
-  const keep = cycles.filter((c) => c.steps !== null);
-  await insertMany(q, 'whoop_cycle_steps', ['user_id', 'cycle_id', 'date', 'steps'], keep.map((c) => [userId, c.cycleId, c.date, c.steps]));
+  const gone = range
+    ? await q.query<{ cycle_id: string | number; date: string }>(
+        `SELECT cycle_id, date FROM whoop_cycle_steps WHERE user_id = $1 AND NOT (cycle_id = ANY($2)) AND start_ms >= $3${range.end === undefined ? '' : ' AND start_ms < $4'}`,
+        [userId, ids, range.start, ...(range.end === undefined ? [] : [range.end])],
+      )
+    : [];
+  const stored = new Map(
+    (await q.query<{ cycle_id: string | number; date: string }>('SELECT cycle_id, date FROM whoop_cycle_steps WHERE user_id = $1 AND cycle_id = ANY($2)', [userId, ids])).map(
+      (r) => [Number(r.cycle_id), r.date],
+    ),
+  );
+  // A held cycle (open past the limit) keeps its stored count. A date worked out from the start never
+  // replaces one that came from the wake-up: the window moved past the sleep, not the cycle.
+  const write = cycles.filter((c) => !c.hold).map((c) => (!c.woke && stored.has(c.cycleId) ? { ...c, date: stored.get(c.cycleId)! } : c));
+  // Every date a cycle here is or was on (a held cycle's too: rebuilding from what's stored changes nothing
+  // unless that day's total was cleared).
+  const dates = new Set([...gone.map((r) => r.date), ...write.map((c) => c.date), ...cycles.flatMap((c) => (stored.has(c.cycleId) ? [stored.get(c.cycleId)!] : []))]);
+  await q.query('DELETE FROM whoop_cycle_steps WHERE user_id = $1 AND cycle_id = ANY($2)', [userId, [...gone.map((r) => Number(r.cycle_id)), ...write.map((c) => c.cycleId)]]);
+  const keep = write.filter((c) => c.steps !== null);
+  await insertMany(q, 'whoop_cycle_steps', ['user_id', 'cycle_id', 'start_ms', 'date', 'steps'], keep.map((c) => [userId, c.cycleId, c.start, c.date, c.steps]));
   await rebuildWhoopSteps(q, userId, [...dates]);
 }
 
@@ -364,18 +399,22 @@ export async function rebuildWhoopSteps(q: Queryable, userId: string, dates: str
   );
 }
 
-/** Fetch and store everything WHOOP has between start and end (ISO). Returns record counts. */
-async function syncRange(scope: Scope, start: string, end?: string) {
+/**
+ * Fetch and store everything WHOOP has between start and end (ISO). Returns record counts. `first` runs in
+ * the same transaction, before anything is written.
+ */
+async function syncRange(scope: Scope, start: string, end?: string, first?: (q: Queryable) => Promise<unknown>) {
   const cycles = await collect<WhoopCycle>(scope, '/cycle', start, end);
   const sleeps = await collect<WhoopSleep>(scope, '/activity/sleep', start, end);
   const recoveries = await collect<WhoopRecovery>(scope, '/recovery', start, end);
   const workouts = await collect<WhoopWorkout>(scope, '/activity/workout', start, end);
   const mapped = mapWhoop({ cycles, sleeps, recoveries, workouts });
   await scope.db.tx(async (q) => {
+    await first?.(q);
     await upsertDaily(q, scope.userId, mapped.daily);
     await upsertEvents(q, scope.userId, mapped.events);
     await upsertWorkouts(q, scope.userId, mapped.workouts);
-    await storeCycleSteps(q, scope.userId, mapped.cycleSteps);
+    await storeCycleSteps(q, scope.userId, mapped.cycleSteps, { start: Date.parse(start), ...(end ? { end: Date.parse(end) } : {}) });
   });
   return { cycles: cycles.length, sleeps: sleeps.length, recoveries: recoveries.length, workouts: workouts.length };
 }
@@ -403,10 +442,11 @@ export async function syncWhoop(scope: Scope, opts: { full?: boolean; deadline?:
     const counts = await syncRange(scope, new Date(since).toISOString());
     // Once per person: re-read the weeks since WHOOP started reporting steps on cycles. Version 2 also clears
     // the day totals the first version wrote (summed per batch and dated by when you fell asleep) before
-    // the cycles rebuild them. (Recent days are re-read on every sync anyway.)
+    // the cycles rebuild them, in one transaction. (Recent days are re-read on every sync anyway.)
     if (!(await getUserSetting(scope.db, scope.userId, 'whoop_steps_v2'))) {
-      await scope.db.query("DELETE FROM daily WHERE user_id = $1 AND metric = 'steps' AND source = 'whoop' AND date >= $2", [scope.userId, WHOOP_STEPS_FROM.slice(0, 10)]);
-      await syncRange(scope, WHOOP_STEPS_FROM);
+      await syncRange(scope, WHOOP_STEPS_FROM, undefined, (q) =>
+        q.query("DELETE FROM daily WHERE user_id = $1 AND metric = 'steps' AND source = 'whoop' AND date >= $2", [scope.userId, WHOOP_STEPS_FROM.slice(0, 10)]),
+      );
       await setUserSetting(scope.db, scope.userId, 'whoop_steps_v2', WHOOP_STEPS_FROM);
     }
     if (profile?.first_name) await setUserSetting(scope.db, scope.userId, 'whoop_first_name', profile.first_name);

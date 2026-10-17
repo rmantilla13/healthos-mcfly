@@ -6,7 +6,7 @@ import { Readable } from 'node:stream';
 import { parseStream } from '../server/apple/import.ts';
 import { pickSteps } from '../server/query.ts';
 import { openStore } from '../server/store.ts';
-import { mapWhoop, storeCycleSteps } from '../server/whoop.ts';
+import { type CycleSteps, mapWhoop, storeCycleSteps } from '../server/whoop.ts';
 
 const cycle = (id: number, start: string, step_count: number | null | undefined, opts: { scored?: boolean; end?: string | null } = {}) => ({
   id,
@@ -25,49 +25,93 @@ const steps = (cycles: ReturnType<typeof cycle>[], sleeps: ReturnType<typeof sle
 test("a WHOOP cycle's steps go on the day you woke up, and nothing is added to the daily rows directly", () => {
   // Fell asleep 23:30 Chicago on Oct 15, woke 07:00 Oct 16: Oct 16's walking.
   const mapped = mapWhoop({ cycles: [cycle(1, '2026-10-16T04:30:00.000Z', 8234, { end: '2026-10-17T04:00:00.000Z' })], sleeps: [sleep(1, '2026-10-16T04:30:00.000Z', '2026-10-16T12:00:00.000Z')] as never, recoveries: [], workouts: [] }, NOW);
-  assert.deepEqual(mapped.cycleSteps, [{ cycleId: 1, date: '2026-10-16', steps: 8234 }]);
+  assert.deepEqual(mapped.cycleSteps, [{ cycleId: 1, start: Date.parse('2026-10-16T04:30:00.000Z'), date: '2026-10-16', woke: true, steps: 8234 }]);
   assert.equal(mapped.daily.find((d) => d.metric === 'steps'), undefined);
 });
 
 test('an early bedtime (asleep at 17:00) still dates the cycle by the morning you woke', () => {
-  // Oct 15: asleep 17:00 local (22:00Z), woke 07:00 Oct 16 local. Without the wake-up this would be Oct 15.
+  // Oct 15: asleep 17:00 local (22:00Z), woke 07:00 Oct 16 local, next sleep 22:00 Oct 16 (29 h). Without the
+  // wake-up this would be Oct 15.
   const [c] = steps([cycle(2, '2026-10-15T22:00:00.000Z', 6100, { end: '2026-10-17T03:00:00.000Z' })], [sleep(2, '2026-10-15T22:00:00.000Z', '2026-10-16T12:00:00.000Z')]);
-  assert.equal(c.date, '2026-10-16');
+  assert.deepEqual([c.date, c.woke, c.steps], ['2026-10-16', true, 6100]);
+  // The same cycle in a batch without its sleep (the window moved past it) only has a date worked out from the start.
+  const [alone] = steps([cycle(2, '2026-10-15T22:00:00.000Z', 6100, { end: '2026-10-17T03:00:00.000Z' })]);
+  assert.deepEqual([alone.date, alone.woke], ['2026-10-15', false]);
 });
 
 test("the current cycle reports today's steps so far", () => {
   const [c] = steps([cycle(3, '2026-10-17T05:00:00.000Z', 1520, { scored: false })]);
-  assert.deepEqual(c, { cycleId: 3, date: '2026-10-17', steps: 1520 });
+  assert.deepEqual(c, { cycleId: 3, start: Date.parse('2026-10-17T05:00:00.000Z'), date: '2026-10-17', woke: false, steps: 1520 });
 });
 
-test("a cycle over 28 hours (the strap was off overnight) spans two days, so its steps aren't used", () => {
-  const ended = steps([cycle(4, '2026-10-15T04:30:00.000Z', 17000, { end: '2026-10-17T04:00:00.000Z' })]);
-  const open = steps([cycle(5, '2026-10-16T04:00:00.000Z', 15000)]); // still open 38 h later
-  assert.equal(ended[0].steps, null);
-  assert.equal(open[0].steps, null);
+test("a finished cycle over 36 hours (the strap was off overnight) spans two days, so its steps aren't used; a late night counts", () => {
+  const missedNight = steps([cycle(4, '2026-10-15T04:30:00.000Z', 17000, { end: '2026-10-17T04:00:00.000Z' })]); // 47.5 h
+  const lateNight = steps([cycle(4, '2026-10-15T03:30:00.000Z', 12000, { end: '2026-10-16T08:00:00.000Z' })]); // bed 22:30, then 03:00: 28.5 h
+  assert.equal(missedNight[0].steps, null);
+  assert.equal(lateNight[0].steps, 12000);
+});
+
+test('a cycle still open past 28 hours holds what was stored, since its count may include the next morning', () => {
+  const [open] = steps([cycle(5, '2026-10-16T04:00:00.000Z', 15000)]); // 38 h, WHOOP hasn't found the next sleep
+  assert.equal(open.hold, true);
+  const [young] = steps([cycle(6, '2026-10-16T16:00:00.000Z', 9000)]); // 26 h
+  assert.equal(young.hold, undefined);
 });
 
 test('no step count (the strap was off, or a cycle from before WHOOP reported steps) gives nothing to store', () => {
   assert.deepEqual(steps([cycle(6, '2026-10-16T04:30:00.000Z', null, { end: '2026-10-17T04:00:00.000Z' }), cycle(7, '2026-09-01T04:30:00.000Z', undefined, { end: '2026-09-02T04:00:00.000Z' })]).map((c) => c.steps), [null, null]);
 });
 
-test("a day's WHOOP steps are rebuilt from every stored cycle, so a partial batch can't shrink the total", async () => {
+const START = (id: number) => Date.parse('2026-10-10T00:00:00Z') + id * 3_600_000;
+const cs = (cycleId: number, date: string, steps: number | null, more: Partial<CycleSteps> = {}): CycleSteps => ({ cycleId, start: START(cycleId), date, woke: true, steps, ...more });
+const whoopDays = async (db: Awaited<ReturnType<typeof openStore>>) =>
+  Object.fromEntries((await db.query<{ date: string; value: number }>("SELECT date, value FROM daily WHERE user_id = 'u' AND metric = 'steps' AND source = 'whoop' ORDER BY date")).map((r) => [r.date, Number(r.value)]));
+
+test("a day's WHOOP steps are rebuilt from every stored cycle, so a partial batch can't shrink the total", async (t) => {
   const db = await openStore();
-  const day = async () => (await db.query<{ value: number }>("SELECT value FROM daily WHERE user_id = 'u' AND metric = 'steps' AND source = 'whoop' AND date = '2026-10-16'"))[0]?.value;
-  await storeCycleSteps(db, 'u', [
-    { cycleId: 1, date: '2026-10-16', steps: 3000 },
-    { cycleId: 2, date: '2026-10-16', steps: 2500 },
-  ]);
+  t.after(() => db.close());
+  const day = async () => (await whoopDays(db))['2026-10-16'];
+  await storeCycleSteps(db, 'u', [cs(1, '2026-10-16', 3000), cs(2, '2026-10-16', 2500)]);
   assert.equal(await day(), 5500, 'two cycles on one day add up');
-  await storeCycleSteps(db, 'u', [{ cycleId: 2, date: '2026-10-16', steps: 2500 }]);
+  await storeCycleSteps(db, 'u', [cs(2, '2026-10-16', 2500)]);
   assert.equal(await day(), 5500, 'a later window that only sees cycle 2 keeps the total');
-  await storeCycleSteps(db, 'u', [{ cycleId: 2, date: '2026-10-16', steps: 2600 }]);
+  await storeCycleSteps(db, 'u', [cs(2, '2026-10-16', 2600)]);
   assert.equal(await day(), 5600, "an updated count (the current cycle) replaces that cycle's share");
-  await storeCycleSteps(db, 'u', [{ cycleId: 2, date: '2026-10-17', steps: 2600 }]);
+  await storeCycleSteps(db, 'u', [cs(2, '2026-10-17', 2600)]);
   assert.equal(await day(), 3000, 'a re-dated cycle leaves its old day');
-  await storeCycleSteps(db, 'u', [{ cycleId: 1, date: '2026-10-16', steps: null }]);
+  await storeCycleSteps(db, 'u', [cs(1, '2026-10-16', null)]);
   assert.equal(await day(), undefined, 'a day with no usable cycles has no WHOOP row');
-  await db.close();
+});
+
+test("a date worked out from the start never replaces the wake-up's; a held cycle keeps its count", async (t) => {
+  const db = await openStore();
+  t.after(() => db.close());
+  await storeCycleSteps(db, 'u', [cs(3, '2026-10-14', 7000)]);
+  await storeCycleSteps(db, 'u', [cs(3, '2026-10-13', 7100, { woke: false })]);
+  assert.deepEqual(await whoopDays(db), { '2026-10-14': 7100 }, 'the count updates, the day stays');
+  await storeCycleSteps(db, 'u', [cs(4, '2026-10-15', 8000, { woke: false })]);
+  assert.deepEqual(await whoopDays(db), { '2026-10-14': 7100, '2026-10-15': 8000 }, 'with nothing stored, the worked-out date is used');
+  await storeCycleSteps(db, 'u', [cs(4, '2026-10-16', 8000)]);
+  assert.deepEqual(await whoopDays(db), { '2026-10-14': 7100, '2026-10-16': 8000 }, 'then its wake-up moves it');
+  await storeCycleSteps(db, 'u', [cs(4, '2026-10-16', 9500, { hold: true })]);
+  assert.deepEqual(await whoopDays(db), { '2026-10-14': 7100, '2026-10-16': 8000 }, 'held: the stored count stays');
+});
+
+test('a stored cycle that began inside the window read and is no longer returned is removed', async (t) => {
+  const db = await openStore();
+  t.after(() => db.close());
+  await storeCycleSteps(db, 'u', [cs(5, '2026-10-16', 3000), cs(6, '2026-10-16', 2500), cs(1, '2026-10-12', 4000)]);
+  // WHOOP merged 6 into 5 (its sleep was deleted). The window starts after cycle 1, which is left alone.
+  await storeCycleSteps(db, 'u', [cs(5, '2026-10-16', 5500)], { start: START(4) });
+  assert.deepEqual(await whoopDays(db), { '2026-10-12': 4000, '2026-10-16': 5500 });
+  // A window answers only for the cycles that began inside it: cycle 8 begins at this one's (exclusive) end.
+  await storeCycleSteps(db, 'u', [cs(7, '2026-10-18', 900), cs(8, '2026-10-19', 100)]);
+  await storeCycleSteps(db, 'u', [cs(7, '2026-10-18', 950)], { start: START(7), end: START(8) });
+  const all = { '2026-10-12': 4000, '2026-10-16': 5500, '2026-10-18': 950, '2026-10-19': 100 };
+  assert.deepEqual(await whoopDays(db), all);
+  // An empty answer doesn't wipe the window.
+  await storeCycleSteps(db, 'u', [], { start: START(0) });
+  assert.deepEqual(await whoopDays(db), all);
 });
 
 test("a day's steps: Apple's calendar day, unless WHOOP's count is clearly larger", () => {

@@ -166,10 +166,16 @@ export const MIGRATIONS: { id: number; name: string; statements: string[] }[] = 
       // WHOOP counts steps per cycle (falling asleep to falling asleep), not per calendar day. Each cycle's
       // count is kept here and a day's WHOOP steps are rebuilt as the sum of the cycles dated to it, so a sync
       // that sees only some of a day's cycles can't overwrite the total with part of it.
+      // start_ms (when the cycle began) tells which stored cycles a sync's window should have returned.
       `CREATE TABLE whoop_cycle_steps (
-        user_id TEXT NOT NULL, cycle_id BIGINT NOT NULL, date TEXT NOT NULL, steps DOUBLE PRECISION NOT NULL,
-        PRIMARY KEY (user_id, cycle_id))`,
+        user_id TEXT NOT NULL, cycle_id BIGINT NOT NULL, start_ms BIGINT NOT NULL, date TEXT NOT NULL,
+        steps DOUBLE PRECISION NOT NULL, PRIMARY KEY (user_id, cycle_id))`,
       'CREATE INDEX whoop_cycle_steps_user_date ON whoop_cycle_steps (user_id, date)',
+      'CREATE INDEX whoop_cycle_steps_user_start ON whoop_cycle_steps (user_id, start_ms)',
+      // The first version's day totals (two cycles summed onto one date). A connected account's next sync
+      // replaces them from the cycles; for anyone no longer connected, nothing would, so they go now.
+      `DELETE FROM daily WHERE metric = 'steps' AND source = 'whoop' AND date >= '2026-09-20'
+        AND user_id NOT IN (SELECT user_id FROM tokens WHERE provider = 'whoop')`,
     ],
   },
 ];

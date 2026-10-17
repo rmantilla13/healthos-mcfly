@@ -65,7 +65,7 @@ export function DayChart({
   if (through === null || !span) {
     return (
       <div className="chart chart-empty" style={{ height }}>
-        No readings on this day
+        {series.total ? 'No hourly readings on this day' : 'No readings on this day'}
       </div>
     );
   }

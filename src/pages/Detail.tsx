@@ -147,6 +147,10 @@ function DayCard({
       value = format(series.hours[h]!);
       note = `${hourSpan(h)} average${range ? ` · ${isToday ? 'today' : 'that day'} ${tickFormat(range[0])}–${format(range[1])}` : ''}`;
     }
+  } else if (kind === 'running' && series.total) {
+    // No hours for this day (the phone didn't sync it), but the day has a count, as Home shows it.
+    value = format(series.total.value);
+    note = `${isToday ? 'so far' : 'whole day'}${series.total.source === 'whoop' ? ', from WHOOP' : ''} · no hourly readings`;
   }
   const hours = through === null ? [] : Array.from({ length: through + 1 }, (_, h) => h);
   const cell = (v: number | null | undefined) => (v === null || v === undefined ? '—' : format(v));
