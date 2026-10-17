@@ -17,6 +17,7 @@
     "migrate:sqlite": "node --env-file-if-exists=.env --env-file-if-exists=.env.local server/cli/migrate-sqlite.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.135.0",
     "@electric-sql/pglite": "^0.5.10",
     "@neondatabase/serverless": "^1.2.0",
     "@vercel/functions": "^3.10.1",

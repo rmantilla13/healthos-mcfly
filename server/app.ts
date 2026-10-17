@@ -13,6 +13,7 @@ import { importAppleHealth } from './apple/import.ts';
 import { ingestRouter } from './apple/ingest.ts';
 import { authRoutes, cronAuthorized, currentUser, publicUser, requireSession, sha256 } from './auth.ts';
 import { DATA_DIR, type Db, type Scope, deleteSource, getUserSetting, setUserSetting } from './db.ts';
+import { type McflyClient, mcflyRouter } from './mcfly.ts';
 import { PHOTO_ASSETS, photoAsset, photoMeta, processPhoto, removePhoto } from './photo.ts';
 import { readSettings, requestContext, summary, trends, workouts } from './query.ts';
 import * as whoop from './whoop.ts';
@@ -25,9 +26,11 @@ export type AppOptions = {
   hosted: boolean;
   /** The server-wide iPhone ingest token from before multi-user (HEALTHOS_INGEST_TOKEN); it maps to the owner. */
   ingestToken?: string;
+  /** Ask McFly's Claude client (tests pass a fake). Defaults to one from ANTHROPIC_API_KEY. */
+  mcflyClient?: () => McflyClient | null;
 };
 
-export function createApp({ db, hosted, ingestToken }: AppOptions) {
+export function createApp({ db, hosted, ingestToken, mcflyClient }: AppOptions) {
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', hosted);
@@ -77,6 +80,7 @@ export function createApp({ db, hosted, ingestToken }: AppOptions) {
 
   api.post('/auth/password', auth.changePassword);
   api.use('/admin', adminRouter(db));
+  api.use('/mcfly', mcflyRouter(db, { hosted, client: mcflyClient }));
 
   const asOf = (req: Request) => (typeof req.query.date === 'string' && DATE.test(req.query.date) ? req.query.date : undefined);
   const days = (req: Request) => Math.min(Math.max(Number(req.query.days) || 30, 1), 3650);

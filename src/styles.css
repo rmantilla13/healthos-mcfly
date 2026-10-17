@@ -1864,3 +1864,155 @@ td {
   stroke-linejoin: round;
   paint-order: stroke;
 }
+
+/* ---------- Ask McFly (src/pages/McFly.tsx) ---------- */
+.mcfly {
+  max-width: 820px;
+}
+.mcfly-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-height: 240px;
+}
+.mcfly-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 8px 0;
+}
+.mcfly-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.chip-btn {
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+}
+.chip-btn:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+.chip-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.mcfly-mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  background: var(--ink);
+  color: var(--surface);
+}
+.mcfly-q {
+  align-self: flex-end;
+  max-width: min(560px, 85%);
+  padding: 10px 14px;
+  border-radius: 16px 16px 4px 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.mcfly-a {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.mcfly-body {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 4px;
+}
+.mcfly-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.mcfly-steps li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.mcfly-answer {
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.mcfly-answer p,
+.mcfly-answer ul,
+.mcfly-answer ol {
+  margin: 0 0 10px;
+}
+.mcfly-answer > :last-child {
+  margin-bottom: 0;
+}
+.mcfly-answer ul,
+.mcfly-answer ol {
+  padding-left: 20px;
+}
+.mcfly-typing {
+  width: 36px;
+  height: 10px;
+  background: radial-gradient(circle closest-side, var(--ink-3) 90%, transparent) 0 50% / 10px 10px repeat-x;
+  animation: mcfly-dots 1s infinite linear;
+  opacity: 0.6;
+}
+@keyframes mcfly-dots {
+  to {
+    background-position: 13px 50%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mcfly-typing {
+    animation: none;
+  }
+}
+.mcfly-composer {
+  position: sticky;
+  bottom: 16px;
+  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+}
+.mcfly-composer textarea {
+  font: inherit;
+  resize: vertical;
+  min-height: 48px;
+  max-height: 240px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.mcfly-composer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.mcfly-composer-row .btn-primary {
+  align-self: auto;
+}
+

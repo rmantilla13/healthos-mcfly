@@ -125,6 +125,16 @@ export const MIGRATIONS: { id: number; name: string; statements: string[] }[] = 
       `DELETE FROM settings WHERE key IN (${USER_SETTING_KEYS.map((k) => `'${k}'`).join(', ')})`,
     ],
   },
+  {
+    id: 3,
+    name: 'Ask McFly: questions and tokens per person per day',
+    statements: [
+      `CREATE TABLE mcfly_usage (
+        user_id TEXT NOT NULL, day TEXT NOT NULL, questions INTEGER NOT NULL DEFAULT 0,
+        input_tokens BIGINT NOT NULL DEFAULT 0, output_tokens BIGINT NOT NULL DEFAULT 0,
+        PRIMARY KEY (user_id, day))`,
+    ],
+  },
 ];
 
 async function migrate(db: Db) {

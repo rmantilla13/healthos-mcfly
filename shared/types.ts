@@ -29,7 +29,7 @@ export type Insight = {
   page: Page;
 };
 
-export type Page = 'home' | 'vitals' | 'sleep' | 'activity' | 'body' | 'integrations' | 'settings' | 'admin';
+export type Page = 'home' | 'vitals' | 'sleep' | 'activity' | 'body' | 'mcfly' | 'integrations' | 'settings' | 'admin';
 
 export type Summary = {
   date: string;
@@ -159,6 +159,8 @@ export type AdminUser = {
   apple: { lastImport: string | null; lastSync: string | null; iphoneToken: boolean };
   whoop: { connected: boolean; lastSync: string | null; lastError: string | null; historyComplete: boolean };
   photo: boolean;
+  /** Ask McFly over the last 30 days: how many questions and tokens, never their content. */
+  mcfly: { questions30d: number; tokens30d: number };
 };
 
 export type AdminInvite = {
@@ -190,3 +192,8 @@ export type AdminOverview = {
   whoop: { configured: boolean; redirectUri: string };
   mcfly: { configured: boolean };
 };
+
+// ---------- Ask McFly ----------
+
+export type McflyStatus = { configured: boolean; limit: number; usedToday: number };
+export type McflyTurn = { role: 'user' | 'assistant'; content: string };

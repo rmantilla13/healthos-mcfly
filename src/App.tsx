@@ -6,6 +6,7 @@ import { Admin } from './pages/Admin.tsx';
 import { Activity, Body, Sleep, Vitals } from './pages/Detail.tsx';
 import { Home } from './pages/Home.tsx';
 import { Integrations, SettingsPage } from './pages/Integrations.tsx';
+import { McFly } from './pages/McFly.tsx';
 import { AccountLinkPage, Login } from './pages/Login.tsx';
 
 const NAV: { page: Page; label: string; icon: IconName }[] = [
@@ -14,6 +15,7 @@ const NAV: { page: Page; label: string; icon: IconName }[] = [
   { page: 'sleep', label: 'Sleep', icon: 'sleep' },
   { page: 'activity', label: 'Activity', icon: 'activity' },
   { page: 'body', label: 'Body', icon: 'body' },
+  { page: 'mcfly', label: 'Ask McFly', icon: 'spark' },
 ];
 
 const DATA_NAV: { page: Page; label: string; icon: IconName }[] = [
@@ -130,6 +132,7 @@ function Dashboard({ signedIn }: { signedIn: boolean }) {
           {page === 'sleep' && <Sleep />}
           {page === 'activity' && <Activity stepGoal={status?.settings.stepGoal ?? 10_000} />}
           {page === 'body' && <Body />}
+          {page === 'mcfly' && status && <McFly key={status.user.id} me={status.user} />}
           {page === 'integrations' && status && <Integrations status={status} params={params} refresh={reload} signedIn={signedIn} />}
           {page === 'settings' && status && <SettingsPage key={status.settings.name} status={status} refresh={reload} signedIn={signedIn} />}
           {page === 'admin' && (isAdmin ? <Admin me={status!.user} /> : status && <NotAllowed />)}

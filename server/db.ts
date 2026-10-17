@@ -130,7 +130,7 @@ export async function setUserSetting(q: Queryable, userId: string, key: string, 
 
 /** Everything one person stored, removed together (account deletion). */
 export async function deleteUserData(q: Queryable, userId: string) {
-  for (const table of ['daily', 'workouts', 'events', 'tokens', 'profile_assets', 'user_settings']) {
+  for (const table of ['daily', 'workouts', 'events', 'tokens', 'profile_assets', 'user_settings', 'mcfly_usage']) {
     await q.query(`DELETE FROM ${table} WHERE user_id = $1`, [userId]);
   }
 }

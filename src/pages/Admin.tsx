@@ -119,6 +119,7 @@ function People({ data, me, act, onLink }: { data: AdminOverview; me: SessionUse
               <th>Data</th>
               <th>Apple Health</th>
               <th>WHOOP</th>
+              <th>McFly, 30 days</th>
               <th>
                 <span className="sr-only">Actions</span>
               </th>
@@ -168,6 +169,10 @@ function People({ data, me, act, onLink }: { data: AdminOverview; me: SessionUse
                       </div>
                     )}
                     {u.whoop.connected && !u.whoop.lastError && <div className="muted small">{u.whoop.historyComplete ? 'History complete' : 'History loading'}</div>}
+                  </td>
+                  <td>
+                    {u.mcfly.questions30d ? `${fmt(u.mcfly.questions30d)} question${u.mcfly.questions30d === 1 ? '' : 's'}` : <span className="muted">None</span>}
+                    {u.mcfly.tokens30d > 0 && <div className="muted small">{fmt(u.mcfly.tokens30d / 1000)}K tokens</div>}
                   </td>
                   <td>
                     {self ? (
@@ -326,6 +331,8 @@ function PlatformSettingsCard({ data, act }: { data: AdminOverview; act: Act }) 
   const s = data.settings;
   const [goal, setGoal] = useState(s.default_step_goal);
   const [days, setDays] = useState(s.invite_days);
+  const [model, setModel] = useState(s.mcfly_model);
+  const [limit, setLimit] = useState(s.mcfly_daily_limit);
   const [saved, setSaved] = useState(false);
 
   async function save(patch: Partial<PlatformSettings>) {
@@ -376,6 +383,24 @@ function PlatformSettingsCard({ data, act }: { data: AdminOverview; act: Act }) 
         <p className={`muted small saved ${saved ? 'is-on' : ''}`}>
           <Icon name="check" size={14} /> Saved
         </p>
+      </section>
+
+      <section className="card settings">
+        <h2>Ask McFly</h2>
+        {data.mcfly.configured ? (
+          <p className="muted">Each person can ask McFly about their own data. It reads only that person's data, and their questions aren't stored.</p>
+        ) : (
+          <p className="muted">Not set up. Add ANTHROPIC_API_KEY (from the Claude Console) to the Vercel project, then redeploy.</p>
+        )}
+        <label>
+          <span>Model</span>
+          <input value={model} onChange={(e) => setModel(e.target.value.trim())} onBlur={() => model && model !== s.mcfly_model && save({ mcfly_model: model })} />
+        </label>
+        <label>
+          <span>Questions per person per day</span>
+          <input inputMode="numeric" value={limit} onChange={(e) => setLimit(e.target.value.replace(/\D/g, ''))} onBlur={() => limit !== s.mcfly_daily_limit && save({ mcfly_daily_limit: limit })} />
+          <small className="muted">0 turns Ask McFly off for everyone.</small>
+        </label>
       </section>
 
       <section className="card settings">

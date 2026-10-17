@@ -134,6 +134,10 @@
         </li>
         <li><strong>Apple Health</strong>, from the healthOS iPhone app (which sends daily summaries) or a Health export you import.</li>
         <li>An optional profile photo.</li>
+        <li>
+          <strong>Ask McFly</strong>, the optional AI assistant: the questions you ask it. Your conversation is kept only in your browser tab,
+          and healthOS stores just a daily count of your questions and how much processing they used.
+        </li>
       </ul>
 
       <h2>How it is used</h2>
@@ -142,13 +146,21 @@
         profiling. It does not sell, rent or share data with anyone.
       </p>
 
+      <h2>Ask McFly</h2>
+      <p>
+        When you ask McFly a question, healthOS sends your question, the conversation so far, and the parts of your health data McFly reads
+        to answer it to <strong>Anthropic</strong>'s API, which generates the reply. McFly can only read your own data, and it can't change
+        anything. Anthropic handles this data under its commercial terms and privacy policy. If you don't use Ask McFly, nothing is sent to
+        Anthropic.
+      </p>
+
       <h2>Who can see it</h2>
       <ul>
         <li>Only you can see your health data. Other members can't see it.</li>
         <li>
           Admins manage accounts. They can see your email, name, role, when you last signed in, and the health of your syncs: how many days of
-          data you have and its date range, when Apple Health and WHOOP last synced, and whether a sync failed. The admin screens don't show your
-          health values.
+          data you have and its date range, when Apple Health and WHOOP last synced, whether a sync failed, and how many questions you asked
+          McFly. The admin screens don't show your health values or your questions.
         </li>
         <li>
           Admins can disable or delete your account and create a password-reset link for you. They never see or set your password.
@@ -166,8 +178,9 @@
 
       <h2>Service providers</h2>
       <p>
-        These providers handle data only to run the service: <strong>WHOOP</strong> (a data source), <strong>Vercel</strong> (hosting) and
-        <strong>Neon</strong> (database). Their own privacy policies apply to their services.
+        These providers handle data only to run the service: <strong>WHOOP</strong> (a data source), <strong>Vercel</strong> (hosting),
+        <strong>Neon</strong> (database) and <strong>Anthropic</strong> (answers for Ask McFly). Their own privacy policies apply to their
+        services.
       </p>
 
       <h2>Keeping and deleting data</h2>

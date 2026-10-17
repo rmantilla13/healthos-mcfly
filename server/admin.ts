@@ -44,7 +44,9 @@ export function adminRouter(db: Db) {
   router.get(
     '/overview',
     h(async (_req, res) => {
-      const [users, volume, settingsRows, whoopRows, invites, platform] = await Promise.all([
+      // McFly use over the last 30 days: counts and tokens only, never the questions.
+      const since = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10);
+      const [users, volume, settingsRows, whoopRows, invites, platform, mcflyRows] = await Promise.all([
         db.query<{ id: string; email: string; name: string; role: Role; status: string; created_at: number; last_login_at: number | null; has_ingest_token: boolean }>(
           `SELECT u.id, u.email, COALESCE(NULLIF(u.name, ''), n.value, '') AS name, u.role, u.status, u.created_at, u.last_login_at,
                   u.ingest_token_hash IS NOT NULL AS has_ingest_token
@@ -61,7 +63,12 @@ export function adminRouter(db: Db) {
           'SELECT id, kind, email, role, user_id, created_at, expires_at, used_at, used_by, revoked_at FROM invites ORDER BY created_at DESC LIMIT 100',
         ),
         platformSettings(db),
+        db.query<{ user_id: string; questions: number; tokens: number }>(
+          'SELECT user_id, SUM(questions)::int AS questions, SUM(input_tokens + output_tokens)::float8 AS tokens FROM mcfly_usage WHERE day >= $1 GROUP BY user_id',
+          [since],
+        ),
       ]);
+      const mcfly = new Map(mcflyRows.map((r) => [r.user_id, r]));
       const vol = new Map(volume.map((v) => [v.user_id, v]));
       const setting = (uid: string, key: string) => settingsRows.find((r) => r.user_id === uid && r.key === key)?.value;
       const parse = (v: string | undefined) => (v ? (JSON.parse(v) as Record<string, unknown>) : null);
@@ -90,6 +97,7 @@ export function adminRouter(db: Db) {
               historyComplete: Boolean((sync?.lastCounts as Record<string, number> | undefined)?.historyComplete),
             },
             photo: Boolean(setting(u.id, 'photo_meta')),
+            mcfly: { questions30d: mcfly.get(u.id)?.questions ?? 0, tokens30d: Number(mcfly.get(u.id)?.tokens ?? 0) },
           };
         }),
         invites: invites.map((i) => ({

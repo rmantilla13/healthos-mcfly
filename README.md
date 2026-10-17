@@ -71,6 +71,33 @@ healthOS is multi-user and invite-only. There is no open sign-up.
   - The iPhone app, using a personal token created under **Integrations → iPhone app**. The token can only write to that person's account.
 - **Mac-only steps:** the Apple Health export import and photo processing run on the Mac. Both go to the owner's account. The terminal import can target someone else: `HEALTHOS_USER_ID=<id> npm run import:apple -- export.zip`.
 
+## Ask McFly
+
+Ask McFly (`#/mcfly`) is a chat assistant, built on Claude, for questions about your own data. Each person who signs in gets their own.
+
+- **What it can read:** five read-only tools in `server/mcfly.ts`:
+  - which metrics exist
+  - a day's summary
+  - up to six metrics' history, at daily, weekly or monthly resolution
+  - workouts
+  - sleep times
+
+  Every tool runs in the signed-in person's scope and returns values in their units. It can't change data or settings, or read anyone else's.
+- **Model and limits:**
+  - The default model is `claude-opus-5-5` with medium effort. Server-side refusal fallbacks are on.
+  - Admins can change the model and the per-person daily question limit under **Admin → Settings**. A limit of 0 turns McFly off.
+- **Privacy:**
+  - The server keeps no conversation. The browser holds the chat in session storage and sends it as plain text with each question.
+  - healthOS stores only daily counts of questions and tokens per person (`mcfly_usage`). Admins see those counts, never the questions.
+  - Questions, data and answers are never logged.
+- **Setup:** create an API key in the Claude Console and add it to the Vercel project as `ANTHROPIC_API_KEY`. Then redeploy:
+
+```bash
+vercel env add ANTHROPIC_API_KEY production
+```
+
+  Without the key, the page says McFly isn't set up yet. Locally, put the key in `.env`.
+
 ## Apple Health
 
 Apple has no web API for HealthKit. Data reaches the dashboard through the export file:
@@ -147,7 +174,7 @@ WHOOP reports HRV as RMSSD and Apple Watch reports SDNN. The two aren't comparab
 |---|---|
 | `npm run dev` | App with hot reload on http://localhost:8787 |
 | `npm run build` then `npm start` | Production build |
-| `npm test` | Importer, iPhone ingest, WHOOP mapping, data blending, and account isolation tests |
+| `npm test` | Importer, iPhone ingest, WHOOP mapping, data blending, account isolation and Ask McFly tests |
 | `npm run typecheck` | TypeScript check |
 | `npm run sync:whoop -- --full` | Re-sync a full year of WHOOP data from the terminal |
 | `npm run deploy` | Build for Vercel and deploy health.mcfly.bot |
