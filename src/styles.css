@@ -1649,6 +1649,20 @@ td {
     align-self: flex-start;
   }
 }
+.photo-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+  max-width: 260px;
+}
+.photo-avatar-preview {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  object-fit: cover;
+  box-shadow: 0 0 0 3px var(--surface), 0 0 0 4px var(--border);
+}
 .banner-start {
   margin-bottom: 16px;
   background: var(--surface);

@@ -16,7 +16,7 @@ import { authRoutes, cronAuthorized, currentUser, publicUser, requireSession, sh
 import { cycleRouter } from './cycle.ts';
 import { DATA_DIR, type Db, type Scope, bumpDataVersion, deleteSource, getUserSetting, setUserSetting } from './db.ts';
 import { type McflyClient, mcflyRouter } from './mcfly.ts';
-import { PHOTO_ASSETS, photoAsset, photoMeta, processPhoto, removePhoto } from './photo.ts';
+import { PHOTO_ASSETS, parsePhotoUpload, photoAsset, photoMeta, processPhoto, removePhoto, storePhotoAssets } from './photo.ts';
 import { readSettings, requestContext, summary, trends, workouts } from './query.ts';
 import * as whoop from './whoop.ts';
 
@@ -68,6 +68,15 @@ export function createApp({ db, hosted, ingestToken, mcflyClient }: AppOptions) 
     if (!cronAuthorized(req)) return void res.status(401).json({ error: 'Unauthorized' });
     if (!whoop.isConfigured()) return void res.json({ skipped: 'WHOOP not configured' });
     res.json(await whoop.syncAllWhoop(db));
+  });
+
+  // A processed photo is a few MB, over the general JSON limit below, so it's parsed here first. The image
+  // work happens on the person's own device (browser or iPhone); this only checks and stores the result.
+  api.post('/profile/photo/upload', requireSession(db), express.json({ limit: '6mb' }), async (req, res) => {
+    const upload = parsePhotoUpload(req.body);
+    if (typeof upload === 'string') return void res.status(400).json({ error: upload });
+    await storePhotoAssets({ db, userId: currentUser(res).id }, upload);
+    res.json({ ok: true });
   });
 
   api.use(express.json());

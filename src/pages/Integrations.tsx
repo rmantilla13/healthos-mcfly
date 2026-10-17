@@ -447,21 +447,79 @@ function DemoCard({ status, refresh }: { status: Status; refresh: () => void }) 
   );
 }
 
+type Processed = { cutout: Blob; avatar: Blob; meta: unknown; cutoutUrl: string; avatarUrl: string };
+
+const base64 = (blob: Blob) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '');
+    reader.onerror = () => reject(new Error("Couldn't read the processed photo."));
+    reader.readAsDataURL(blob);
+  });
+
 function PhotoSettings({ status, refresh }: { status: Status; refresh: () => void }) {
   const [busy, setBusy] = useState(false);
+  const [step, setStep] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [drag, setDrag] = useState(false);
+  const [preview, setPreview] = useState<Processed | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const photo = status.photo;
 
-  async function upload(file: File) {
+  useEffect(
+    () => () => {
+      if (preview) {
+        URL.revokeObjectURL(preview.cutoutUrl);
+        URL.revokeObjectURL(preview.avatarUrl);
+      }
+    },
+    [preview],
+  );
+
+  /** On the Mac: the server cuts the photo out with Apple Vision. */
+  async function uploadToMac(file: File) {
+    const res = await fetch('/api/profile/photo', { method: 'POST', headers: { 'X-HealthOS': '1', 'Content-Type': 'application/octet-stream' }, body: file });
+    if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? 'Processing failed');
+    refresh();
+    notifyDataChanged();
+  }
+
+  /** Hosted: cut out and measured right here in the browser; nothing is uploaded until you save. */
+  async function processHere(file: File) {
+    const { processPhoto } = await import('../photo/process.ts');
+    const done = await processPhoto(file, setStep);
+    setPreview({ ...done, cutoutUrl: URL.createObjectURL(done.cutout), avatarUrl: URL.createObjectURL(done.avatar) });
+  }
+
+  async function choose(file: File) {
     setError(null);
-    if (!file.type.startsWith('image/') && !/\.(heic|heif)$/i.test(file.name)) return setError('Choose an image file (JPEG, PNG or HEIC).');
+    if (!file.type.startsWith('image/') && !/\.(heic|heif)$/i.test(file.name)) return setError('Choose an image file (JPEG or PNG).');
     setBusy(true);
     try {
-      const res = await fetch('/api/profile/photo', { method: 'POST', headers: { 'X-HealthOS': '1', 'Content-Type': 'application/octet-stream' }, body: file });
-      if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? 'Processing failed');
+      await (status.hosted ? processHere(file) : uploadToMac(file));
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+      setStep(null);
+    }
+  }
+
+  async function save() {
+    if (!preview) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/profile/photo/upload', {
+        method: 'POST',
+        headers: { 'X-HealthOS': '1', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cutout: await base64(preview.cutout), avatar: await base64(preview.avatar), meta: preview.meta }),
+      });
+      if (res.status === 413) throw new Error('That photo came out too large to save. Try a smaller or tighter photo.');
+      if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? "Couldn't save the photo.");
+      setPreview(null);
       refresh();
+      notifyDataChanged();
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -475,13 +533,29 @@ function PhotoSettings({ status, refresh }: { status: Status; refresh: () => voi
         <h2>Profile photo</h2>
         <p className="muted small">
           {status.hosted
-            ? 'Used for the figure on Home and your avatar. Photos are cut out with Apple Vision on your Mac: add or replace one from healthOS running there, and it shows up here.'
+            ? 'Used for the figure on Home and your avatar. It\'s cut out on this device; only the cut-out, avatar and the points for your vitals are saved.'
             : "Used for the figure on Home and your avatar. It's cut out and analyzed on this Mac with Apple's Vision framework, then saved to your healthOS database."}
         </p>
       </div>
-      <div className="photo-row">
-        {photo && <img className="photo-preview" src={`/api/profile/cutout.png?v=${photo.version}`} alt="Your cut-out photo" />}
-        {!status.hosted && (
+      {preview ? (
+        <div className="photo-row">
+          <img className="photo-preview" src={preview.cutoutUrl} alt="Your new cut-out" />
+          <div className="photo-confirm">
+            <img className="photo-avatar-preview" src={preview.avatarUrl} alt="Your new avatar" />
+            <p className="muted small">Here's how it came out. Save it to use it on Home and as your avatar.</p>
+            <div className="btn-row">
+              <button className="btn btn-primary" disabled={busy} onClick={save}>
+                {busy ? 'Saving…' : 'Save photo'}
+              </button>
+              <button className="btn btn-quiet" disabled={busy} onClick={() => setPreview(null)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="photo-row">
+          {photo && <img className="photo-preview" src={`/api/profile/cutout.png?v=${photo.version}`} alt="Your cut-out photo" />}
           <div
             className={`dropzone photo-drop ${drag ? 'is-drag' : ''}`}
             onDragOver={(e) => {
@@ -493,35 +567,48 @@ function PhotoSettings({ status, refresh }: { status: Status; refresh: () => voi
               e.preventDefault();
               setDrag(false);
               const f = e.dataTransfer.files[0];
-              if (f && !busy) upload(f);
+              if (f && !busy) choose(f);
             }}
           >
             {busy ? (
-              <span className="progress-label">Cutting out and measuring… (the first run compiles the tool, about 15s)</span>
+              <span className="progress-label">
+                {status.hosted ? (step ?? 'Working…') : 'Cutting out and measuring… (the first run compiles the tool, about 15s)'}
+              </span>
             ) : (
               <>
                 <Icon name="upload" size={22} />
                 <span>{photo ? 'Drop a new photo to replace it' : 'Drop a photo of yourself here'}</span>
                 <button className="btn" onClick={() => input.current?.click()}>
-                  Choose photo
+                  {photo ? 'Choose a new photo' : 'Upload a photo'}
                 </button>
               </>
             )}
-            <input ref={input} type="file" accept="image/*,.heic,.heif" hidden onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
+            <input
+              ref={input}
+              type="file"
+              accept="image/*,.heic,.heif"
+              hidden
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                e.target.value = '';
+                if (f) choose(f);
+              }}
+            />
           </div>
-        )}
-      </div>
+        </div>
+      )}
       {error && (
         <p className="note-bad">
           <Icon name="alert" size={15} /> {error}
         </p>
       )}
-      {photo && !busy && (
+      {photo && !busy && !preview && (
         <button
           className="btn btn-quiet"
           onClick={async () => {
             await sendJson('POST', '/profile/photo/clear');
             refresh();
+            notifyDataChanged();
           }}
         >
           Remove photo
