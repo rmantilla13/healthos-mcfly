@@ -14,7 +14,7 @@ import { importAppleHealth } from './apple/import.ts';
 import { ingestRouter } from './apple/ingest.ts';
 import { authRoutes, cronAuthorized, currentUser, publicUser, requireSession, sha256 } from './auth.ts';
 import { cycleRouter } from './cycle.ts';
-import { DATA_DIR, type Db, type Scope, deleteSource, getUserSetting, setUserSetting } from './db.ts';
+import { DATA_DIR, type Db, type Scope, bumpDataVersion, deleteSource, getUserSetting, setUserSetting } from './db.ts';
 import { type McflyClient, mcflyRouter } from './mcfly.ts';
 import { PHOTO_ASSETS, photoAsset, photoMeta, processPhoto, removePhoto } from './photo.ts';
 import { readSettings, requestContext, summary, trends, workouts } from './query.ts';
@@ -160,6 +160,11 @@ export function createApp({ db, hosted, ingestToken, mcflyClient }: AppOptions) 
     };
   }
 
+  /** A cheap "has anything changed?" check: compare it with the last one seen, and refetch only if it moved. */
+  api.get('/version', async (_req, res) => {
+    res.json({ version: (await getUserSetting(db, currentUser(res).id, 'data_version')) ?? null });
+  });
+
   api.get('/status', async (_req, res) => {
     res.json(await status(res));
   });
@@ -182,6 +187,8 @@ export function createApp({ db, hosted, ingestToken, mcflyClient }: AppOptions) 
     if (body.sex === null || body.sex === 'female' || body.sex === 'male' || body.sex === 'unspecified') await setUserSetting(db, userId, 'sex', body.sex);
     // Off hides cycle data everywhere; it doesn't delete it (POST /api/cycle/delete does).
     if (typeof body.cycleTracking === 'boolean') await setUserSetting(db, userId, 'cycle_tracking', body.cycleTracking ? 'on' : null);
+    // Units, names and time zone change what every view shows, on every device.
+    await bumpDataVersion(db, userId);
     res.json(await status(res));
   });
 
@@ -273,6 +280,7 @@ export function createApp({ db, hosted, ingestToken, mcflyClient }: AppOptions) 
     await deleteSource(db, scope.userId, 'apple');
     await setUserSetting(db, scope.userId, 'apple_last_import', null);
     await setUserSetting(db, scope.userId, 'apple_last_sync', null);
+    await bumpDataVersion(db, scope.userId);
     jobs.delete(scope.userId);
     res.json(await status(res));
   });

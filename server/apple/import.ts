@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { SaxesParser, type SaxesTagPlain } from 'saxes';
 import yauzl from 'yauzl';
-import { type DailyRow, type EventRow, type HourlyRow, type Scope, type WorkoutRow, deleteSource, getUserSetting, setUserSetting, upsertDaily, upsertEvents, upsertHourly, upsertWorkouts } from '../db.ts';
+import { type DailyRow, type EventRow, type HourlyRow, type Scope, type WorkoutRow, deleteSource, getUserSetting, setUserSetting, upsertDaily, upsertEvents, upsertHourly, upsertWorkouts, bumpDataVersion } from '../db.ts';
 import { DAY_ROLLOVER_MS, localDate, localHour, parseAppleDate, toLocalIso, type Stamp, zoneOffsets } from '../dates.ts';
 import type { CervicalMucus, Flow, OvulationTest } from '../../shared/types.ts';
 import { type CycleKind, type CycleRow, upsertCycle } from '../cycle.ts';
@@ -624,6 +624,7 @@ export async function importAppleHealth(scope: Scope, file: string, onProgress?:
     lastDate: dates.at(-1) ?? null,
   };
   await setUserSetting(db, userId, 'apple_last_import', JSON.stringify({ ...result, importedAt: new Date().toISOString() }));
+  await bumpDataVersion(db, userId);
   return result;
 }
 

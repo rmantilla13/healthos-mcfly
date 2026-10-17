@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { type DailyRow, type Db, type EventRow, OWNER_ID, type Scope, type WorkoutRow, getUserSetting, setUserSetting, upsertDaily, upsertEvents, upsertWorkouts } from './db.ts';
+import { type DailyRow, type Db, type EventRow, OWNER_ID, type Scope, type WorkoutRow, bumpDataVersion, getUserSetting, setUserSetting, upsertDaily, upsertEvents, upsertWorkouts } from './db.ts';
 import { DAY_MS, DAY_ROLLOVER_MS, localDate, stampFromIso, toLocalIso } from './dates.ts';
 
 // Every function works on one person's scope: their tokens, sync state and data. The cron (syncAllWhoop)
@@ -355,6 +355,8 @@ export async function syncWhoop(scope: Scope, opts: { full?: boolean; deadline?:
 
     const lastSync = new Date().toISOString();
     await setUserSetting(scope.db, scope.userId, 'whoop_last_sync', lastSync);
+    // Recent days are in: let clients refetch now rather than after the history backfill below.
+    await bumpDataVersion(scope.db, scope.userId);
 
     const saved = Number(await getUserSetting(scope.db, scope.userId, 'whoop_backfill_before'));
     let before = Number.isFinite(saved) && saved > 0 ? saved : Math.min(since, Date.now() - BACKFILL_DAYS * DAY_MS);
@@ -366,6 +368,7 @@ export async function syncWhoop(scope: Scope, opts: { full?: boolean; deadline?:
       await setUserSetting(scope.db, scope.userId, 'whoop_backfill_before', String(before));
     }
 
+    if (before < (Number.isFinite(saved) && saved > 0 ? saved : Infinity)) await bumpDataVersion(scope.db, scope.userId);
     await saveSyncState(scope, { running: false, lastSync, lastCounts: { ...counts, historyComplete: before <= HISTORY_START ? 1 : 0 } });
   } catch (err) {
     await saveSyncState(scope, { ...prev, running: false, lastError: err instanceof Error ? err.message : String(err) });

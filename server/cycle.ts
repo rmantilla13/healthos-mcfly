@@ -9,7 +9,7 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import type { CervicalMucus, CycleData, CycleDay, CycleEstimate, CycleFields, CycleLogDay, Flow, OvulationTest, SexualActivity } from '../shared/types.ts';
 import { currentUser } from './auth.ts';
 import { addDays } from './dates.ts';
-import type { Db, Queryable, Scope } from './db.ts';
+import { type Db, type Queryable, type Scope, bumpDataVersion } from './db.ts';
 import { requestContext } from './query.ts';
 import { insertMany } from './store.ts';
 
@@ -356,12 +356,14 @@ export function cycleRouter(db: Db, hosted: boolean) {
     }
     if (day.date > today) return void res.status(400).json({ error: "That day hasn't happened yet." });
     await db.tx((q) => replaceCycleDays(q, scope.userId, MANUAL, [day]));
+    await bumpDataVersion(db, scope.userId);
     res.json({ ok: true });
   });
 
   /** Everything cycle-related this person stored, from every source. Works whether tracking is on or off. */
   router.post('/delete', async (_req, res) => {
     const deleted = await db.query('DELETE FROM cycle WHERE user_id = $1 RETURNING 1', [scopeOf(res).userId]);
+    await bumpDataVersion(db, scopeOf(res).userId);
     res.json({ deleted: deleted.length });
   });
 

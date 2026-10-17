@@ -1,5 +1,6 @@
 // Row types and write helpers over the Postgres store (server/store.ts). Every data row belongs to a user:
 // helpers take the user id explicitly, and the schema has no default for it, so a write can't land unowned.
+import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { type Db, type Queryable, OWNER_ID, getStore, insertMany } from './store.ts';
 
@@ -157,6 +158,14 @@ export async function setUserSetting(q: Queryable, userId: string, key: string, 
       [userId, key, value],
     );
   }
+}
+
+/**
+ * Mark that this person's data changed. Clients poll GET /api/version (one row read) and refetch only when
+ * it moves, instead of re-downloading everything on a timer. Opaque: compare it, don't parse it.
+ */
+export async function bumpDataVersion(q: Queryable, userId: string) {
+  await setUserSetting(q, userId, 'data_version', `${Date.now().toString(36)}-${randomBytes(3).toString('hex')}`);
 }
 
 /** Everything one person stored, removed together (account deletion). */

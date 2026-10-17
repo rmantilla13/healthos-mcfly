@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AuthMe, Page, Status, SyncResult } from '../shared/types.ts';
 import { Icon, type IconName } from './components/Icon.tsx';
-import { UnitsContext, fmtDate, href, notifyDataChanged, sendJson, useAccountLink, useApi, useRoute } from './lib.ts';
+import { UnitsContext, clearLoadedData, fmtDate, href, notifyDataChanged, sendJson, useAccountLink, useApi, useBackgroundRefresh, useRoute } from './lib.ts';
 import { Admin } from './pages/Admin.tsx';
 import { Cycle } from './pages/Cycle.tsx';
 import { Activity, Body, Sleep, Vitals } from './pages/Detail.tsx';
@@ -63,7 +63,11 @@ export function App() {
   useEffect(() => {
     check();
     // Any API call that comes back 401 (e.g. the session expired) returns to the sign-in screen.
-    const onSignin = () => setAuth({ state: 'signin', setup: false });
+    const onSignin = () => {
+      // Whoever signs in next on this tab mustn't see what was loaded for the last person.
+      clearLoadedData();
+      setAuth({ state: 'signin', setup: false });
+    };
     window.addEventListener('healthos:signin', onSignin);
     return () => window.removeEventListener('healthos:signin', onSignin);
   }, [check]);
@@ -95,6 +99,7 @@ function Dashboard({ signedIn }: { signedIn: boolean }) {
   // Only meaningful when sign-in is on; the server enforces it either way.
   const isAdmin = signedIn && status?.user.role === 'admin';
   useAutoSync(status, reload);
+  useBackgroundRefresh();
 
   // The hosted server runs in UTC; tell it this browser's time zone so "today" is your today.
   useEffect(() => {

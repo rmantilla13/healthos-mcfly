@@ -4,7 +4,7 @@
 
 import { createHash, timingSafeEqual } from 'node:crypto';
 import express, { type NextFunction, type Request, type Response } from 'express';
-import { type DailyRow, type Db, type EventRow, HOURLY_FOLD, type HourlyRow, OWNER_ID, type Scope, type WorkoutRow, setUserSetting, upsertDaily, upsertEvents, upsertHourly, upsertWorkouts } from '../db.ts';
+import { type DailyRow, type Db, type EventRow, HOURLY_FOLD, type HourlyRow, OWNER_ID, type Scope, type WorkoutRow, setUserSetting, upsertDaily, upsertEvents, upsertHourly, upsertWorkouts, bumpDataVersion } from '../db.ts';
 import type { CycleDay } from '../../shared/types.ts';
 import { parseCycleDay, replaceCycleDays } from '../cycle.ts';
 import { SOURCE } from './import.ts';
@@ -225,6 +225,7 @@ export async function ingestApple(scope: Scope, p: IngestPayload): Promise<Inges
     // The saved sync summary leaves out the cycle count: it's shown in places cycle data isn't.
     const { cycle: _cycle, ...shown } = result;
     await setUserSetting(db, userId, 'apple_last_sync', JSON.stringify({ ...shown, syncedAt: new Date().toISOString() }));
+    await bumpDataVersion(db, userId);
   }
   return result;
 }

@@ -35,9 +35,77 @@ export function uploadFile(file: File, onProgress: (sent: number, total: number)
 /** Tell every view to refetch (after an import, sync or settings change). */
 export const notifyDataChanged = () => window.dispatchEvent(new Event('healthos:data'));
 
-/** Fetches JSON and keeps the previous result on screen while a new one loads. */
+// ---------- loaded data and background freshness ----------
+// Views keep what they've loaded, in memory and keyed by path, so switching pages shows it at once without
+// a download. A light check of GET /api/version (every minute while the tab is visible, and when it comes
+// back into view) tells every view to refetch only when this person's data actually changed.
+
+type Cached = { data: unknown; version: string | null | undefined; at: number; day: string };
+const cache = new Map<string, Cached>();
+/** The last /api/version seen; undefined until the first check (or on a server without it). */
+let dataVersion: string | null | undefined;
+/** Loaded data is reused for at most this long, even when nothing changed. */
+const MAX_AGE_MS = 5 * 60_000;
+const localDay = () => new Date().toLocaleDateString('en-CA');
+
+/** Forget everything loaded (signing out, or another person signing in on this tab). */
+export function clearLoadedData() {
+  cache.clear();
+  dataVersion = undefined;
+}
+
+const fresh = (c: Cached) => c.version !== undefined && c.version === dataVersion && Date.now() - c.at < MAX_AGE_MS && c.day === localDay();
+
+/**
+ * Keeps the dashboard current in the background: checks the data version every minute while the tab is
+ * visible and whenever it's shown again, and refetches every view when the version moves or the day rolls
+ * over. Each check is one tiny request; nothing is re-downloaded unless something changed.
+ */
+export function useBackgroundRefresh() {
+  useEffect(() => {
+    let day = localDay();
+    const check = async () => {
+      if (document.visibilityState !== 'visible') return;
+      if (localDay() !== day) {
+        day = localDay();
+        notifyDataChanged();
+      }
+      try {
+        const res = await fetch('/api/version');
+        if (res.status === 401) return void window.dispatchEvent(new Event('healthos:signin'));
+        if (!res.ok) return; // An older server: views fetch when they open, as before.
+        const { version } = (await res.json()) as { version: string | null };
+        if (dataVersion === undefined) {
+          // First check: what's on screen was loaded moments ago, so it counts as this version.
+          dataVersion = version;
+          for (const c of cache.values()) if (c.version === undefined) c.version = version;
+        } else if (version !== dataVersion) {
+          dataVersion = version;
+          notifyDataChanged();
+        }
+      } catch {
+        // Offline: try again at the next check.
+      }
+    };
+    check();
+    const timer = setInterval(check, 60_000);
+    const onShow = () => void check();
+    document.addEventListener('visibilitychange', onShow);
+    window.addEventListener('focus', onShow);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onShow);
+      window.removeEventListener('focus', onShow);
+    };
+  }, []);
+}
+
+/**
+ * Fetches JSON and keeps the previous result on screen while a new one loads. Opening a view reuses what
+ * was loaded for the same path if the data hasn't changed since; a data change or reload() refetches.
+ */
 export function useApi<T>(path: string | null) {
-  const [data, setData] = useState<T>();
+  const [data, setData] = useState<T | undefined>(() => (path ? (cache.get(path)?.data as T | undefined) : undefined));
   const [error, setError] = useState<Error>();
   const [loading, setLoading] = useState(false);
   const [version, setVersion] = useState(0);
@@ -50,10 +118,22 @@ export function useApi<T>(path: string | null) {
 
   useEffect(() => {
     if (!path) return;
+    const hit = cache.get(path);
+    if (hit) setData(hit.data as T);
+    if (version === 0 && hit && fresh(hit)) {
+      setError(undefined);
+      return;
+    }
     let alive = true;
     setLoading(true);
     getJson<T>(path)
-      .then((d) => alive && (setData(d), setError(undefined)))
+      .then((d) => {
+        cache.set(path, { data: d, version: dataVersion, at: Date.now(), day: localDay() });
+        if (alive) {
+          setData(d);
+          setError(undefined);
+        }
+      })
       .catch((e: Error) => alive && setError(e))
       .finally(() => alive && setLoading(false));
     return () => {
