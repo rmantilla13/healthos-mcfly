@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 import type { McflyStatus, McflyTurn, SessionUser } from '../../shared/types.ts';
 import { Icon } from '../components/Icon.tsx';
+import { ShinyText } from '../components/ShinyText.tsx';
 import { useApi } from '../lib.ts';
 
 type Msg = { role: 'user' | 'assistant'; content: string; steps?: string[]; error?: string; pending?: boolean };
@@ -208,15 +209,20 @@ export function McFly({ me }: { me: SessionUser }) {
                     <div className="mcfly-body">
                       {(m.steps?.length ?? 0) > 0 && (
                         <ul className="mcfly-steps" aria-label="What McFly looked at">
-                          {m.steps!.map((s, j) => (
-                            <li key={j}>
-                              <Icon name="check" size={12} /> {s}
-                            </li>
-                          ))}
+                          {m.steps!.map((s, j) => {
+                            // The step McFly is on shimmers until its answer starts; finished ones get a check.
+                            const working = m.pending && !m.content && j === m.steps!.length - 1;
+                            return (
+                              <li key={j}>
+                                {working ? <span className="mcfly-step-ring" aria-hidden="true" /> : <Icon name="check" size={12} />}
+                                {working ? <ShinyText>{s}</ShinyText> : s}
+                              </li>
+                            );
+                          })}
                         </ul>
                       )}
                       {m.content && <Answer text={m.content} />}
-                      {m.pending && !m.content && <span className="mcfly-typing" aria-label="McFly is thinking" />}
+                      {m.pending && !m.content && !m.steps?.length && <ShinyText className="mcfly-thinking">McFly is thinking…</ShinyText>}
                       {m.error && (
                         <p className="note-bad">
                           <Icon name="alert" size={15} /> {m.error}

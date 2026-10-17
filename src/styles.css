@@ -1919,6 +1919,16 @@ td {
   paint-order: stroke;
 }
 
+/* ---------- shiny text (src/components/ShinyText.tsx, adapted from React Bits) ---------- */
+.shiny-text {
+  display: inline-block;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
 /* ---------- Ask McFly (src/pages/McFly.tsx) ----------
    The page is exactly one screen tall: the conversation scrolls inside it and the composer stays at the
    bottom. Where text scrolls out at the top it passes under a short blurred, fading band. */
@@ -2091,21 +2101,31 @@ td {
 .mcfly-answer ol {
   padding-left: 20px;
 }
-.mcfly-typing {
-  width: 36px;
-  height: 10px;
-  background: radial-gradient(circle closest-side, var(--ink-3) 90%, transparent) 0 50% / 10px 10px repeat-x;
-  animation: mcfly-dots 1s infinite linear;
-  opacity: 0.6;
+/* McFly's thinking state: shiny text (components/ShinyText.tsx) for "thinking…" and the step it's on. */
+.mcfly-thinking {
+  align-self: flex-start;
+  font-size: 14px;
+  font-weight: 500;
 }
-@keyframes mcfly-dots {
+.mcfly-step-ring {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  margin: 1px;
+  border-radius: 50%;
+  border: 1.5px solid var(--ink-3);
+  border-top-color: transparent;
+  animation: mcfly-spin 0.9s linear infinite;
+}
+@keyframes mcfly-spin {
   to {
-    background-position: 13px 50%;
+    transform: rotate(360deg);
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .mcfly-typing {
+  .mcfly-step-ring {
     animation: none;
+    border-top-color: var(--ink-3);
   }
 }
 .mcfly-composer {
