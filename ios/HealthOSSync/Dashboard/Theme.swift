@@ -4,6 +4,10 @@ import UIKit
 /// Color tokens from src/styles.css, light and dark.
 enum Palette {
     static let page = dynamic(0xF3F3F1, 0x0D0D0D)
+    static let pageGlow = dynamic(0xFCFCFB, 0x161615)
+    /// Vital callouts on the portrait (web: temp amber, heart pink).
+    static let vitalTemp = dynamic(0xF2CF63, 0xF2CF63)
+    static let vitalHeart = dynamic(0xE0567C, 0xF27798)
     static let surface = dynamic(0xFFFFFF, 0x1A1A19)
     static let surface2 = dynamic(0xF6F6F4, 0x222221)
     static let border = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 1, alpha: 0.08) : UIColor(white: 0.04, alpha: 0.07) })

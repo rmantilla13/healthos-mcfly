@@ -93,6 +93,28 @@ final class DayAggregatorTests: XCTestCase {
         QuantityPoint(start: at("15 \(String(format: "%02d:%02d", hour, minute))"), value: value, source: source)
     }
 
+    func testWhoopStepsCompeteForTheDayButOtherWhoopRecordsStaySkipped() {
+        // Someone who wears WHOOP more than a Watch: the iPhone saw 1,000 steps, WHOOP 7,300. WHOOP wins the day,
+        // never the sum (both count the same walking), and the hours are WHOOP's.
+        let phone = SampleSource(name: "Sami's iPhone", bundleIdentifier: "com.apple.health.phone")
+        let whoop = SampleSource(name: "WHOOP", bundleIdentifier: "com.whoop.iphone")
+        let steps = HealthTypes.quantities.first { $0.metric == "steps" }!
+        let resting = HealthTypes.quantities.first { $0.metric == "resting_hr" }!
+        let agg = DayAggregator(dates: ["2026-10-15"])
+        agg.add(points: [point(9, 0, 600, phone), point(17, 0, 400, phone),
+                         point(9, 5, 3000, whoop), point(13, 0, 2300, whoop), point(17, 10, 2000, whoop)], as: steps)
+        agg.add(points: [point(6, 0, 48, whoop)], as: resting)
+        let p = agg.finish()
+        XCTAssertEqual(p.daily.first { $0.metric == "steps" }?.value, 7300)
+        let hours = (p.hourly ?? []).filter { $0.metric == "steps" }
+        XCTAssertEqual(hours.map(\.hour), [9, 13, 17])
+        XCTAssertEqual(hours.map(\.value), [3000, 2300, 2000])
+        XCTAssertNil(p.daily.first { $0.metric == "resting_hr" })
+        XCTAssertTrue(agg.sawWhoopSteps)
+        XCTAssertTrue(whoop.counts("steps"))
+        XCTAssertFalse(whoop.counts("resting_hr"))
+    }
+
     func testHourlyStepsComeFromTheSourceThatWinsTheDay() {
         // iPhone and Watch both count the same walks; the day keeps the Watch (more steps), so its hours are sent
         // and they add up to the daily row.
@@ -153,6 +175,26 @@ final class DayAggregatorTests: XCTestCase {
         XCTAssertEqual(state.anchors.count, 1)
     }
 
+    func testCycleRecordsFoldLikeTheImporter() {
+        let t0 = at("15 07:00").date, t1 = at("15 22:00").date
+        let days = CycleFolder.fold([
+            CycleRecord(date: "2026-10-15", at: t0, kind: .flow("light", periodStart: true)),
+            CycleRecord(date: "2026-10-15", at: t1, kind: .flow("heavy", periodStart: false)),
+            CycleRecord(date: "2026-10-15", at: t0, kind: .ovulation("negative")),
+            CycleRecord(date: "2026-10-15", at: t1, kind: .ovulation("lh_surge")),
+            CycleRecord(date: "2026-10-15", at: t1, kind: .bbt(36.9)),
+            CycleRecord(date: "2026-10-15", at: t0, kind: .bbt(36.4)), // the first reading wins
+            CycleRecord(date: "2026-10-15", at: t0, kind: .sexual("protected")),
+            CycleRecord(date: "2026-10-15", at: t1, kind: .sexual("unprotected")),
+            CycleRecord(date: "2026-10-16", at: t1, kind: .mucus("egg_white")),
+            CycleRecord(date: "2026-10-14", at: t1, kind: .spotting), // not a day being sent
+        ], dates: ["2026-10-15", "2026-10-16"])
+        XCTAssertEqual(days, [
+            CycleDay(date: "2026-10-15", flow: "heavy", periodStart: true, ovulationTest: "lh_surge", bbt: 36.4, sexualActivity: "unprotected"),
+            CycleDay(date: "2026-10-16", mucus: "egg_white"),
+        ])
+    }
+
     func testWhoopIsRecognizedByNameOrBundle() {
         // Same rule as fromDirectSource in server/apple/import.ts (/^whoop\b/i on the name), plus the bundle ID.
         XCTAssertTrue(SampleSource(name: "WHOOP", bundleIdentifier: "").isReadDirectly)
@@ -180,8 +222,65 @@ final class DayAggregatorTests: XCTestCase {
         XCTAssertNil(Config.serverURL(""))
     }
 
-    func testPendingDaysAreUploadedAWeekAtATime() {
+    func testPendingDaysAreUploadedAWeekAtATimeNewestFirst() {
         let days = ["2026-10-01", "2026-10-02", "2026-10-07", "2026-10-08", "2026-10-20"]
-        XCTAssertEqual(SyncEngine.windows(days), [["2026-10-01", "2026-10-02", "2026-10-07"], ["2026-10-08"], ["2026-10-20"]])
+        // Newest window first; each window oldest first, because Health.payload reads from its first day to its last.
+        XCTAssertEqual(SyncEngine.windows(days), [["2026-10-20"], ["2026-10-02", "2026-10-07", "2026-10-08"], ["2026-10-01"]])
+        XCTAssertEqual(SyncEngine.windows(["2026-10-08", "2026-10-02", "2026-10-08"]), [["2026-10-02", "2026-10-08"]])
+        for window in SyncEngine.windows(days) { XCTAssertEqual(window, window.sorted()) }
+    }
+
+    func testDeletedCycleEntryClearsItsDay() {
+        var state = SyncState()
+        XCTAssertEqual(state.noteCycle(added: ["A": "2026-03-02", "B": "2026-03-03"], deleted: [], today: "2026-10-17"), [])
+        // Deleting A: its day is rechecked and, with nothing left, sent as {date}.
+        XCTAssertEqual(state.noteCycle(added: [:], deleted: ["A"], today: "2026-10-17"), ["2026-03-02"])
+        XCTAssertEqual(state.cycleClear, ["2026-03-02"])
+        XCTAssertNil(state.cycleSampleDays["A"])
+        // A deletion with no known day rechecks the last 60 days.
+        XCTAssertEqual(state.noteCycle(added: [:], deleted: ["Z"], today: "2026-10-17").count, 61)
+
+        let at = Date()
+        let kept = CycleRecord(date: "2026-03-03", at: at, kind: .spotting)
+        let days = CycleFolder.fold([kept], dates: ["2026-03-01", "2026-03-02", "2026-03-03"], clearing: ["2026-03-02", "2026-03-03"])
+        XCTAssertEqual(days, [CycleDay(date: "2026-03-02"), CycleDay(date: "2026-03-03", spotting: true)])
+        // An empty day nobody deleted from stays out, so an export import's rows there survive.
+        XCTAssertFalse(days.contains { $0.date == "2026-03-01" })
+        let json = String(data: try! JSONEncoder().encode(CycleDay(date: "2026-03-02")), encoding: .utf8)
+        XCTAssertEqual(json, #"{"date":"2026-03-02"}"#)
+    }
+
+    /// An older build part-way through sending all of history oldest first (it had reached 2019-10-24).
+    func testUpgradeMidBackfillSendsRecentMonthFirstThenHistoryNewestFirst() throws {
+        let today = "2026-10-17"
+        var pending: [String] = []
+        var d = "2019-10-25"
+        while d <= "2026-10-16" { pending.append(d); d = Day.add(d, 1) }
+        let json = try JSONSerialization.data(withJSONObject: ["server": "https://health.mcfly.bot", "pending": pending, "hourlyBackfillStarted": true])
+        var state = try JSONDecoder().decode(SyncState.self, from: json)
+        XCTAssertTrue(state.hourlyBackfillStarted)
+
+        state.pending = Set(state.pending).union([today]).sorted()
+        state.splitOld(today: today)
+        XCTAssertEqual(state.pending.first, "2026-09-17")
+        XCTAssertEqual(state.pending.last, today)
+        XCTAssertEqual(state.pending.count, 31)
+        let recent = SyncEngine.windows(state.pending)
+        XCTAssertEqual(recent.first?.last, today)
+        XCTAssertEqual(recent.first?.first, "2026-10-11")
+
+        // History: newest first, nothing from before 2019-10-25 (already on the server), nothing recent twice.
+        let history = SyncEngine.windows(state.backfill)
+        XCTAssertEqual(history.first, ["2026-09-10", "2026-09-11", "2026-09-12", "2026-09-13", "2026-09-14", "2026-09-15", "2026-09-16"])
+        XCTAssertEqual(history.last?.first, "2019-10-25")
+        XCTAssertTrue(Set(state.backfill).isDisjoint(with: state.pending))
+
+        // Not done until the backfill queue is empty too.
+        state.pending = []
+        state.finishHourlyBackfill(serverStoredHours: true)
+        XCTAssertFalse(state.hourlyBackfillDone)
+        state.backfill = []
+        state.finishHourlyBackfill(serverStoredHours: true)
+        XCTAssertTrue(state.hourlyBackfillDone)
     }
 }

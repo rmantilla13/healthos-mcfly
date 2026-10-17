@@ -91,4 +91,8 @@ struct SampleSource: Equatable {
         bundleIdentifier.lowercased().contains("whoop")
             || name.trimmingCharacters(in: .whitespaces).range(of: #"^whoop\b"#, options: [.regularExpression, .caseInsensitive]) != nil
     }
+
+    /// Whether this source's records of `metric` count. WHOOP's are skipped (healthOS reads WHOOP's API), except
+    /// steps: WHOOP's step count competes with the iPhone and Watch for a day's best single source, like the importer.
+    func counts(_ metric: String) -> Bool { !isReadDirectly || metric == "steps" }
 }

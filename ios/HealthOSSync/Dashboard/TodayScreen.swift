@@ -42,7 +42,7 @@ struct TodayScreen: View {
         }
         .task { await dashboard.startIfNeeded() }
         .onReceive(NotificationCenter.default.publisher(for: .healthOSSynced)) { _ in
-            Task { await dashboard.load() }
+            Task { await dashboard.refreshIfChanged(includeStatus: false) }
         }
     }
 }
@@ -51,23 +51,22 @@ private struct TodayContent: View {
     let summary: Summary
     @Environment(Dashboard.self) private var dashboard
     @Environment(AppModel.self) private var sync
+    @State private var mcfly = McFlyChat()
+    @State private var chatOpen = false
 
     private let columns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Header(summary: summary, name: summary.name ?? dashboard.status?.settings?.name)
-                SyncStatusLine()
+                OrganicHeader(summary: summary, name: summary.name ?? dashboard.status?.settings?.name)
                 if let error = dashboard.error { Banner(text: error, icon: "wifi.exclamationmark", tone: .peach) }
                 if summary.demo == true {
                     Banner(text: "Showing demo data. Connect Apple Health or WHOOP to see your own.", icon: "sparkles", tone: .blue)
                 }
+                OrganicPortrait(summary: summary, photo: dashboard.status?.photo, units: dashboard.units, stepGoal: dashboard.stepGoal)
+                if let timeline = summary.timeline { TodayPath(timeline: timeline) }
                 if let week = summary.week { WeekCard(week: week, stepGoal: dashboard.stepGoal) }
-                if let photo = dashboard.status?.photo {
-                    PhotoFigure(photo: photo, vitals: summary.vitals, units: dashboard.units)
-                }
-                if let vitals = summary.vitals { VitalsRow(vitals: vitals, asOf: summary.date, units: dashboard.units) }
                 LazyVGrid(columns: columns, spacing: 12) {
                     ReadinessCard(summary: summary)
                     Spo2Card(summary: summary)
@@ -76,14 +75,21 @@ private struct TodayContent: View {
                     LoadCard(summary: summary)
                     ActivityCard(summary: summary, goal: dashboard.stepGoal)
                 }
-                if let timeline = summary.timeline { TimelineCard(timeline: timeline, today: summary.today) }
                 InsightsCard(insights: summary.insights ?? [], today: summary.today)
             }
             .padding(16)
             .opacity(dashboard.loading ? 0.6 : 1)
             .animation(.easeInOut(duration: 0.2), value: dashboard.loading)
         }
-        .refreshable { await sync.syncAll() }
+        .refreshable { await sync.syncAll(force: true) }
+        // In the safe area, so it floats just above the tab bar instead of under it.
+        .safeAreaInset(edge: .bottom) {
+            if mcfly.status?.available == true {
+                AskMcFlyPill { chatOpen = true }.padding(.bottom, 6)
+            }
+        }
+        .sheet(isPresented: $chatOpen) { McFlySheet(chat: mcfly) }
+        .task(id: dashboard.generation) { await mcfly.refreshStatus() }
     }
 }
 
@@ -243,7 +249,7 @@ struct SyncStatusLine: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Button { Task { await sync.syncAll() } } label: {
+            Button { Task { await sync.syncAll(force: true) } } label: {
                 HStack(spacing: 6) {
                     if sync.syncingSources {
                         ProgressView().controlSize(.small)

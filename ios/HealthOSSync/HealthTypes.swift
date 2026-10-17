@@ -48,7 +48,8 @@ enum HealthTypes {
     static let mindful = HKCategoryType(.mindfulSession)
     static let workout = HKWorkoutType.workoutType()
 
-    static var sampleTypes: [HKSampleType] { quantities.map(\.type) + [sleep, mindful, workout] }
+    /// Cycle types join only once cycle tracking is on (and the server stores cycle days).
+    static var sampleTypes: [HKSampleType] { quantities.map(\.type) + [sleep, mindful, workout] + (CycleTypes.active ? CycleTypes.all : []) }
     static var readTypes: Set<HKObjectType> { Set(sampleTypes) }
 
     static func label(_ type: HKSampleType) -> String {

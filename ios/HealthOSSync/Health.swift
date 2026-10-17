@@ -19,6 +19,9 @@ final class Health: @unchecked Sendable {
         var sawDeletions = false
         /// Ingest ids ("hk-<uuid>") of deleted workouts and mindful sessions, which are keyed by UUID on the server.
         var deletedIDs: [String] = []
+        /// Cycle types only: the day of each added sample, and the UUIDs of deleted ones (to clear emptied days).
+        var addedDays: [String: String] = [:]
+        var deletedUUIDs: [String] = []
         var anchor: HKQueryAnchor?
         var samples = 0
     }
@@ -36,11 +39,16 @@ final class Health: @unchecked Sendable {
             // the type's whole history comes through once it's allowed.
             guard let page = try await Self.unlessUndetermined({ try await query.result(for: store) }) else { return Changes(anchor: anchor) }
             // WHOOP's copies never change a day's result (the aggregation skips them), so they don't make it dirty.
-            for sample in page.addedSamples where !sample.writtenBy.isReadDirectly { out.dates.insert(Self.day(of: sample)) }
+            let metric = type == HKQuantityType(.stepCount) ? "steps" : ""
+            for sample in page.addedSamples where sample.writtenBy.counts(metric) { out.dates.insert(Self.day(of: sample)) }
             out.samples += page.addedSamples.count
             if !page.deletedObjects.isEmpty { out.sawDeletions = true }
             if type == HealthTypes.workout || type == HealthTypes.mindful {
                 out.deletedIDs += page.deletedObjects.map { "hk-" + $0.uuid.uuidString.lowercased() }
+            }
+            if CycleTypes.all.contains(type) {
+                for sample in page.addedSamples where !sample.writtenBy.isReadDirectly { out.addedDays[sample.uuid.uuidString] = Self.day(of: sample) }
+                out.deletedUUIDs += page.deletedObjects.map(\.uuid.uuidString)
             }
             out.anchor = page.newAnchor
             if page.addedSamples.count + page.deletedObjects.count < pageSize { return out }
@@ -67,7 +75,8 @@ final class Health: @unchecked Sendable {
     }
 
     /// Complete rows for `days` (sorted local dates), read from HealthKit in one padded window.
-    func payload(for days: [String]) async throws -> IngestPayload {
+    /// `clearCycle`: days where a cycle sample was deleted; sent as `{date}` when nothing is left, so the server forgets them.
+    func payload(for days: [String], clearCycle: Set<String> = []) async throws -> IngestPayload {
         // Pad by two days: a local day spans UTC offsets from -12h to +14h, and a night can start the evening before.
         let from = Day.midnightUTC(days.first!).addingTimeInterval(-2 * 86_400)
         let to = Day.midnightUTC(days.last!).addingTimeInterval(3 * 86_400)
@@ -79,7 +88,19 @@ final class Health: @unchecked Sendable {
         agg.add(sleep: try await samples(.categorySample(type: HealthTypes.sleep, predicate: window)))
         agg.add(mindful: try await samples(.categorySample(type: HealthTypes.mindful, predicate: window)))
         agg.add(workouts: try await samples(.workout(window)))
-        return agg.finish()
+        if agg.sawWhoopSteps { Config.sawWhoopSteps = true }
+        var payload = agg.finish()
+        if CycleTypes.active {
+            var records: [CycleRecord] = []
+            for type in [CycleTypes.flow, CycleTypes.spotting, CycleTypes.ovulation, CycleTypes.mucus, CycleTypes.sexual] {
+                records += CycleFolder.records(category: try await samples(.categorySample(type: type, predicate: window)))
+            }
+            records += CycleFolder.records(bbt: try await samples(.quantitySample(type: CycleTypes.bbt, predicate: window)))
+            // Only days with records: a day sent with nothing would clear what an export import stored there.
+            let days = CycleFolder.fold(records, dates: Set(days), clearing: clearCycle)
+            payload.cycle = days.isEmpty ? nil : days
+        }
+        return payload
     }
 
     // MARK: Background delivery
@@ -100,10 +121,21 @@ final class Health: @unchecked Sendable {
             }
             store.execute(query)
             observers.append(query)
-            store.enableBackgroundDelivery(for: type, frequency: .immediate) { _, error in
+            store.enableBackgroundDelivery(for: type, frequency: Self.deliveryFrequency(type)) { _, error in
                 if let error { print("[healthos] background delivery for \(type.identifier) failed: \(error.localizedDescription)") }
             }
         }
+    }
+
+    /// Heart rate arrives every few minutes from a Watch: hourly wakes are plenty and save battery. Steps, energy and
+    /// distance are hourly at most anyway. Everything else (sleep, workouts, mindful, body) is rare, so immediate.
+    static func deliveryFrequency(_ type: HKSampleType) -> HKUpdateFrequency {
+        let hourly: Set<String> = [
+            HKQuantityTypeIdentifier.heartRate.rawValue, HKQuantityTypeIdentifier.stepCount.rawValue,
+            HKQuantityTypeIdentifier.activeEnergyBurned.rawValue, HKQuantityTypeIdentifier.distanceWalkingRunning.rawValue,
+            HKQuantityTypeIdentifier.appleExerciseTime.rawValue, HKQuantityTypeIdentifier.respiratoryRate.rawValue,
+        ]
+        return hourly.contains(type.identifier) ? .hourly : .immediate
     }
 
     func stopObserving() {

@@ -7,13 +7,17 @@ The healthOS dashboard as a native SwiftUI app. It also sends your iPhone's Appl
 The app reads the same API as the website (`/api/summary`, `/api/trends`, `/api/workouts`, `/api/status`). It shows the same numbers, including WHOOP recovery and strain, which only the server has.
 
 - **Today:**
-  - the greeting and a "week so far" summary;
-  - resting heart, breathing and temperature, each against your own range;
+  - the greeting, then your profile photo as an organic portrait: it reveals through a short ASCII sweep once per launch (skipped with Reduce Motion), with heart, breathing and temperature dots, leader-line callouts, and Slept, Steps and HRV shapes around it;
+  - the day's path, and a "week so far" summary;
   - six cards: recovery or VO₂ max, blood oxygen, HRV, sleep, strain or active energy, and steps against your goal;
   - the day's timeline and insights.
   - Arrows step through past days. Pull down to refresh, which also pushes any new Health data.
+  - **Ask McFly:** a pill above the tab bar opens a chat with the dashboard's assistant (`/api/mcfly`, streamed from `/api/mcfly/chat`). The conversation stays in memory only. It shows how many questions are left today, and the pill is hidden when the server has McFly off.
 - **Trends:** Vitals, Sleep (stacked stages), Activity (steps against goal, plus workouts) and Body, over 30 days, 90 days or a year. Drag across a chart to read a single day.
-- **Settings:** server address, sign-in status, and the Apple Health sync controls.
+- **Settings:**
+  - server address and sign-in status;
+  - the profile photo: **Change photo** picks one from Photos and cuts it out on the phone with Apple Vision, using the same steps as the Mac tool `server/photo/cutout.swift`. After a Save/Cancel preview it uploads to `POST /api/profile/photo/upload`;
+  - the Apple Health sync controls.
 
 Cards hide or switch to fit your sources, as on the web: no WHOOP means VO₂ max instead of recovery, active energy instead of strain, and HRV labelled SDNN.
 
@@ -22,6 +26,7 @@ Cards hide or switch to fit your sources, as on the web: no WHOOP means VO₂ ma
 - **Session:** the 30-day session cookie lives in the Keychain.
 - **Local servers:** one with no password set needs no sign-in.
 - **Offline:** the last summary is cached on the phone, so the app opens with numbers even offline.
+- **Fresh data without re-downloading:** the app checks `GET /api/version` on open, on return, after syncs and every minute while open. It downloads the summary and trends again only when the version changed or the day rolled over, or on pull to refresh. Servers without `/api/version` get a reload on open, on return and after syncs.
 
 ## Apple Health sync
 
@@ -29,10 +34,18 @@ Cards hide or switch to fit your sources, as on the web: no WHOOP means VO₂ ma
 - **Finds what changed** with one HealthKit anchored query per type. Only the local days touched by new samples are re-read.
 - **Aggregates on the phone** into the same per-day rows as `server/apple/import.ts`:
   - Sum metrics keep the best single source per day.
+  - Steps WHOOP writes into Health compete too (iPhone, Watch or WHOOP; the highest total wins, never the sum), and the hours follow the winner. WHOOP's other records stay skipped, because healthOS reads WHOOP's API.
   - Sleep counts toward the wake day (6 h rollover). Overlapping segments are merged, and the source with the most sleep wins.
   - Days use each record's own time zone (`HKMetadataKeyTimeZone`, or the device's).
-- **Uploads** a week of days per request to `POST /api/apple/ingest` with the bearer token. A day whose upload fails stays queued for the next sync.
-- **Syncs in the background:** an `HKObserverQuery` per type plus `enableBackgroundDelivery`. iOS decides the cadence (at most hourly for steps), and Health data can't be read while the phone is locked.
+- **Uploads** a week of days per request to `POST /api/apple/ingest` with the bearer token, newest week first. A day whose upload fails stays queued for the next sync.
+  - Every sync sends today, plus any changed day in the last 30.
+  - Older days (the first upload, or the one-time hourly backfill) wait in a saved queue. They go up newest first, four weeks per pass, only while the app is open and not in Low Power Mode. Settings shows how many are left.
+- **Cycle tracking:** menstrual flow, spotting, ovulation tests, cervical mucus, sexual activity and basal body temperature. The app reads these only after you turn cycle tracking on in healthOS settings and the server answers that it stores cycle days. Each day sent replaces that day on the server.
+- **Syncs in the background:**
+  - **HealthKit wakes:** an `HKObserverQuery` per type plus `enableBackgroundDelivery`. Wakes are hourly for heart rate, steps, energy, distance, exercise and breathing, and immediate for everything else.
+  - **Backstop:** a `BGAppRefreshTask` (`health.mcfly.sync.refresh`).
+  - **On a wake:** the app pushes changed recent days, then sends `POST /api/sync` so the server refreshes WHOOP, at most every 15 minutes.
+  - **Skipped in Low Power Mode.** Health data also can't be read while the phone is locked.
 
 Workouts and mindful sessions are keyed by their HealthKit UUID. If an earlier `export.zip` import holds the same one (same start instant and type), the server replaces the imported copy, so nothing is duplicated.
 

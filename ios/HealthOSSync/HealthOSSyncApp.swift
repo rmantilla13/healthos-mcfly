@@ -39,12 +39,22 @@ struct RootView: View {
         }
         // On open and on every return to the app: one Sync for Apple Health and WHOOP.
         .onChange(of: scenePhase, initial: true) { _, phase in
+            if phase == .background { Background.schedule() }
             guard phase == .active else { return }
             Task {
                 // After an update that reads a new type, Health asks about it now; it shows nothing otherwise.
                 if Config.healthRequested { await sync.requestHealthAccess() }
                 await dashboard.startIfNeeded()
                 await sync.syncAllIfStale()
+            }
+        }
+        // While the app is open: a cheap check every minute; summary and trends download only when data changed.
+        .task(id: scenePhase) {
+            guard scenePhase == .active else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(60))
+                if Task.isCancelled { break }
+                await dashboard.refreshIfChanged(includeStatus: false)
             }
         }
     }
@@ -58,6 +68,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         #endif
         // HealthKit relaunches the app in the background for new data; the observer queries have to be
         // registered again before launch finishes, or that delivery is missed.
+        Background.register()
         Background.apply()
         return true
     }

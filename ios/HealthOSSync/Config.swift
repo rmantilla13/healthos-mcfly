@@ -41,6 +41,12 @@ enum Config {
         set { defaults.set(newValue, forKey: "serverURL") }
     }
 
+    /// WHOOP has written steps into Health at least once, so its hours can reach the Day view.
+    static var sawWhoopSteps: Bool {
+        get { defaults.bool(forKey: "sawWhoopSteps") }
+        set { defaults.set(newValue, forKey: "sawWhoopSteps") }
+    }
+
     static var token: String {
         get { Keychain.read() ?? "" }
         set { Keychain.write(newValue) }
@@ -60,6 +66,18 @@ enum Config {
     static var lastEmail: String {
         get { defaults.string(forKey: "lastEmail") ?? "" }
         set { defaults.set(newValue, forKey: "lastEmail") }
+    }
+
+    /// The person's cycle-tracking setting on the server (status.settings.cycleTracking).
+    static var cycleTracking: Bool {
+        get { defaults.bool(forKey: "cycleTracking") }
+        set { defaults.set(newValue, forKey: "cycleTracking") }
+    }
+
+    /// The server answered an ingest with a `cycle` count, so it stores cycle days.
+    static var serverStoresCycle: Bool {
+        get { defaults.bool(forKey: "serverStoresCycle") }
+        set { defaults.set(newValue, forKey: "serverStoresCycle") }
     }
 
     static var healthRequested: Bool {

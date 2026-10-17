@@ -174,6 +174,8 @@ struct ServerStatus: Codable {
         let stepGoal: Double?
         let units: String?
         let timeZone: String?
+        let sex: String?
+        let cycleTracking: Bool?
     }
 
     struct Apple: Codable {
@@ -213,11 +215,13 @@ struct PhotoMeta: Codable, Equatable {
     let version: Double
     let width: Double
     let height: Double
+    /// Face box [x, y, w, h], 0–1 within the cut-out. Labels stay off it.
+    let face: [Double]?
     @Lossy var dots: Dots?
 
     var versionKey: String { String(Int64(version)) }
 
-    static func == (a: PhotoMeta, b: PhotoMeta) -> Bool { a.version == b.version && a.width == b.width && a.height == b.height && a.dots == b.dots }
+    static func == (a: PhotoMeta, b: PhotoMeta) -> Bool { a.version == b.version && a.width == b.width && a.height == b.height && a.face == b.face && a.dots == b.dots }
 }
 
 struct AuthState: Codable {

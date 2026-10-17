@@ -48,6 +48,8 @@ struct IngestPayload: Codable {
     var daily: [DailyRow] = []
     /// Every hour with data for each (date, metric) sent: the server replaces that day's hours for the metric.
     var hourly: [HourlyRow]?
+    /// Days with cycle records, each that day's complete set.
+    var cycle: [CycleDay]?
     var workouts: [WorkoutRow] = []
     var events: [EventRow] = []
     var deleted: Deleted?
@@ -108,6 +110,8 @@ final class DayAggregator {
     // wake date -> source -> segments. The source with the most sleep wins the night.
     private var sleep: [String: [String: [SleepSegment]]] = [:]
     private var mindful: [EventRow] = []
+    /// WHOOP wrote steps into Health for these days (it does only when Health → Apps → WHOOP → Steps is allowed).
+    private(set) var sawWhoopSteps = false
     private var workouts: [WorkoutRow] = []
 
     /// Hourly metrics the server accepts that come from summing samples.
@@ -128,7 +132,8 @@ final class DayAggregator {
 
     /// The aggregation itself, kept free of HealthKit so tests can set the source.
     func add(points: [QuantityPoint], as q: QuantityMetric) {
-        for p in points where !p.source.isReadDirectly {
+        for p in points where p.source.counts(q.metric) {
+            if p.source.isReadDirectly { sawWhoopSteps = true }
             let value = p.value
             guard value.isFinite else { continue }
             let date = p.start.localDate()

@@ -9,7 +9,7 @@ settings:
   base:
     SWIFT_VERSION: "5.0"
     MARKETING_VERSION: "1.0"
-    CURRENT_PROJECT_VERSION: "4"
+    CURRENT_PROJECT_VERSION: "6"
 targets:
   HealthOSSync:
     type: application
@@ -36,6 +36,9 @@ targets:
         # Only HTTPS via URLSession: exempt from export compliance documentation.
         ITSAppUsesNonExemptEncryption: false
         UIRequiredDeviceCapabilities: [healthkit]
+        # The app refresh backstop for background sync (Background.refreshTask).
+        UIBackgroundModes: [fetch]
+        BGTaskSchedulerPermittedIdentifiers: [health.mcfly.sync.refresh]
     entitlements:
       path: HealthOSSync/HealthOSSync.entitlements
       properties:

@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import UIKit
 
 enum AppTab: Hashable { case today, trends, settings }
 
@@ -56,6 +57,10 @@ final class Dashboard {
     var account: AuthState.User?
     /// Goes up after every successful load, so screens holding their own fetched data (trends, workouts) fetch again.
     var generation = 0
+    /// The server's data version behind what's on screen (nil: unknown, so the next check reloads).
+    private(set) var dataVersion: String?
+    /// The phone's local date when today's summary was loaded, so the first check after midnight reloads.
+    private var loadedOn: String?
 
     private var server: URL?
     private var trendCache: [String: Trends] = [:]
@@ -82,6 +87,8 @@ final class Dashboard {
             if let cached = SummaryCache.load(for: client.base) {
                 summary = cached.summary
                 status = cached.status
+                dataVersion = cached.version
+                loadedOn = cached.loadedOn
             }
         }
         do {
@@ -100,25 +107,64 @@ final class Dashboard {
             self.error = error.localizedDescription
             return
         }
-        if phase == .ready { await load() }
+        if phase == .ready { await refreshIfChanged(includeStatus: true) }
     }
 
-    func load() async {
+    /// Reloads only when the server's data changed since what's on screen, or the day rolled over. Runs on open, on
+    /// return to the app, after syncs and every minute while the app is open. `includeStatus` also refreshes
+    /// settings and the photo, which the data version doesn't cover (not on the minute timer).
+    func refreshIfChanged(includeStatus: Bool) async {
+        guard phase == .ready, !loading, let client = APIClient.current() else { return }
+        guard UIApplication.shared.applicationState == .active else { return }
+        let version: String?
+        do {
+            version = try await client.dataVersion()
+        } catch APIError.signInRequired {
+            phase = .signIn
+            return
+        } catch {
+            // Offline: keep what's on screen; the next check tries again.
+            return
+        }
+        let rolledOver = date == nil && loadedOn != Day.today()
+        // A server without /version can't say whether anything changed: reload on open, return and after syncs,
+        // but not every minute.
+        if version == nil, !includeStatus, !rolledOver, summary != nil { return }
+        if summary == nil || version == nil || version != dataVersion || rolledOver {
+            await load(knownVersion: version)
+        } else if includeStatus, let status = try? await client.status() {
+            self.status = status
+            if let on = status.settings?.cycleTracking { Config.cycleTracking = on }
+            if date == nil, let summary { SummaryCache.save(summary: summary, status: status, version: dataVersion, loadedOn: loadedOn, for: client.base) }
+        }
+    }
+
+    /// Downloads the summary and status. Pull to refresh and changing day call it directly.
+    func load(knownVersion: String?? = .none) async {
         guard let client = APIClient.current() else { return }
         loading = true
         defer { loading = false }
         do {
             async let s = client.summary(date: date)
             async let st = client.status()
+            // Read before (or with) the data, so a change landing mid-load still shows up on the next check.
+            let version: String?
+            if let knownVersion { version = knownVersion } else { version = try? await client.dataVersion() }
             let (summary, status) = try await (s, st)
             self.summary = summary
             self.status = status
+            // Cycle tracking turned on (on the web): the next Sync asks Health for those types, then sends their history.
+            if let on = status.settings?.cycleTracking { Config.cycleTracking = on }
             error = nil
             if case .unavailable = phase { phase = .ready }
             trendCache = [:]
             workoutCache = [:]
             generation += 1
-            if date == nil { SummaryCache.save(summary: summary, status: status, for: client.base) }
+            dataVersion = version
+            if date == nil {
+                loadedOn = Day.today()
+                SummaryCache.save(summary: summary, status: status, version: version, loadedOn: loadedOn, for: client.base)
+            }
         } catch APIError.signInRequired {
             phase = .signIn
         } catch {
@@ -196,6 +242,8 @@ final class Dashboard {
         status = nil
         date = nil
         error = nil
+        dataVersion = nil
+        loadedOn = nil
         trendCache = [:]
         workoutCache = [:]
     }
@@ -207,6 +255,8 @@ enum SummaryCache {
     private struct Entry: Codable {
         let summary: Summary
         let status: ServerStatus?
+        var version: String?
+        var loadedOn: String?
     }
 
     private static func file(for base: URL) -> URL {
@@ -215,13 +265,13 @@ enum SummaryCache {
         return dir.appendingPathComponent("summary-\(hashId(base.absoluteString)).json")
     }
 
-    static func load(for base: URL) -> (summary: Summary, status: ServerStatus?)? {
+    static func load(for base: URL) -> (summary: Summary, status: ServerStatus?, version: String?, loadedOn: String?)? {
         guard let data = try? Data(contentsOf: file(for: base)), let e = try? JSONDecoder().decode(Entry.self, from: data) else { return nil }
-        return (e.summary, e.status)
+        return (e.summary, e.status, e.version, e.loadedOn)
     }
 
-    static func save(summary: Summary, status: ServerStatus?, for base: URL) {
-        try? JSONEncoder().encode(Entry(summary: summary, status: status)).write(to: file(for: base), options: [.atomic, .completeFileProtection])
+    static func save(summary: Summary, status: ServerStatus?, version: String?, loadedOn: String?, for base: URL) {
+        try? JSONEncoder().encode(Entry(summary: summary, status: status, version: version, loadedOn: loadedOn)).write(to: file(for: base), options: [.atomic, .completeFileProtection])
     }
 
     static func clear(for base: URL) { try? FileManager.default.removeItem(at: file(for: base)) }

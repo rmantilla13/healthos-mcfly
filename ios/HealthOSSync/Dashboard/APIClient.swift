@@ -76,6 +76,32 @@ struct APIClient {
         throw APIError.server(http.statusCode, message)
     }
 
+    func getJSON<T: Decodable>(_ path: String) async throws -> T { try await get(path) }
+
+    /// A POST whose response is read as it arrives (server-sent events). Status handling is left to the caller.
+    func stream(_ path: String, body: Data) async throws -> (URLSession.AsyncBytes, HTTPURLResponse) {
+        var req = URLRequest(url: base.appendingPathComponent("api" + path))
+        req.httpMethod = "POST"
+        req.timeoutInterval = 120
+        req.setValue("1", forHTTPHeaderField: "X-HealthOS")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        if let cookie = SessionStore.cookie(for: base) { req.setValue("\(SessionStore.name)=\(cookie)", forHTTPHeaderField: "Cookie") }
+        req.httpBody = body
+        do {
+            let (bytes, response) = try await Self.session.bytes(for: req)
+            guard let http = response as? HTTPURLResponse else { throw APIError.network("No response from the server.") }
+            if http.statusCode == 401 { SessionStore.clear() }
+            return (bytes, http)
+        } catch let e as APIError {
+            throw e
+        } catch {
+            throw APIError.network("Can't reach \(base.host ?? base.absoluteString). \(error.localizedDescription)")
+        }
+    }
+
+    func post(_ path: String, body: Data) async throws -> Data { try await request(path, method: "POST", body: body) }
+
     private func get<T: Decodable>(_ path: String, query: [URLQueryItem] = []) async throws -> T {
         try JSONDecoder().decode(T.self, from: try await request(path, query: query))
     }
@@ -124,6 +150,18 @@ struct APIClient {
     }
 
     func status() async throws -> ServerStatus { try await get("/status") }
+
+    /// An opaque version of the signed-in person's data; it changes whenever any of their data changes.
+    /// nil when unknown: the server has no /version yet (404) or answered null. Either way, refetch.
+    func dataVersion() async throws -> String? {
+        struct Reply: Decodable { let version: String? }
+        do {
+            let reply: Reply = try await get("/version")
+            return reply.version
+        } catch APIError.server(404, _) {
+            return nil
+        }
+    }
 
     /// Asks the server to refresh WHOOP now (POST /api/sync). Returns the status JSON with `whoopStarted`.
     /// Servers before /api/sync have POST /api/whoop/sync, which answers 400 when WHOOP isn't connected.

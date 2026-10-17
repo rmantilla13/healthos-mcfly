@@ -108,3 +108,18 @@ final class DashboardTests: XCTestCase {
         XCTAssertEqual(days.weekly(days: 30).count, 14)
     }
 }
+
+final class PhotoCutoutTests: XCTestCase {
+    func testPhotoWithoutAFaceExplainsWhy() throws {
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 400, height: 600)).image { ctx in
+            UIColor.systemTeal.setFill()
+            ctx.fill(CGRect(x: 0, y: 0, width: 400, height: 600))
+        }
+        XCTAssertThrowsError(try PhotoCutout.process(image.pngData()!)) { error in
+            XCTAssertTrue(error is PhotoCutout.Failure, "\(error)")
+        }
+        XCTAssertThrowsError(try PhotoCutout.process(Data("not an image".utf8))) { error in
+            XCTAssertEqual(error.localizedDescription, "Couldn't read that image. Choose a photo.")
+        }
+    }
+}
