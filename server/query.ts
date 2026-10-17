@@ -133,11 +133,19 @@ const BLEND: Record<string, Blend> = {
   sleep_hours: { agree: within(0.2), trust: 'whoop' },
 };
 /**
- * Steps: Apple (iPhone or Watch) and WHOOP count the same walking, so the two are never added. A day takes the
- * higher count: whichever device was carried or worn more saw more of the day. Someone who wears WHOOP all
- * day and leaves the phone on a desk gets WHOOP's count; on a day the strap was charging, Apple's.
+ * Steps. Apple's count is a calendar day from whichever device saw the most of it: iPhone, Watch, or WHOOP's
+ * own copy in Health. WHOOP's API count runs from one sleep to the next, so the two days' edges differ and
+ * they're never added. Apple's calendar day is used unless WHOOP's is clearly larger (Apple missed most of
+ * the day: the phone sat on a desk while the strap was worn), then WHOOP's. Close counts are the same
+ * walking measured over slightly different windows, and the calendar one is right and has hours.
  */
-const HIGHER = new Set(['steps']);
+const WHOOP_STEPS_RATIO = 1.2;
+const WHOOP_STEPS_MARGIN = 1000;
+
+export function pickSteps<T extends { source: string; value: number }>(apple: T | undefined, whoop: T | undefined): T | undefined {
+  if (!apple || !whoop) return apple ?? whoop;
+  return whoop.value >= apple.value * WHOOP_STEPS_RATIO && whoop.value - apple.value >= WHOOP_STEPS_MARGIN ? whoop : apple;
+}
 
 /** A night's stages and time in bed follow that night's sleep_hours decision, so the parts stay consistent. */
 const FOLLOWS: Record<string, string> = {
@@ -169,7 +177,10 @@ export function valueOn(ctx: Snapshot, metric: string, date: string): { value: n
     .map((source) => ({ source, value: bySource.get(source)?.get(date) }))
     .filter((p): p is { source: string; value: number } => p.value !== undefined);
   if (present.length <= 1) return present[0];
-  if (HIGHER.has(metric)) return present.reduce((a, b) => (b.value > a.value ? b : a));
+  if (metric === 'steps') {
+    const pick = pickSteps(present.find((p) => p.source === 'apple'), present.find((p) => p.source === 'whoop'));
+    if (pick) return pick;
+  }
   const how = decide(ctx, FOLLOWS[metric] ?? metric, date);
   if (how === 'mean') return { value: present.reduce((t, p) => t + p.value, 0) / present.length, source: 'apple+whoop' };
   return present.find((p) => p.source === how) ?? present[0];

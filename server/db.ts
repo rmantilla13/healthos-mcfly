@@ -119,6 +119,7 @@ export async function deleteSource(q: Queryable, userId: string, source: string)
   for (const table of ['daily', 'hourly', 'workouts', 'events', 'cycle']) {
     await q.query(`DELETE FROM ${table} WHERE user_id = $1 AND source = $2`, [userId, source]);
   }
+  if (source === 'whoop') await q.query('DELETE FROM whoop_cycle_steps WHERE user_id = $1', [userId]);
 }
 
 // ---------- settings ----------
@@ -170,7 +171,7 @@ export async function bumpDataVersion(q: Queryable, userId: string) {
 
 /** Everything one person stored, removed together (account deletion). */
 export async function deleteUserData(q: Queryable, userId: string) {
-  for (const table of ['daily', 'hourly', 'workouts', 'events', 'cycle', 'tokens', 'profile_assets', 'user_settings', 'mcfly_usage']) {
+  for (const table of ['daily', 'hourly', 'workouts', 'events', 'cycle', 'whoop_cycle_steps', 'tokens', 'profile_assets', 'user_settings', 'mcfly_usage']) {
     await q.query(`DELETE FROM ${table} WHERE user_id = $1`, [userId]);
   }
 }

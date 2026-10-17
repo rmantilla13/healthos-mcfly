@@ -228,6 +228,11 @@ export type DaySeries = {
   /** Heart rate only: the lowest and highest reading in each hour. */
   min?: (number | null)[];
   max?: (number | null)[];
+  /**
+   * Steps only: the day's count as Home and the charts show it, and where it came from. When it's WHOOP's
+   * (its API has no hours), it's larger than the hours add up to: those come from the iPhone or Watch.
+   */
+  total?: { value: number; source: string };
 };
 
 export type DayData = {

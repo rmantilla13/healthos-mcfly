@@ -3,7 +3,7 @@
 import type { DayData, DayMetric, DaySeries } from '../shared/types.ts';
 import { addDays } from './dates.ts';
 import type { Scope } from './db.ts';
-import { requestContext } from './query.ts';
+import { pickSteps, requestContext } from './query.ts';
 
 export const DAY_METRICS: DayMetric[] = ['steps', 'active_energy', 'heart_rate'];
 /** The stored hourly metric that says whether a Day metric has data at all. */
@@ -95,6 +95,15 @@ export async function dayView(scope: Scope, hosted: boolean, requested: DayMetri
     if (m === 'heart_rate') {
       series.min = (dayOf('hr_min', date) ?? empty()).map(round);
       series.max = (dayOf('hr_max', date) ?? empty()).map(round);
+    }
+    if (m === 'steps') {
+      // The day's steps as everything else shows them (same rule), so the card can't silently disagree.
+      const rows = await scope.db.query<{ source: string; value: number }>(
+        "SELECT source, value FROM daily WHERE user_id = $1 AND metric = 'steps' AND date = $2 AND source IN ('apple', 'whoop')",
+        [scope.userId, date],
+      );
+      const total = pickSteps(rows.find((r) => r.source === 'apple'), rows.find((r) => r.source === 'whoop'));
+      if (total) series.total = { value: Math.round(Number(total.value)), source: total.source };
     }
     metrics[m] = series;
     for (const stored of STORED[m]) {

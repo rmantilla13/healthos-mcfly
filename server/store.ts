@@ -159,6 +159,19 @@ export const MIGRATIONS: { id: number; name: string; statements: string[] }[] = 
         PRIMARY KEY (user_id, date, kind, source))`,
     ],
   },
+  {
+    id: 6,
+    name: "WHOOP steps per cycle, dated by the day you woke",
+    statements: [
+      // WHOOP counts steps per cycle (falling asleep to falling asleep), not per calendar day. Each cycle's
+      // count is kept here and a day's WHOOP steps are rebuilt as the sum of the cycles dated to it, so a sync
+      // that sees only some of a day's cycles can't overwrite the total with part of it.
+      `CREATE TABLE whoop_cycle_steps (
+        user_id TEXT NOT NULL, cycle_id BIGINT NOT NULL, date TEXT NOT NULL, steps DOUBLE PRECISION NOT NULL,
+        PRIMARY KEY (user_id, cycle_id))`,
+      'CREATE INDEX whoop_cycle_steps_user_date ON whoop_cycle_steps (user_id, date)',
+    ],
+  },
 ];
 
 async function migrate(db: Db) {

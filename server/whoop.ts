@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
-import { type DailyRow, type Db, type EventRow, OWNER_ID, type Scope, type WorkoutRow, bumpDataVersion, getUserSetting, setUserSetting, upsertDaily, upsertEvents, upsertWorkouts } from './db.ts';
+import { type DailyRow, type Db, type EventRow, OWNER_ID, type Queryable, type Scope, type WorkoutRow, bumpDataVersion, getUserSetting, setUserSetting, upsertDaily, upsertEvents, upsertWorkouts } from './db.ts';
+import { insertMany } from './store.ts';
 import { DAY_MS, DAY_ROLLOVER_MS, localDate, stampFromIso, toLocalIso } from './dates.ts';
 
 // Every function works on one person's scope: their tokens, sync state and data. The cron (syncAllWhoop)
@@ -217,7 +218,16 @@ export type WhoopWorkout = {
 
 const H = 3_600_000;
 
-export function mapWhoop(data: { cycles: WhoopCycle[]; sleeps: WhoopSleep[]; recoveries: WhoopRecovery[]; workouts: WhoopWorkout[] }) {
+/** A cycle longer than this covers more than one waking day (the strap was off overnight): its steps can't be split. */
+const MAX_STEP_CYCLE_MS = 28 * H;
+
+/** One cycle's steps and the day they belong to; steps null when the cycle's count can't be used. */
+export type CycleSteps = { cycleId: number; date: string; steps: number | null };
+
+export function mapWhoop(
+  data: { cycles: WhoopCycle[]; sleeps: WhoopSleep[]; recoveries: WhoopRecovery[]; workouts: WhoopWorkout[] },
+  now = Date.now(),
+) {
   const daily = new Map<string, DailyRow>();
   const add = (date: string, metric: string, value: number | undefined, mode: 'set' | 'sum' = 'set') => {
     if (value === undefined || !Number.isFinite(value)) return;
@@ -228,13 +238,21 @@ export function mapWhoop(data: { cycles: WhoopCycle[]; sleeps: WhoopSleep[]; rec
   const events: EventRow[] = [];
   const workouts: WorkoutRow[] = [];
 
+  // When you woke from each cycle's main sleep: a cycle's steps are walked after that, on that day.
+  const wokeOn = new Map<number, string>();
+  for (const s of data.sleeps) if (!s.nap && s.cycle_id !== undefined) wokeOn.set(s.cycle_id, localDate(stampFromIso(s.end, s.timezone_offset)));
+
   const cycleDay = new Map<number, string>();
+  const cycleSteps: CycleSteps[] = [];
   for (const c of data.cycles) {
     // A cycle starts when you fall asleep, so it belongs to the day you wake into.
     const day = localDate(stampFromIso(c.start, c.timezone_offset), DAY_ROLLOVER_MS);
     cycleDay.set(c.id, day);
-    // Steps are there before the cycle is scored: the current cycle reports steps so far.
-    if (typeof c.step_count === 'number' && c.step_count >= 0) add(day, 'steps', c.step_count, 'sum');
+    // Steps (also on the current, unscored cycle: steps so far) are dated by the wake-up when it's known,
+    // which handles an early bedtime; a cycle over 28 hours spans two waking days and is left out.
+    const length = (c.end ? Date.parse(c.end) : now) - Date.parse(c.start);
+    const usable = typeof c.step_count === 'number' && c.step_count >= 0 && length <= MAX_STEP_CYCLE_MS;
+    cycleSteps.push({ cycleId: c.id, date: wokeOn.get(c.id) ?? day, steps: usable ? (c.step_count as number) : null });
     if (c.score_state !== 'SCORED' || !c.score) continue;
     add(day, 'strain', c.score.strain);
     add(day, 'whoop_kcal', c.score.kilojoule / 4.184);
@@ -295,7 +313,7 @@ export function mapWhoop(data: { cycles: WhoopCycle[]; sleeps: WhoopSleep[]; rec
     });
   }
 
-  return { daily: [...daily.values()], events, workouts };
+  return { daily: [...daily.values()], events, workouts, cycleSteps };
 }
 
 function titleCase(s: string) {
@@ -320,6 +338,32 @@ async function saveSyncState(scope: Scope, s: SyncState) {
   await setUserSetting(scope.db, scope.userId, 'whoop_sync', JSON.stringify(s));
 }
 
+/**
+ * Keep each cycle's steps, then rebuild the WHOOP step count of every day those cycles touch (now or before
+ * a re-date) from all of that day's stored cycles. A batch that holds only some of a day's cycles (the
+ * sync window slides forward) therefore never replaces the day's total with part of it.
+ */
+export async function storeCycleSteps(q: Queryable, userId: string, cycles: CycleSteps[]) {
+  if (!cycles.length) return;
+  const ids = cycles.map((c) => c.cycleId);
+  const before = await q.query<{ date: string }>('SELECT date FROM whoop_cycle_steps WHERE user_id = $1 AND cycle_id = ANY($2)', [userId, ids]);
+  const dates = new Set([...before.map((r) => r.date), ...cycles.map((c) => c.date)]);
+  await q.query('DELETE FROM whoop_cycle_steps WHERE user_id = $1 AND cycle_id = ANY($2)', [userId, ids]);
+  const keep = cycles.filter((c) => c.steps !== null);
+  await insertMany(q, 'whoop_cycle_steps', ['user_id', 'cycle_id', 'date', 'steps'], keep.map((c) => [userId, c.cycleId, c.date, c.steps]));
+  await rebuildWhoopSteps(q, userId, [...dates]);
+}
+
+export async function rebuildWhoopSteps(q: Queryable, userId: string, dates: string[]) {
+  if (!dates.length) return;
+  await q.query("DELETE FROM daily WHERE user_id = $1 AND metric = 'steps' AND source = 'whoop' AND date = ANY($2)", [userId, dates]);
+  await q.query(
+    `INSERT INTO daily (user_id, date, metric, source, value)
+     SELECT user_id, date, 'steps', 'whoop', SUM(steps) FROM whoop_cycle_steps WHERE user_id = $1 AND date = ANY($2) GROUP BY user_id, date`,
+    [userId, dates],
+  );
+}
+
 /** Fetch and store everything WHOOP has between start and end (ISO). Returns record counts. */
 async function syncRange(scope: Scope, start: string, end?: string) {
   const cycles = await collect<WhoopCycle>(scope, '/cycle', start, end);
@@ -331,6 +375,7 @@ async function syncRange(scope: Scope, start: string, end?: string) {
     await upsertDaily(q, scope.userId, mapped.daily);
     await upsertEvents(q, scope.userId, mapped.events);
     await upsertWorkouts(q, scope.userId, mapped.workouts);
+    await storeCycleSteps(q, scope.userId, mapped.cycleSteps);
   });
   return { cycles: cycles.length, sleeps: sleeps.length, recoveries: recoveries.length, workouts: workouts.length };
 }
@@ -356,11 +401,13 @@ export async function syncWhoop(scope: Scope, opts: { full?: boolean; deadline?:
       api<{ max_heart_rate?: number }>(scope, '/user/measurement/body').catch(() => null),
     ]);
     const counts = await syncRange(scope, new Date(since).toISOString());
-    // Once per person: re-read the weeks since WHOOP started reporting steps on cycles, which earlier syncs
-    // stored without them. (Recent days are re-read on every sync anyway.)
-    if (!(await getUserSetting(scope.db, scope.userId, 'whoop_steps_since'))) {
+    // Once per person: re-read the weeks since WHOOP started reporting steps on cycles. Version 2 also clears
+    // the day totals the first version wrote (summed per batch and dated by when you fell asleep) before
+    // the cycles rebuild them. (Recent days are re-read on every sync anyway.)
+    if (!(await getUserSetting(scope.db, scope.userId, 'whoop_steps_v2'))) {
+      await scope.db.query("DELETE FROM daily WHERE user_id = $1 AND metric = 'steps' AND source = 'whoop' AND date >= $2", [scope.userId, WHOOP_STEPS_FROM.slice(0, 10)]);
       await syncRange(scope, WHOOP_STEPS_FROM);
-      await setUserSetting(scope.db, scope.userId, 'whoop_steps_since', WHOOP_STEPS_FROM);
+      await setUserSetting(scope.db, scope.userId, 'whoop_steps_v2', WHOOP_STEPS_FROM);
     }
     if (profile?.first_name) await setUserSetting(scope.db, scope.userId, 'whoop_first_name', profile.first_name);
     // WHOOP's weight is whatever is typed into the profile, not a weigh-in, so it isn't stored as a measurement.

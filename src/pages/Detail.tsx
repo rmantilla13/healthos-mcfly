@@ -133,6 +133,12 @@ function DayCard({
     const typical = series.typical[through];
     value = format(run[through]!);
     note = `${isToday ? `by ${hourLabel(through + 1)}` : 'whole day'}${typical !== null ? ` · typical ${isToday ? 'by now ' : ''}${format(typical)}` : ''}`;
+    // WHOOP counted clearly more than the phone or Watch did: that's the day's figure, as on Home; the hours
+    // (WHOOP has none) are the phone's or Watch's share of it.
+    if (series.total?.source === 'whoop' && series.total.value > (run[through] ?? 0)) {
+      value = format(series.total.value);
+      note = `${isToday ? 'so far' : 'whole day'}, from WHOOP · hourly line from iPhone or Apple Watch (${format(run[through]!)})`;
+    }
   } else if (through !== null) {
     const h = lastReading(series.hours, through);
     const upTo = (l?: (number | null)[]) => l?.slice(0, through + 1);

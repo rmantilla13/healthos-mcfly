@@ -259,7 +259,7 @@ test("a WHOOP sign-in started by one person can't be finished by another", async
 test("deleting an account removes all of that person's data and nobody else's", async () => {
   const before = (await db.query<{ n: number }>('SELECT COUNT(*)::int AS n FROM daily WHERE user_id = $1', [OWNER_ID]))[0].n;
   assert.equal((await owner.call('DELETE', `/api/admin/users/${bobId}`)).status, 200);
-  for (const t of ['daily', 'hourly', 'workouts', 'events', 'tokens', 'profile_assets', 'user_settings', 'mcfly_usage']) {
+  for (const t of ['daily', 'hourly', 'workouts', 'events', 'tokens', 'profile_assets', 'user_settings', 'mcfly_usage', 'whoop_cycle_steps']) {
     assert.equal((await db.query<{ n: number }>(`SELECT COUNT(*)::int AS n FROM ${t} WHERE user_id = $1`, [bobId]))[0].n, 0, t);
   }
   assert.equal((await db.query<{ n: number }>('SELECT COUNT(*)::int AS n FROM daily WHERE user_id = $1', [OWNER_ID]))[0].n, before);
