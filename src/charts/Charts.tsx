@@ -4,6 +4,7 @@ import type { Point } from '../../shared/types.ts';
 import { Icon } from '../components/Icon.tsx';
 import { daysBetween, fmtDate } from '../lib.ts';
 import { Tooltip, TooltipRow, barPath, median, niceTicks, smoothPath, useScrub, useWidth } from './core.tsx';
+import { BarClimb, EndPulse, Flow, type Pulse, stagger, useSvgId } from './motion.tsx';
 
 export const M = { top: 20, right: 14, bottom: 26, left: 44 };
 
@@ -67,6 +68,9 @@ export function TrendChart({
   refLines = [],
   median: showMedian = true,
   label,
+  pulse,
+  flow,
+  shimmer = false,
 }: {
   points: Point[];
   format: (v: number) => string;
@@ -77,6 +81,12 @@ export function TrendChart({
   refLines?: { value: number; label: string }[];
   median?: boolean;
   label: string;
+  /** The latest point's loop (motion.tsx). */
+  pulse?: Pulse;
+  /** Seconds for a highlight to run along the line, or none. */
+  flow?: number;
+  /** The area under the line glows slowly in and out (temperature). */
+  shimmer?: boolean;
 }) {
   const [ref, width] = useWidth<HTMLDivElement>();
   const n = points.length;
@@ -134,21 +144,33 @@ export function TrendChart({
               </text>
             </g>
           ))}
-          {segments.map((seg, k) => {
-            const d = smoothPath(seg);
-            return (
-              <g key={k}>
-                {seg.length > 1 && <path d={`${d} L${seg.at(-1)![0]},${baseY} L${seg[0][0]},${baseY} Z`} fill={color} opacity={0.1} />}
-                <path d={d} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-                {seg.length === 1 && <circle cx={seg[0][0]} cy={seg[0][1]} r={3} fill={color} />}
-              </g>
-            );
-          })}
+          {/* Keyed by the data, so the line draws itself in again when the range changes, not on every hover. */}
+          <g key={drawKey(points)}>
+            {segments.map((seg, k) => {
+              const d = smoothPath(seg);
+              return (
+                <g key={k}>
+                  {seg.length > 1 && (
+                    <path
+                      d={`${d} L${seg.at(-1)![0]},${baseY} L${seg[0][0]},${baseY} Z`}
+                      fill={color}
+                      opacity={0.1}
+                      className={`motion fade-in${shimmer ? ' area-shimmer' : ''}`}
+                    />
+                  )}
+                  <path d={d} pathLength={1} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="motion draw-in" />
+                  {seg.length > 1 && flow && <Flow d={d} seconds={flow} />}
+                  {seg.length === 1 && <circle cx={seg[0][0]} cy={seg[0][1]} r={3} fill={color} className="motion pop-in" />}
+                </g>
+              );
+            })}
+          </g>
           {mid !== null && <MedianLabel y={yOf(mid)} text={format(mid)} />}
-          {index !== null && <line x1={xOf(index)} x2={xOf(index)} y1={M.top - 8} y2={baseY} className="crosshair" />}
-          <circle cx={xOf(index ?? last)} cy={yOf(points[index ?? last].value)} r={4.5} fill={color} className="dot-ring" />
+          {index !== null && <line x1={0} x2={0} y1={M.top - 8} y2={baseY} className="crosshair glide" style={{ transform: `translateX(${xOf(index)}px)` }} />}
+          <EndPulse x={xOf(last)} y={yOf(points[last].value)} color={color} pulse={pulse} />
+          <circle cx={xOf(index ?? last)} cy={yOf(points[index ?? last].value)} r={4.5} fill={color} className="dot-ring motion pop-in after-draw glide" />
           {index === null && (
-            <text x={xOf(last)} y={yOf(points[last].value) - 12} textAnchor="end" className="end-label">
+            <text x={xOf(last)} y={yOf(points[last].value) - 12} textAnchor="end" className="end-label motion fade-in after-draw">
               {format(points[last].value)}
             </text>
           )}
@@ -173,6 +195,7 @@ export function BarChart({
   median: showMedian = true,
   label,
   periodLabel,
+  live = false,
 }: {
   points: Point[];
   format: (v: number) => string;
@@ -182,6 +205,8 @@ export function BarChart({
   median?: boolean;
   label: string;
   periodLabel?: (date: string) => string;
+  /** The last bar is today's and still counting: a highlight keeps climbing it. */
+  live?: boolean;
 }) {
   const [ref, width] = useWidth<HTMLDivElement>();
   const n = points.length;
@@ -194,9 +219,11 @@ export function BarChart({
   const hi = ticks.at(-1) ?? 1;
   const yOf = (v: number) => M.top + (1 - v / hi) * (height - M.top - M.bottom);
   const { index, handlers } = useScrub(n, xOf);
+  const climbId = useSvgId('climb');
   if (!n) return <EmptyChart height={height} />;
   const baseY = height - M.bottom;
   const dateText = periodLabel ?? ((d: string) => fmtDate(d, { weekday: 'short', month: 'short', day: 'numeric' }));
+  const lastY = yOf(points[n - 1].value);
 
   return (
     <div className="chart" ref={ref} style={{ height }}>
@@ -209,10 +236,12 @@ export function BarChart({
               <path
                 key={p.date}
                 d={barPath(xOf(i) - barW / 2, y, barW, baseY - y, Math.min(4, barW / 2))}
-                className={index === i ? 'bar bar-hover' : i === n - 1 ? 'bar bar-accent' : 'bar'}
+                className={`${index === i ? 'bar bar-hover' : i === n - 1 ? 'bar bar-accent' : 'bar'} motion grow-up`}
+                style={stagger(i, n)}
               />
             );
           })}
+          {live && <BarClimb id={climbId} x={xOf(n - 1) - barW / 2} y={lastY} w={barW} h={baseY - lastY} />}
           <line x1={M.left} x2={width - M.right} y1={baseY} y2={baseY} className="baseline" />
           {goal && (
             <g>
@@ -290,7 +319,7 @@ export function StackedBars({
             let y = baseY;
             const segs = series.filter((s) => (r.values[s.key] ?? 0) > 0);
             return (
-              <g key={r.date} opacity={index === null || index === i ? 1 : 0.55}>
+              <g key={r.date} opacity={index === null || index === i ? 1 : 0.55} className="motion grow-up" style={stagger(i, n)}>
                 {segs.map((s, k) => {
                   const h = (r.values[s.key] ?? 0) * scale;
                   y -= h;
@@ -358,6 +387,7 @@ export function ChartCard({
   table,
   children,
   className = '',
+  motif,
 }: {
   title: string;
   value?: ReactNode;
@@ -366,6 +396,8 @@ export function ChartCard({
   table: { columns: string[]; rows: (string | number)[][] };
   children: ReactNode;
   className?: string;
+  /** A small looping illustration of the topic, beside the headline value (e.g. the heart monitor). */
+  motif?: ReactNode;
 }) {
   const [view, setView] = useState<'chart' | 'table'>('chart');
   return (
@@ -376,6 +408,7 @@ export function ChartCard({
           {value !== undefined && <div className="chart-card-value">{value}</div>}
           {note && <div className="chart-card-note">{note}</div>}
         </div>
+        {motif && <div className="chart-card-motif">{motif}</div>}
         <div className="seg" role="group" aria-label={`${title} view`}>
           <button className={view === 'chart' ? 'on' : ''} onClick={() => setView('chart')} aria-pressed={view === 'chart'} title="Chart">
             <Icon name="chart" size={15} />
@@ -413,3 +446,6 @@ export function ChartCard({
     </section>
   );
 }
+
+/** Changes when the plotted data does, so entrance animations replay for a new range but not for a hover. */
+const drawKey = (points: { date: string }[]) => `${points.length}:${points[0]?.date ?? ''}:${points.at(-1)?.date ?? ''}`;

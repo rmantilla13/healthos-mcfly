@@ -3,6 +3,7 @@ import type { DayData, DaySeries, Point, Trends, Workout } from '../../shared/ty
 import { BarChart, ChartCard, Legend, StackedBars, TrendChart, type StackSeries } from '../charts/Charts.tsx';
 import { DayChart } from '../charts/Day.tsx';
 import { cumulative, drawThrough, extent, hourLabel, hourSpan, lastReading } from '../charts/day.ts';
+import { HeartTrace, NightSky, type Pulse, Rings, oxygenFlow } from '../charts/motion.tsx';
 import { Icon } from '../components/Icon.tsx';
 import { compact, distance, duration, fmt, fmtDate, hoursMinutes, mass, relativeDay, shiftDate, temp, useApi, useUnits } from '../lib.ts';
 
@@ -113,6 +114,7 @@ function DayCard({
   tickFormat = format,
   color,
   goal,
+  heart = false,
 }: {
   title: string;
   kind: 'running' | 'hourly';
@@ -122,6 +124,8 @@ function DayCard({
   tickFormat?: (v: number) => string;
   color: string;
   goal?: { value: number; label: string };
+  /** Heart rate: the latest hour beats at its own rate, and the monitor sim runs beside the value. */
+  heart?: boolean;
 }) {
   const through = drawThrough(data.date, data.today, data.asOf);
   const isToday = data.date === data.today;
@@ -153,6 +157,10 @@ function DayCard({
     note = `${isToday ? 'so far' : 'whole day'}${series.total.source === 'whoop' ? ', from WHOOP' : ''} · no hourly readings`;
   }
   const hours = through === null ? [] : Array.from({ length: through + 1 }, (_, h) => h);
+  const lastH = kind === 'hourly' ? lastReading(series.hours, through) : null;
+  const bpm = heart && lastH !== null ? series.hours[lastH] : null;
+  // A running total is only still climbing today; an hourly reading beats (heart) or just marks the latest hour.
+  const pulse: Pulse | undefined = bpm ? { kind: 'beat', bpm } : kind === 'running' ? (isToday ? { kind: 'calm', seconds: 2.4 } : undefined) : { kind: 'calm' };
   const cell = (v: number | null | undefined) => (v === null || v === undefined ? '—' : format(v));
   const table =
     kind === 'running'
@@ -164,6 +172,7 @@ function DayCard({
       title={title}
       value={value}
       note={note}
+      motif={bpm ? <HeartTrace bpm={bpm} caption={`Simulated · ${fmt(bpm)} bpm, ${hourSpan(lastH!)}`} /> : undefined}
       legend={
         <Legend
           kind="line"
@@ -175,7 +184,17 @@ function DayCard({
       }
       table={table}
     >
-      <DayChart kind={kind} series={series} through={through} format={format} tickFormat={tickFormat} color={color} goal={goal} label={`${title} by hour, ${dayLabel}`} />
+      <DayChart
+        kind={kind}
+        series={series}
+        through={through}
+        format={format}
+        tickFormat={tickFormat}
+        color={color}
+        goal={goal}
+        label={`${title} by hour, ${dayLabel}`}
+        pulse={pulse}
+      />
     </ChartCard>
   );
 }
@@ -197,6 +216,12 @@ function weekly(ps: Point[], days: number): Point[] {
 
 const weekLabel = (d: string) => `Week of ${fmtDate(d, { month: 'short', day: 'numeric' })}`;
 
+/** Today on this device, as YYYY-MM-DD. */
+function localToday() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function Trend({
   title,
   points,
@@ -205,6 +230,10 @@ function Trend({
   unitNote,
   color,
   zero,
+  pulse = { kind: 'calm' },
+  flow,
+  shimmer,
+  motif,
 }: {
   title: string;
   points: Point[];
@@ -213,6 +242,10 @@ function Trend({
   unitNote?: string;
   color?: string;
   zero?: boolean;
+  pulse?: Pulse;
+  flow?: number;
+  shimmer?: boolean;
+  motif?: ReactNode;
 }) {
   const a = avg(points);
   const last = points.at(-1);
@@ -232,8 +265,19 @@ function Trend({
         )
       }
       table={{ columns: ['Date', title], rows: points.map((p) => [fmtDate(p.date, { year: 'numeric', month: 'short', day: 'numeric' }), format(p.value)]) }}
+      motif={last ? motif : undefined}
     >
-      <TrendChart points={points} format={format} tickFormat={tickFormat} color={color} zero={zero} label={`${title} trend`} />
+      <TrendChart
+        points={points}
+        format={format}
+        tickFormat={tickFormat}
+        color={color}
+        zero={zero}
+        label={`${title} trend`}
+        pulse={pulse}
+        flow={flow}
+        shimmer={shimmer}
+      />
     </ChartCard>
   );
 }
@@ -252,6 +296,12 @@ export function Vitals() {
   const has = (m: string) => (t[m]?.length ?? 0) > 0;
   const tf = (c: number) => `${fmt(temp(c, units).value, 1)} ${temp(c, units).unit}`;
   const d = day.mode === 'day' ? day.data : undefined;
+  // The loops run at the latest readings in the range: the heart at its resting rate, breathing at its own.
+  const bpm = t.resting_hr?.at(-1)?.value;
+  const hrv = (has('hrv_rmssd') ? t.hrv_rmssd : t.hrv_sdnn)?.at(-1)?.value;
+  const rpm = t.resp_rate?.at(-1)?.value;
+  const beat: Pulse = bpm ? { kind: 'beat', bpm } : { kind: 'calm' };
+  const variability = (ms?: number): Pulse => (bpm && ms ? { kind: 'variability', bpm, hrvMs: ms } : { kind: 'calm' });
 
   return (
     <div className={`page ${loading || (day.mode !== 'range' && day.loading) ? 'is-refreshing' : ''}`}>
@@ -266,7 +316,16 @@ export function Vitals() {
       {d && (
         <div className="grid-1">
           {d.metrics.heart_rate && (
-            <DayCard title="Heart rate" kind="hourly" series={d.metrics.heart_rate} data={d} format={(v) => `${fmt(v)} bpm`} tickFormat={(v) => fmt(v)} color="var(--series-2)" />
+            <DayCard
+              title="Heart rate"
+              kind="hourly"
+              series={d.metrics.heart_rate}
+              data={d}
+              format={(v) => `${fmt(v)} bpm`}
+              tickFormat={(v) => fmt(v)}
+              color="var(--series-2)"
+              heart
+            />
           )}
           <p className="day-footnote">Recovery, HRV, blood oxygen, breathing and temperature are measured once a night. Pick a range to see them.</p>
         </div>
@@ -274,16 +333,48 @@ export function Vitals() {
       {day.mode === 'range' && (
         <div className="grid-2">
           {has('recovery') && <Trend title="Recovery" points={t.recovery} format={(v) => `${fmt(v)}%`} color="var(--series-3)" />}
-          <Trend title="Resting heart rate" points={t.resting_hr ?? []} format={(v) => `${fmt(v)} bpm`} tickFormat={(v) => fmt(v)} color="var(--series-2)" />
+          <Trend
+            title="Resting heart rate"
+            points={t.resting_hr ?? []}
+            format={(v) => `${fmt(v)} bpm`}
+            tickFormat={(v) => fmt(v)}
+            color="var(--series-2)"
+            pulse={beat}
+            motif={bpm ? <HeartTrace bpm={bpm} hrvMs={hrv} rpm={rpm} caption={`Simulated · ${fmt(bpm)} bpm${hrv ? ` · HRV ${fmt(hrv)} ms` : ''}`} /> : undefined}
+          />
           {(has('hrv_rmssd') || !has('hrv_sdnn')) && (
-            <Trend title="HRV (RMSSD)" points={t.hrv_rmssd ?? []} format={(v) => `${fmt(v)} ms`} tickFormat={(v) => fmt(v)} unitNote="WHOOP, during sleep" />
+            <Trend
+              title="HRV (RMSSD)"
+              points={t.hrv_rmssd ?? []}
+              format={(v) => `${fmt(v)} ms`}
+              tickFormat={(v) => fmt(v)}
+              unitNote="WHOOP, during sleep"
+              pulse={variability(t.hrv_rmssd?.at(-1)?.value)}
+            />
           )}
-          {has('hrv_sdnn') && <Trend title="HRV (SDNN)" points={t.hrv_sdnn} format={(v) => `${fmt(v)} ms`} tickFormat={(v) => fmt(v)} unitNote="Apple Watch" />}
-          <Trend title="Blood oxygen" points={t.spo2 ?? []} format={(v) => `${fmt(v, 1)}%`} tickFormat={(v) => fmt(v)} color="var(--series-2)" />
-          <Trend title="Respiratory rate" points={t.resp_rate ?? []} format={(v) => `${fmt(v, 1)} rpm`} tickFormat={(v) => fmt(v, 1)} />
-          {has('body_temp') && <Trend title="Body temperature" points={t.body_temp} format={tf} tickFormat={(v) => fmt(temp(v, units).value, 1)} />}
-          {has('wrist_temp') && <Trend title="Wrist temperature" points={t.wrist_temp} format={tf} tickFormat={(v) => fmt(temp(v, units).value, 1)} unitNote="Apple Watch, during sleep" />}
-          {has('skin_temp') && <Trend title="Skin temperature" points={t.skin_temp} format={tf} tickFormat={(v) => fmt(temp(v, units).value, 1)} unitNote="WHOOP" />}
+          {has('hrv_sdnn') && (
+            <Trend
+              title="HRV (SDNN)"
+              points={t.hrv_sdnn}
+              format={(v) => `${fmt(v)} ms`}
+              tickFormat={(v) => fmt(v)}
+              unitNote="Apple Watch"
+              pulse={variability(t.hrv_sdnn.at(-1)?.value)}
+            />
+          )}
+          <Trend title="Blood oxygen" points={t.spo2 ?? []} format={(v) => `${fmt(v, 1)}%`} tickFormat={(v) => fmt(v)} color="var(--series-2)" flow={oxygenFlow(bpm)} />
+          <Trend
+            title="Respiratory rate"
+            points={t.resp_rate ?? []}
+            format={(v) => `${fmt(v, 1)} rpm`}
+            tickFormat={(v) => fmt(v, 1)}
+            pulse={rpm ? { kind: 'breath', rpm } : { kind: 'calm' }}
+          />
+          {has('body_temp') && <Trend title="Body temperature" points={t.body_temp} format={tf} tickFormat={(v) => fmt(temp(v, units).value, 1)} shimmer />}
+          {has('wrist_temp') && (
+            <Trend title="Wrist temperature" points={t.wrist_temp} format={tf} tickFormat={(v) => fmt(temp(v, units).value, 1)} unitNote="Apple Watch, during sleep" shimmer />
+          )}
+          {has('skin_temp') && <Trend title="Skin temperature" points={t.skin_temp} format={tf} tickFormat={(v) => fmt(temp(v, units).value, 1)} unitNote="WHOOP" shimmer />}
         </div>
       )}
     </div>
@@ -291,6 +382,9 @@ export function Vitals() {
 }
 
 // ---------- Sleep ----------
+
+/** Sleep's loops run on a slow, resting clock. */
+const SLEEP_PULSE: Pulse = { kind: 'calm', seconds: 5.5 };
 
 const STAGES: StackSeries[] = [
   { key: 'sleep_deep', label: 'Deep', color: 'var(--stage-deep)' },
@@ -329,6 +423,7 @@ export function Sleep() {
           title={days > 90 ? 'Sleep stages, weekly average' : 'Sleep stages'}
           value={a !== null ? hoursMinutes(a) : '—'}
           note="average time asleep"
+          motif={rows.length ? <NightSky /> : undefined}
           legend={<Legend items={STAGES.map((s) => ({ label: s.label, color: s.color }))} />}
           table={{
             columns: ['Night', ...STAGES.map((s) => s.label)],
@@ -346,11 +441,18 @@ export function Sleep() {
         </ChartCard>
       </div>
       <div className="grid-2">
-        <Trend title="Time asleep" points={hours} format={hoursMinutes} tickFormat={(v) => `${fmt(v)}h`} />
+        <Trend title="Time asleep" points={hours} format={hoursMinutes} tickFormat={(v) => `${fmt(v)}h`} pulse={SLEEP_PULSE} />
         {(t.sleep_performance?.length ?? 0) > 0 ? (
-          <Trend title="Sleep performance" points={t.sleep_performance} format={(v) => `${fmt(v)}%`} unitNote="WHOOP: sleep vs sleep needed" color="var(--series-3)" />
+          <Trend
+            title="Sleep performance"
+            points={t.sleep_performance}
+            format={(v) => `${fmt(v)}%`}
+            unitNote="WHOOP: sleep vs sleep needed"
+            color="var(--series-3)"
+            pulse={SLEEP_PULSE}
+          />
         ) : (
-          <Trend title="Sleep efficiency" points={t.sleep_efficiency ?? []} format={(v) => `${fmt(v)}%`} color="var(--series-3)" />
+          <Trend title="Sleep efficiency" points={t.sleep_efficiency ?? []} format={(v) => `${fmt(v)}%`} color="var(--series-3)" pulse={SLEEP_PULSE} />
         )}
       </div>
     </div>
@@ -417,6 +519,7 @@ export function Activity({ stepGoal }: { stepGoal: number }) {
                 goal={{ value: stepGoal, label: `Goal ${compact(stepGoal)}` }}
                 label="Steps per day"
                 periodLabel={days > 90 ? weekLabel : undefined}
+                live={days <= 90 && steps.at(-1)?.date === localToday()}
               />
             </ChartCard>
           </div>
@@ -486,6 +589,8 @@ export function Body() {
   const { data, loading } = useApi<Trends>(`/trends?metrics=weight,body_fat,lean_mass,vo2max&days=${days}`);
   const t = data ?? {};
   const mf = (kg: number) => `${fmt(mass(kg, units).value, 1)} ${mass(kg, units).unit}`;
+  // Same 25–60 scale as Home's cardio fitness card: the higher it sits, the stronger the rings ripple.
+  const vo2 = t.vo2max?.at(-1)?.value;
 
   return (
     <div className={`page ${loading ? 'is-refreshing' : ''}`}>
@@ -493,7 +598,14 @@ export function Body() {
       <div className="grid-2">
         <Trend title="Weight" points={t.weight ?? []} format={mf} tickFormat={(v) => fmt(mass(v, units).value)} />
         <Trend title="Body fat" points={t.body_fat ?? []} format={(v) => `${fmt(v, 1)}%`} tickFormat={(v) => fmt(v)} color="var(--series-2)" />
-        <Trend title="Cardio fitness (VO₂ max)" points={t.vo2max ?? []} format={(v) => fmt(v, 1)} unitNote="mL/kg·min" color="var(--series-3)" />
+        <Trend
+          title="Cardio fitness (VO₂ max)"
+          points={t.vo2max ?? []}
+          format={(v) => fmt(v, 1)}
+          unitNote="mL/kg·min"
+          color="var(--series-3)"
+          motif={vo2 !== undefined && <Rings value={(vo2 - 25) / 35} tone="fitness" />}
+        />
         {(t.lean_mass?.length ?? 0) > 0 && <Trend title="Lean body mass" points={t.lean_mass} format={mf} tickFormat={(v) => fmt(mass(v, units).value)} />}
       </div>
     </div>

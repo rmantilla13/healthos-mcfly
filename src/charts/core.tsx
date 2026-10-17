@@ -97,7 +97,7 @@ export function niceTicks(min: number, max: number, count = 4): number[] {
 export function Tooltip({ x, y, width, children }: { x: number; y: number; width: number; children: ReactNode }) {
   const flip = x > width - 150;
   return (
-    <div className="tooltip" style={{ left: x, top: y, transform: `translate(${flip ? 'calc(-100% - 12px)' : '12px'}, -50%)` }} role="status">
+    <div className="tooltip glide" style={{ left: x, top: y, transform: `translate(${flip ? 'calc(-100% - 12px)' : '12px'}, -50%)` }} role="status">
       {children}
     </div>
   );

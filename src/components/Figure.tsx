@@ -1,6 +1,7 @@
 import { type CSSProperties, type Ref, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { PhotoMeta, Summary, Vital } from '../../shared/types.ts';
 import { useWidth } from '../charts/core.tsx';
+import { beatVar, breathVar } from '../charts/motion.tsx';
 import { fmt, fmtDate, temp, useUnits } from '../lib.ts';
 import { PhotoReveal } from './PhotoReveal.tsx';
 
@@ -78,18 +79,16 @@ function CalloutLabel({
   );
 }
 
-const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
-
 /**
  * CSS custom properties that drive a callout's animation from its reading, or null when there's nothing to show.
- * Heart beats once per 60/bpm s and breathing cycles once per 60/rpm s; the clamps only catch impossible data,
- * so a bad row can't freeze or strobe the dot. Temperature's colour comes from its status (data-status below).
+ * Heart beats once per 60/bpm s and breathing cycles once per 60/rpm s, with the same timing as the charts'
+ * loops (charts/motion.tsx). Temperature's colour comes from its status (data-status below).
  */
 function liveVars(k: Key, v: Vital): CSSProperties | null {
   const value = v.latest?.value;
   if (value == null || !Number.isFinite(value)) return null;
-  if (k === 'heart') return value > 0 ? ({ '--beat': `${(60 / clamp(value, 30, 220)).toFixed(3)}s` } as CSSProperties) : null;
-  if (k === 'breathing') return value > 0 ? ({ '--breath': `${(60 / clamp(value, 4, 40)).toFixed(3)}s` } as CSSProperties) : null;
+  if (k === 'heart') return beatVar(value);
+  if (k === 'breathing') return breathVar(value);
   return {};
 }
 
