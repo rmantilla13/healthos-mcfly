@@ -5,7 +5,7 @@ import { Icon } from '../components/Icon.tsx';
 import { daysBetween, fmtDate } from '../lib.ts';
 import { Tooltip, TooltipRow, barPath, median, niceTicks, smoothPath, useScrub, useWidth } from './core.tsx';
 
-const M = { top: 20, right: 14, bottom: 26, left: 44 };
+export const M = { top: 20, right: 14, bottom: 26, left: 44 };
 
 /** Fewer points than this and a "typical" level means little, so no median line is drawn. */
 const MEDIAN_MIN_POINTS = 5;
@@ -42,7 +42,7 @@ function xLabels(dates: string[], width: number) {
   return out;
 }
 
-function YAxis({ ticks, yOf, width, format }: { ticks: number[]; yOf: (v: number) => number; width: number; format: (v: number) => string }) {
+export function YAxis({ ticks, yOf, width, format }: { ticks: number[]; yOf: (v: number) => number; width: number; format: (v: number) => string }) {
   return (
     <g>
       {ticks.map((t) => (
@@ -328,12 +328,12 @@ export function StackedBars({
   );
 }
 
-export function Legend({ items, kind = 'rect' }: { items: { label: string; color: string }[]; kind?: 'rect' | 'line' }) {
+export function Legend({ items, kind = 'rect' }: { items: { label: string; color: string; dashed?: boolean }[]; kind?: 'rect' | 'line' }) {
   return (
     <div className="legend">
       {items.map((it) => (
         <span key={it.label} className="legend-item">
-          <span className={`legend-key ${kind}`} style={{ background: it.color }} />
+          <span className={`legend-key ${it.dashed ? 'dash' : kind}`} style={it.dashed ? { color: it.color } : { background: it.color }} />
           {it.label}
         </span>
       ))}
