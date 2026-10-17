@@ -66,7 +66,7 @@ test("with the person's time zone, export hours follow the zone, not the export'
   const xml = `<?xml version="1.0" encoding="UTF-8"?><HealthData>
     <Record type="HKQuantityTypeIdentifierStepCount" sourceName="Watch" unit="count" startDate="2026-01-15 09:30:00 -0500" endDate="2026-01-15 09:40:00 -0500" value="700"/>
     <Record type="HKQuantityTypeIdentifierStepCount" sourceName="Watch" unit="count" startDate="2026-07-15 09:30:00 -0500" endDate="2026-07-15 09:40:00 -0500" value="900"/>
-    <Record type="HKQuantityTypeIdentifierStepCount" sourceName="WHOOP" unit="count" startDate="2026-07-15 10:30:00 -0500" endDate="2026-07-15 10:40:00 -0500" value="5000"/>
+    <Record type="HKQuantityTypeIdentifierActiveEnergyBurned" sourceName="WHOOP" unit="kcal" startDate="2026-07-15 10:30:00 -0500" endDate="2026-07-15 10:40:00 -0500" value="500"/>
   </HealthData>`;
   const hours = async (timeZone?: string) =>
     (await parseStream(Readable.from([Buffer.from(xml)]), undefined, { timeZone })).finish().hourly.map((h) => `${h.date} ${h.hour} ${h.value}`);

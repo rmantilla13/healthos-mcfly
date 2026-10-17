@@ -163,6 +163,8 @@ export type WhoopCycle = {
   timezone_offset: string;
   score_state: string;
   score?: { strain: number; kilojoule: number; average_heart_rate: number; max_heart_rate: number };
+  /** Steps over the cycle (waking to sleep, not midnight to midnight); null when the strap wasn't worn. Since 2026-09-23. */
+  step_count?: number | null;
 };
 
 export type WhoopSleep = {
@@ -231,6 +233,8 @@ export function mapWhoop(data: { cycles: WhoopCycle[]; sleeps: WhoopSleep[]; rec
     // A cycle starts when you fall asleep, so it belongs to the day you wake into.
     const day = localDate(stampFromIso(c.start, c.timezone_offset), DAY_ROLLOVER_MS);
     cycleDay.set(c.id, day);
+    // Steps are there before the cycle is scored: the current cycle reports steps so far.
+    if (typeof c.step_count === 'number' && c.step_count >= 0) add(day, 'steps', c.step_count, 'sum');
     if (c.score_state !== 'SCORED' || !c.score) continue;
     add(day, 'strain', c.score.strain);
     add(day, 'whoop_kcal', c.score.kilojoule / 4.184);
@@ -335,6 +339,9 @@ async function syncRange(scope: Scope, start: string, end?: string) {
  * Recent data first (re-reading the last few days, which WHOOP rescores), then older history in windows
  * until the deadline, resuming from where the previous sync stopped.
  */
+/** WHOOP added step_count to cycles on 2026-09-23; a few days earlier covers cycles that began before it. */
+const WHOOP_STEPS_FROM = '2026-09-20T00:00:00.000Z';
+
 export async function syncWhoop(scope: Scope, opts: { full?: boolean; deadline?: number; backfill?: boolean } = {}) {
   const prev = await syncState(scope);
   if (prev.running) return;
@@ -349,6 +356,12 @@ export async function syncWhoop(scope: Scope, opts: { full?: boolean; deadline?:
       api<{ max_heart_rate?: number }>(scope, '/user/measurement/body').catch(() => null),
     ]);
     const counts = await syncRange(scope, new Date(since).toISOString());
+    // Once per person: re-read the weeks since WHOOP started reporting steps on cycles, which earlier syncs
+    // stored without them. (Recent days are re-read on every sync anyway.)
+    if (!(await getUserSetting(scope.db, scope.userId, 'whoop_steps_since'))) {
+      await syncRange(scope, WHOOP_STEPS_FROM);
+      await setUserSetting(scope.db, scope.userId, 'whoop_steps_since', WHOOP_STEPS_FROM);
+    }
     if (profile?.first_name) await setUserSetting(scope.db, scope.userId, 'whoop_first_name', profile.first_name);
     // WHOOP's weight is whatever is typed into the profile, not a weigh-in, so it isn't stored as a measurement.
     if (body?.max_heart_rate) await setUserSetting(scope.db, scope.userId, 'whoop_max_hr', String(body.max_heart_rate));

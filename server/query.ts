@@ -132,6 +132,13 @@ const BLEND: Record<string, Blend> = {
   resp_rate: { agree: within(0.1), trust: 'whoop' },
   sleep_hours: { agree: within(0.2), trust: 'whoop' },
 };
+/**
+ * Steps: Apple (iPhone or Watch) and WHOOP count the same walking, so the two are never added. A day takes the
+ * higher count: whichever device was carried or worn more saw more of the day. Someone who wears WHOOP all
+ * day and leaves the phone on a desk gets WHOOP's count; on a day the strap was charging, Apple's.
+ */
+const HIGHER = new Set(['steps']);
+
 /** A night's stages and time in bed follow that night's sleep_hours decision, so the parts stay consistent. */
 const FOLLOWS: Record<string, string> = {
   sleep_deep: 'sleep_hours',
@@ -162,6 +169,7 @@ export function valueOn(ctx: Snapshot, metric: string, date: string): { value: n
     .map((source) => ({ source, value: bySource.get(source)?.get(date) }))
     .filter((p): p is { source: string; value: number } => p.value !== undefined);
   if (present.length <= 1) return present[0];
+  if (HIGHER.has(metric)) return present.reduce((a, b) => (b.value > a.value ? b : a));
   const how = decide(ctx, FOLLOWS[metric] ?? metric, date);
   if (how === 'mean') return { value: present.reduce((t, p) => t + p.value, 0) / present.length, source: 'apple+whoop' };
   return present.find((p) => p.source === how) ?? present[0];

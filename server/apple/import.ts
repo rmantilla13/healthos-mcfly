@@ -165,6 +165,13 @@ export function fromDirectSource(sourceName: string | undefined) {
   return /^whoop\b/i.test((sourceName ?? '').trim());
 }
 
+/**
+ * Except steps. A day's steps keep one device's count, never a sum (see the sums below), so WHOOP's steps in
+ * Health compete with the iPhone's and the Watch's instead of adding to them, and their hours follow the
+ * device that wins the day. For someone who wears WHOOP more than an Apple Watch, that's usually WHOOP.
+ */
+const KEPT_FROM_DIRECT = new Set(['HKQuantityTypeIdentifierStepCount']);
+
 export type ImportProgress = { bytesRead: number; totalBytes: number; records: number };
 export type ImportResult = {
   records: number;
@@ -222,7 +229,7 @@ export class AppleAggregator {
 
   onOpenTag(tag: SaxesTagPlain) {
     const a = tag.attributes as Record<string, string>;
-    if ((tag.name === 'Record' || tag.name === 'Workout') && fromDirectSource(a.sourceName)) {
+    if ((tag.name === 'Record' || tag.name === 'Workout') && fromDirectSource(a.sourceName) && !(tag.name === 'Record' && KEPT_FROM_DIRECT.has(a.type))) {
       this.records += tag.name === 'Record' ? 1 : 0;
       this.skipped++;
       return;
