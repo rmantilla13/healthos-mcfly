@@ -6,6 +6,7 @@ import express, { type Request, type Response } from 'express';
 import type { Units } from '../shared/types.ts';
 import { platformSettings } from './admin.ts';
 import { currentUser } from './auth.ts';
+import { cycleView } from './cycle.ts';
 import { addDays } from './dates.ts';
 import type { Db, Scope } from './db.ts';
 import { requestContext, summary, trends, workouts } from './query.ts';
@@ -78,7 +79,8 @@ function inUnits(kind: Kind | undefined, value: number, unit: string, units: Uni
 
 const unitOf = (metric: string, units: Units) => inUnits(METRICS[metric]?.kind, 0, METRICS[metric]?.unit ?? '', units).unit;
 
-type Ctx = { scope: Scope; hosted: boolean; units: Units; today: string; demo: boolean };
+/** cycle: the person has cycle tracking on, so McFly may read it. */
+type Ctx = { scope: Scope; hosted: boolean; units: Units; today: string; demo: boolean; cycle: boolean };
 
 const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
 
@@ -113,7 +115,14 @@ function asDays(v: unknown, max: number, fallback: number): number {
   return Math.min(n, max);
 }
 
-const TOOLS: (BetaTool & { label: (input: Record<string, unknown>) => string; run: (ctx: Ctx, input: Record<string, unknown>) => Promise<unknown> })[] = [
+type Tool = BetaTool & {
+  label: (input: Record<string, unknown>) => string;
+  run: (ctx: Ctx, input: Record<string, unknown>) => Promise<unknown>;
+  /** Offered only when this holds. A tool left out isn't even described to the model. */
+  when?: (ctx: Ctx) => boolean;
+};
+
+const TOOLS: Tool[] = [
   {
     name: 'list_metrics',
     description:
@@ -326,14 +335,46 @@ const TOOLS: (BetaTool & { label: (input: Record<string, unknown>) => string; ru
       };
     },
   },
+  {
+    name: 'get_cycle',
+    when: (ctx) => ctx.cycle,
+    description:
+      "This person's menstrual cycle tracking: periods detected from what they logged, cycle lengths, the current cycle day, ovulation inferred after the fact (basal temperature rise or LH test), estimates of the next period, ovulation and fertile window, and the entries logged day by day (flow, period start, spotting, ovulation tests, cervical mucus, basal body temperature, sexual activity). Periods, cycles and estimates always use all history; days limits only the entries.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        days: { type: 'integer', minimum: 1, maximum: 730, description: 'How many days of entries back from end_date, inclusive. Defaults to 90.' },
+        end_date: { type: 'string', description: 'YYYY-MM-DD. Defaults to today.' },
+      },
+      additionalProperties: false,
+    },
+    label: () => 'Looking at your cycle',
+    async run(ctx, input) {
+      if (!ctx.cycle) throw new ToolInputError('Cycle tracking is off.');
+      const v = await cycleView(ctx.scope, ctx.hosted, { days: asDays(input.days, 730, 90), end: asDate(input.end_date, ctx, 'end_date') });
+      return {
+        today: v.today,
+        note: "Next period, ovulation and fertile window are calendar estimates from this person's own logged cycles: not a diagnosis, and not reliable as contraception.",
+        currentCycle: v.current,
+        stats: v.stats,
+        estimate: v.estimate,
+        noEstimate: v.noEstimate === 'cycles' ? 'Fewer than two complete cycles logged.' : v.noEstimate === 'stale' ? 'The latest logged period is long past.' : null,
+        periods: v.periods.slice(-12),
+        cycles: v.cycles.slice(-12),
+        ovulations: v.ovulations.slice(-12),
+        entries: v.days.map(({ apple: _a, manual: _m, bbt, ...d }) => ({ ...d, ...(bbt !== undefined && { basalTemp: inUnits('temp', bbt, '°C', ctx.units) }) })),
+      };
+    },
+  },
 ];
 
-const TOOL_BY_NAME = new Map(TOOLS.map((t) => [t.name, t]));
+/** The tools this person's question may use. */
+const toolsFor = (ctx: Ctx) => TOOLS.filter((t) => !t.when || t.when(ctx));
 
 /** What the API sees: the definitions without our run/label functions. Eager streaming, so we validate inputs ourselves. */
-const API_TOOLS: BetaTool[] = TOOLS.map(({ name, description, input_schema }) => ({ name, description, input_schema, eager_input_streaming: true }));
+const apiTools = (tools: Tool[]): BetaTool[] => tools.map(({ name, description, input_schema }) => ({ name, description, input_schema, eager_input_streaming: true }));
 
-function systemPrompt(name: string, today: string, timeZone: string | null, units: Units) {
+function systemPrompt(name: string, today: string, timeZone: string | null, units: Units, cycle: boolean) {
   const weekday = new Date(`${today}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' });
   return `You are McFly, the health assistant in healthOS, a private dashboard that brings together one person's Apple Health and WHOOP data. You're talking with ${name || 'the person who owns this account'}. Today is ${weekday}, ${today}${timeZone ? ` (${timeZone})` : ''}. They use ${units === 'imperial' ? 'imperial units (°F, lb, miles)' : 'metric units (°C, kg, km)'}, and the tools already return values in those units.
 
@@ -347,7 +388,12 @@ About the data
 - Daily values are what the dashboard shows. On days both devices measured blood oxygen, respiratory rate or sleep, the two are averaged when they agree, and WHOOP's value is used when they don't.
 - Resting heart rate comes from WHOOP (measured asleep) when present and otherwise from Apple Watch (measured during the day), so it can shift a few bpm when the source changes.
 - HRV is either RMSSD (WHOOP, or newer Apple Watch) or SDNN (Apple Watch). The two measures aren't comparable, so don't compare one with the other.
-- Recovery, strain, and sleep performance, efficiency and consistency are WHOOP's own scores.
+- Recovery, strain, and sleep performance, efficiency and consistency are WHOOP's own scores.${
+    cycle
+      ? `
+- They track their menstrual cycle, and get_cycle reads it. Its next period, ovulation and fertile window are estimates from their own past cycles: call them estimates, and never present them as contraception or a diagnosis.`
+      : ''
+  }
 
 Boundaries
 - You're not a doctor and can't diagnose. Give general, evidence-based wellness context. When something looks concerning, such as a sustained change, a value well outside their usual range, or a symptom they mention, suggest checking with a clinician. If they describe an emergency, tell them to contact emergency services.
@@ -431,9 +477,11 @@ export function mcflyRouter(db: Db, { hosted, client = defaultClient }: McflyOpt
       return void res.status(429).json({ error: `You've asked McFly ${limit} questions today, the daily limit. Ask again tomorrow.` });
     }
 
-    const ctx: Ctx = { scope, hosted, units: rc.settings.units, today: rc.today, demo: rc.demo };
+    const ctx: Ctx = { scope, hosted, units: rc.settings.units, today: rc.today, demo: rc.demo, cycle: rc.settings.cycleTracking };
+    const tools = toolsFor(ctx);
+    const toolByName = new Map(tools.map((t) => [t.name, t]));
     const messages: BetaMessageParam[] = history.map((t) => ({ role: t.role, content: t.content }));
-    const system = systemPrompt(rc.settings.name, rc.today, rc.settings.timeZone, rc.settings.units);
+    const system = systemPrompt(rc.settings.name, rc.today, rc.settings.timeZone, rc.settings.units, ctx.cycle);
 
     res.status(200);
     res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
@@ -465,7 +513,7 @@ export function mcflyRouter(db: Db, { hosted, client = defaultClient }: McflyOpt
             fallbacks: 'default',
             cache_control: { type: 'ephemeral' },
             system,
-            tools: API_TOOLS,
+            tools: apiTools(tools),
             messages,
           },
           { signal: abort.signal },
@@ -506,7 +554,7 @@ export function mcflyRouter(db: Db, { hosted, client = defaultClient }: McflyOpt
         messages.push({ role: 'assistant', content: message.content });
         const results = await Promise.all(
           calls.map(async (call): Promise<BetaToolResultBlockParam> => {
-            const tool = TOOL_BY_NAME.get(call.name);
+            const tool = toolByName.get(call.name);
             const input = call.input && typeof call.input === 'object' && !Array.isArray(call.input) ? (call.input as Record<string, unknown>) : null;
             if (!tool || !input) return { type: 'tool_result', tool_use_id: call.id, is_error: true, content: `Unknown tool or malformed input: ${call.name}` };
             send('tool', { label: tool.label(input) });

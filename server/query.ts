@@ -22,6 +22,8 @@ export type Ctx = {
   sleepStarts: { date: string; start: string }[];
 };
 
+const SEXES = ['female', 'male', 'unspecified'] as const;
+
 /** One person's settings, falling back to the platform defaults an admin sets. */
 export function settingsFrom(mine: Map<string, string>, platform: Map<string, string>, opts: { hosted: boolean; userId: string }): Settings {
   // Hosted, the OS user is the platform's sandbox account, so don't guess a name from it.
@@ -33,6 +35,8 @@ export function settingsFrom(mine: Map<string, string>, platform: Map<string, st
     units: units === 'imperial' ? 'imperial' : 'metric',
     demo: (mine.get('demo') as Settings['demo']) || 'auto',
     timeZone: mine.get('timezone') ?? null,
+    sex: SEXES.find((x) => x === mine.get('sex')) ?? null,
+    cycleTracking: mine.get('cycle_tracking') === 'on',
   };
 }
 

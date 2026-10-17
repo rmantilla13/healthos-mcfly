@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Settings, Status, SyncResult } from '../../shared/types.ts';
 import { Icon } from '../components/Icon.tsx';
 import { copyText, fmt, fmtDate, notifyDataChanged, sendJson, uploadFile } from '../lib.ts';
+import { CycleSettings } from './Cycle.tsx';
 
 function ago(iso: string) {
   const mins = Math.round((Date.now() - Date.parse(iso)) / 60_000);
@@ -590,6 +591,7 @@ export function SettingsPage({ status, refresh, signedIn }: { status: Status; re
           <Icon name="check" size={14} /> Saved
         </p>
       </section>
+      <CycleSettings status={status} refresh={refresh} />
       {signedIn && <AccountSettings status={status} />}
       <PhotoSettings status={status} refresh={refresh} />
     </div>

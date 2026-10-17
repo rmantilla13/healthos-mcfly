@@ -5,6 +5,8 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { type DailyRow, type Db, type EventRow, HOURLY_FOLD, type HourlyRow, OWNER_ID, type Scope, type WorkoutRow, setUserSetting, upsertDaily, upsertEvents, upsertHourly, upsertWorkouts } from '../db.ts';
+import type { CycleDay } from '../../shared/types.ts';
+import { parseCycleDay, replaceCycleDays } from '../cycle.ts';
 import { SOURCE } from './import.ts';
 
 /** Daily metrics the importer produces (server/apple/import.ts). Anything else is a client bug. */
@@ -51,8 +53,13 @@ export type IngestPayload = {
   events: EventRow[];
   /** Ids of workouts and mindful sessions the app sent earlier that were since deleted in Health. */
   deleted: { workouts: string[]; events: string[] };
+  /**
+   * Cycle tracking records by day (server/cycle.ts). Each day sent is that day's complete set from Health and
+   * replaces it; a day with only its date clears it. Stored whether or not the person has tracking on.
+   */
+  cycle: CycleDay[];
 };
-export type IngestResult = { daily: number; hourly: number; workouts: number; events: number; deleted: number };
+export type IngestResult = { daily: number; hourly: number; workouts: number; events: number; deleted: number; cycle: number };
 
 export class IngestError extends Error {}
 
@@ -162,7 +169,8 @@ export function parseIngest(body: unknown): IngestPayload {
       if (!id.startsWith('hk-')) fail(`deleted.${key}[${i}]`, 'only ids starting with hk- can be deleted');
       return id;
     });
-  return { daily, hourly, workouts, events, deleted: { workouts: deletedIds('workouts'), events: deletedIds('events') } };
+  const cycle = list(b, 'cycle').map((raw, i) => parseCycleDay(raw, `cycle[${i}]`, fail));
+  return { daily, hourly, workouts, events, deleted: { workouts: deletedIds('workouts'), events: deletedIds('events') }, cycle };
 }
 
 /** Upserts a validated push. Each daily row is a complete recomputed day, so it replaces the stored value. */
@@ -210,10 +218,13 @@ export async function ingestApple(scope: Scope, p: IngestPayload): Promise<Inges
       }
     }
     await upsertEvents(q, userId, p.events);
+    await replaceCycleDays(q, userId, SOURCE, p.cycle);
   });
-  const result = { daily: p.daily.length, hourly: p.hourly.length, workouts: p.workouts.length, events: p.events.length, deleted };
-  if (result.daily + result.hourly + result.workouts + result.events + deleted > 0) {
-    await setUserSetting(db, userId, 'apple_last_sync', JSON.stringify({ ...result, syncedAt: new Date().toISOString() }));
+  const result = { daily: p.daily.length, hourly: p.hourly.length, workouts: p.workouts.length, events: p.events.length, deleted, cycle: p.cycle.length };
+  if (result.daily + result.hourly + result.workouts + result.events + deleted + result.cycle > 0) {
+    // The saved sync summary leaves out the cycle count: it's shown in places cycle data isn't.
+    const { cycle: _cycle, ...shown } = result;
+    await setUserSetting(db, userId, 'apple_last_sync', JSON.stringify({ ...shown, syncedAt: new Date().toISOString() }));
   }
   return result;
 }

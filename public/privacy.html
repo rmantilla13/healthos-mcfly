@@ -133,6 +133,13 @@
           to WHOOP.
         </li>
         <li><strong>Apple Health</strong>, from the healthOS iPhone app (which sends daily summaries) or a Health export you import.</li>
+        <li>
+          <strong>Your health profile</strong>, if you fill it in: the sex you choose for health calculations (female, male or prefer not to
+          say).
+        </li>
+        <li>
+          <strong>Cycle tracking</strong>, which is off unless you turn it on: reproductive-health data, described in its own section below.
+        </li>
         <li>An optional profile photo.</li>
         <li>
           <strong>Ask McFly</strong>, the optional AI assistant: the questions you ask it. Your conversation is kept only in your browser tab,
@@ -151,8 +158,43 @@
         When you ask McFly a question, healthOS sends your question, the conversation so far, and the parts of your health data McFly reads
         to answer it to <strong>Anthropic</strong>'s API, which generates the reply. McFly can only read your own data, and it can't change
         anything. Anthropic handles this data under its commercial terms and privacy policy. If you don't use Ask McFly, nothing is sent to
-        Anthropic.
+        Anthropic. McFly can read your cycle tracking data only while you have cycle tracking turned on.
       </p>
+
+      <h2>Cycle tracking</h2>
+      <p>
+        Cycle tracking is reproductive-health data, so it has extra protections. It stays off until you turn on <strong>Track my cycle</strong>
+        in Settings. Anyone can turn it on: it doesn't depend on the sex you choose.
+      </p>
+      <ul>
+        <li>
+          <strong>What it covers</strong>: menstrual flow and the first day of each period, spotting, ovulation test results, cervical mucus,
+          basal body temperature, and sexual activity, including whether protection was used. It comes from Apple Health and from what you log
+          on the Cycle page.
+        </li>
+        <li>
+          <strong>While it's off</strong>: if your Apple Health export, or the iPhone app once you allow it to read cycle data, includes these
+          records, healthOS still stores them, hidden from every page and from Ask McFly, so your history is there if you turn tracking on.
+          Turning tracking off hides the data again. It doesn't delete it.
+        </li>
+        <li>
+          <strong>Estimates</strong>: your next period, ovulation and fertile window are calculated only from your own logged cycles. They are
+          estimates. They are not medical advice, and they are not reliable as contraception.
+        </li>
+        <li>
+          <strong>Who sees it</strong>: only you. It is kept apart from your other health data. It never appears in your summaries or insights,
+          in the admin screens, in the server's logs, or in web addresses.
+        </li>
+        <li>
+          <strong>Ask McFly</strong>: while tracking is on, McFly can read this data, and the parts it reads to answer a question are sent to
+          Anthropic as described above.
+        </li>
+        <li>
+          <strong>Deleting it</strong>: <strong>Delete all cycle data</strong>, in Settings or on the Cycle page, removes every cycle entry at
+          once, whether tracking is on or off. Entries from Apple Health come back with your next import or iPhone sync unless you also delete
+          them in the Health app or turn off healthOS's access to them in the iPhone's Health settings.
+        </li>
+      </ul>
 
       <h2>Who can see it</h2>
       <ul>
@@ -160,7 +202,8 @@
         <li>
           Admins manage accounts. They can see your email, name, role, when you last signed in, and the health of your syncs: how many days of
           data you have and its date range, when Apple Health and WHOOP last synced, whether a sync failed, and how many questions you asked
-          McFly. The admin screens don't show your health values or your questions.
+          McFly. The admin screens don't show your health values or your questions. Admins never see your cycle tracking data, your health
+          profile, or whether you have cycle tracking turned on.
         </li>
         <li>
           Admins can disable or delete your account and create a password-reset link for you. They never see or set your password.
@@ -187,6 +230,7 @@
       <ul>
         <li>Your data is kept until you remove it or your account is deleted.</li>
         <li>You can remove your Apple Health data from the Integrations page at any time.</li>
+        <li>You can delete all your cycle tracking data from Settings or the Cycle page at any time.</li>
         <li>
           Disconnecting WHOOP in healthOS revokes the app's access with WHOOP and deletes the stored tokens. You can also revoke access from
           WHOOP's own account settings.

@@ -13,6 +13,7 @@ import { DAY_METRICS, dayView } from './day.ts';
 import { importAppleHealth } from './apple/import.ts';
 import { ingestRouter } from './apple/ingest.ts';
 import { authRoutes, cronAuthorized, currentUser, publicUser, requireSession, sha256 } from './auth.ts';
+import { cycleRouter } from './cycle.ts';
 import { DATA_DIR, type Db, type Scope, deleteSource, getUserSetting, setUserSetting } from './db.ts';
 import { type McflyClient, mcflyRouter } from './mcfly.ts';
 import { PHOTO_ASSETS, photoAsset, photoMeta, processPhoto, removePhoto } from './photo.ts';
@@ -84,6 +85,7 @@ export function createApp({ db, hosted, ingestToken, mcflyClient }: AppOptions) 
   api.post('/auth/password', auth.changePassword);
   api.use('/admin', adminRouter(db));
   api.use('/mcfly', mcflyRouter(db, { hosted, client: mcflyClient }));
+  api.use('/cycle', cycleRouter(db, hosted));
 
   const asOf = (req: Request) => (typeof req.query.date === 'string' && DATE.test(req.query.date) ? req.query.date : undefined);
   const days = (req: Request) => Math.min(Math.max(Number(req.query.days) || 30, 1), 3650);
@@ -177,6 +179,9 @@ export function createApp({ db, hosted, ingestToken, mcflyClient }: AppOptions) 
     if (body.units === 'metric' || body.units === 'imperial') await setUserSetting(db, userId, 'units', body.units);
     if (body.demo === 'auto' || body.demo === 'on' || body.demo === 'off') await setUserSetting(db, userId, 'demo', body.demo);
     if (typeof body.timeZone === 'string' && validZone(body.timeZone)) await setUserSetting(db, userId, 'timezone', body.timeZone);
+    if (body.sex === null || body.sex === 'female' || body.sex === 'male' || body.sex === 'unspecified') await setUserSetting(db, userId, 'sex', body.sex);
+    // Off hides cycle data everywhere; it doesn't delete it (POST /api/cycle/delete does).
+    if (typeof body.cycleTracking === 'boolean') await setUserSetting(db, userId, 'cycle_tracking', body.cycleTracking ? 'on' : null);
     res.json(await status(res));
   });
 

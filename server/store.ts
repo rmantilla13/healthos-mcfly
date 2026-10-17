@@ -147,6 +147,18 @@ export const MIGRATIONS: { id: number; name: string; statements: string[] }[] = 
         PRIMARY KEY (user_id, metric, date, hour, source))`,
     ],
   },
+  {
+    id: 5,
+    name: 'Cycle tracking: per-person cycle log',
+    statements: [
+      // Reproductive-health entries, kept apart from `daily` so nothing that reads daily (summaries, the
+      // admin view, McFly's metric list) can reach them. One value per day, kind and source ('apple' or
+      // 'manual'); see server/cycle.ts for the kinds and their values.
+      `CREATE TABLE cycle (
+        user_id TEXT NOT NULL, date TEXT NOT NULL, kind TEXT NOT NULL, source TEXT NOT NULL, value TEXT NOT NULL,
+        PRIMARY KEY (user_id, date, kind, source))`,
+    ],
+  },
 ];
 
 async function migrate(db: Db) {

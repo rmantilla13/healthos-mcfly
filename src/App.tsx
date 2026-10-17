@@ -3,6 +3,7 @@ import type { AuthMe, Page, Status, SyncResult } from '../shared/types.ts';
 import { Icon, type IconName } from './components/Icon.tsx';
 import { UnitsContext, fmtDate, href, notifyDataChanged, sendJson, useAccountLink, useApi, useRoute } from './lib.ts';
 import { Admin } from './pages/Admin.tsx';
+import { Cycle } from './pages/Cycle.tsx';
 import { Activity, Body, Sleep, Vitals } from './pages/Detail.tsx';
 import { Home } from './pages/Home.tsx';
 import { Integrations, SettingsPage } from './pages/Integrations.tsx';
@@ -17,6 +18,9 @@ const NAV: { page: Page; label: string; icon: IconName }[] = [
   { page: 'body', label: 'Body', icon: 'body' },
   { page: 'mcfly', label: 'Ask McFly', icon: 'spark' },
 ];
+
+/** Shown after Body, only to people who turned cycle tracking on. */
+const CYCLE_NAV: { page: Page; label: string; icon: IconName } = { page: 'cycle', label: 'Cycle', icon: 'cycle' };
 
 const DATA_NAV: { page: Page; label: string; icon: IconName }[] = [
   { page: 'integrations', label: 'Integrations', icon: 'integrations' },
@@ -113,7 +117,7 @@ function Dashboard({ signedIn }: { signedIn: boolean }) {
             <span>healthOS</span>
           </a>
           <nav aria-label="Main">
-            {NAV.map((n) => (
+            {NAV.flatMap((n) => (n.page === 'body' && status?.settings.cycleTracking ? [n, CYCLE_NAV] : [n])).map((n) => (
               <a key={n.page} href={href(n.page)} className={page === n.page ? 'nav-item is-active' : 'nav-item'} aria-current={page === n.page ? 'page' : undefined}>
                 <Icon name={n.icon} />
                 <span>{n.label}</span>
@@ -142,6 +146,7 @@ function Dashboard({ signedIn }: { signedIn: boolean }) {
           {page === 'sleep' && <Sleep />}
           {page === 'activity' && <Activity stepGoal={status?.settings.stepGoal ?? 10_000} />}
           {page === 'body' && <Body />}
+          {page === 'cycle' && status && <Cycle status={status} />}
           {page === 'mcfly' && status && <McFly key={status.user.id} me={status.user} />}
           {page === 'integrations' && status && <Integrations status={status} params={params} refresh={reload} signedIn={signedIn} />}
           {page === 'settings' && status && <SettingsPage key={status.settings.name} status={status} refresh={reload} signedIn={signedIn} />}

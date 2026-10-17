@@ -29,7 +29,7 @@ export type Insight = {
   page: Page;
 };
 
-export type Page = 'home' | 'vitals' | 'sleep' | 'activity' | 'body' | 'mcfly' | 'integrations' | 'settings' | 'admin';
+export type Page = 'home' | 'vitals' | 'sleep' | 'activity' | 'body' | 'cycle' | 'mcfly' | 'integrations' | 'settings' | 'admin';
 
 export type Summary = {
   date: string;
@@ -89,7 +89,17 @@ export type Trends = Record<string, Point[]>;
 
 export type Units = 'metric' | 'imperial';
 
-export type Settings = { name: string; stepGoal: number; units: Units; demo: 'auto' | 'on' | 'off'; timeZone: string | null };
+export type Settings = {
+  name: string;
+  stepGoal: number;
+  units: Units;
+  demo: 'auto' | 'on' | 'off';
+  timeZone: string | null;
+  /** "Sex for health calculations"; null until chosen. Nothing depends on it except the cycle tracking hint. */
+  sex: Sex | null;
+  /** Cycle tracking is on: the Cycle page, GET /api/cycle and McFly's cycle tool. Off by default. */
+  cycleTracking: boolean;
+};
 
 export type PhotoMeta = {
   version: number;
@@ -229,4 +239,64 @@ export type DayData = {
   asOf: number | null;
   /** Only metrics the person has hourly data for at all; an empty object means "no Day view". */
   metrics: Partial<Record<DayMetric, DaySeries>>;
+};
+
+// ---------- Cycle tracking (GET /api/cycle) ----------
+// Reproductive-health data: opt-in per person, never part of /api/summary or the admin view.
+
+export type Sex = 'female' | 'male' | 'unspecified';
+export type Flow = 'none' | 'unspecified' | 'light' | 'medium' | 'heavy';
+export type OvulationTest = 'negative' | 'lh_surge' | 'estrogen_surge' | 'indeterminate';
+export type CervicalMucus = 'dry' | 'sticky' | 'creamy' | 'watery' | 'egg_white';
+export type SexualActivity = 'protected' | 'unprotected' | 'unspecified';
+
+/** What was logged on one day. A field that's absent wasn't logged. */
+export type CycleFields = {
+  flow?: Flow;
+  /** Marked as the first day of a period (Apple Health's cycle start, or by hand). */
+  periodStart?: boolean;
+  /** Bleeding between periods. */
+  spotting?: boolean;
+  ovulationTest?: OvulationTest;
+  mucus?: CervicalMucus;
+  /** Basal body temperature in °C. */
+  bbt?: number;
+  sexualActivity?: SexualActivity;
+};
+
+export type CycleDay = CycleFields & { date: string };
+
+/** A day as shown: entries made by hand override Apple Health's, field by field. */
+export type CycleLogDay = CycleDay & { apple?: CycleFields; manual?: CycleFields };
+
+export type CycleEstimate = {
+  /** The most likely first day of the next period, and the range it usually falls in. */
+  nextPeriod: { date: string; earliest: string; latest: string };
+  ovulation: string;
+  /** The five days before ovulation, ovulation day, and the day after. */
+  fertile: { start: string; end: string };
+  /** calendar: from past cycle lengths; lh_test or bbt: from this cycle's ovulation test or temperature rise. */
+  basis: 'calendar' | 'lh_test' | 'bbt';
+  /** How many recent cycles it rests on. */
+  cycles: number;
+};
+
+export type CycleData = {
+  enabled: boolean;
+  today: string;
+  /** Logged days in the window asked for, oldest first. */
+  days: CycleLogDay[];
+  /** Detected periods over all history, oldest first. */
+  periods: { start: string; end: string; days: number }[];
+  /** Lengths between consecutive period starts, oldest first. */
+  cycles: { start: string; days: number }[];
+  /** Medians over recent cycles. */
+  stats: { cycleDays: number | null; periodDays: number | null; shortest: number | null; longest: number | null };
+  current: { start: string; day: number } | null;
+  /** Estimates from the person's own history. null until two complete cycles are logged, or when the latest period is long past. */
+  estimate: CycleEstimate | null;
+  /** Why there's no estimate. */
+  noEstimate: 'cycles' | 'stale' | null;
+  /** Ovulation inferred after the fact, per cycle: a basal temperature rise, or the day after an LH surge. */
+  ovulations: { date: string; basis: 'bbt' | 'lh_test' }[];
 };

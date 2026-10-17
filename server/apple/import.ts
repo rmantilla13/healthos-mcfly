@@ -5,6 +5,8 @@ import { SaxesParser, type SaxesTagPlain } from 'saxes';
 import yauzl from 'yauzl';
 import { type DailyRow, type EventRow, type HourlyRow, type Scope, type WorkoutRow, deleteSource, getUserSetting, setUserSetting, upsertDaily, upsertEvents, upsertHourly, upsertWorkouts } from '../db.ts';
 import { DAY_ROLLOVER_MS, localDate, localHour, parseAppleDate, toLocalIso, type Stamp, zoneOffsets } from '../dates.ts';
+import type { CervicalMucus, Flow, OvulationTest } from '../../shared/types.ts';
+import { type CycleKind, type CycleRow, upsertCycle } from '../cycle.ts';
 
 export const SOURCE = 'apple';
 
@@ -108,6 +110,53 @@ export function resolveNight(segments: SleepSegment[]): SleepNight {
   return night;
 }
 
+// Cycle tracking records (server/cycle.ts), kept apart from the daily metrics. Apple renamed menstrual flow's
+// values in iOS 18 (MenstrualFlow* became VaginalBleeding*), so both spellings are read, and so are raw numbers.
+const BASAL_TEMP = 'HKQuantityTypeIdentifierBasalBodyTemperature';
+const CYCLE_TYPES: Record<string, CycleKind> = {
+  HKCategoryTypeIdentifierMenstrualFlow: 'flow',
+  HKCategoryTypeIdentifierIntermenstrualBleeding: 'spotting',
+  HKCategoryTypeIdentifierOvulationTestResult: 'ovulation_test',
+  HKCategoryTypeIdentifierCervicalMucusQuality: 'mucus',
+  HKCategoryTypeIdentifierSexualActivity: 'sexual_activity',
+};
+
+/** An Apple category value ("HKCategoryValueVaginalBleedingMedium", or its raw number) as one of ours. */
+function appleChoice<T extends string>(value: string | undefined, prefixes: string[], names: Record<string, T>, raw: (T | undefined)[]): T | undefined {
+  if (!value) return undefined;
+  if (/^\d+$/.test(value)) return raw[Number(value)];
+  const prefix = prefixes.find((p) => value.startsWith(p));
+  return prefix ? names[value.slice(prefix.length)] : undefined;
+}
+
+const appleFlow = (v: string | undefined) =>
+  appleChoice<Flow>(v, ['HKCategoryValueVaginalBleeding', 'HKCategoryValueMenstrualFlow'], { Unspecified: 'unspecified', Light: 'light', Medium: 'medium', Heavy: 'heavy', None: 'none' }, [
+    undefined,
+    'unspecified',
+    'light',
+    'medium',
+    'heavy',
+    'none',
+  ]);
+const appleOvulation = (v: string | undefined) =>
+  appleChoice<OvulationTest>(
+    v,
+    ['HKCategoryValueOvulationTestResult'],
+    { Negative: 'negative', LuteinizingHormoneSurge: 'lh_surge', Positive: 'lh_surge', Indeterminate: 'indeterminate', EstrogenSurge: 'estrogen_surge' },
+    [undefined, 'negative', 'lh_surge', 'indeterminate', 'estrogen_surge'],
+  );
+const appleMucus = (v: string | undefined) =>
+  appleChoice<CervicalMucus>(v, ['HKCategoryValueCervicalMucusQuality'], { Dry: 'dry', Sticky: 'sticky', Creamy: 'creamy', Watery: 'watery', EggWhite: 'egg_white' }, [
+    undefined,
+    'dry',
+    'sticky',
+    'creamy',
+    'watery',
+    'egg_white',
+  ]);
+const yes = (v: string | undefined) => v === '1' || v?.toLowerCase() === 'true';
+const no = (v: string | undefined) => v === '0' || v?.toLowerCase() === 'false';
+
 /**
  * Apps whose data healthOS reads from their own API. Their copies in Apple Health are skipped,
  * or they would count twice (WHOOP writes sleep, heart rate, SpO2 and workouts into Health).
@@ -165,6 +214,11 @@ export class AppleAggregator {
   private mindful: EventRow[] = [];
   private workouts: WorkoutRow[] = [];
   private openWorkout: { attrs: Record<string, string>; stats: Record<string, string>[] } | null = null;
+  // A cycle record waits for its closing tag: a period's start and protection used are <MetadataEntry> children.
+  private openCycle: { attrs: Record<string, string>; meta: Record<string, string> } | null = null;
+  private cycle: CycleRow[] = [];
+  // Basal temperature: date -> the day's first reading, the one taken on waking.
+  private basalTemp = new Map<string, { ms: number; value: number }>();
 
   onOpenTag(tag: SaxesTagPlain) {
     const a = tag.attributes as Record<string, string>;
@@ -176,9 +230,14 @@ export class AppleAggregator {
     if (tag.name === 'Record') this.record(a);
     else if (tag.name === 'Workout') this.openWorkout = { attrs: a, stats: [] };
     else if (tag.name === 'WorkoutStatistics' && this.openWorkout) this.openWorkout.stats.push(a);
+    else if (tag.name === 'MetadataEntry' && this.openCycle && a.key) this.openCycle.meta[a.key] = a.value;
   }
 
   onCloseTag(tag: SaxesTagPlain) {
+    if (tag.name === 'Record' && this.openCycle) {
+      this.cycleRecord(this.openCycle.attrs, this.openCycle.meta);
+      this.openCycle = null;
+    }
     if (tag.name === 'Workout' && this.openWorkout) {
       const w = buildWorkout(this.openWorkout.attrs, this.openWorkout.stats);
       if (w) this.workouts.push(w);
@@ -191,6 +250,11 @@ export class AppleAggregator {
     const type = a.type;
     if (type === 'HKCategoryTypeIdentifierSleepAnalysis') return this.sleepRecord(a);
     if (type === 'HKCategoryTypeIdentifierMindfulSession') return this.mindfulRecord(a);
+    if (Object.hasOwn(CYCLE_TYPES, type)) {
+      this.openCycle = { attrs: a, meta: {} };
+      return;
+    }
+    if (type === BASAL_TEMP) return this.basalTempRecord(a);
 
     const q = QUANTITIES[type];
     if (!q || !a.startDate || a.value === undefined) return;
@@ -267,7 +331,41 @@ export class AppleAggregator {
     });
   }
 
-  finish(): { daily: DailyRow[]; hourly: HourlyRow[]; workouts: WorkoutRow[]; events: EventRow[] } {
+  /**
+   * The stamp in the person's own zone, when known. Cycle entries are whole days logged at local midnight,
+   * so the export's one fixed offset would put half the year's entries on the day before.
+   */
+  private zoned(st: Stamp): Stamp {
+    return this.offsetAt ? { ms: st.ms, offsetMin: this.offsetAt(st.ms) } : st;
+  }
+
+  private cycleRecord(a: Record<string, string>, meta: Record<string, string>) {
+    const kind = CYCLE_TYPES[a.type];
+    if (!kind || !a.startDate) return;
+    const date = localDate(this.zoned(parseAppleDate(a.startDate)));
+    const push = (k: CycleKind, value: string | undefined) => value && this.cycle.push({ date, kind: k, source: SOURCE, value });
+    if (kind === 'flow') {
+      push('flow', appleFlow(a.value));
+      if (yes(meta.HKMenstrualCycleStart)) push('period_start', '1');
+    } else if (kind === 'spotting') push('spotting', '1');
+    else if (kind === 'ovulation_test') push('ovulation_test', appleOvulation(a.value));
+    else if (kind === 'mucus') push('mucus', appleMucus(a.value));
+    else if (kind === 'sexual_activity') {
+      const used = meta.HKSexualActivityProtectionUsed;
+      push('sexual_activity', yes(used) ? 'protected' : no(used) ? 'unprotected' : 'unspecified');
+    }
+  }
+
+  private basalTempRecord(a: Record<string, string>) {
+    const raw = Number(a.value);
+    if (!a.startDate || !Number.isFinite(raw)) return;
+    const start = parseAppleDate(a.startDate);
+    const date = localDate(this.zoned(start));
+    const cur = this.basalTemp.get(date);
+    if (!cur || start.ms < cur.ms) this.basalTemp.set(date, { ms: start.ms, value: toCelsius(raw, a.unit ?? '') });
+  }
+
+  finish(): { daily: DailyRow[]; hourly: HourlyRow[]; workouts: WorkoutRow[]; events: EventRow[]; cycle: CycleRow[] } {
     const daily: DailyRow[] = [];
     const push = (date: string, metric: string, value: number) => daily.push({ date, metric, source: SOURCE, value });
 
@@ -347,7 +445,9 @@ export class AppleAggregator {
         });
       }
     }
-    return { daily, hourly, workouts: this.workouts, events };
+    const cycle = [...this.cycle];
+    for (const [date, { value }] of this.basalTemp) cycle.push({ date, kind: 'bbt', source: SOURCE, value: String(Math.round(value * 100) / 100) });
+    return { daily, hourly, workouts: this.workouts, events, cycle };
   }
 }
 
@@ -501,10 +601,13 @@ export async function importAppleHealth(scope: Scope, file: string, onProgress?:
     },
     { timeZone },
   );
-  const { daily, hourly, workouts, events } = agg.finish();
+  const { daily, hourly, workouts, events, cycle } = agg.finish();
 
   await db.tx(async (q) => {
+    // Clears Apple's rows only, cycle entries included; anything logged by hand stays.
     await deleteSource(q, userId, SOURCE);
+    // Stored whether or not cycle tracking is on, and hidden until it is.
+    await upsertCycle(q, userId, cycle);
     await upsertDaily(q, userId, daily);
     await upsertHourly(q, userId, hourly);
     await upsertWorkouts(q, userId, workouts);

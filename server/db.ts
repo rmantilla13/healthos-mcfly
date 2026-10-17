@@ -115,7 +115,7 @@ export async function upsertHourly(q: Queryable, userId: string, rows: HourlyRow
 }
 
 export async function deleteSource(q: Queryable, userId: string, source: string) {
-  for (const table of ['daily', 'hourly', 'workouts', 'events']) {
+  for (const table of ['daily', 'hourly', 'workouts', 'events', 'cycle']) {
     await q.query(`DELETE FROM ${table} WHERE user_id = $1 AND source = $2`, [userId, source]);
   }
 }
@@ -161,7 +161,7 @@ export async function setUserSetting(q: Queryable, userId: string, key: string, 
 
 /** Everything one person stored, removed together (account deletion). */
 export async function deleteUserData(q: Queryable, userId: string) {
-  for (const table of ['daily', 'hourly', 'workouts', 'events', 'tokens', 'profile_assets', 'user_settings', 'mcfly_usage']) {
+  for (const table of ['daily', 'hourly', 'workouts', 'events', 'cycle', 'tokens', 'profile_assets', 'user_settings', 'mcfly_usage']) {
     await q.query(`DELETE FROM ${table} WHERE user_id = $1`, [userId]);
   }
 }
