@@ -442,6 +442,28 @@ nav {
 .avatar img {
   filter: url(#photo-tone-light);
 }
+/* The photo's entrance (PhotoReveal.tsx): hidden until it loads, then uncovered from the bottom up while
+   ASCII characters drawn on .photo-ascii lead the edge. */
+.figure-photo.is-revealing {
+  clip-path: inset(100% 0 0 0);
+}
+.photo-ascii {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+/* The vitals callouts wait for the photo, then fade in, rather than floating over empty space. */
+.figure-photo-wrap .figure-svg,
+.figure-photo-wrap .callout {
+  transition: opacity 0.5s ease;
+}
+.figure-photo-wrap:has(.figure-photo.is-revealing) .figure-svg,
+.figure-photo-wrap:has(.figure-photo.is-revealing) .callout {
+  opacity: 0;
+  transition: none;
+}
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) .figure-photo,
   :root:not([data-theme='light']) .avatar img {

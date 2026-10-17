@@ -2,6 +2,7 @@ import { type CSSProperties, type Ref, useId, useLayoutEffect, useMemo, useRef, 
 import type { PhotoMeta, Summary, Vital } from '../../shared/types.ts';
 import { useWidth } from '../charts/core.tsx';
 import { fmt, fmtDate, temp, useUnits } from '../lib.ts';
+import { PhotoReveal } from './PhotoReveal.tsx';
 
 // The figure is drawn in a 600×640 space and shown through a tighter viewBox; callouts are
 // positioned in the same coordinates (as percentages) so labels, lines and dots stay aligned at any size.
@@ -266,7 +267,7 @@ function PhotoFigure({ vitals, asOf, photo }: { vitals: Summary['vitals']; asOf:
     <div className="figure figure-photo-wrap" ref={wrapRef} style={{ aspectRatio: `${photo.width} / ${photo.height}` }}>
       <PhotoToneFilters />
       <div className="figure-glow" />
-      <img className="figure-photo" src={`/api/profile/cutout.png?v=${photo.version}`} alt="" />
+      <PhotoReveal className="figure-photo" src={`/api/profile/cutout.png?v=${photo.version}`} version={photo.version} />
       <svg className="figure-svg" viewBox={`0 0 1000 ${1000 * ratio}`} preserveAspectRatio="none" aria-hidden="true">
         {labels.map((l) => {
           const [dx, dy] = dots[l.key];
