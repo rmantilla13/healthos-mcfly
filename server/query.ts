@@ -37,6 +37,9 @@ export function settingsFrom(mine: Map<string, string>, platform: Map<string, st
     timeZone: mine.get('timezone') ?? null,
     sex: SEXES.find((x) => x === mine.get('sex')) ?? null,
     cycleTracking: mine.get('cycle_tracking') === 'on',
+    familySharing: mine.get('family_sharing') !== 'off',
+    shareCyclePhase: mine.get('family_cycle_phase') === 'on',
+    familyNoticeSeen: mine.get('family_notice_seen') === 'on',
   };
 }
 
@@ -66,7 +69,7 @@ function sourcesFor(ctx: { demo: boolean }, metric: string): string[] {
   return APPLE_FIRST.has(metric) ? ['apple', 'whoop'] : ['whoop', 'apple'];
 }
 
-async function loadDaily(scope: Scope, demo: boolean, from: string, to: string, metrics?: string[]): Promise<DailyIndex> {
+export async function loadDaily(scope: Scope, demo: boolean, from: string, to: string, metrics?: string[]): Promise<DailyIndex> {
   const params: unknown[] = [scope.userId, from, to, sourceList(demo)];
   let filter = '';
   if (metrics) {
@@ -88,7 +91,7 @@ async function loadDaily(scope: Scope, demo: boolean, from: string, to: string, 
   return index;
 }
 
-async function latestDataDate(scope: Scope, demo: boolean, today: string): Promise<string | null> {
+export async function latestDataDate(scope: Scope, demo: boolean, today: string): Promise<string | null> {
   const [row] = await scope.db.query<{ d: string | null }>(
     'SELECT MAX(date) AS d FROM daily WHERE user_id = $1 AND source = ANY($2) AND date <= $3',
     [scope.userId, sourceList(demo), today],

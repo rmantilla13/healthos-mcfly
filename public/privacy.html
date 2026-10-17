@@ -115,11 +115,12 @@
         </div>
 
         <h1>Privacy Policy</h1>
-      <p class="updated">Last updated October 16, 2026</p>
+      <p class="updated">Last updated October 17, 2026</p>
 
       <p>
         healthOS is a private health dashboard at <strong>health.mcfly.bot</strong>, run by Ricky Mantilla. It is not open to the public:
-        accounts are created only with an invite code from an admin. Each person who joins gets their own private dashboard.
+        accounts are created only with an invite code from an admin. Each person who joins gets their own dashboard, and members who share see
+        each other on the Family board.
       </p>
 
       <h2>What data it uses</h2>
@@ -152,14 +153,15 @@
 
       <h2>How it is used</h2>
       <p>
-        Your data is used only to show you your own charts, trends and summaries. healthOS has no advertising, no analytics or tracking, and no
-        profiling. It does not sell, rent or share data with anyone.
+        Your data is used to show you your own charts, trends and summaries and, while you share, your tile on the Family board. healthOS has
+        no advertising, no analytics or tracking, and no profiling. It does not sell or rent data, or share it outside healthOS.
       </p>
 
       <h2>Ask McFly</h2>
       <p>
         When you ask McFly a question, healthOS sends your question, the conversation so far, and the parts of your health data McFly reads
-        to answer it to <strong>Anthropic</strong>'s API, which generates the reply. McFly can only read your own data, and it can't change
+        to answer it to <strong>Anthropic</strong>'s API, which generates the reply. McFly can only read your own data, never other members',
+        and it can't change
         anything. Anthropic handles this data under its commercial terms and privacy policy. If you don't use Ask McFly, nothing is sent to
         Anthropic. McFly can read your cycle tracking data only while you have cycle tracking turned on.
       </p>
@@ -185,8 +187,9 @@
           estimates. They are not medical advice, and they are not reliable as contraception.
         </li>
         <li>
-          <strong>Who sees it</strong>: only you. It is kept apart from your other health data. It never appears in your summaries or insights,
-          in the admin screens, in the server's logs, or in web addresses.
+          <strong>Who sees it</strong>: only you, unless you share your phase on the Family board. It is kept apart from your other health data.
+          Apart from a phase you share, it never appears in your summaries or insights, in the admin screens, in the server's logs, or in web
+          addresses.
         </li>
         <li>
           <strong>Ask McFly</strong>: while tracking is on, McFly can read this data, and the parts it reads to answer a question are sent to
@@ -199,14 +202,40 @@
         </li>
       </ul>
 
+      <h2>Family board</h2>
+      <p>
+        Members see each other on the <strong>Family board</strong>. Sharing is on unless you turn off <strong>Share with family</strong> in
+        Settings, and it's mutual: turn it off and you neither see anyone nor are seen.
+      </p>
+      <ul>
+        <li>
+          <strong>Your tile shows</strong>: your name and avatar, which devices you use, your local date and when your newest data is from,
+          last night's sleep (WHOOP's total includes naps), WHOOP recovery or Apple Watch heart rate variability, whether your resting heart
+          rate is above or below your usual (not the number), today's steps and the hour they were counted to, your usual for each, and a
+          status that compares you only with your own last 30 days.
+        </li>
+        <li>
+          <strong>Never on it</strong>: your email, step goal, workouts, weight, temperature, history, or anything you ask McFly.
+        </li>
+        <li>
+          <strong>Cycle phase</strong>: only if you also turn on <strong>Show my cycle phase to family</strong>. It shows one word (period,
+          follicular or luteal), never dates or logs, and it disappears as your next period approaches. Turning it on tells members that you
+          track your cycle. Turning off cycle tracking or sharing turns it off too.
+        </li>
+        <li>Changes reach pages that are already open within about 5 minutes. The status is a nudge to check in, not medical advice.</li>
+      </ul>
+
       <h2>Who can see it</h2>
       <ul>
-        <li>Only you can see your health data. Other members can't see it.</li>
+        <li>
+          Your full health data is visible only to you. Other members see only your Family board tile, and only while you both share.
+        </li>
         <li>
           Admins manage accounts. They can see your email, name, role, when you last signed in, and the health of your syncs: how many days of
           data you have and its date range, when Apple Health and WHOOP last synced, whether a sync failed, and how many questions you asked
-          McFly. The admin screens don't show your health values or your questions. Admins never see your cycle tracking data, your health
-          profile, or whether you have cycle tracking turned on.
+          McFly. The admin screens don't show your health values or your questions. In the admin screens, admins never see your cycle
+          tracking data, your health profile, or whether you have cycle tracking turned on. An admin who shares sees the Family board like
+          any other member, including a phase you share.
         </li>
         <li>
           Admins can disable or delete your account and create a password-reset link for you. They never see or set your password.

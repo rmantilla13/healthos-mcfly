@@ -61,7 +61,7 @@ export function Cycle({ status }: { status: Status }) {
       <header className="page-head">
         <div>
           <h1>Cycle</h1>
-          <p>From Apple Health and what you log here. Only you can see it.</p>
+          <p>From Apple Health and what you log here. Only you can see it, unless you share your phase with family.</p>
         </div>
         <button className="btn" onClick={() => setSelected(data.today)}>
           Log today
@@ -400,8 +400,8 @@ function DeleteCycleData({ onDeleted }: { onDeleted?: () => void }) {
 
 // ---------- Settings ----------
 
-export function CycleSettings({ status, refresh }: { status: Status; refresh: () => void }) {
-  const { sex, cycleTracking } = status.settings;
+export function CycleSettings({ status, refresh, family = false }: { status: Status; refresh: () => void; family?: boolean }) {
+  const { sex, cycleTracking, shareCyclePhase } = status.settings;
   const [busy, setBusy] = useState(false);
   async function save(patch: Partial<Settings>) {
     setBusy(true);
@@ -418,7 +418,7 @@ export function CycleSettings({ status, refresh }: { status: Status; refresh: ()
       <section className="card settings">
         <div>
           <h2>Health profile</h2>
-          <p className="muted small">Only you can see this. Admins never see it.</p>
+          <p className="muted small">Only you can see this, except a phase you share with family. Admin screens never show it.</p>
         </div>
         <div className="settings-row">
           <span>Sex for health calculations</span>
@@ -450,6 +450,24 @@ export function CycleSettings({ status, refresh }: { status: Status; refresh: ()
             <span />
           </button>
         </div>
+        {cycleTracking && family && (
+          <div className="settings-row cycle-switch-row">
+            <div>
+              <span>Show my cycle phase to family</span>
+              <p className="muted small">One word on your Family board tile (period, follicular or luteal), never dates or logs. Hidden as your next period approaches. Members will know you track your cycle.</p>
+            </div>
+            <button
+              className={`switch ${shareCyclePhase ? 'is-on' : ''}`}
+              role="switch"
+              aria-checked={shareCyclePhase}
+              aria-label="Show my cycle phase to family"
+              disabled={busy}
+              onClick={() => save({ shareCyclePhase: !shareCyclePhase })}
+            >
+              <span />
+            </button>
+          </div>
+        )}
         {!cycleTracking && (
           <p className="muted small">
             While this is off, cycle data from Apple Health is still saved, hidden from every page and from Ask McFly, so your history is there if you turn it on.

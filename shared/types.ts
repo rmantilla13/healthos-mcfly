@@ -29,7 +29,7 @@ export type Insight = {
   page: Page;
 };
 
-export type Page = 'home' | 'vitals' | 'sleep' | 'activity' | 'body' | 'cycle' | 'mcfly' | 'integrations' | 'settings' | 'admin';
+export type Page = 'home' | 'family' | 'vitals' | 'sleep' | 'activity' | 'body' | 'cycle' | 'mcfly' | 'integrations' | 'settings' | 'admin';
 
 export type Summary = {
   date: string;
@@ -99,6 +99,12 @@ export type Settings = {
   sex: Sex | null;
   /** Cycle tracking is on: the Cycle page, GET /api/cycle and McFly's cycle tool. Off by default. */
   cycleTracking: boolean;
+  /** On the Family board: on unless turned off. Mutual: off, you neither see anyone nor are seen. */
+  familySharing: boolean;
+  /** Your cycle phase on your Family board tile. Off by default; only while cycle tracking and sharing are on. */
+  shareCyclePhase: boolean;
+  /** The one-time note that the Family board shows your daily status was dismissed. */
+  familyNoticeSeen: boolean;
 };
 
 export type PhotoMeta = {
@@ -305,3 +311,43 @@ export type CycleData = {
   /** Ovulation inferred after the fact, per cycle: a basal temperature rise, or the day after an LH surge. */
   ovulations: { date: string; basis: 'bbt' | 'lh_test' }[];
 };
+
+// ---------- Family board (GET /api/family) ----------
+
+/** How someone is doing against their own last 30 days, never against each other. */
+export type FamilyStatus = 'good' | 'off' | 'check' | 'quiet' | 'learning';
+export type FamilyReason = 'recovery' | 'hrv' | 'resting_hr' | 'sleep';
+export type FamilyDevice = 'whoop' | 'watch' | 'iphone';
+/** One word for a shared cycle phase. Absent near the next period, so it can never imply "late". */
+export type FamilyCyclePhase = 'period' | 'follicular' | 'luteal';
+
+/** One person's tile: all another member learns about them. */
+export type FamilyMember = {
+  id: string;
+  name: string;
+  isYou: boolean;
+  demo: boolean;
+  /** Their today, in their own time zone. */
+  today: string;
+  /** Photo version for /api/family/:id/avatar.png, null without one. */
+  avatar: number | null;
+  devices: FamilyDevice[];
+  latestDataDate: string | null;
+  /** With status quiet: the newest data (or, with fresh phone data, the newest watch or WHOOP data). */
+  quietSince: string | null;
+  /** null for phone-only people: nothing to compare. */
+  status: FamilyStatus | null;
+  reasons: FamilyReason[];
+  sleep: { hours: number; date: string; usual: number | null; inBed: boolean } | null;
+  readiness:
+    | { kind: 'recovery'; value: number; date: string; usual: number | null }
+    | { kind: 'hrv'; metric: 'hrv_rmssd' | 'hrv_sdnn'; value: number; date: string; usual: number | null }
+    | null;
+  /** Against their usual; the value itself isn't shared. */
+  restingHr: { status: RangeStatus; date: string } | null;
+  /** Today's steps. asOfHour and usualByNow only when the phone or Watch counted them hour by hour. */
+  steps: { value: number; source: 'apple' | 'whoop'; asOfHour: number | null; usualByNow: number | null } | null;
+  cyclePhase?: FamilyCyclePhase;
+};
+
+export type FamilyBoard = { sharing: false } | { sharing: true; today: string; members: FamilyMember[] };
