@@ -1594,3 +1594,138 @@ td {
   align-self: stretch;
   padding: 10px 14px;
 }
+
+/* ---------- vitals animations (Home figure callouts) ----------
+   Each callout moves at its own number, set on .callout-mark from the live reading (Figure.tsx, CalloutMark):
+   the heart dot beats every --beat (60 / bpm s), the throat halo breathes every --breath (60 / rpm s), and the
+   forehead glows cool / neutral / amber by data-status. Only .is-live marks (a reading exists) animate. */
+:root {
+  --vital-pulse: #e0567c;
+  --temp-cool: #4f95ea;
+  --temp-neutral: #f2cf63;
+  --temp-warm: #f08a24;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --vital-pulse: #f27798;
+    --temp-cool: #6da7ec;
+    --temp-neutral: #e9c45a;
+    --temp-warm: #f59a3c;
+  }
+}
+/* Scale SVG circles about their own centre, not the SVG origin. */
+.callout-mark .callout-dot,
+.callout-mark .callout-halo,
+.callout-mark .pulse-ring,
+.callout-mark .temp-glow {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* Heart: a lub-dub on the dot and a soft ring leaving it on each beat. */
+.pulse-ring {
+  fill: none;
+  stroke: var(--vital-pulse);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+  opacity: 0;
+}
+.mark-heart.is-live .callout-dot {
+  animation: vital-beat var(--beat) infinite;
+}
+.mark-heart.is-live .pulse-ring {
+  animation: vital-beat-ring var(--beat) infinite ease-out;
+}
+@keyframes vital-beat {
+  0% {
+    transform: scale(1);
+    animation-timing-function: cubic-bezier(0.3, 0, 0.6, 1);
+  }
+  10% {
+    transform: scale(1.42);
+    animation-timing-function: ease-in;
+  }
+  20% {
+    transform: scale(1.04);
+    animation-timing-function: cubic-bezier(0.3, 0, 0.6, 1);
+  }
+  29% {
+    transform: scale(1.24);
+    animation-timing-function: ease-in-out;
+  }
+  44%,
+  100% {
+    transform: scale(1);
+  }
+}
+@keyframes vital-beat-ring {
+  0% {
+    transform: scale(0.45);
+    opacity: 0;
+  }
+  8% {
+    opacity: 0.75;
+  }
+  72%,
+  100% {
+    transform: scale(2.1);
+    opacity: 0;
+  }
+}
+
+/* Breathing: the halo fills on a quicker inhale (40%) and empties on a longer exhale. */
+.mark-breathing.is-live .callout-halo {
+  animation: vital-breathe var(--breath) infinite;
+}
+@keyframes vital-breathe {
+  0%,
+  100% {
+    transform: scale(0.78);
+    opacity: 0.7;
+    animation-timing-function: ease-in-out;
+  }
+  40% {
+    transform: scale(1.25);
+    opacity: 1;
+    animation-timing-function: ease-in-out;
+  }
+}
+
+/* Temperature: a slow warmth glow behind the forehead dot, coloured by the person's own range. */
+.mark-temp {
+  --temp-glow: var(--temp-neutral);
+}
+.mark-temp[data-status='low'] {
+  --temp-glow: var(--temp-cool);
+}
+.mark-temp[data-status='high'] {
+  --temp-glow: var(--temp-warm);
+}
+.temp-glow-stop {
+  stop-color: var(--temp-glow);
+}
+.temp-glow {
+  opacity: 0.8;
+  pointer-events: none;
+}
+.mark-temp.is-live .temp-glow {
+  animation: vital-warmth 6s ease-in-out infinite;
+}
+@keyframes vital-warmth {
+  0%,
+  100% {
+    transform: scale(0.9);
+    opacity: 0.55;
+  }
+  50% {
+    transform: scale(1.08);
+    opacity: 0.95;
+  }
+}
+
+/* Reduced motion: hold still. The temperature tint stays (it's colour, not motion); the pulse ring hides. */
+@media (prefers-reduced-motion: reduce) {
+  .callout-mark * {
+    animation: none !important;
+  }
+}

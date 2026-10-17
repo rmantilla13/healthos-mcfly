@@ -1,4 +1,4 @@
-import { type CSSProperties, type Ref, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { type CSSProperties, type Ref, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { PhotoMeta, Summary, Vital } from '../../shared/types.ts';
 import { useWidth } from '../charts/core.tsx';
 import { fmt, fmtDate, temp, useUnits } from '../lib.ts';
@@ -62,6 +62,53 @@ function CalloutLabel({
         {stale && v.latest ? ` · ${fmtDate(v.latest.date)}` : ''}
       </div>
     </div>
+  );
+}
+
+const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
+
+/**
+ * CSS custom properties that drive a callout's animation from its reading, or null when there's nothing to show.
+ * Heart beats once per 60/bpm s and breathing cycles once per 60/rpm s; the clamps only catch impossible data,
+ * so a bad row can't freeze or strobe the dot. Temperature's colour comes from its status (data-status below).
+ */
+function liveVars(k: Key, v: Vital): CSSProperties | null {
+  const value = v.latest?.value;
+  if (value == null || !Number.isFinite(value)) return null;
+  if (k === 'heart') return value > 0 ? ({ '--beat': `${(60 / clamp(value, 30, 220)).toFixed(3)}s` } as CSSProperties) : null;
+  if (k === 'breathing') return value > 0 ? ({ '--breath': `${(60 / clamp(value, 4, 40)).toFixed(3)}s` } as CSSProperties) : null;
+  return {};
+}
+
+/**
+ * A callout's dot and halo, animated by its own number (styles.css, "vitals animations"): the heart dot beats with
+ * a pulse ring at the resting rate, the throat halo breathes at the respiratory rate, and the forehead glows cool,
+ * neutral or warm by where the temperature sits in the person's range. Radii are in the parent SVG's units.
+ */
+function CalloutMark({ k, v, cx, cy, halo, dot }: { k: Key; v: Vital; cx: number; cy: number; halo: number; dot: number }) {
+  // Sanitised so the id is safe inside url(#…) whatever format React's ids take.
+  const glowId = `temp-glow-${useId().replace(/[^\w-]/g, '')}`;
+  const vars = liveVars(k, v);
+  return (
+    <g
+      className={`callout-mark mark-${k}${vars ? ' is-live' : ''}`}
+      style={vars ?? undefined}
+      data-status={k === 'temp' && vars ? (v.status ?? 'none') : undefined}
+    >
+      {k === 'temp' && vars && (
+        <>
+          <radialGradient id={glowId}>
+            <stop offset="0%" className="temp-glow-stop" stopOpacity="0.85" />
+            <stop offset="45%" className="temp-glow-stop" stopOpacity="0.4" />
+            <stop offset="100%" className="temp-glow-stop" stopOpacity="0" />
+          </radialGradient>
+          <circle cx={cx} cy={cy} r={halo * 2.4} fill={`url(#${glowId})`} className="temp-glow" />
+        </>
+      )}
+      <circle cx={cx} cy={cy} r={halo} className="callout-halo" />
+      {k === 'heart' && vars && <circle cx={cx} cy={cy} r={halo} className="pulse-ring" />}
+      <circle cx={cx} cy={cy} r={dot} className="callout-dot" />
+    </g>
   );
 }
 
@@ -178,8 +225,7 @@ function PhotoFigure({ vitals, asOf, photo }: { vitals: Summary['vitals']; asOf:
           return (
             <g key={l.key}>
               <line x1={dx * 1000} y1={dy * 1000 * ratio} x2={ex * 1000} y2={ey * 1000 * ratio} className="callout-line" />
-              <circle cx={dx * 1000} cy={dy * 1000 * ratio} r={13 * px} className="callout-halo" />
-              <circle cx={dx * 1000} cy={dy * 1000 * ratio} r={5 * px} className="callout-dot" />
+              <CalloutMark k={l.key} v={vitals[l.key]} cx={dx * 1000} cy={dy * 1000 * ratio} halo={13 * px} dot={5 * px} />
             </g>
           );
         })}
@@ -281,8 +327,7 @@ function Silhouette({ vitals, asOf }: { vitals: Summary['vitals']; asOf: string 
         {CALLOUTS.map((c) => (
           <g key={c.key}>
             <line x1={c.dot[0]} y1={c.dot[1]} x2={c.anchor[0] + (c.side === 'left' ? 6 : -6)} y2={c.anchor[1] + 26} className="callout-line" />
-            <circle cx={c.dot[0]} cy={c.dot[1]} r="15" className="callout-halo" />
-            <circle cx={c.dot[0]} cy={c.dot[1]} r="5" className="callout-dot" />
+            <CalloutMark k={c.key} v={vitals[c.key]} cx={c.dot[0]} cy={c.dot[1]} halo={15} dot={5} />
           </g>
         ))}
       </svg>
