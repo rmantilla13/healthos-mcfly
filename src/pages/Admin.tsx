@@ -7,7 +7,7 @@ import { fmt, fmtDate, sendJson, useApi } from '../lib.ts';
 import { CopyField } from './Integrations.tsx';
 
 type Tab = 'users' | 'invites' | 'settings';
-type Shown = { title: string; url: string; note: string } | null;
+type Shown = { title: string; url: string; note: string; code?: string } | null;
 
 // Local dates: these are moments (sign-ins, link times), not the wearer's recorded days.
 const shortDate = (ms: number, year = false) =>
@@ -66,6 +66,13 @@ export function Admin({ me }: { me: SessionUser }) {
               <Icon name="check" size={16} />
             </button>
           </div>
+          {shown.code && (
+            <div className="admin-code">
+              <code>{shown.code}</code>
+              <CopyField value={shown.code} label="Copy code" />
+            </div>
+          )}
+          {shown.code && <span className="muted small">Or share the link, which carries the same code:</span>}
           <CopyField value={shown.url} label="Copy link" />
           <p className="muted small">{shown.note}</p>
         </section>
@@ -231,12 +238,15 @@ function Invites({ data, act, onLink }: { data: AdminOverview; act: Act; onLink:
 
   async function create(e: React.FormEvent) {
     e.preventDefault();
-    const r = await act(() => sendJson<{ url: string; expiresInDays: number }>('POST', '/admin/invites', { email: email.trim() || undefined, role, days: Number(days) }));
+    const r = await act(() =>
+      sendJson<{ code: string; url: string; expiresInDays: number }>('POST', '/admin/invites', { email: email.trim() || undefined, role, days: Number(days) }),
+    );
     if (!r) return;
     onLink({
-      title: email.trim() ? `Invite link for ${email.trim()}` : 'Invite link',
+      title: email.trim() ? `Invite code for ${email.trim()}` : 'Invite code',
+      code: r.code,
       url: r.url,
-      note: `Send it privately. It creates one account${email.trim() ? ' for that email' : ''}, works for ${r.expiresInDays} days, and is shown only now.`,
+      note: `Share it privately. They enter it under "Have an invite code?" on the sign-in page or in the iPhone app. It creates one account${email.trim() ? ' for that email' : ''}, works for ${r.expiresInDays} days, and is shown only now.`,
     });
     setEmail('');
     setRole('user');
@@ -246,15 +256,15 @@ function Invites({ data, act, onLink }: { data: AdminOverview; act: Act; onLink:
     <>
       {closed && (
         <div className="banner banner-bad">
-          <Icon name="alert" size={16} /> Registration is closed, so invite links won't create accounts until you reopen it in Settings.
+          <Icon name="alert" size={16} /> Sign-ups are closed, so invite codes won't create accounts until you reopen them in Settings.
         </div>
       )}
       <section className="card">
         <h2>Invite someone</h2>
         <form className="admin-invite" onSubmit={create}>
           <label>
-            <span>Email (optional)</span>
-            <input type="email" placeholder="Anyone with the link" value={email} onChange={(e) => setEmail(e.target.value)} />
+            <span>Only for this email (optional)</span>
+            <input type="email" placeholder="Anyone with the code" value={email} onChange={(e) => setEmail(e.target.value)} />
           </label>
           <label>
             <span>Role</span>
@@ -268,16 +278,16 @@ function Invites({ data, act, onLink }: { data: AdminOverview; act: Act; onLink:
             <input inputMode="numeric" value={days} onChange={(e) => setDays(e.target.value.replace(/\D/g, ''))} />
           </label>
           <button className="btn btn-primary" type="submit" disabled={!days}>
-            Create link
+            Create code
           </button>
         </form>
-        <p className="muted small">Leave the email empty for a link anyone can use once. With an email, only that address can sign up with it.</p>
+        <p className="muted small">Nothing is emailed: you share the code yourself. Leave the email empty for a code anyone can use once; with one, only that address can sign up with it.</p>
       </section>
 
       <section className="card">
-        <h2>Links</h2>
+        <h2>Codes and reset links</h2>
         {data.invites.length === 0 ? (
-          <p className="muted">No links yet.</p>
+          <p className="muted">None yet.</p>
         ) : (
           <div className="admin-table">
             <table>
@@ -304,7 +314,7 @@ function Invites({ data, act, onLink }: { data: AdminOverview; act: Act; onLink:
                         {target ?? <span className="muted">Anyone</span>}
                         {i.kind === 'invite' && usedBy && <div className="muted small">Joined as {usedBy.email}</div>}
                       </td>
-                      <td>{i.kind === 'invite' ? `Invite · ${i.role === 'admin' ? 'admin' : 'member'}` : 'Password reset'}</td>
+                      <td>{i.kind === 'invite' ? `Invite code · ${i.role === 'admin' ? 'admin' : 'member'}` : 'Password reset'}</td>
                       <td>{shortDate(i.createdAt)}</td>
                       <td>{shortDate(i.expiresAt)}</td>
                       <td>{state}</td>
@@ -351,14 +361,14 @@ function PlatformSettingsCard({ data, act }: { data: AdminOverview; act: Act }) 
           <div className="filters" role="group" aria-label="New accounts">
             {(['invite', 'closed'] as const).map((v) => (
               <button key={v} className={s.registration === v ? 'on' : ''} aria-pressed={s.registration === v} onClick={() => save({ registration: v })}>
-                {v === 'invite' ? 'By invite link' : 'Closed'}
+                {v === 'invite' ? 'By invite code' : 'Closed'}
               </button>
             ))}
           </div>
-          <small className="muted">There's no open sign-up. Closed also stops links you've already sent.</small>
+          <small className="muted">There's no open sign-up. Closed also stops codes you've already shared.</small>
         </div>
         <label>
-          <span>Invite links last (days)</span>
+          <span>Invite codes last (days)</span>
           <input inputMode="numeric" value={days} onChange={(e) => setDays(e.target.value.replace(/\D/g, ''))} onBlur={() => days !== s.invite_days && save({ invite_days: days })} />
         </label>
       </section>

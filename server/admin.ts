@@ -1,7 +1,7 @@
 // Admin API (/api/admin/*). Admins manage accounts, invites and platform settings, and see each
 // account's data volume and sync health, but never anyone's health values.
 import express, { type NextFunction, type Request, type Response } from 'express';
-import { HttpError, type Role, countActiveAdmins, createLink, currentUser, getUser, normalizeEmail, requireAdmin } from './auth.ts';
+import { HttpError, type Role, countActiveAdmins, createLink, currentUser, formatCode, getUser, normalizeEmail, requireAdmin } from './auth.ts';
 import { type Db, deleteUserData, getSettings, setSetting } from './db.ts';
 import * as whoop from './whoop.ts';
 
@@ -132,8 +132,8 @@ export function adminRouter(db: Db) {
       const platform = await platformSettings(db);
       const days = Math.min(Math.max(Number(req.body?.days) || Number(platform.invite_days) || 7, 1), 30);
       const link = await createLink(db, { kind: 'invite', createdBy: currentUser(res).id, email, role, days });
-      // The token is shown once, here. Only its hash is stored.
-      res.json({ id: link.id, url: `${origin(req)}/#/invite/${link.token}`, expiresInDays: days });
+      // The code is shown once, here. Only its hash is stored. The link is the same code, for convenience.
+      res.json({ id: link.id, code: formatCode(link.token), url: `${origin(req)}/#/invite/${link.token}`, expiresInDays: days });
     }),
   );
 

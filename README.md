@@ -54,7 +54,9 @@ How the hosted copy works:
 healthOS is multi-user and invite-only. There is no open sign-up.
 
 - **First sign-in:** on a database with no accounts yet, sign in with your email and the password from `setup-vercel.sh`. That creates the first admin account, which keeps every row you already had.
-- **Inviting someone:** open **Admin → Invites** and create a link. You can lock it to one email address. Send the link privately. It creates one account and expires after the number of days you set (7 by default).
+- **Inviting someone:** open **Admin → Invites** and create a code, such as `8DX7-X782`. You can lock it to one email address, but nothing is emailed: you share the code yourself. They enter it under **Have an invite code?** on the sign-in page, or in the iPhone app. The link shown with it carries the same code. A code creates one account and expires after the number of days you set (7 by default).
+  - Codes are 8 characters with no look-alikes (0/O, 1/I/L). They work in any case, with or without the dash, or as a pasted link.
+  - Failed attempts are rate-limited per address, like sign-in.
 - **Forgotten passwords:** there's no email service. An admin creates a reset link under **Admin → People** and passes it on. Using it sets a new password and signs that person out everywhere else.
 - **Admins can:**
   - change roles
@@ -184,7 +186,7 @@ WHOOP reports HRV as RMSSD and Apple Watch reports SDNN. The two aren't comparab
 
 - **Hosted:**
   - Nothing is readable without signing in, and each person reads only their own data.
-  - Only hashes of passwords, invite links and iPhone tokens are stored.
+  - Only hashes of passwords, invite codes, reset links and iPhone tokens are stored.
   - Preview deployments and `*.vercel.app` URLs are also behind Vercel's own login.
   - Responses carry strict security headers.
 - **Local:** the server listens only on `127.0.0.1`.

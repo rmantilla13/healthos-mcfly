@@ -79,7 +79,9 @@ test('before any account exists, the original password creates the admin', async
 test('an invite link creates exactly one account, for the invited email', async () => {
   const inv = await owner.post('/api/admin/invites', { email: 'bob@example.com', role: 'user' });
   assert.equal(inv.status, 200);
-  assert.match(inv.json.url, /\/#\/invite\/[A-Za-z0-9_-]{20,}$/);
+  // A short code to read out or type, and a link that carries the same code.
+  assert.match(inv.json.code, /^[ABCDEFGHJKMNPQRSTUVWXYZ2-9]{4}-[ABCDEFGHJKMNPQRSTUVWXYZ2-9]{4}$/);
+  assert.equal(inv.json.url.endsWith(`/#/invite/${inv.json.code.replace('-', '')}`), true);
   const token = tokenFrom(inv.json.url);
 
   const check = await bob.post('/api/auth/link', { token });
@@ -98,6 +100,26 @@ test('an invite link creates exactly one account, for the invited email', async 
 
   const again = await new Client().post('/api/auth/invite', { token, email: 'bob@example.com', name: 'Bob 2', password: 'bob password 456' });
   assert.equal(again.status, 404, 'a used link stays used');
+});
+
+test('an invite code works however it is typed or pasted, and only once', async () => {
+  const { code } = (await owner.post('/api/admin/invites', {})).json as { code: string };
+  const messy = ` ${code.toLowerCase().replace('-', ' ')} `;
+  const pasted = `https://health.example/#/invite/${code.replace('-', '')}`;
+  const visitor = new Client();
+  assert.equal((await visitor.post('/api/auth/link', { token: messy })).json.kind, 'invite');
+  assert.equal((await visitor.post('/api/auth/link', { token: pasted })).json.kind, 'invite');
+  const ok = await visitor.post('/api/auth/invite', { token: code, email: 'carol@example.com', name: 'Carol', password: 'carol password 1' });
+  assert.equal(ok.status, 200);
+  assert.equal((await new Client().post('/api/auth/invite', { token: messy, email: 'dan@example.com', password: 'dan password 12' })).status, 404);
+  // Clean up so the account counts below stay as they were.
+  const carol = (await visitor.get('/api/auth/me')).json.user.id;
+  assert.equal((await owner.call('DELETE', `/api/admin/users/${carol}`)).status, 200);
+});
+
+test('password reset links stay long, unguessable tokens', async () => {
+  const link = (await owner.post(`/api/admin/users/${bobId}/reset`)).json.url as string;
+  assert.match(link, /#\/reset\/[A-Za-z0-9_-]{32}$/);
 });
 
 test("each person sees only their own data, on every endpoint", async () => {

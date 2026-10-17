@@ -40,7 +40,16 @@ function ErrorNote({ error }: { error: string | null }) {
   );
 }
 
+/** An invite code as typed: ABCD-EFGH, abcd efgh or a pasted link, ready for #/invite/<code>. */
+const cleanCode = (raw: string) => {
+  const t = raw.trim().replace(/^.*#\/invite\//, '');
+  const compact = t.replace(/[\s-]/g, '').toUpperCase();
+  return /^[A-Z2-9]{8}$/.test(compact) ? compact : t;
+};
+
 export function Login({ misconfigured, setup, onSignedIn }: { misconfigured: boolean; setup: boolean; onSignedIn: () => void }) {
+  const [mode, setMode] = useState<'signin' | 'code'>('signin');
+  const [code, setCode] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -69,6 +78,33 @@ export function Login({ misconfigured, setup, onSignedIn }: { misconfigured: boo
     );
   }
 
+  if (mode === 'code') {
+    return (
+      <Shell
+        onSubmit={(e) => {
+          e.preventDefault();
+          const c = cleanCode(code);
+          if (c) location.hash = `#/invite/${c}`;
+        }}
+      >
+        <div>
+          <h2 className="login-title">Join with an invite code</h2>
+          <p className="muted small">Enter the code the admin gave you, like ABCD-EFGH.</p>
+        </div>
+        <label>
+          <span>Invite code</span>
+          <input autoFocus autoCapitalize="characters" autoComplete="off" spellCheck={false} value={code} onChange={(e) => setCode(e.target.value)} />
+        </label>
+        <button className="btn btn-primary" type="submit" disabled={!cleanCode(code)}>
+          Continue
+        </button>
+        <button type="button" className="btn btn-quiet" onClick={() => setMode('signin')}>
+          Back to sign-in
+        </button>
+      </Shell>
+    );
+  }
+
   return (
     <Shell onSubmit={submit}>
       {setup && (
@@ -88,7 +124,14 @@ export function Login({ misconfigured, setup, onSignedIn }: { misconfigured: boo
       <button className="btn btn-primary" type="submit" disabled={busy || !email || !password}>
         {busy ? 'Signing in…' : 'Sign in'}
       </button>
-      {!setup && <p className="muted small">New here? You need an invite link from the admin. Forgot your password? Ask the admin for a reset link.</p>}
+      {!setup && (
+        <>
+          <button type="button" className="btn btn-quiet" onClick={() => setMode('code')}>
+            Have an invite code?
+          </button>
+          <p className="muted small">Forgot your password? Ask the admin for a reset link.</p>
+        </>
+      )}
     </Shell>
   );
 }
@@ -162,7 +205,7 @@ export function AccountLinkPage({ kind, token, onDone }: { kind: 'invite' | 'res
         <h2 className="login-title">{kind === 'invite' ? 'Create your account' : 'Choose a new password'}</h2>
         <p className="muted small">
           {kind === 'invite'
-            ? 'Your dashboard is private to you. The admin can manage your account but never sees your health data.'
+            ? `Invite code ${token.length === 8 ? `${token.slice(0, 4)}-${token.slice(4)}` : 'accepted'}. Your dashboard is private to you: the admin can manage your account but never sees your health data.`
             : 'Setting a new password signs you out everywhere else.'}
         </p>
       </div>

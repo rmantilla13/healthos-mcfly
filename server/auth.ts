@@ -7,7 +7,7 @@
 // - Owner setup: before any account exists, the first sign-in with the original HEALTHOS_PASSWORD_HASH
 //   password creates the admin account (id "owner", which already owns all pre-multi-user data).
 // - Locally with no SESSION_SECRET the app stays open as the owner, as before.
-import { createHash, createHmac, randomBytes, randomUUID, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, randomInt, randomUUID, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import type { NextFunction, Request, Response } from 'express';
 import { OWNER_ID, type Db, type Queryable } from './db.ts';
@@ -145,15 +145,41 @@ async function guard(db: Db, req: Request, outcome?: 'fail' | 'ok') {
 
 const slowDown = () => new Promise((r) => setTimeout(r, 400));
 
-// ---------- invite and reset links ----------
-// One mechanism for both. Only a hash of the token is stored; the link carries it in the URL fragment
-// (#/invite/… or #/reset/…), which browsers never send to a server, so it can't end up in logs.
+// ---------- invite codes and reset links ----------
+// One mechanism for both, and only a hash of each token is stored. An invite is a short code someone can
+// type into the sign-in page or the iPhone app (no email service needed); a reset stays a long link. Links
+// carry the token in the URL fragment (#/invite/… or #/reset/…), which browsers never send to a server.
+// Codes are 8 characters from 31 (about 40 bits): with failures rate-limited per address and invites
+// expiring within days, guessing one isn't practical.
+
+const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // no 0/O or 1/I/L look-alikes
+const CODE = new RegExp(`^[${CODE_ALPHABET}]{8}$`);
+
+function inviteCode() {
+  return Array.from({ length: 8 }, () => CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]).join('');
+}
+
+/** ABCDEFGH → ABCD-EFGH, for reading aloud. */
+export const formatCode = (code: string) => `${code.slice(0, 4)}-${code.slice(4)}`;
+
+/**
+ * What someone typed or pasted: a code in any case with dashes or spaces, a whole invite or reset link,
+ * or a long token. Codes come back canonical (uppercase, no separators); anything else as given.
+ */
+export function normalizeToken(raw: unknown): string {
+  if (typeof raw !== 'string') return '';
+  let t = raw.trim();
+  const link = /#\/(?:invite|reset)\/(.+)$/.exec(t);
+  if (link) t = link[1].trim();
+  const compact = t.replace(/[\s-]/g, '').toUpperCase();
+  return CODE.test(compact) ? compact : t;
+}
 
 export async function createLink(
   q: Queryable,
   opts: { kind: 'invite' | 'reset'; createdBy: string; email?: string; role?: Role; userId?: string; days: number },
 ) {
-  const token = randomBytes(24).toString('base64url');
+  const token = opts.kind === 'invite' ? inviteCode() : randomBytes(24).toString('base64url');
   const id = randomUUID();
   await q.query(
     `INSERT INTO invites (id, kind, token_hash, email, role, user_id, created_by, created_at, expires_at)
@@ -275,9 +301,10 @@ export function authRoutes(db: Db) {
 
     /** What a link is for, so the page can show the right form (and a locked email). */
     checkLink: limited(async (req, res) => {
-      const link = typeof req.body?.token === 'string' ? await peekLink(db, req.body.token) : null;
+      const token = normalizeToken(req.body?.token);
+      const link = token ? await peekLink(db, token) : null;
       if (!link) {
-        res.status(404).json({ error: 'This link is invalid, expired or already used.' });
+        res.status(404).json({ error: 'This code or link is invalid, expired or already used.' });
         return false;
       }
       res.json({ kind: link.kind, email: link.email });
@@ -288,7 +315,7 @@ export function authRoutes(db: Db) {
       if (authMode() !== 'required') throw new HttpError(400, 'Sign-in is not set up on this server.');
       const [reg] = await db.query<{ value: string }>("SELECT value FROM settings WHERE key = 'registration'");
       if (reg?.value === 'closed') throw new HttpError(403, 'New accounts are closed right now. Ask the admin.');
-      const token = typeof req.body?.token === 'string' ? req.body.token : '';
+      const token = normalizeToken(req.body?.token);
       const email = normalizeEmail(req.body?.email);
       const name = typeof req.body?.name === 'string' ? req.body.name.trim().slice(0, 60) : '';
       const password = checkPassword(req.body?.password);
@@ -297,7 +324,7 @@ export function authRoutes(db: Db) {
       const hash = await hashPassword(password);
       const created = await db.tx(async (q) => {
         const link = await consumeLink(q, token, 'invite', id);
-        if (!link) throw new HttpError(404, 'This invite is invalid, expired or already used.');
+        if (!link) throw new HttpError(404, 'This invite code is invalid, expired or already used.');
         if (link.email && link.email !== email) throw new HttpError(400, `This invite is for ${link.email}.`);
         const [taken] = await q.query('SELECT 1 FROM users WHERE email = $1', [email]);
         if (taken) throw new HttpError(409, 'An account with that email already exists. Sign in instead.');
@@ -313,7 +340,7 @@ export function authRoutes(db: Db) {
         throw err;
       });
       if (!created) {
-        res.status(404).json({ error: 'This invite is invalid, expired or already used.' });
+        res.status(404).json({ error: 'This invite code is invalid, expired or already used.' });
         return false;
       }
       startSession(res, { id, session_version: 1 });
@@ -323,7 +350,7 @@ export function authRoutes(db: Db) {
 
     resetPassword: limited(async (req, res) => {
       if (authMode() !== 'required') throw new HttpError(400, 'Sign-in is not set up on this server.');
-      const token = typeof req.body?.token === 'string' ? req.body.token : '';
+      const token = normalizeToken(req.body?.token);
       const hash = await hashPassword(checkPassword(req.body?.password));
       const user = await db.tx(async (q) => {
         const link = await consumeLink(q, token, 'reset', 'self');
