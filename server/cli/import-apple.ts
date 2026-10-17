@@ -20,5 +20,6 @@ const result = await importAppleHealth(await getStore(), path.resolve(file), ({ 
 process.stdout.write('\n');
 console.log(
   `Imported ${result.records.toLocaleString()} records covering ${result.days} days (${result.firstDate} → ${result.lastDate}), ` +
+    `skipped ${result.skipped.toLocaleString()} that WHOOP wrote into Health (read from WHOOP directly), ` +
     `${result.workouts} workouts, in ${((Date.now() - started) / 1000).toFixed(1)}s.`,
 );

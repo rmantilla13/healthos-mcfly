@@ -269,7 +269,7 @@ export function Activity({ stepGoal }: { stepGoal: number }) {
                     <td>{d ? `${fmt(d.value, 2)} ${d.unit}` : '—'}</td>
                     <td>{w.avg_hr ? `${fmt(w.avg_hr)} bpm` : '—'}</td>
                     <td>{w.strain ? fmt(w.strain, 1) : '—'}</td>
-                    <td className="muted">{w.source === 'apple' ? 'Apple Health' : w.source === 'whoop' ? 'WHOOP' : 'Demo'}</td>
+                    <td className="muted">{({ apple: 'Apple Health', whoop: 'WHOOP', 'apple+whoop': 'Apple + WHOOP' } as Record<string, string>)[w.source] ?? 'Demo'}</td>
                   </tr>
                 );
               })}

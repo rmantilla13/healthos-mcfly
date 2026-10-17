@@ -96,40 +96,118 @@ export async function requestContext(q: Queryable, hosted: boolean) {
 
 // ---------- series over the snapshot ----------
 
-/** Daily values for a metric, one per date, taken from the preferred source that has that day. */
-export function series(ctx: Pick<Ctx, 'daily' | 'demo'>, metric: string, from: string, to: string): Point[] {
+/**
+ * Metrics that Apple Watch and WHOOP each measure themselves. (WHOOP's own copies in Apple Health are
+ * skipped at import, so the two are independent.) On a day both have, the dashboard shows their mean
+ * when they agree within the tolerance, and otherwise the source trusted for that metric, so one
+ * device that slipped off mid-night can't drag the number.
+ */
+type Blend = { agree: (a: number, b: number) => boolean; trust: string };
+const within = (pct: number) => (a: number, b: number) => Math.abs(a - b) <= pct * Math.max(Math.abs(a), Math.abs(b));
+const withinAbs = (d: number) => (a: number, b: number) => Math.abs(a - b) <= d;
+// Chosen from the user's own overlap: SpO2 agrees within 2.5 points every day, and sleep differs mainly
+// on nights one device wasn't worn. Resting heart rate is deliberately not blended: WHOOP measures it
+// asleep and Apple during the day, ~7 bpm apart, so an average would add a third level that shifts with
+// whichever device was worn. It takes WHOOP's sleeping measure when there is one, as the source order says.
+const BLEND: Record<string, Blend> = {
+  // WHOOP is worn overnight, so it's the steadier reading when the two disagree.
+  spo2: { agree: withinAbs(2.5), trust: 'whoop' },
+  resp_rate: { agree: within(0.1), trust: 'whoop' },
+  sleep_hours: { agree: within(0.2), trust: 'whoop' },
+};
+/** A night's stages and time in bed follow that night's sleep_hours decision, so the parts stay consistent. */
+const FOLLOWS: Record<string, string> = {
+  sleep_deep: 'sleep_hours',
+  sleep_rem: 'sleep_hours',
+  sleep_light: 'sleep_hours',
+  sleep_awake: 'sleep_hours',
+  sleep_in_bed: 'sleep_hours',
+};
+
+type Snapshot = Pick<Ctx, 'daily' | 'demo'>;
+
+/** How to combine the sources for a blended metric on a date: average them, or take one. */
+function decide(ctx: Snapshot, metric: string, date: string): 'mean' | string | null {
+  const rule = BLEND[metric];
+  const bySource = ctx.daily.get(metric);
+  if (!rule || !bySource) return null;
+  const a = bySource.get('apple')?.get(date);
+  const w = bySource.get('whoop')?.get(date);
+  if (a === undefined || w === undefined) return null;
+  return rule.agree(a, w) ? 'mean' : rule.trust;
+}
+
+/** The dashboard's value for a metric on one date, and where it came from. */
+export function valueOn(ctx: Snapshot, metric: string, date: string): { value: number; source: string } | undefined {
+  const bySource = ctx.daily.get(metric);
+  if (!bySource) return undefined;
+  const present = sourcesFor(ctx, metric)
+    .map((source) => ({ source, value: bySource.get(source)?.get(date) }))
+    .filter((p): p is { source: string; value: number } => p.value !== undefined);
+  if (present.length <= 1) return present[0];
+  const how = decide(ctx, FOLLOWS[metric] ?? metric, date);
+  if (how === 'mean') return { value: present.reduce((t, p) => t + p.value, 0) / present.length, source: 'apple+whoop' };
+  return present.find((p) => p.source === how) ?? present[0];
+}
+
+/** Daily values for a metric over a date range, combining sources as described above. */
+export function series(ctx: Snapshot, metric: string, from: string, to: string): Point[] {
   const bySource = ctx.daily.get(metric);
   if (!bySource) return [];
-  const sources = sourcesFor(ctx, metric);
   const dates = new Set<string>();
-  for (const s of sources) for (const d of bySource.get(s)?.keys() ?? []) if (d >= from && d <= to) dates.add(d);
-  return [...dates].sort().map((date) => {
-    const value = sources.map((s) => bySource.get(s)?.get(date)).find((v) => v !== undefined)!;
-    return { date, value };
-  });
+  for (const byDate of bySource.values()) for (const d of byDate.keys()) if (d >= from && d <= to) dates.add(d);
+  return [...dates].sort().map((date) => ({ date, value: valueOn(ctx, metric, date)!.value }));
 }
 
 /**
- * The most recent value within the lookback window, from any source. Source preference only breaks
- * ties on the same day, so a stale reading from the preferred source never hides a fresher one
- * (e.g. a WHOOP left in a drawer while the Apple Watch keeps recording).
+ * The most recent value within the lookback window, from any source, so a stale reading from one
+ * device never hides a fresher one (e.g. a WHOOP left in a drawer while the Apple Watch keeps recording).
  */
-export function latest(ctx: Pick<Ctx, 'daily' | 'demo'>, metric: string, asOf: string, lookbackDays = 14): Latest | null {
+export function latest(ctx: Snapshot, metric: string, asOf: string, lookbackDays = 14): Latest | null {
   const bySource = ctx.daily.get(metric);
   if (!bySource) return null;
   const from = addDays(asOf, -lookbackDays);
-  let best: Latest | null = null;
-  let bestRank = Infinity;
-  sourcesFor(ctx, metric).forEach((source, rank) => {
-    for (const [date, value] of bySource.get(source) ?? []) {
-      if (date < from || date > asOf) continue;
-      if (!best || date > best.date || (date === best.date && rank < bestRank)) {
-        best = { date, value, source };
-        bestRank = rank;
-      }
+  let newest: string | undefined;
+  for (const byDate of bySource.values()) for (const d of byDate.keys()) if (d >= from && d <= asOf && (!newest || d > newest)) newest = d;
+  if (!newest) return null;
+  const v = valueOn(ctx, metric, newest)!;
+  return { date: newest, value: v.value, source: v.source };
+}
+
+/**
+ * The same session recorded by both devices becomes one: Apple's type, duration, calories and distance
+ * (what you chose and what the Watch measured), plus WHOOP's strain.
+ */
+export function mergeWorkouts(list: Workout[]): Workout[] {
+  const whoop = list.filter((w) => w.source === 'whoop');
+  const used = new Set<string>();
+  const overlaps = (a: Workout, b: Workout) => {
+    const [as, ae, bs, be] = [Date.parse(a.start), Date.parse(a.end), Date.parse(b.start), Date.parse(b.end)];
+    const overlap = Math.min(ae, be) - Math.max(as, bs);
+    return Math.abs(as - bs) < 15 * 60_000 || overlap > 0.5 * Math.min(ae - as, be - bs);
+  };
+  const out: Workout[] = [];
+  for (const w of list) {
+    if (w.source === 'whoop') continue;
+    const twin = w.source === 'apple' ? whoop.find((x) => !used.has(x.id) && overlaps(w, x)) : undefined;
+    if (!twin) {
+      out.push(w);
+      continue;
     }
-  });
-  return best;
+    used.add(twin.id);
+    out.push({
+      ...w,
+      source: 'apple+whoop',
+      sport: /^other$/i.test(w.sport) ? twin.sport : w.sport,
+      energy_kcal: w.energy_kcal ?? twin.energy_kcal,
+      distance_m: w.distance_m ?? twin.distance_m,
+      avg_hr: w.avg_hr ?? twin.avg_hr,
+      max_hr: Math.max(Number(w.max_hr ?? 0), Number(twin.max_hr ?? 0)) || null,
+      strain: twin.strain,
+    });
+  }
+  for (const x of whoop) if (!used.has(x.id)) out.push(x);
+  return out.sort((a, b) => Date.parse(b.start) - Date.parse(a.start));
 }
 
 export async function trends(q: Queryable, hosted: boolean, metrics: string[], days: number, asOfParam?: string): Promise<Trends> {
@@ -143,7 +221,7 @@ export async function trends(q: Queryable, hosted: boolean, metrics: string[], d
 export async function workouts(q: Queryable, hosted: boolean, days: number, asOfParam?: string): Promise<Workout[]> {
   const { demo, today } = await requestContext(q, hosted);
   const asOf = asOfParam ?? today;
-  return loadWorkouts(q, demo, addDays(asOf, -(days - 1)), asOf);
+  return mergeWorkouts(await loadWorkouts(q, demo, addDays(asOf, -(days - 1)), asOf));
 }
 
 // ---------- helpers ----------
@@ -207,7 +285,7 @@ export async function summary(q: Queryable, hosted: boolean, asOfParam?: string)
     ),
     timeline(q, demo, asOf),
   ]);
-  const ctx: Ctx = { settings, demo, today, daily, workouts: recentWorkouts, sleepStarts };
+  const ctx: Ctx = { settings, demo, today, daily, workouts: mergeWorkouts(recentWorkouts), sleepStarts };
 
   const heart = latest(ctx, 'resting_hr', asOf);
   const breathing = latest(ctx, 'resp_rate', asOf);
@@ -334,13 +412,11 @@ async function timeline(q: Queryable, demo: boolean, asOf: string): Promise<Summ
   );
   const day = row?.d ?? asOf;
 
-  const [events, ws] = await Promise.all([
+  const [events, rawWorkouts] = await Promise.all([
     q.query<TimelineEvent>('SELECT id, kind, title, start, "end" FROM events WHERE date = $1 AND source = ANY($2)', [day, sources]),
-    q.query<{ id: string; sport: string; start: string; end: string; energy_kcal: number | null; strain: number | null }>(
-      'SELECT id, sport, start, "end", energy_kcal, strain FROM workouts WHERE date = $1 AND source = ANY($2)',
-      [day, sources],
-    ),
+    q.query<Workout>('SELECT * FROM workouts WHERE date = $1 AND source = ANY($2)', [day, sources]),
   ]);
+  const ws = mergeWorkouts(rawWorkouts);
 
   // Apple and WHOOP often both record the same session; keep one when two start within 10 minutes.
   const merged: TimelineEvent[] = [];

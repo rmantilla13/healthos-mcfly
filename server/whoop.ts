@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { type Db, type EventRow, type Queryable, type WorkoutRow, type DailyRow, getSetting, setSetting, upsertDaily, upsertEvents, upsertWorkouts } from './db.ts';
-import { DAY_MS, DAY_ROLLOVER_MS, localDate, stampFromIso, toLocalIso, todayLocal } from './dates.ts';
+import { DAY_MS, DAY_ROLLOVER_MS, localDate, stampFromIso, toLocalIso } from './dates.ts';
 
 export const SOURCE = 'whoop';
 
@@ -10,6 +10,11 @@ const API = 'https://api.prod.whoop.com/developer/v2';
 // `offline` is what makes WHOOP return a refresh token.
 const SCOPES = ['offline', 'read:profile', 'read:body_measurement', 'read:cycles', 'read:recovery', 'read:sleep', 'read:workout'];
 const BACKFILL_DAYS = 365;
+// Older history is fetched backwards in windows, a few per sync, until this date (before any WHOOP data).
+const HISTORY_START = Date.parse('2015-01-01T00:00:00Z');
+const WINDOW_DAYS = 120;
+// Leave headroom under the function's 300s limit.
+const SYNC_BUDGET_MS = 230_000;
 
 export function whoopConfig() {
   const port = process.env.PORT ?? '8787';
@@ -126,13 +131,14 @@ async function api<T>(db: Db, path: string, params: Record<string, string> = {})
   throw new Error(`WHOOP ${path} kept failing; try again later.`);
 }
 
-async function collect<T>(db: Db, path: string, start: string): Promise<T[]> {
+async function collect<T>(db: Db, path: string, start: string, end?: string): Promise<T[]> {
   const out: T[] = [];
   let nextToken: string | undefined;
   do {
     const page = await api<{ records: T[]; next_token?: string | null }>(db, path, {
       limit: '25',
       start,
+      ...(end ? { end } : {}),
       ...(nextToken ? { nextToken } : {}),
     });
     out.push(...page.records);
@@ -303,44 +309,56 @@ async function saveSyncState(q: Queryable, s: SyncState) {
   await setSetting(q, 'whoop_sync', JSON.stringify(s));
 }
 
+/** Fetch and store everything WHOOP has between start and end (ISO). Returns record counts. */
+async function syncRange(db: Db, start: string, end?: string) {
+  const cycles = await collect<WhoopCycle>(db, '/cycle', start, end);
+  const sleeps = await collect<WhoopSleep>(db, '/activity/sleep', start, end);
+  const recoveries = await collect<WhoopRecovery>(db, '/recovery', start, end);
+  const workouts = await collect<WhoopWorkout>(db, '/activity/workout', start, end);
+  const mapped = mapWhoop({ cycles, sleeps, recoveries, workouts });
+  await db.tx(async (q) => {
+    await upsertDaily(q, mapped.daily);
+    await upsertEvents(q, mapped.events);
+    await upsertWorkouts(q, mapped.workouts);
+  });
+  return { cycles: cycles.length, sleeps: sleeps.length, recoveries: recoveries.length, workouts: workouts.length };
+}
+
 export async function syncWhoop(db: Db, opts: { full?: boolean; timeZone?: string } = {}) {
   const prev = await syncState(db);
   if (prev.running) return;
+  const deadline = Date.now() + SYNC_BUDGET_MS;
   await saveSyncState(db, { ...prev, running: true, startedAt: new Date().toISOString(), lastError: undefined });
   try {
     const last = await getSetting(db, 'whoop_last_sync');
     // Re-read a few days on each sync: WHOOP rescores recent sleep and recovery after the fact.
     const since = !last || opts.full ? Date.now() - BACKFILL_DAYS * DAY_MS : Date.parse(last) - 4 * DAY_MS;
-    const start = new Date(since).toISOString();
 
     const [profile, body] = await Promise.all([
       api<{ first_name?: string }>(db, '/user/profile/basic').catch(() => null),
       api<{ weight_kilogram?: number; max_heart_rate?: number }>(db, '/user/measurement/body').catch(() => null),
     ]);
-    const cycles = await collect<WhoopCycle>(db, '/cycle', start);
-    const sleeps = await collect<WhoopSleep>(db, '/activity/sleep', start);
-    const recoveries = await collect<WhoopRecovery>(db, '/recovery', start);
-    const workouts = await collect<WhoopWorkout>(db, '/activity/workout', start);
-
-    const mapped = mapWhoop({ cycles, sleeps, recoveries, workouts });
-    await db.tx(async (q) => {
-      await upsertDaily(q, mapped.daily);
-      if (body?.weight_kilogram) {
-        await upsertDaily(q, [{ date: todayLocal(opts.timeZone), metric: 'weight', source: SOURCE, value: body.weight_kilogram }]);
-      }
-      await upsertEvents(q, mapped.events);
-      await upsertWorkouts(q, mapped.workouts);
-    });
+    const counts = await syncRange(db, new Date(since).toISOString());
     if (profile?.first_name) await setSetting(db, 'whoop_first_name', profile.first_name);
+    // WHOOP's weight is whatever is typed into the profile, not a weigh-in, so it isn't stored as a measurement.
     if (body?.max_heart_rate) await setSetting(db, 'whoop_max_hr', String(body.max_heart_rate));
+    await db.query("DELETE FROM daily WHERE source = 'whoop' AND metric = 'weight'");
 
     const lastSync = new Date().toISOString();
     await setSetting(db, 'whoop_last_sync', lastSync);
-    await saveSyncState(db, {
-      running: false,
-      lastSync,
-      lastCounts: { cycles: cycles.length, sleeps: sleeps.length, recoveries: recoveries.length, workouts: workouts.length },
-    });
+
+    // Then older history, newest first, a window at a time, resuming where the last sync stopped.
+    const saved = Number(await getSetting(db, 'whoop_backfill_before'));
+    let before = Number.isFinite(saved) && saved > 0 ? saved : Math.min(since, Date.now() - BACKFILL_DAYS * DAY_MS);
+    while (before > HISTORY_START && Date.now() < deadline) {
+      const after = Math.max(HISTORY_START, before - WINDOW_DAYS * DAY_MS);
+      const got = await syncRange(db, new Date(after).toISOString(), new Date(before).toISOString());
+      for (const k of Object.keys(counts) as (keyof typeof counts)[]) counts[k] += got[k];
+      before = after;
+      await setSetting(db, 'whoop_backfill_before', String(before));
+    }
+
+    await saveSyncState(db, { running: false, lastSync, lastCounts: { ...counts, historyComplete: before <= HISTORY_START ? 1 : 0 } });
   } catch (err) {
     await saveSyncState(db, { ...prev, running: false, lastError: err instanceof Error ? err.message : String(err) });
     throw err;

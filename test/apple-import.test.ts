@@ -153,3 +153,24 @@ test('a record longer than any real night is ignored', async () => {
   );
   assert.equal(v.sleep_hours, 7);
 });
+
+test("WHOOP's own copies in Apple Health are skipped (WHOOP is read from its API)", async () => {
+  const xml = `<?xml version="1.0"?><HealthData>
+    <Record type="HKQuantityTypeIdentifierRestingHeartRate" sourceName="WHOOP" unit="count/min" startDate="2026-10-13 00:00:00 -0700" endDate="2026-10-13 00:00:00 -0700" value="49"/>
+    <Record type="HKQuantityTypeIdentifierRestingHeartRate" sourceName="Ricky’s Apple Watch" unit="count/min" startDate="2026-10-13 00:00:00 -0700" endDate="2026-10-13 23:59:00 -0700" value="57"/>
+    <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="WHOOP" startDate="2026-10-12 22:00:00 -0700" endDate="2026-10-13 07:00:00 -0700" value="HKCategoryValueSleepAnalysisAsleepUnspecified"/>
+    <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Ricky’s Apple Watch" startDate="2026-10-12 23:00:00 -0700" endDate="2026-10-13 06:00:00 -0700" value="HKCategoryValueSleepAnalysisAsleepCore"/>
+    <Record type="HKQuantityTypeIdentifierHeartRateVariabilityRMSSD" sourceName="Ricky’s Apple Watch" unit="ms" startDate="2026-10-13 03:00:00 -0700" endDate="2026-10-13 03:01:00 -0700" value="42"/>
+    <Workout workoutActivityType="HKWorkoutActivityTypeWalking" duration="30" durationUnit="min" sourceName="WHOOP" startDate="2026-10-13 12:00:00 -0700" endDate="2026-10-13 12:30:00 -0700">
+      <WorkoutStatistics type="HKQuantityTypeIdentifierActiveEnergyBurned" startDate="2026-10-13 12:00:00 -0700" endDate="2026-10-13 12:30:00 -0700" sum="120" unit="kcal"/>
+    </Workout>
+  </HealthData>`;
+  const agg = await parseStream(Readable.from([Buffer.from(xml)]));
+  const { daily, workouts } = agg.finish();
+  const v = (m: string) => daily.find((d) => d.metric === m)?.value;
+  assert.equal(v('resting_hr'), 57, 'only the Watch reading counts');
+  assert.equal(v('sleep_hours'), 7, "the Watch's night, not WHOOP's 9h copy");
+  assert.equal(v('hrv_rmssd_watch'), 42);
+  assert.equal(workouts.length, 0);
+  assert.equal(agg.skipped, 3);
+});

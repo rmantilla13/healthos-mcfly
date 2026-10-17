@@ -25,6 +25,9 @@ const QUANTITIES: Record<string, Quantity> = {
   HKQuantityTypeIdentifierHeartRate: { metric: 'hr_avg', agg: 'avg' },
   HKQuantityTypeIdentifierRestingHeartRate: { metric: 'resting_hr', agg: 'avg' },
   HKQuantityTypeIdentifierHeartRateVariabilitySDNN: { metric: 'hrv_sdnn', agg: 'avg' },
+  // Newer Apple Watch software also records RMSSD. Kept apart from WHOOP's nightly RMSSD: the Watch's
+  // short-window readings run far lower (about 6 ms vs 14 ms on the same day), so they don't share a line.
+  HKQuantityTypeIdentifierHeartRateVariabilityRMSSD: { metric: 'hrv_rmssd_watch', agg: 'avg' },
   HKQuantityTypeIdentifierOxygenSaturation: { metric: 'spo2', agg: 'avg', convert: toPercent },
   HKQuantityTypeIdentifierRespiratoryRate: { metric: 'resp_rate', agg: 'avg' },
   HKQuantityTypeIdentifierAppleSleepingWristTemperature: { metric: 'wrist_temp', agg: 'avg', convert: toCelsius },
@@ -105,9 +108,19 @@ export function resolveNight(segments: SleepSegment[]): SleepNight {
   return night;
 }
 
+/**
+ * Apps whose data healthOS reads from their own API. Their copies in Apple Health are skipped,
+ * or they would count twice (WHOOP writes sleep, heart rate, SpO2 and workouts into Health).
+ */
+export function fromDirectSource(sourceName: string | undefined) {
+  return /^whoop\b/i.test((sourceName ?? '').trim());
+}
+
 export type ImportProgress = { bytesRead: number; totalBytes: number; records: number };
 export type ImportResult = {
   records: number;
+  /** Records skipped as another app's copy of data read directly (WHOOP). */
+  skipped: number;
   days: number;
   workouts: number;
   firstDate: string | null;
@@ -117,6 +130,8 @@ export type ImportResult = {
 /** Accumulates Apple Health records into per-day values. Kept separate from I/O so tests can drive it. */
 export class AppleAggregator {
   records = 0;
+  /** Records skipped because they're another app's copy of data read directly (see fromDirectSource). */
+  skipped = 0;
   // sum metrics: date -> metric -> source -> total. Different devices (iPhone and
   // Watch) both log steps for the same walk, so per day we keep the best single source.
   private sums = new Map<string, Map<string, Map<string, number>>>();
@@ -131,6 +146,11 @@ export class AppleAggregator {
 
   onOpenTag(tag: SaxesTagPlain) {
     const a = tag.attributes as Record<string, string>;
+    if ((tag.name === 'Record' || tag.name === 'Workout') && fromDirectSource(a.sourceName)) {
+      this.records += tag.name === 'Record' ? 1 : 0;
+      this.skipped++;
+      return;
+    }
     if (tag.name === 'Record') this.record(a);
     else if (tag.name === 'Workout') this.openWorkout = { attrs: a, stats: [] };
     else if (tag.name === 'WorkoutStatistics' && this.openWorkout) this.openWorkout.stats.push(a);
@@ -418,6 +438,7 @@ export async function importAppleHealth(db: Db, file: string, onProgress?: (p: I
   const dates = [...new Set(daily.map((d) => d.date))].sort();
   const result: ImportResult = {
     records: agg.records,
+    skipped: agg.skipped,
     days: dates.length,
     workouts: workouts.length,
     firstDate: dates[0] ?? null,
