@@ -70,6 +70,14 @@ export function useScrub(n: number, xOf: (i: number) => number) {
   };
 }
 
+/** Middle value (the mean of the two middle values for an even count), or null when there are none. */
+export function median(values: number[]): number | null {
+  if (!values.length) return null;
+  const s = [...values].sort((a, b) => a - b);
+  const mid = s.length >> 1;
+  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+}
+
 /** Clean axis ticks: 1, 2, 2.5 or 5 times a power of ten. */
 export function niceTicks(min: number, max: number, count = 4): number[] {
   if (!Number.isFinite(min) || !Number.isFinite(max)) return [];

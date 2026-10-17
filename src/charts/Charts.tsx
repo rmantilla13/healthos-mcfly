@@ -3,9 +3,31 @@ import { type ReactNode, useCallback, useMemo, useState } from 'react';
 import type { Point } from '../../shared/types.ts';
 import { Icon } from '../components/Icon.tsx';
 import { daysBetween, fmtDate } from '../lib.ts';
-import { Tooltip, TooltipRow, barPath, niceTicks, smoothPath, useScrub, useWidth } from './core.tsx';
+import { Tooltip, TooltipRow, barPath, median, niceTicks, smoothPath, useScrub, useWidth } from './core.tsx';
 
 const M = { top: 20, right: 14, bottom: 26, left: 44 };
+
+/** Fewer points than this and a "typical" level means little, so no median line is drawn. */
+const MEDIAN_MIN_POINTS = 5;
+
+const medianOf = (points: Point[], on: boolean) => (on && points.length >= MEDIAN_MIN_POINTS ? median(points.map((p) => p.value)) : null);
+
+/**
+ * A dashed line at the median of what's plotted, so recent days read as above or below the person's own
+ * typical level for the range. Labelled at the left end: the latest-value and goal labels sit on the right.
+ */
+function MedianLine({ y, width }: { y: number; width: number }) {
+  return <line x1={M.left} x2={width - M.right} y1={y} y2={y} className="median-line" />;
+}
+
+function MedianLabel({ y, text }: { y: number; text: string }) {
+  // Above the line, unless that would run into the top of the plot.
+  return (
+    <text x={M.left + 4} y={y - 6 < M.top ? y + 14 : y - 6} className="median-label">
+      Median {text}
+    </text>
+  );
+}
 
 function xLabels(dates: string[], width: number) {
   if (!dates.length) return [];
@@ -43,6 +65,7 @@ export function TrendChart({
   height = 220,
   zero = false,
   refLines = [],
+  median: showMedian = true,
   label,
 }: {
   points: Point[];
@@ -52,10 +75,12 @@ export function TrendChart({
   height?: number;
   zero?: boolean;
   refLines?: { value: number; label: string }[];
+  median?: boolean;
   label: string;
 }) {
   const [ref, width] = useWidth<HTMLDivElement>();
   const n = points.length;
+  const mid = medianOf(points, showMedian);
   const first = points[0]?.date;
   const span = n ? Math.max(1, daysBetween(first, points.at(-1)!.date)) : 1;
   const xOf = useCallback(
@@ -92,9 +117,10 @@ export function TrendChart({
   return (
     <div className="chart" ref={ref} style={{ height }}>
       {width > 0 && (
-        <svg width={width} height={height} {...handlers} role="img" aria-label={label}>
+        <svg width={width} height={height} {...handlers} role="img" aria-label={mid !== null ? `${label}, median ${format(mid)}` : label}>
           <YAxis ticks={ticks} yOf={yOf} width={width} format={tickFormat} />
           <line x1={M.left} x2={width - M.right} y1={baseY} y2={baseY} className="baseline" />
+          {mid !== null && <MedianLine y={yOf(mid)} width={width} />}
           {xLabels(points.map((p) => p.date), width).map(({ i, text }) => (
             <text key={i} x={xOf(i)} y={height - 6} textAnchor={i === 0 ? 'start' : i === last ? 'end' : 'middle'} className="axis-label">
               {text}
@@ -118,6 +144,7 @@ export function TrendChart({
               </g>
             );
           })}
+          {mid !== null && <MedianLabel y={yOf(mid)} text={format(mid)} />}
           {index !== null && <line x1={xOf(index)} x2={xOf(index)} y1={M.top - 8} y2={baseY} className="crosshair" />}
           <circle cx={xOf(index ?? last)} cy={yOf(points[index ?? last].value)} r={4.5} fill={color} className="dot-ring" />
           {index === null && (
@@ -143,6 +170,7 @@ export function BarChart({
   tickFormat = format,
   height = 220,
   goal,
+  median: showMedian = true,
   label,
   periodLabel,
 }: {
@@ -151,11 +179,13 @@ export function BarChart({
   tickFormat?: (v: number) => string;
   height?: number;
   goal?: { value: number; label: string };
+  median?: boolean;
   label: string;
   periodLabel?: (date: string) => string;
 }) {
   const [ref, width] = useWidth<HTMLDivElement>();
   const n = points.length;
+  const mid = medianOf(points, showMedian);
   const plotW = width - M.left - M.right;
   const slot = n ? plotW / n : 0;
   const barW = Math.max(1, Math.min(24, slot - 2));
@@ -171,7 +201,7 @@ export function BarChart({
   return (
     <div className="chart" ref={ref} style={{ height }}>
       {width > 0 && (
-        <svg width={width} height={height} {...handlers} role="img" aria-label={label}>
+        <svg width={width} height={height} {...handlers} role="img" aria-label={mid !== null ? `${label}, median ${format(mid)}` : label}>
           <YAxis ticks={ticks} yOf={yOf} width={width} format={tickFormat} />
           {points.map((p, i) => {
             const y = yOf(p.value);
@@ -191,6 +221,13 @@ export function BarChart({
                 {goal.label}
               </text>
             </g>
+          )}
+          {/* Over the bars, so the line isn't hidden behind them. */}
+          {mid !== null && (
+            <>
+              <MedianLine y={yOf(mid)} width={width} />
+              <MedianLabel y={yOf(mid)} text={format(mid)} />
+            </>
           )}
           {xLabels(points.map((p) => p.date), width).map(({ i, text }) => (
             <text key={i} x={xOf(i)} y={height - 6} textAnchor={i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'} className="axis-label">

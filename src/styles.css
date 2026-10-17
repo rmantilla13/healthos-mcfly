@@ -1729,3 +1729,23 @@ td {
     animation: none !important;
   }
 }
+
+/* ---------- median lines (detail-page charts) ----------
+   A dashed line at the median of the plotted range (Charts.tsx, MedianLine). Dashed, so it never reads as a
+   grid line or the solid goal line; the label is haloed in the card colour so it stays legible over the data. */
+.median-line {
+  stroke: var(--ink-2);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+  stroke-opacity: 0.75;
+}
+.median-label {
+  font-size: 11px;
+  font-weight: 500;
+  fill: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+  stroke: var(--surface);
+  stroke-width: 3;
+  stroke-linejoin: round;
+  paint-order: stroke;
+}
