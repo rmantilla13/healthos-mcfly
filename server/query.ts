@@ -109,16 +109,27 @@ export function series(ctx: Pick<Ctx, 'daily' | 'demo'>, metric: string, from: s
   });
 }
 
+/**
+ * The most recent value within the lookback window, from any source. Source preference only breaks
+ * ties on the same day, so a stale reading from the preferred source never hides a fresher one
+ * (e.g. a WHOOP left in a drawer while the Apple Watch keeps recording).
+ */
 export function latest(ctx: Pick<Ctx, 'daily' | 'demo'>, metric: string, asOf: string, lookbackDays = 14): Latest | null {
   const bySource = ctx.daily.get(metric);
   if (!bySource) return null;
   const from = addDays(asOf, -lookbackDays);
-  for (const source of sourcesFor(ctx, metric)) {
-    let best: string | undefined;
-    for (const d of bySource.get(source)?.keys() ?? []) if (d >= from && d <= asOf && (!best || d > best)) best = d;
-    if (best) return { date: best, value: bySource.get(source)!.get(best)!, source };
-  }
-  return null;
+  let best: Latest | null = null;
+  let bestRank = Infinity;
+  sourcesFor(ctx, metric).forEach((source, rank) => {
+    for (const [date, value] of bySource.get(source) ?? []) {
+      if (date < from || date > asOf) continue;
+      if (!best || date > best.date || (date === best.date && rank < bestRank)) {
+        best = { date, value, source };
+        bestRank = rank;
+      }
+    }
+  });
+  return best;
 }
 
 export async function trends(q: Queryable, hosted: boolean, metrics: string[], days: number, asOfParam?: string): Promise<Trends> {
@@ -161,12 +172,14 @@ function windowMean(points: Point[], from: string, to: string) {
   return mean(points.filter((p) => p.date >= from && p.date <= to).map((p) => p.value));
 }
 
+/** Of several ways to measure the same thing (HRV as RMSSD or SDNN, temperatures), the one measured most recently. */
 function pickMetric(ctx: Ctx, candidates: string[], asOf: string, lookback = 30) {
+  let pick: { metric: string; latest: Latest | null } = { metric: candidates[0], latest: null };
   for (const m of candidates) {
     const l = latest(ctx, m, asOf, lookback);
-    if (l) return { metric: m, latest: l };
+    if (l && (!pick.latest || l.date > pick.latest.date)) pick = { metric: m, latest: l };
   }
-  return { metric: candidates[0], latest: null };
+  return pick;
 }
 
 function capitalize(s: string) {
