@@ -64,12 +64,15 @@ struct APIClient {
         if (200..<300).contains(http.statusCode) { return data }
 
         let message = (try? JSONDecoder().decode(ErrorBody.self, from: data))?.error ?? HTTPURLResponse.localizedString(forStatusCode: http.statusCode)
+        let accountForm = path == "/auth/login" || path == "/auth/invite"
         // A 401 from the sign-in itself is a wrong password; anywhere else the session is gone.
-        if http.statusCode == 401, path != "/auth/login" {
+        if http.statusCode == 401, !accountForm {
             SessionStore.clear()
             throw APIError.signInRequired
         }
         if http.statusCode == 503 { throw APIError.misconfigured(message) }
+        // Sign-in errors (wrong password, too many attempts) are written for people; show them as they are.
+        if accountForm, (400..<500).contains(http.statusCode) { throw APIError.network(message) }
         throw APIError.server(http.statusCode, message)
     }
 
@@ -79,9 +82,28 @@ struct APIClient {
 
     func authState() async throws -> AuthState { try await get("/auth/me") }
 
-    func signIn(password: String) async throws {
-        _ = try await request("/auth/login", method: "POST", body: try JSONEncoder().encode(["password": password]))
+    /// Servers with accounts read both fields; older ones read only the password, so sending both works with either.
+    func signIn(email: String, password: String) async throws {
+        var body = ["password": password]
+        if !email.isEmpty { body["email"] = email }
+        _ = try await request("/auth/login", method: "POST", body: try JSONEncoder().encode(body))
         guard SessionStore.cookie(for: base) != nil else { throw APIError.network("The server accepted the password but sent no session.") }
+    }
+
+    /// Creates an account from an invite and signs in (POST /api/auth/invite, same as the web's invite page).
+    func acceptInvite(code: String, email: String, name: String, password: String) async throws {
+        let body = ["token": Self.inviteToken(from: code), "email": email, "name": name, "password": password]
+        _ = try await request("/auth/invite", method: "POST", body: try JSONEncoder().encode(body))
+        guard SessionStore.cookie(for: base) != nil else { throw APIError.network("The account was created, but the server sent no session. Sign in.") }
+    }
+
+    /// The code from what someone pasted: a bare code, or a whole invite link (…#/invite/<code>).
+    /// Case and dashes are kept, since link tokens are case-sensitive; the server normalizes short codes.
+    static func inviteToken(from input: String) -> String {
+        var s = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let r = s.range(of: "#/invite/") { s = String(s[r.upperBound...]) }
+        if let end = s.firstIndex(where: { $0 == "?" || $0 == "&" || $0 == "/" }) { s = String(s[..<end]) }
+        return s.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     func signOut() async {
@@ -102,6 +124,30 @@ struct APIClient {
     }
 
     func status() async throws -> ServerStatus { try await get("/status") }
+
+    /// Asks the server to refresh WHOOP now (POST /api/sync). Returns the status JSON with `whoopStarted`.
+    /// Servers before /api/sync have POST /api/whoop/sync, which answers 400 when WHOOP isn't connected.
+    func syncSources() async throws -> ServerStatus {
+        let empty = Data("{}".utf8)
+        do {
+            return try JSONDecoder().decode(ServerStatus.self, from: try await request("/sync", method: "POST", body: empty))
+        } catch APIError.server(404, _) {
+            do {
+                return try JSONDecoder().decode(ServerStatus.self, from: try await request("/whoop/sync", method: "POST", body: empty))
+            } catch APIError.server(400, _) {
+                return try await status()
+            }
+        }
+    }
+
+    /// A profile image (avatar.png or cutout.png) for this photo version; nil when there's no photo.
+    func profileImage(_ name: String, version: String) async throws -> Data? {
+        do {
+            return try await request("/profile/\(name)", query: [URLQueryItem(name: "v", value: version)])
+        } catch APIError.server(404, _) {
+            return nil
+        }
+    }
 }
 
 /// The hosted dashboard's session cookie, kept in the Keychain and tied to the server it came from.

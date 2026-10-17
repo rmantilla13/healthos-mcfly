@@ -186,20 +186,57 @@ struct ServerStatus: Codable {
     struct Whoop: Codable {
         let configured: Bool?
         let connected: Bool?
+        let syncing: Bool?
         let lastSync: String?
+        let lastError: String?
     }
 
     let hosted: Bool?
     let demo: Bool?
+    /// POST /api/sync only: a WHOOP sync started on the server for this request.
+    let whoopStarted: Bool?
+    @Lossy var photo: PhotoMeta?
     @Lossy var settings: Settings?
     @Lossy var apple: Apple?
     @Lossy var whoop: Whoop?
 }
 
+/// The profile photo's metadata (shared/types.ts PhotoMeta). The images come from /api/profile/*.png.
+struct PhotoMeta: Codable, Equatable {
+    struct Dots: Codable, Equatable {
+        let temp: [Double]?
+        let breathing: [Double]?
+        let heart: [Double]?
+    }
+
+    /// Changes with every new photo; the image URLs carry it so caches never show an old photo.
+    let version: Double
+    let width: Double
+    let height: Double
+    @Lossy var dots: Dots?
+
+    var versionKey: String { String(Int64(version)) }
+
+    static func == (a: PhotoMeta, b: PhotoMeta) -> Bool { a.version == b.version && a.width == b.width && a.height == b.height && a.dots == b.dots }
+}
+
 struct AuthState: Codable {
+    struct User: Codable {
+        let id: String?
+        let email: String?
+        let name: String?
+        let role: String?
+    }
+
     /// "open" (local server, no sign-in), "required" or "misconfigured".
     let mode: String
     let authenticated: Bool
+    /// Present only on servers with per-person accounts (sign in with email and password);
+    /// true while no account exists yet. Older servers sign in with a password alone.
+    let setup: Bool?
+    @Lossy var user: User?
+
+    var usesAccounts: Bool { setup != nil }
 }
 
 /// Decodes to nil instead of throwing, and treats a missing key as nil.

@@ -32,8 +32,11 @@ final class Health: @unchecked Sendable {
         var out = Changes(anchor: anchor)
         while true {
             let query = HKAnchoredObjectQueryDescriptor(predicates: [.sample(type: type, predicate: predicate)], anchor: out.anchor, limit: pageSize)
-            let page = try await query.result(for: store)
-            for sample in page.addedSamples { out.dates.insert(Self.day(of: sample)) }
+            // Not asked about yet (a type a newer build reads): no changes, and the anchor stays put so
+            // the type's whole history comes through once it's allowed.
+            guard let page = try await Self.unlessUndetermined({ try await query.result(for: store) }) else { return Changes(anchor: anchor) }
+            // WHOOP's copies never change a day's result (the aggregation skips them), so they don't make it dirty.
+            for sample in page.addedSamples where !sample.writtenBy.isReadDirectly { out.dates.insert(Self.day(of: sample)) }
             out.samples += page.addedSamples.count
             if !page.deletedObjects.isEmpty { out.sawDeletions = true }
             if type == HealthTypes.workout || type == HealthTypes.mindful {
@@ -50,7 +53,17 @@ final class Health: @unchecked Sendable {
     }
 
     func samples<S: HKSample>(_ predicate: HKSamplePredicate<S>) async throws -> [S] {
-        try await HKSampleQueryDescriptor(predicates: [predicate], sortDescriptors: []).result(for: store)
+        try await Self.unlessUndetermined({ try await HKSampleQueryDescriptor(predicates: [predicate], sortDescriptors: []).result(for: store) }) ?? []
+    }
+
+    /// Runs a query, returning nil when the person hasn't been asked about that type yet, so one new type
+    /// doesn't fail a whole background sync. Every other error still throws.
+    static func unlessUndetermined<T>(_ query: () async throws -> T) async throws -> T? {
+        do {
+            return try await query()
+        } catch let error as HKError where error.code == .errorAuthorizationNotDetermined {
+            return nil
+        }
     }
 
     /// Complete rows for `days` (sorted local dates), read from HealthKit in one padded window.

@@ -17,6 +17,9 @@ struct SyncState: Codable {
     var deletedWorkouts: [String] = []
     var deletedEvents: [String] = []
     var last: SyncReport?
+    /// The one-time re-read of history that gives already-synced days their hours, once the server stores them.
+    var hourlyBackfillStarted = false
+    var hourlyBackfillDone = false
 
     init(server: String = "", since: Date? = nil, last: SyncReport? = nil) {
         self.server = server
@@ -34,6 +37,23 @@ struct SyncState: Codable {
         deletedWorkouts = try c.decodeIfPresent([String].self, forKey: .deletedWorkouts) ?? []
         deletedEvents = try c.decodeIfPresent([String].self, forKey: .deletedEvents) ?? []
         last = try c.decodeIfPresent(SyncReport.self, forKey: .last)
+        hourlyBackfillStarted = try c.decodeIfPresent(Bool.self, forKey: .hourlyBackfillStarted) ?? false
+        hourlyBackfillDone = try c.decodeIfPresent(Bool.self, forKey: .hourlyBackfillDone) ?? false
+    }
+
+    /// Days only go up again when they change, so hours a server dropped (it didn't store them yet) would never
+    /// arrive. The first reply that counts `hourly` starts one full re-read of history.
+    mutating func startHourlyBackfill(serverStoresHours: Bool) {
+        guard serverStoresHours, !hourlyBackfillStarted, !hourlyBackfillDone else { return }
+        hourlyBackfillStarted = true
+        anchors = [:]
+    }
+
+    /// Done once every pending day went up and the server confirmed it stored their hours.
+    mutating func finishHourlyBackfill(serverStoredHours: Bool) {
+        guard hourlyBackfillStarted, pending.isEmpty, serverStoredHours else { return }
+        hourlyBackfillStarted = false
+        hourlyBackfillDone = true
     }
 
     private static var file: URL {
@@ -111,11 +131,19 @@ actor SyncEngine {
             guard Health.shared.isAvailable else { throw SyncError("Health data isn't available on this device.") }
             guard let base = Config.serverURL() else { throw SyncError("Enter the healthOS server URL.") }
             let token = Config.token
-            guard !token.isEmpty else { throw SyncError("Enter the ingest token (HEALTHOS_INGEST_TOKEN in the server's .env).") }
+            guard !token.isEmpty else { throw SyncError("Paste your ingest token from the dashboard: Integrations → iPhone app.") }
 
             // A different server has none of our history: start over.
             if state.server != base.absoluteString {
                 state = SyncState(server: base.absoluteString, since: Config.history.start(from: Date()), last: state.last)
+            }
+
+            let client = IngestClient(base: base, token: token)
+            // Ask (with an empty push, which writes nothing) whether this server stores hours yet.
+            var storedHours = false
+            if !state.hourlyBackfillDone {
+                storedHours = try await client.send(IngestPayload()).hourly != nil
+                state.startHourlyBackfill(serverStoresHours: storedHours)
             }
 
             // 1. Which days changed since the last sync.
@@ -150,7 +178,6 @@ actor SyncEngine {
             try state.save()
 
             // 2. Re-read each pending day in full and upload it, a week at a time.
-            let client = IngestClient(base: base, token: token)
             if !state.deletedWorkouts.isEmpty || !state.deletedEvents.isEmpty {
                 await emit("Removing deleted workouts and sessions")
                 try await client.send(IngestPayload(deleted: .init(workouts: state.deletedWorkouts, events: state.deletedEvents)))
@@ -163,13 +190,15 @@ actor SyncEngine {
             for (i, window) in windows.enumerated() {
                 await emit(windows.count == 1 && window.count == 1 ? "Uploading \(window[0])" : "Uploading \(window.first!) – \(window.last!) (\(i + 1)/\(windows.count))")
                 let payload = try await Health.shared.payload(for: window)
-                try await client.send(payload)
+                let reply = try await client.send(payload)
+                storedHours = reply.hourly != nil
                 let sent = Set(window)
                 state.pending.removeAll { sent.contains($0) }
                 try state.save()
                 days += window.count
                 rows += payload.rowCount
             }
+            state.finishHourlyBackfill(serverStoredHours: storedHours)
             state.last = SyncReport(finishedAt: Date(), ok: true, message: days == 0 ? "Up to date" : "Sent \(days) day\(days == 1 ? "" : "s") (\(rows) rows)")
         } catch {
             let message = (error as? HKError)?.code == .errorDatabaseInaccessible

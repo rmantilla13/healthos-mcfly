@@ -7,7 +7,7 @@ enum SampleData {
     // Apple-computed types (exercise minutes, sleeping wrist temperature) can't be written by apps.
     static let shareTypes: Set<HKSampleType> = Set(
         HealthTypes.quantities.map(\.identifier)
-            .filter { $0 != .appleExerciseTime && $0 != .appleSleepingWristTemperature }
+            .filter { $0 != .appleExerciseTime && $0 != .appleSleepingWristTemperature && $0.rawValue != "HKQuantityTypeIdentifierHeartRateVariabilityRMSSD" }
             .map { HKQuantityType($0) as HKSampleType }
     ).union([HealthTypes.sleep, HealthTypes.mindful, HealthTypes.workout])
 

@@ -16,7 +16,17 @@ struct QuantityMetric {
 enum HealthTypes {
     static let bpm = HKUnit.count().unitDivided(by: .minute())
 
-    static let quantities: [QuantityMetric] = [
+    static let quantities: [QuantityMetric] = {
+        var list = baseQuantities
+        if #available(iOS 27.0, *) {
+            // Newer Apple Watch software records RMSSD too: short daytime readings, so its own metric,
+            // separate from WHOOP's nightly hrv_rmssd (server/apple/import.ts does the same).
+            list.append(.init(identifier: .heartRateVariabilityRMSSD, metric: "hrv_rmssd_watch", aggregation: .avg, unit: .secondUnit(with: .milli)))
+        }
+        return list
+    }()
+
+    private static let baseQuantities: [QuantityMetric] = [
         .init(identifier: .stepCount, metric: "steps", aggregation: .sum, unit: .count()),
         .init(identifier: .activeEnergyBurned, metric: "active_energy", aggregation: .sum, unit: .kilocalorie()),
         .init(identifier: .appleExerciseTime, metric: "exercise_min", aggregation: .sum, unit: .minute()),

@@ -15,6 +15,8 @@ struct IngestClient {
         let daily: Int
         let workouts: Int
         let events: Int
+        /// Only servers that store hours report this; older ones drop the hourly rows silently.
+        let hourly: Int?
     }
 
     private struct ErrorBody: Decodable { let error: String }

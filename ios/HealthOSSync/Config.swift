@@ -31,8 +31,9 @@ enum Config {
         get {
             if let saved = defaults.string(forKey: "serverURL") { return saved }
             #if targetEnvironment(simulator)
-            // Simulator builds can write fake sample data to Health, so they point at a local dev server, not the live one.
-            return "http://localhost:8787"
+            // No default: simulator builds can fill Health with fake sample data, and any server the app syncs
+            // with receives it. Even localhost:8787 writes to the hosted database when .env.local has DATABASE_URL.
+            return ""
             #else
             return "https://health.mcfly.bot"
             #endif
@@ -53,6 +54,12 @@ enum Config {
     static var backgroundSync: Bool {
         get { defaults.object(forKey: "backgroundSync") as? Bool ?? true }
         set { defaults.set(newValue, forKey: "backgroundSync") }
+    }
+
+    /// Pre-fills the sign-in form. Not a secret; the password is never stored.
+    static var lastEmail: String {
+        get { defaults.string(forKey: "lastEmail") ?? "" }
+        set { defaults.set(newValue, forKey: "lastEmail") }
     }
 
     static var healthRequested: Bool {

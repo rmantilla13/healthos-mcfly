@@ -36,8 +36,18 @@ struct EventRow: Codable, Equatable {
     var date: String
 }
 
+/// One clock hour of one metric (POST /api/apple/ingest `hourly`). Days and hours are the phone's local time.
+struct HourlyRow: Codable, Equatable {
+    var date: String
+    var hour: Int
+    var metric: String
+    var value: Double
+}
+
 struct IngestPayload: Codable {
     var daily: [DailyRow] = []
+    /// Every hour with data for each (date, metric) sent: the server replaces that day's hours for the metric.
+    var hourly: [HourlyRow]?
     var workouts: [WorkoutRow] = []
     var events: [EventRow] = []
     var deleted: Deleted?
@@ -51,10 +61,25 @@ struct IngestPayload: Codable {
     var rowCount: Int { daily.count + workouts.count + events.count }
 }
 
+/// One quantity sample as the aggregation sees it.
+struct QuantityPoint {
+    let start: Stamp
+    let value: Double
+    let source: SampleSource
+}
+
 struct SleepSegment {
     let start: Stamp
     let end: Stamp
     let stage: SleepStage
+}
+
+/// One sleep sample as the aggregation sees it (kept free of HealthKit so tests can set the source).
+struct SleepRecord {
+    let start: Stamp
+    let end: Stamp
+    let stage: SleepStage
+    let source: SampleSource
 }
 
 struct SleepNight {
@@ -72,13 +97,21 @@ final class DayAggregator {
 
     // date -> metric -> source -> total. iPhone and Watch both count the same walk, so a day keeps the best single source.
     private var sums: [String: [String: [String: Double]]] = [:]
+    // date -> metric -> source -> hour -> total, for the Day view. A day sends the hours of the source that
+    // won its daily total, so the hours add up to the daily row (the export importer does the same).
+    private var hourlySums: [String: [String: [String: [Int: Double]]]] = [:]
     private var averages: [String: (sum: Double, n: Int)] = [:] // "date|metric"
     private var hrRange: [String: (min: Double, max: Double)] = [:]
+    // "date|hour" -> heart rate that hour, over every non-WHOOP source.
+    private var hourlyHR: [String: (sum: Double, n: Int, min: Double, max: Double)] = [:]
     private var lasts: [String: (at: Date, value: Double)] = [:] // "date|metric"
     // wake date -> source -> segments. The source with the most sleep wins the night.
     private var sleep: [String: [String: [SleepSegment]]] = [:]
     private var mindful: [EventRow] = []
     private var workouts: [WorkoutRow] = []
+
+    /// Hourly metrics the server accepts that come from summing samples.
+    static let hourlySumMetrics: Set<String> = ["steps", "active_energy"]
 
     // Longer than any real night: such records are app bugs, not sleep.
     static let maxSegment: TimeInterval = 20 * 3600
@@ -90,43 +123,85 @@ final class DayAggregator {
     }
 
     func add(_ samples: [HKQuantitySample], as q: QuantityMetric) {
-        for s in samples {
-            let date = s.startStamp.localDate()
-            guard dates.contains(date) else { continue }
-            let value = s.quantity.doubleValue(for: q.unit) * q.scale
+        add(points: samples.map { QuantityPoint(start: $0.startStamp, value: $0.quantity.doubleValue(for: q.unit) * q.scale, source: $0.writtenBy) }, as: q)
+    }
+
+    /// The aggregation itself, kept free of HealthKit so tests can set the source.
+    func add(points: [QuantityPoint], as q: QuantityMetric) {
+        for p in points where !p.source.isReadDirectly {
+            let value = p.value
             guard value.isFinite else { continue }
+            let date = p.start.localDate()
+            guard dates.contains(date) else { continue }
+            let hour = p.start.localHour
             let key = "\(date)|\(q.metric)"
             switch q.aggregation {
             case .sum:
-                sums[date, default: [:]][q.metric, default: [:]][s.sourceName, default: 0] += value
+                sums[date, default: [:]][q.metric, default: [:]][p.source.name, default: 0] += value
+                if Self.hourlySumMetrics.contains(q.metric) {
+                    hourlySums[date, default: [:]][q.metric, default: [:]][p.source.name, default: [:]][hour, default: 0] += value
+                }
             case .avg:
                 averages[key, default: (0, 0)].sum += value
                 averages[key, default: (0, 0)].n += 1
                 if q.metric == "hr_avg" {
                     let r = hrRange[date] ?? (value, value)
                     hrRange[date] = (Swift.min(r.min, value), Swift.max(r.max, value))
+                    let hk = "\(date)|\(hour)"
+                    let h = hourlyHR[hk] ?? (0, 0, value, value)
+                    hourlyHR[hk] = (h.sum + value, h.n + 1, Swift.min(h.min, value), Swift.max(h.max, value))
                 }
             case .last:
-                if let cur = lasts[key], s.startDate < cur.at { continue }
-                lasts[key] = (s.startDate, value)
+                if let cur = lasts[key], p.start.date < cur.at { continue }
+                lasts[key] = (p.start.date, value)
             }
         }
     }
 
+    /// The source whose total counts for the day: the largest, ties broken by name so it's stable.
+    private static func winner(_ bySource: [String: Double]) -> (source: String, total: Double)? {
+        bySource.max { a, b in a.value != b.value ? a.value < b.value : a.key > b.key }.map { ($0.key, $0.value) }
+    }
+
+    /// Hour rows for the Day view: steps and active energy from each day's winning source, heart rate over all sources.
+    var hourlyRows: [HourlyRow] {
+        var rows: [HourlyRow] = []
+        for (date, byMetric) in hourlySums {
+            for (metric, bySource) in byMetric {
+                guard let win = Self.winner(sums[date]?[metric] ?? [:]), let hours = bySource[win.source] else { continue }
+                rows += hours.map { HourlyRow(date: date, hour: $0.key, metric: metric, value: $0.value) }
+            }
+        }
+        for (key, h) in hourlyHR {
+            let parts = key.split(separator: "|")
+            let (date, hour) = (String(parts[0]), Int(parts[1])!)
+            rows += [
+                HourlyRow(date: date, hour: hour, metric: "hr_avg", value: h.sum / Double(h.n)),
+                HourlyRow(date: date, hour: hour, metric: "hr_min", value: h.min),
+                HourlyRow(date: date, hour: hour, metric: "hr_max", value: h.max),
+            ]
+        }
+        return rows.sorted { ($0.date, $0.metric, $0.hour) < ($1.date, $1.metric, $1.hour) }
+    }
+
     func add(sleep samples: [HKCategorySample]) {
-        for s in samples {
-            guard let stage = SleepStage(s.value) else { continue }
-            let span = s.endDate.timeIntervalSince(s.startDate)
+        add(sleepRecords: samples.compactMap { s in
+            SleepStage(s.value).map { SleepRecord(start: s.startStamp, end: s.endStamp, stage: $0, source: s.writtenBy) }
+        })
+    }
+
+    func add(sleepRecords records: [SleepRecord]) {
+        for r in records where !r.source.isReadDirectly {
+            let span = r.end.date.timeIntervalSince(r.start.date)
             guard span > 0, span <= Self.maxSegment else { continue }
-            let end = s.endStamp
-            let date = end.localDate(shift: Day.rollover)
+            let date = r.end.localDate(shift: Day.rollover)
             guard dates.contains(date) else { continue }
-            sleep[date, default: [:]][s.sourceName, default: []].append(SleepSegment(start: s.startStamp, end: end, stage: stage))
+            sleep[date, default: [:]][r.source.name, default: []].append(SleepSegment(start: r.start, end: r.end, stage: r.stage))
         }
     }
 
     func add(mindful samples: [HKCategorySample]) {
-        for s in samples {
+        for s in samples where !s.writtenBy.isReadDirectly {
             let start = s.startStamp
             let date = start.localDate()
             guard dates.contains(date) else { continue }
@@ -138,7 +213,7 @@ final class DayAggregator {
 
     func add(workouts list: [HKWorkout]) {
         let distanceTypes: [HKQuantityTypeIdentifier] = [.distanceWalkingRunning, .distanceCycling, .distanceSwimming, .distanceWheelchair, .distanceDownhillSnowSports]
-        for w in list {
+        for w in list where !w.writtenBy.isReadDirectly {
             let start = w.startStamp
             let date = start.localDate()
             guard dates.contains(date) else { continue }
@@ -177,7 +252,7 @@ final class DayAggregator {
         }
 
         for (date, byMetric) in sums {
-            for (metric, bySource) in byMetric { push(date, metric, bySource.values.max()!) }
+            for (metric, bySource) in byMetric { if let win = Self.winner(bySource) { push(date, metric, win.total) } }
         }
         for (key, a) in averages {
             let (date, metric) = split(key)
@@ -222,6 +297,8 @@ final class DayAggregator {
             }
         }
         p.workouts = workouts
+        let hourly = hourlyRows
+        p.hourly = hourly.isEmpty ? nil : hourly
         return p
     }
 

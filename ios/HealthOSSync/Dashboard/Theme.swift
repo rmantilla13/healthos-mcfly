@@ -136,3 +136,25 @@ struct Chip: View {
             .foregroundStyle(Palette.ink2)
     }
 }
+
+/// The healthOS mark, drawn like the dashboard's Logo (src/App.tsx) and the app icon.
+struct BrandMark: View {
+    var body: some View {
+        Canvas { ctx, size in
+            let unit = min(size.width, size.height) / 32
+            let c = CGPoint(x: size.width / 2, y: size.height / 2)
+            var rays = Path()
+            for i in 0..<24 {
+                let a = Double(i) / 24 * .pi * 2
+                let r1 = 5 + Double(i % 2) * 1.5
+                let r2 = 13 - Double(i % 3)
+                rays.move(to: CGPoint(x: c.x + r1 * unit * cos(a), y: c.y + r1 * unit * sin(a)))
+                rays.addLine(to: CGPoint(x: c.x + r2 * unit * cos(a), y: c.y + r2 * unit * sin(a)))
+            }
+            ctx.stroke(rays, with: .color(Palette.ink), style: StrokeStyle(lineWidth: 1.3 * unit, lineCap: .round))
+            let r = 2.4 * unit
+            ctx.fill(Path(ellipseIn: CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2)), with: .color(Palette.ink))
+        }
+        .accessibilityHidden(true)
+    }
+}

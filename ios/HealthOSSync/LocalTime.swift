@@ -18,6 +18,9 @@ struct Stamp {
         return Stamp.utc.dateComponents([.year, .month, .day, .hour, .minute, .second], from: Date(timeIntervalSince1970: seconds))
     }
 
+    /// Wall-clock hour (0–23) where it was recorded.
+    var localHour: Int { wall().hour! }
+
     /// Local calendar date (YYYY-MM-DD). Sleep passes `Day.rollover` so a night counts toward the wake day.
     func localDate(shift: TimeInterval = 0) -> String {
         let c = wall(shift: shift)
@@ -55,6 +58,12 @@ enum Day {
     static func add(_ day: String, _ days: Int) -> String { parser.string(from: midnightUTC(day).addingTimeInterval(TimeInterval(days) * 86_400)) }
     static func today() -> String { Stamp(Date(), timeZone: .current).localDate() }
     static func of(_ date: Date) -> String { Stamp(date, timeZone: .current).localDate() }
+    /// Midnight that starts this calendar day in the phone's time zone.
+    static func localMidnight(_ day: String) -> Date? {
+        let p = day.split(separator: "-").compactMap { Int($0) }
+        guard p.count == 3 else { return nil }
+        return Calendar.current.date(from: DateComponents(year: p[0], month: p[1], day: p[2]))
+    }
 }
 
 extension HKSample {
@@ -67,4 +76,19 @@ extension HKSample {
     var startStamp: Stamp { Stamp(startDate, timeZone: recordedTimeZone) }
     var endStamp: Stamp { Stamp(endDate, timeZone: recordedTimeZone) }
     var sourceName: String { sourceRevision.source.name }
+    var writtenBy: SampleSource { SampleSource(name: sourceRevision.source.name, bundleIdentifier: sourceRevision.source.bundleIdentifier) }
+}
+
+/// The app or device that wrote a sample.
+struct SampleSource: Equatable {
+    let name: String
+    let bundleIdentifier: String
+
+    /// A source healthOS reads directly from its own API (WHOOP). WHOOP also writes sleep, heart rate,
+    /// SpO2 and workouts into Apple Health, and counting those copies too would double them.
+    /// Same rule as fromDirectSource in server/apple/import.ts, plus the bundle ID.
+    var isReadDirectly: Bool {
+        bundleIdentifier.lowercased().contains("whoop")
+            || name.trimmingCharacters(in: .whitespaces).range(of: #"^whoop\b"#, options: [.regularExpression, .caseInsensitive]) != nil
+    }
 }

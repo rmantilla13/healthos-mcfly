@@ -9,7 +9,7 @@ settings:
   base:
     SWIFT_VERSION: "5.0"
     MARKETING_VERSION: "1.0"
-    CURRENT_PROJECT_VERSION: "1"
+    CURRENT_PROJECT_VERSION: "4"
 targets:
   HealthOSSync:
     type: application
@@ -22,14 +22,20 @@ targets:
     info:
       path: HealthOSSync/Info.plist
       properties:
-        CFBundleDisplayName: healthOS Sync
+        CFBundleDisplayName: healthOS
+        # From the build settings above, so testflight.sh's bump reaches the app.
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
-        NSHealthShareUsageDescription: healthOS Sync reads your Health data and sends daily summaries to the healthOS dashboard running on your own Mac.
-        NSHealthUpdateUsageDescription: In the simulator, healthOS Sync can write sample Health data so the sync can be tried end to end.
-        NSLocalNetworkUsageDescription: healthOS Sync sends your Health data to the healthOS dashboard on your Mac over your local network.
+        NSHealthShareUsageDescription: healthOS reads your Health data and sends daily summaries to your healthOS dashboard.
+        NSHealthUpdateUsageDescription: In the simulator, healthOS can write sample Health data so the sync can be tried end to end.
+        NSLocalNetworkUsageDescription: healthOS can send your Health data to a healthOS server on your local network.
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
+        # Only HTTPS via URLSession: exempt from export compliance documentation.
+        ITSAppUsesNonExemptEncryption: false
+        UIRequiredDeviceCapabilities: [healthkit]
     entitlements:
       path: HealthOSSync/HealthOSSync.entitlements
       properties:
@@ -41,8 +47,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: health.mcfly.sync
         TARGETED_DEVICE_FAMILY: "1"
         CODE_SIGN_STYLE: Automatic
-        # Set your team to install on an iPhone (or pick it in Xcode > Signing & Capabilities).
-        DEVELOPMENT_TEAM: ""
+        DEVELOPMENT_TEAM: 92X9CP6C6D
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ENABLE_PREVIEWS: YES
     scheme:
       testTargets: [HealthOSSyncTests]
@@ -56,3 +62,4 @@ targets:
       base:
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: health.mcfly.sync.tests
+        DEVELOPMENT_TEAM: 92X9CP6C6D

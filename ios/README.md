@@ -1,8 +1,29 @@
-# healthOS Sync (iOS)
+# healthOS for iPhone
 
-A small SwiftUI app that reads Apple Health on your iPhone and pushes it to the healthOS server on your Mac. It replaces the manual `export.zip` import.
+The healthOS dashboard as a native SwiftUI app. It also sends your iPhone's Apple Health data to the server automatically, so you don't need the manual `export.zip` import.
 
-## What it does
+## Dashboard
+
+The app reads the same API as the website (`/api/summary`, `/api/trends`, `/api/workouts`, `/api/status`). It shows the same numbers, including WHOOP recovery and strain, which only the server has.
+
+- **Today:**
+  - the greeting and a "week so far" summary;
+  - resting heart, breathing and temperature, each against your own range;
+  - six cards: recovery or VO₂ max, blood oxygen, HRV, sleep, strain or active energy, and steps against your goal;
+  - the day's timeline and insights.
+  - Arrows step through past days. Pull down to refresh, which also pushes any new Health data.
+- **Trends:** Vitals, Sleep (stacked stages), Activity (steps against goal, plus workouts) and Body, over 30 days, 90 days or a year. Drag across a chart to read a single day.
+- **Settings:** server address, sign-in status, and the Apple Health sync controls.
+
+Cards hide or switch to fit your sources, as on the web: no WHOOP means VO₂ max instead of recovery, active energy instead of strain, and HRV labelled SDNN.
+
+**Sign-in:** the same account as the website. On servers with per-person accounts the app asks for email and password; older single-user servers need only the password. The app works with either.
+- **Invites:** someone invited taps **Have an invite code?** and enters the code, or pastes the whole invite link. They pick a name, email and password, and land on their own dashboard. No email is ever sent.
+- **Session:** the 30-day session cookie lives in the Keychain.
+- **Local servers:** one with no password set needs no sign-in.
+- **Offline:** the last summary is cached on the phone, so the app opens with numbers even offline.
+
+## Apple Health sync
 
 - **Reads** steps, active energy, exercise minutes, walking + running distance, heart rate, resting HR, HRV (SDNN), blood oxygen, respiratory rate, sleeping wrist temperature, body temperature, weight, body fat, lean mass, VO₂ max, sleep stages, mindful sessions and workouts.
 - **Finds what changed** with one HealthKit anchored query per type. Only the local days touched by new samples are re-read.
@@ -27,14 +48,21 @@ Without it, the endpoint answers 503 and accepts nothing.
 
 ## Install on your iPhone
 
-Needs iOS 17 or later. Built and tested with Xcode 27.
+Needs iOS 17 or later. Built and tested with Xcode 27. Bundle ID `health.mcfly.sync`, team `92X9CP6C6D`.
 
-1. Open `ios/HealthOSSync.xcodeproj`.
-2. Under **Signing & Capabilities**, pick your team. The bundle identifier is `health.mcfly.sync`.
-3. Run on your phone.
-4. In the app, paste the token, then tap **Test connection**. The server address is already filled in.
-5. Tap **Sync now**. When the Health sheet asks how much history to share, pick **All Recorded Data** if you want a full backfill. The **First upload covers** setting can limit it further.
-6. For background sync, leave **Background App Refresh** on for the app (Settings → General).
+1. Install the latest build from **TestFlight**. In App Store Connect → TestFlight, add yourself to an internal testing group once; new builds then appear in the TestFlight app. For a quick local install instead, run the `HealthOSSync` scheme on your phone from Xcode.
+2. Open the app and sign in, or join with an invite code. It already points at `https://health.mcfly.bot`.
+3. In **Settings**, paste your ingest token, then tap **Test connection**. Each person gets their own on the dashboard under Integrations → iPhone app; the owner can also use the `HEALTHOS_INGEST_TOKEN` value set on Vercel.
+4. Tap **Sync now**. When the Health sheet asks how much history to share, pick **All Recorded Data** if you want a full backfill. The **First upload covers** setting can limit it further.
+5. For background sync, leave **Background App Refresh** on for the app (Settings → General).
+
+### Shipping a new TestFlight build
+
+```bash
+ios/testflight.sh
+```
+
+The script bumps the build number in `project.yml`, archives a Release build, and uploads it with the Apple account signed in to Xcode. Apple then processes the build, usually in 5–30 minutes, before it shows up in TestFlight. Change `MARKETING_VERSION` in `project.yml` for a new version number.
 
 ### Syncing to a Mac instead
 
@@ -42,9 +70,15 @@ To keep data on your Mac, run the server there with `HEALTHOS_LAN=1` as well as 
 
 ## Simulator
 
-The simulator shares the Mac's network, so `http://localhost:8787` (the default there) reaches the normal localhost-only server. You still need `HEALTHOS_INGEST_TOKEN` in `.env`.
+Simulator builds have an extra **Add sample Health data** button. It writes two weeks of plausible data into the simulator's Health store, so the whole flow can be tried without a phone. Device builds never ask for write access.
 
-The simulator has an extra **Add sample Health data** button. It writes two weeks of plausible data into the simulator's Health store, so the whole flow can be tried without a phone. Device builds never ask for write access.
+**Point the simulator only at a scratch server.** Whatever is in its Health store is uploaded as real Apple Health data. Never use the hosted site. Avoid `localhost:8787` too: with `DATABASE_URL` in `.env.local`, that server writes to the hosted database. Simulator builds start with no server address for this reason. The simulator shares the Mac's network, so a scratch server on the Mac is reachable at localhost:
+
+```bash
+env -u DATABASE_URL HEALTHOS_DATA_DIR=/tmp/healthos-scratch PORT=8790 HEALTHOS_INGEST_TOKEN=any-test-token-16chars node server/index.ts
+```
+
+Then enter `http://localhost:8790` and that token in the app's Settings.
 
 Build and test from the terminal:
 

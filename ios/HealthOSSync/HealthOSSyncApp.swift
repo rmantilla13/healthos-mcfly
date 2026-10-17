@@ -7,7 +7,45 @@ struct HealthOSSyncApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            RootView()
+        }
+    }
+}
+
+struct RootView: View {
+    @State private var dashboard = Dashboard()
+    @State private var sync = AppModel()
+    @Environment(\.scenePhase) private var scenePhase
+
+    var body: some View {
+        @Bindable var dashboard = dashboard
+        TabView(selection: $dashboard.tab) {
+            TodayScreen()
+                .tabItem { Label("Today", systemImage: "heart.text.square") }
+                .tag(AppTab.today)
+            TrendsScreen()
+                .tabItem { Label("Trends", systemImage: "chart.xyaxis.line") }
+                .tag(AppTab.trends)
+            SettingsScreen()
+                .tabItem { Label("Settings", systemImage: "gearshape") }
+                .tag(AppTab.settings)
+        }
+        .environment(dashboard)
+        .environment(sync)
+        .tint(Palette.series1)
+        .onAppear {
+            sync.dashboard = dashboard
+            KeyboardDismisser.install()
+        }
+        // On open and on every return to the app: one Sync for Apple Health and WHOOP.
+        .onChange(of: scenePhase, initial: true) { _, phase in
+            guard phase == .active else { return }
+            Task {
+                // After an update that reads a new type, Health asks about it now; it shows nothing otherwise.
+                if Config.healthRequested { await sync.requestHealthAccess() }
+                await dashboard.startIfNeeded()
+                await sync.syncAllIfStale()
+            }
         }
     }
 }

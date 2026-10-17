@@ -44,6 +44,28 @@ final class DashboardTests: XCTestCase {
         XCTAssertNotNil(s.activity?.latest)
     }
 
+    func testReadsSignInStateFromOldAndNewServers() throws {
+        let old = try JSONDecoder().decode(AuthState.self, from: Data(#"{"mode":"required","authenticated":false}"#.utf8))
+        XCTAssertFalse(old.usesAccounts)
+        XCTAssertNil(old.user)
+
+        let new = try JSONDecoder().decode(AuthState.self, from: Data(#"{"mode":"required","authenticated":true,"setup":false,"user":{"id":"u1","email":"sam@example.com","name":"Sam","role":"admin"}}"#.utf8))
+        XCTAssertTrue(new.usesAccounts)
+        XCTAssertEqual(new.user?.email, "sam@example.com")
+
+        let fresh = try JSONDecoder().decode(AuthState.self, from: Data(#"{"mode":"required","authenticated":false,"setup":true,"user":null}"#.utf8))
+        XCTAssertTrue(fresh.usesAccounts)
+        XCTAssertNil(fresh.user)
+    }
+
+    func testInviteCodesAndLinksBothWork() {
+        XCTAssertEqual(APIClient.inviteToken(from: "  ABCD-EFGH \n"), "ABCD-EFGH")
+        // Link tokens are case-sensitive base64url: keep case, dashes and underscores.
+        XCTAssertEqual(APIClient.inviteToken(from: "https://health.mcfly.bot/#/invite/aB3-x_Yz9Q"), "aB3-x_Yz9Q")
+        XCTAssertEqual(APIClient.inviteToken(from: "https://health.mcfly.bot/#/invite/aB3-x_Yz9Q?from=admin"), "aB3-x_Yz9Q")
+        XCTAssertEqual(APIClient.inviteToken(from: ""), "")
+    }
+
     func testTheCachedSummaryRoundTrips() throws {
         let s = try JSONDecoder().decode(Summary.self, from: fixture("summary"))
         let again = try JSONDecoder().decode(Summary.self, from: JSONEncoder().encode(s))

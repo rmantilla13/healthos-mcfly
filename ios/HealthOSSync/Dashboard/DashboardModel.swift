@@ -48,6 +48,14 @@ final class Dashboard {
     var error: String?
     var tab: AppTab = .today
     var trendsSection: TrendsSection = .vitals
+    /// "open" (no sign-in, e.g. a local server) or "required" (the hosted dashboard).
+    var authMode: String?
+    /// The server signs in with email and password (per-person accounts), not a password alone.
+    var usesAccounts = false
+    /// Who's signed in, on servers with accounts.
+    var account: AuthState.User?
+    /// Goes up after every successful load, so screens holding their own fetched data (trends, workouts) fetch again.
+    var generation = 0
 
     private var server: URL?
     private var trendCache: [String: Trends] = [:]
@@ -59,7 +67,8 @@ final class Dashboard {
 
     /// Connects to the configured server if it changed since the last start.
     func startIfNeeded() async {
-        if server != Config.serverURL() || phase == .starting { await start() }
+        // Also when /auth/me never succeeded (offline at launch): until then the sign-in mode is unknown.
+        if server != Config.serverURL() || phase == .starting || authMode == nil { await start() }
     }
 
     func start() async {
@@ -77,6 +86,9 @@ final class Dashboard {
         }
         do {
             let auth = try await client.authState()
+            authMode = auth.mode
+            usesAccounts = auth.usesAccounts
+            account = auth.user
             switch auth.mode {
             case "open": phase = .ready
             case "required": phase = auth.authenticated ? .ready : .signIn
@@ -102,8 +114,10 @@ final class Dashboard {
             self.summary = summary
             self.status = status
             error = nil
+            if case .unavailable = phase { phase = .ready }
             trendCache = [:]
             workoutCache = [:]
+            generation += 1
             if date == nil { SummaryCache.save(summary: summary, status: status, for: client.base) }
         } catch APIError.signInRequired {
             phase = .signIn
@@ -112,17 +126,25 @@ final class Dashboard {
         }
     }
 
-    /// Pull to refresh: reload, then push any new Health data and reload again if it sent something.
-    func refresh() async {
+
+    func signIn(email: String, password: String) async throws {
+        guard let client = APIClient.current() else { throw APIError.network("Enter the server address in Settings.") }
+        try await client.signIn(email: email, password: password)
+        Config.lastEmail = email
+        if let auth = try? await client.authState() {
+            authMode = auth.mode
+            usesAccounts = auth.usesAccounts
+            account = auth.user
+        }
+        phase = .ready
         await load()
-        guard !Config.token.isEmpty, Config.healthRequested else { return }
-        let report = await SyncEngine.shared.sync()
-        if report.ok, report.message != "Up to date" { await load() }
     }
 
-    func signIn(password: String) async throws {
+    func join(code: String, name: String, email: String, password: String) async throws {
         guard let client = APIClient.current() else { throw APIError.network("Enter the server address in Settings.") }
-        try await client.signIn(password: password)
+        try await client.acceptInvite(code: code, email: email, name: name, password: password)
+        Config.lastEmail = email
+        account = (try? await client.authState())?.user
         phase = .ready
         await load()
     }
@@ -133,6 +155,7 @@ final class Dashboard {
             SummaryCache.clear(for: client.base)
         }
         clearData()
+        account = nil
         phase = .signIn
     }
 
