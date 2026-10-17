@@ -56,15 +56,26 @@ export function McFly({ me }: { me: SessionUser }) {
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const abort = useRef<AbortController | null>(null);
-  const end = useRef<HTMLDivElement>(null);
+  const thread = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
+  // Follow new text only while the reader is at the bottom; scrolling up to reread stops it.
+  const following = useRef(true);
+  const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
     save(me.id, msgs);
   }, [me.id, msgs]);
   useEffect(() => {
-    end.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });
+    const el = thread.current;
+    if (el && following.current) el.scrollTop = el.scrollHeight;
   }, [msgs]);
+
+  function onScroll() {
+    const el = thread.current;
+    if (!el) return;
+    following.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    setScrolled(el.scrollTop > 4);
+  }
   useEffect(() => () => abort.current?.abort(), []);
 
   const update = (fn: (last: Msg) => Msg) => setMsgs((ms) => [...ms.slice(0, -1), fn(ms[ms.length - 1])]);
@@ -75,6 +86,7 @@ export function McFly({ me }: { me: SessionUser }) {
     const history = historyFor(msgs, q);
     setDraft('');
     setBusy(true);
+    following.current = true;
     setMsgs((ms) => [...ms, { role: 'user', content: q }, { role: 'assistant', content: '', steps: [], pending: true }]);
     const controller = new AbortController();
     abort.current = controller;
@@ -161,54 +173,56 @@ export function McFly({ me }: { me: SessionUser }) {
         </section>
       ) : (
         <>
-          <div className="mcfly-thread" aria-live="polite">
-            {msgs.length === 0 && (
-              <div className="mcfly-empty">
-                <span className="mcfly-mark" aria-hidden="true">
-                  <Icon name="spark" size={22} />
-                </span>
-                <p className="muted">Try one of these, or ask your own.</p>
-                <div className="mcfly-suggestions">
-                  {SUGGESTIONS.map((s) => (
-                    <button key={s} className="chip-btn" onClick={() => ask(s)} disabled={busy || left === 0}>
-                      {s}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-            {msgs.map((m, i) =>
-              m.role === 'user' ? (
-                <div key={i} className="mcfly-q">
-                  {m.content}
-                </div>
-              ) : (
-                <div key={i} className="mcfly-a">
+          <div className={`mcfly-thread-wrap${scrolled ? ' is-scrolled' : ''}`}>
+            <div className="mcfly-fade" aria-hidden="true" />
+            <div className="mcfly-thread" ref={thread} onScroll={onScroll} aria-live="polite">
+              {msgs.length === 0 && (
+                <div className="mcfly-empty">
                   <span className="mcfly-mark" aria-hidden="true">
-                    <Icon name="spark" size={16} />
+                    <Icon name="spark" size={22} />
                   </span>
-                  <div className="mcfly-body">
-                    {(m.steps?.length ?? 0) > 0 && (
-                      <ul className="mcfly-steps" aria-label="What McFly looked at">
-                        {m.steps!.map((s, j) => (
-                          <li key={j}>
-                            <Icon name="check" size={12} /> {s}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                    {m.content && <Answer text={m.content} />}
-                    {m.pending && !m.content && <span className="mcfly-typing" aria-label="McFly is thinking" />}
-                    {m.error && (
-                      <p className="note-bad">
-                        <Icon name="alert" size={15} /> {m.error}
-                      </p>
-                    )}
+                  <p className="muted">Try one of these, or ask your own.</p>
+                  <div className="mcfly-suggestions">
+                    {SUGGESTIONS.map((s) => (
+                      <button key={s} className="chip-btn" onClick={() => ask(s)} disabled={busy || left === 0}>
+                        {s}
+                      </button>
+                    ))}
                   </div>
                 </div>
-              ),
-            )}
-            <div ref={end} />
+              )}
+              {msgs.map((m, i) =>
+                m.role === 'user' ? (
+                  <div key={i} className="mcfly-q">
+                    {m.content}
+                  </div>
+                ) : (
+                  <div key={i} className="mcfly-a">
+                    <span className="mcfly-mark" aria-hidden="true">
+                      <Icon name="spark" size={16} />
+                    </span>
+                    <div className="mcfly-body">
+                      {(m.steps?.length ?? 0) > 0 && (
+                        <ul className="mcfly-steps" aria-label="What McFly looked at">
+                          {m.steps!.map((s, j) => (
+                            <li key={j}>
+                              <Icon name="check" size={12} /> {s}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      {m.content && <Answer text={m.content} />}
+                      {m.pending && !m.content && <span className="mcfly-typing" aria-label="McFly is thinking" />}
+                      {m.error && (
+                        <p className="note-bad">
+                          <Icon name="alert" size={15} /> {m.error}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ),
+              )}
+            </div>
           </div>
 
           <form
