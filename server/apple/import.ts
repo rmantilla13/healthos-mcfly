@@ -3,8 +3,8 @@ import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { SaxesParser, type SaxesTagPlain } from 'saxes';
 import yauzl from 'yauzl';
-import { type DailyRow, type EventRow, type Scope, type WorkoutRow, deleteSource, setUserSetting, upsertDaily, upsertEvents, upsertWorkouts } from '../db.ts';
-import { DAY_ROLLOVER_MS, localDate, parseAppleDate, toLocalIso, type Stamp } from '../dates.ts';
+import { type DailyRow, type EventRow, type HourlyRow, type Scope, type WorkoutRow, deleteSource, getUserSetting, setUserSetting, upsertDaily, upsertEvents, upsertHourly, upsertWorkouts } from '../db.ts';
+import { DAY_ROLLOVER_MS, localDate, localHour, parseAppleDate, toLocalIso, type Stamp, zoneOffsets } from '../dates.ts';
 
 export const SOURCE = 'apple';
 
@@ -127,8 +127,26 @@ export type ImportResult = {
   lastDate: string | null;
 };
 
+/** Metrics also kept hour by hour, for the Day view. */
+const HOURLY_SUMS = new Set(['steps', 'active_energy']);
+
 /** Accumulates Apple Health records into per-day values. Kept separate from I/O so tests can drive it. */
 export class AppleAggregator {
+  /**
+   * With the person's time zone, hourly buckets use the local hour the zone had at each instant. Apple's
+   * export prints every timestamp with one fixed offset, so for half the year its own wall clock is an
+   * hour off. Days keep the export's own dates, as before.
+   */
+  constructor(opts: { timeZone?: string | null } = {}) {
+    if (opts.timeZone) {
+      try {
+        this.offsetAt = zoneOffsets(opts.timeZone);
+      } catch {
+        // Unknown zone name: use the export's own offsets.
+      }
+    }
+  }
+  private offsetAt?: (ms: number) => number;
   records = 0;
   /** Records skipped because they're another app's copy of data read directly (see fromDirectSource). */
   skipped = 0;
@@ -138,6 +156,10 @@ export class AppleAggregator {
   private avgs = new Map<string, { sum: number; n: number }>();
   private hrRange = new Map<string, { min: number; max: number }>();
   private lasts = new Map<string, { ms: number; value: number }>();
+  // hourly sums: date|metric -> source -> hour -> total, so each day can keep its best single source, as days do.
+  private hourSums = new Map<string, Map<string, Map<number, number>>>();
+  // hourly heart rate: date|hour -> running average, low and high.
+  private hourHr = new Map<string, { sum: number; n: number; min: number; max: number }>();
   // sleep: wake-date -> source -> segments. The source with the most sleep wins the night.
   private sleep = new Map<string, Map<string, SleepSegment[]>>();
   private mindful: EventRow[] = [];
@@ -178,6 +200,26 @@ export class AppleAggregator {
     const start = parseAppleDate(a.startDate);
     const date = localDate(start);
     const source = a.sourceName ?? 'unknown';
+
+    if (HOURLY_SUMS.has(q.metric) || q.metric === 'hr_avg') {
+      const local = this.offsetAt ? { ms: start.ms, offsetMin: this.offsetAt(start.ms) } : start;
+      const hDate = localDate(local);
+      const hour = localHour(local);
+      if (q.metric === 'hr_avg') {
+        const k = `${hDate}|${hour}`;
+        const cur = this.hourHr.get(k);
+        if (cur) {
+          cur.sum += value;
+          cur.n++;
+          cur.min = Math.min(cur.min, value);
+          cur.max = Math.max(cur.max, value);
+        } else this.hourHr.set(k, { sum: value, n: 1, min: value, max: value });
+      } else {
+        const bySource = getOr(this.hourSums, `${hDate}|${q.metric}`, () => new Map());
+        const byHour = getOr(bySource, source, () => new Map());
+        byHour.set(hour, (byHour.get(hour) ?? 0) + value);
+      }
+    }
 
     if (q.agg === 'sum') {
       const byMetric = getOr(this.sums, date, () => new Map());
@@ -225,7 +267,7 @@ export class AppleAggregator {
     });
   }
 
-  finish(): { daily: DailyRow[]; workouts: WorkoutRow[]; events: EventRow[] } {
+  finish(): { daily: DailyRow[]; hourly: HourlyRow[]; workouts: WorkoutRow[]; events: EventRow[] } {
     const daily: DailyRow[] = [];
     const push = (date: string, metric: string, value: number) => daily.push({ date, metric, source: SOURCE, value });
 
@@ -243,6 +285,28 @@ export class AppleAggregator {
     for (const [k, { value }] of this.lasts) {
       const [date, metric] = k.split('|');
       push(date, metric, value);
+    }
+
+    const hourly: HourlyRow[] = [];
+    for (const [k, bySource] of this.hourSums) {
+      const [date, metric] = k.split('|');
+      // iPhone and Watch both log the same walk: keep the source with the most for the day, as days do.
+      let best: Map<number, number> | undefined;
+      let bestTotal = -Infinity;
+      for (const byHour of bySource.values()) {
+        const total = [...byHour.values()].reduce((a, b) => a + b, 0);
+        if (total > bestTotal) [best, bestTotal] = [byHour, total];
+      }
+      for (const [hour, value] of best ?? []) hourly.push({ date, hour, metric, source: SOURCE, value });
+    }
+    for (const [k, { sum, n, min, max }] of this.hourHr) {
+      const [date, h] = k.split('|');
+      const hour = Number(h);
+      hourly.push(
+        { date, hour, metric: 'hr_avg', source: SOURCE, value: sum / n },
+        { date, hour, metric: 'hr_min', source: SOURCE, value: min },
+        { date, hour, metric: 'hr_max', source: SOURCE, value: max },
+      );
     }
 
     const events: EventRow[] = [...this.mindful];
@@ -283,7 +347,7 @@ export class AppleAggregator {
         });
       }
     }
-    return { daily, workouts: this.workouts, events };
+    return { daily, hourly, workouts: this.workouts, events };
   }
 }
 
@@ -345,8 +409,12 @@ function getOr<K, V>(map: Map<K, V>, key: K, make: () => V): V {
 }
 
 /** Stream-parse export.xml text. Never loads the whole file: real exports run to several GB. */
-export async function parseStream(stream: Readable, onChunk?: (bytes: number, records: number) => void): Promise<AppleAggregator> {
-  const agg = new AppleAggregator();
+export async function parseStream(
+  stream: Readable,
+  onChunk?: (bytes: number, records: number) => void,
+  opts: { timeZone?: string | null } = {},
+): Promise<AppleAggregator> {
+  const agg = new AppleAggregator(opts);
   const parser = new SaxesParser({ xmlns: false });
   parser.on('opentag', (t) => agg.onOpenTag(t as SaxesTagPlain));
   parser.on('closetag', (t) => agg.onCloseTag(t as SaxesTagPlain));
@@ -422,16 +490,23 @@ async function openExportXml(file: string): Promise<{ stream: Readable; totalByt
 export async function importAppleHealth(scope: Scope, file: string, onProgress?: (p: ImportProgress) => void): Promise<ImportResult> {
   const { db, userId } = scope;
   const { stream, totalBytes } = await openExportXml(file);
+  // The zone the dashboard reported for this person, for historical local hours (see AppleAggregator).
+  const timeZone = await getUserSetting(db, userId, 'timezone');
   let bytesRead = 0;
-  const agg = await parseStream(Readable.from(utf8Safe(stream)), (bytes, records) => {
-    bytesRead += bytes;
-    onProgress?.({ bytesRead, totalBytes, records });
-  });
-  const { daily, workouts, events } = agg.finish();
+  const agg = await parseStream(
+    Readable.from(utf8Safe(stream)),
+    (bytes, records) => {
+      bytesRead += bytes;
+      onProgress?.({ bytesRead, totalBytes, records });
+    },
+    { timeZone },
+  );
+  const { daily, hourly, workouts, events } = agg.finish();
 
   await db.tx(async (q) => {
     await deleteSource(q, userId, SOURCE);
     await upsertDaily(q, userId, daily);
+    await upsertHourly(q, userId, hourly);
     await upsertWorkouts(q, userId, workouts);
     await upsertEvents(q, userId, events);
   });

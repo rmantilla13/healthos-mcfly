@@ -4,7 +4,7 @@
 
 import { createHash, timingSafeEqual } from 'node:crypto';
 import express, { type NextFunction, type Request, type Response } from 'express';
-import { type DailyRow, type Db, type EventRow, OWNER_ID, type Scope, type WorkoutRow, setUserSetting, upsertDaily, upsertEvents, upsertWorkouts } from '../db.ts';
+import { type DailyRow, type Db, type EventRow, HOURLY_FOLD, type HourlyRow, OWNER_ID, type Scope, type WorkoutRow, setUserSetting, upsertDaily, upsertEvents, upsertHourly, upsertWorkouts } from '../db.ts';
 import { SOURCE } from './import.ts';
 
 /** Daily metrics the importer produces (server/apple/import.ts). Anything else is a client bug. */
@@ -35,6 +35,9 @@ export const APPLE_METRICS = new Set([
   'sleep_awake',
 ]);
 
+/** Hourly metrics the app may send for the Day view: sums per hour, and heart rate's average, low and high. */
+export const HOURLY_METRICS = new Set(Object.keys(HOURLY_FOLD));
+
 const MAX_ROWS = 100_000;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/;
@@ -42,12 +45,14 @@ const EVENT_KINDS = new Set(['sleep', 'nap', 'mindful']);
 
 export type IngestPayload = {
   daily: DailyRow[];
+  /** Local wall-clock hours. Each (date, metric) sent is that day's complete set of hours and replaces it. */
+  hourly: HourlyRow[];
   workouts: WorkoutRow[];
   events: EventRow[];
   /** Ids of workouts and mindful sessions the app sent earlier that were since deleted in Health. */
   deleted: { workouts: string[]; events: string[] };
 };
-export type IngestResult = { daily: number; workouts: number; events: number; deleted: number };
+export type IngestResult = { daily: number; hourly: number; workouts: number; events: number; deleted: number };
 
 export class IngestError extends Error {}
 
@@ -104,6 +109,17 @@ export function parseIngest(body: unknown): IngestPayload {
     if (!APPLE_METRICS.has(metric)) fail(`${p}.metric`, `unknown metric "${metric}"`);
     return { date: date(r.date, `${p}.date`), metric, source: SOURCE, value: num(r.value, `${p}.value`) };
   });
+  const hourly = list(b, 'hourly').map((raw, i): HourlyRow => {
+    const p = `hourly[${i}]`;
+    const r = record(raw, p);
+    const metric = text(r.metric, `${p}.metric`, 40);
+    if (!HOURLY_METRICS.has(metric)) fail(`${p}.metric`, `unknown hourly metric "${metric}"`);
+    const hour = r.hour;
+    if (typeof hour !== 'number' || !Number.isInteger(hour) || hour < 0 || hour > 23) fail(`${p}.hour`, 'expected a whole hour from 0 to 23');
+    const value = num(r.value, `${p}.value`);
+    if (value < 0) fail(`${p}.value`, 'must not be negative');
+    return { date: date(r.date, `${p}.date`), hour, metric, source: SOURCE, value };
+  });
   const workouts = list(b, 'workouts').map((raw, i): WorkoutRow => {
     const p = `workouts[${i}]`;
     const r = record(raw, p);
@@ -146,7 +162,7 @@ export function parseIngest(body: unknown): IngestPayload {
       if (!id.startsWith('hk-')) fail(`deleted.${key}[${i}]`, 'only ids starting with hk- can be deleted');
       return id;
     });
-  return { daily, workouts, events, deleted: { workouts: deletedIds('workouts'), events: deletedIds('events') } };
+  return { daily, hourly, workouts, events, deleted: { workouts: deletedIds('workouts'), events: deletedIds('events') } };
 }
 
 /** Upserts a validated push. Each daily row is a complete recomputed day, so it replaces the stored value. */
@@ -166,6 +182,16 @@ export async function ingestApple(scope: Scope, p: IngestPayload): Promise<Inges
       deleted += (await q.query('DELETE FROM events WHERE user_id = $1 AND source = $2 AND id = $3 RETURNING 1', [userId, SOURCE, id])).length;
     }
     await upsertDaily(q, userId, p.daily);
+    // Each (date, metric) is the phone's complete set of hours for that day: clear it, then write, so an
+    // hour that no longer has data (a deleted sample) doesn't linger.
+    const days = [...new Set(p.hourly.map((h) => `${h.date}|${h.metric}`))].map((k) => k.split('|'));
+    if (days.length) {
+      await q.query(
+        'DELETE FROM hourly WHERE user_id = $1 AND source = $2 AND (date, metric) IN (SELECT * FROM unnest($3::text[], $4::text[]))',
+        [userId, SOURCE, days.map((d) => d[0]), days.map((d) => d[1])],
+      );
+    }
+    await upsertHourly(q, userId, p.hourly);
     for (const w of p.workouts) {
       if (w.id.startsWith('hk-')) {
         await q.query(
@@ -185,8 +211,8 @@ export async function ingestApple(scope: Scope, p: IngestPayload): Promise<Inges
     }
     await upsertEvents(q, userId, p.events);
   });
-  const result = { daily: p.daily.length, workouts: p.workouts.length, events: p.events.length, deleted };
-  if (result.daily + result.workouts + result.events + deleted > 0) {
+  const result = { daily: p.daily.length, hourly: p.hourly.length, workouts: p.workouts.length, events: p.events.length, deleted };
+  if (result.daily + result.hourly + result.workouts + result.events + deleted > 0) {
     await setUserSetting(db, userId, 'apple_last_sync', JSON.stringify({ ...result, syncedAt: new Date().toISOString() }));
   }
   return result;

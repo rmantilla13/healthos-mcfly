@@ -26,6 +26,18 @@ export type WorkoutRow = {
   strain: number | null;
 };
 
+/** One local hour of one metric: a sum (steps, active_energy) or a reading (hr_avg, hr_min, hr_max). */
+export type HourlyRow = { date: string; hour: number; metric: string; source: string; value: number };
+
+/** Hourly metrics and how two buckets for the same hour combine (the repeated hour when clocks go back). */
+export const HOURLY_FOLD: Record<string, (a: number, b: number) => number> = {
+  steps: (a, b) => a + b,
+  active_energy: (a, b) => a + b,
+  hr_avg: (a, b) => (a + b) / 2,
+  hr_min: Math.min,
+  hr_max: Math.max,
+};
+
 export type EventRow = {
   id: string;
   source: string;
@@ -83,8 +95,27 @@ export async function upsertEvents(q: Queryable, userId: string, rows: EventRow[
   );
 }
 
+export async function upsertHourly(q: Queryable, userId: string, rows: HourlyRow[]) {
+  // One row per (metric, date, hour, source): duplicates in a batch fold together rather than make
+  // Postgres reject the statement.
+  const unique = new Map<string, HourlyRow>();
+  for (const r of rows) {
+    if (!Number.isFinite(r.value)) continue;
+    const k = `${r.metric}|${r.date}|${r.hour}|${r.source}`;
+    const prev = unique.get(k);
+    unique.set(k, prev ? { ...r, value: (HOURLY_FOLD[r.metric] ?? ((_a, b) => b))(prev.value, r.value) } : r);
+  }
+  await insertMany(
+    q,
+    'hourly',
+    ['user_id', 'metric', 'date', 'hour', 'source', 'value'],
+    [...unique.values()].map((r) => [userId, r.metric, r.date, r.hour, r.source, r.value]),
+    'ON CONFLICT (user_id, metric, date, hour, source) DO UPDATE SET value = excluded.value',
+  );
+}
+
 export async function deleteSource(q: Queryable, userId: string, source: string) {
-  for (const table of ['daily', 'workouts', 'events']) {
+  for (const table of ['daily', 'hourly', 'workouts', 'events']) {
     await q.query(`DELETE FROM ${table} WHERE user_id = $1 AND source = $2`, [userId, source]);
   }
 }
@@ -130,7 +161,7 @@ export async function setUserSetting(q: Queryable, userId: string, key: string, 
 
 /** Everything one person stored, removed together (account deletion). */
 export async function deleteUserData(q: Queryable, userId: string) {
-  for (const table of ['daily', 'workouts', 'events', 'tokens', 'profile_assets', 'user_settings', 'mcfly_usage']) {
+  for (const table of ['daily', 'hourly', 'workouts', 'events', 'tokens', 'profile_assets', 'user_settings', 'mcfly_usage']) {
     await q.query(`DELETE FROM ${table} WHERE user_id = $1`, [userId]);
   }
 }

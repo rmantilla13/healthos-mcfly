@@ -9,6 +9,7 @@ import { waitUntil } from '@vercel/functions';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import type { ImportJob, Settings, Status } from '../shared/types.ts';
 import { adminRouter } from './admin.ts';
+import { DAY_METRICS, dayView } from './day.ts';
 import { importAppleHealth } from './apple/import.ts';
 import { ingestRouter } from './apple/ingest.ts';
 import { authRoutes, cronAuthorized, currentUser, publicUser, requireSession, sha256 } from './auth.ts';
@@ -97,6 +98,15 @@ export function createApp({ db, hosted, ingestToken, mcflyClient }: AppOptions) 
       .filter((m) => /^[a-z0-9_]+$/.test(m))
       .slice(0, 20);
     res.json(await trends(scopeOf(res), hosted, metrics, days(req), asOf(req)));
+  });
+
+  api.get('/day', async (req, res) => {
+    const asked = String(req.query.metrics ?? DAY_METRICS.join(',')).split(',');
+    const metrics = DAY_METRICS.filter((m) => asked.includes(m));
+    if (!metrics.length) return void res.status(400).json({ error: `metrics must include ${DAY_METRICS.join(', ')}` });
+    const date = req.query.date === undefined ? undefined : String(req.query.date);
+    if (date !== undefined && !DATE.test(date)) return void res.status(400).json({ error: 'date must be YYYY-MM-DD' });
+    res.json(await dayView(scopeOf(res), hosted, metrics, date));
   });
 
   api.get('/workouts', async (req, res) => {

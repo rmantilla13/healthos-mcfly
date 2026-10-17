@@ -135,6 +135,18 @@ export const MIGRATIONS: { id: number; name: string; statements: string[] }[] = 
         PRIMARY KEY (user_id, day))`,
     ],
   },
+  {
+    id: 4,
+    name: 'Day view: hourly values per person',
+    statements: [
+      // One value per local hour: a sum (steps, active_energy) or a reading (hr_avg, hr_min, hr_max).
+      // Keyed metric-first so a person's run of days for one metric is one index range.
+      `CREATE TABLE hourly (
+        user_id TEXT NOT NULL, metric TEXT NOT NULL, date TEXT NOT NULL,
+        hour SMALLINT NOT NULL CHECK (hour BETWEEN 0 AND 23), source TEXT NOT NULL, value DOUBLE PRECISION NOT NULL,
+        PRIMARY KEY (user_id, metric, date, hour, source))`,
+    ],
+  },
 ];
 
 async function migrate(db: Db) {

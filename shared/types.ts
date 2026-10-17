@@ -197,3 +197,33 @@ export type AdminOverview = {
 
 export type McflyStatus = { configured: boolean; limit: number; usedToday: number };
 export type McflyTurn = { role: 'user' | 'assistant'; content: string };
+
+// ---------- Day view (GET /api/day) ----------
+
+export type DayMetric = 'steps' | 'active_energy' | 'heart_rate';
+
+/** One metric's day, by local hour (index 0 = midnight to 1 AM). Every array has 24 entries. */
+export type DaySeries = {
+  /** A sum per hour (steps, active energy) or an average (heart rate); null where nothing was recorded. */
+  hours: (number | null)[];
+  /**
+   * The median for each hour over the previous 30 days. For summed metrics it's the running total by the
+   * end of that hour ("typical by now"); for heart rate it's the typical hourly average. null where fewer
+   * than 3 days qualify.
+   */
+  typical: (number | null)[];
+  /** Heart rate only: the lowest and highest reading in each hour. */
+  min?: (number | null)[];
+  max?: (number | null)[];
+};
+
+export type DayData = {
+  /** The day shown. */
+  date: string;
+  /** The person's today, in their time zone. */
+  today: string;
+  /** The last hour (0–23) with any reading on `date`, or null when the day has none. */
+  asOf: number | null;
+  /** Only metrics the person has hourly data for at all; an empty object means "no Day view". */
+  metrics: Partial<Record<DayMetric, DaySeries>>;
+};

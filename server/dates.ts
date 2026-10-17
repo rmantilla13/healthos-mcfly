@@ -40,6 +40,33 @@ export function localDate(st: Stamp, shiftMs = 0): string {
   return wall(st, shiftMs).toISOString().slice(0, 10);
 }
 
+/** Local hour (0–23) of the stamp. */
+export function localHour(st: Stamp): number {
+  return wall(st).getUTCHours();
+}
+
+/**
+ * The UTC offset an IANA time zone had at an instant, e.g. -300 for America/Chicago in summer. Apple's
+ * export prints every timestamp with one fixed offset (today's), so the historical local hour has to come
+ * from the zone instead. Cached per hour: an import asks about millions of samples but only ~80k hours.
+ */
+export function zoneOffsets(timeZone: string): (ms: number) => number {
+  const fmt = new Intl.DateTimeFormat('en-US', { timeZone, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric' });
+  const cache = new Map<number, number>();
+  return (ms) => {
+    const key = Math.floor(ms / HOUR);
+    let off = cache.get(key);
+    if (off === undefined) {
+      const at = key * HOUR;
+      const p = Object.fromEntries(fmt.formatToParts(new Date(at)).map((x) => [x.type, x.value]));
+      const wallMs = Date.UTC(Number(p.year), Number(p.month) - 1, Number(p.day), Number(p.hour), Number(p.minute));
+      off = Math.round((wallMs - at) / 60_000);
+      cache.set(key, off);
+    }
+    return off;
+  };
+}
+
 /** ISO string carrying the local offset, e.g. 2024-01-15T07:30:00-08:00. */
 export function toLocalIso(st: Stamp): string {
   const sign = st.offsetMin < 0 ? '-' : '+';
