@@ -1,7 +1,7 @@
 // Usage: npm run import:apple -- ~/Downloads/export.zip
 import path from 'node:path';
 import { importAppleHealth } from '../apple/import.ts';
-import { getStore } from '../db.ts';
+import { OWNER_ID, getStore } from '../db.ts';
 
 const file = process.argv[2];
 if (!file) {
@@ -11,7 +11,7 @@ if (!file) {
 
 const started = Date.now();
 let lastPrint = 0;
-const result = await importAppleHealth(await getStore(), path.resolve(file), ({ bytesRead, totalBytes, records }) => {
+const result = await importAppleHealth({ db: await getStore(), userId: process.env.HEALTHOS_USER_ID || OWNER_ID }, path.resolve(file), ({ bytesRead, totalBytes, records }) => {
   if (Date.now() - lastPrint < 500) return;
   lastPrint = Date.now();
   const pct = totalBytes ? ` ${Math.min(100, Math.round((bytesRead / totalBytes) * 100))}%` : '';

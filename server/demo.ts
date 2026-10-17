@@ -1,7 +1,7 @@
 // Synthetic data so the dashboard has something to show before real data is connected.
 // Stored under source 'demo' and regenerated (up to today) when the local server starts on a local
 // database. Never written to the hosted (Neon) database.
-import { type Db, type DailyRow, type EventRow, type WorkoutRow, deleteSource, upsertDaily, upsertEvents, upsertWorkouts } from './db.ts';
+import { type DailyRow, type Db, type EventRow, OWNER_ID, type WorkoutRow, deleteSource, upsertDaily, upsertEvents, upsertWorkouts } from './db.ts';
 import { addDays, todayLocal, toLocalIso, type Stamp } from './dates.ts';
 
 export const SOURCE = 'demo';
@@ -17,7 +17,7 @@ function rng(seed: number) {
   };
 }
 
-export async function seedDemo(db: Db) {
+export async function seedDemo(db: Db, userId = OWNER_ID) {
   const rand = rng(20261016);
   const noise = (sd: number) => (rand() + rand() + rand() - 1.5) * sd * 1.15;
   const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -133,9 +133,9 @@ export async function seedDemo(db: Db) {
   });
 
   await db.tx(async (q) => {
-    await deleteSource(q, SOURCE);
-    await upsertDaily(q, daily);
-    await upsertEvents(q, events);
-    await upsertWorkouts(q, workouts);
+    await deleteSource(q, userId, SOURCE);
+    await upsertDaily(q, userId, daily);
+    await upsertEvents(q, userId, events);
+    await upsertWorkouts(q, userId, workouts);
   });
 }

@@ -1576,6 +1576,9 @@ td {
 .login-brand {
   padding: 0 0 4px;
 }
+.login-brand span {
+  display: inline; /* the narrow-sidebar rule hides .brand text; the sign-in card keeps it */
+}
 .login label {
   display: flex;
   flex-direction: column;
@@ -1593,6 +1596,118 @@ td {
 .login .btn-primary {
   align-self: stretch;
   padding: 10px 14px;
+}
+
+.login-title {
+  font-size: 18px;
+  margin: 0 0 4px;
+}
+.login small,
+.settings small {
+  font-weight: 400;
+  font-size: 12px;
+}
+
+.banner-start {
+  margin-bottom: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--ink);
+}
+.banner-start svg:last-child {
+  margin-left: auto;
+  color: var(--ink-3);
+}
+
+/* ---------- admin ---------- */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.admin-table {
+  overflow-x: auto;
+  margin: 0 -4px;
+}
+.admin-table td {
+  vertical-align: top;
+}
+.admin-table tr.is-off td {
+  color: var(--ink-3);
+}
+.admin-table .small {
+  font-size: 12px;
+  margin-top: 2px;
+}
+.admin-person {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.admin-person .pill {
+  padding: 1px 8px;
+  font-size: 11px;
+}
+.admin-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.admin-status i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--axis);
+}
+.admin-status.is-on i {
+  background: var(--good);
+}
+.admin-actions {
+  flex-wrap: nowrap;
+  gap: 6px;
+}
+.admin-table td .btn {
+  padding: 4px 10px;
+  margin: -4px 0;
+  font-size: 12px;
+}
+.btn-danger {
+  color: var(--critical);
+}
+.admin-link {
+  border: 1px solid var(--ink-3);
+}
+.admin-link .copy-field code {
+  word-break: break-all;
+}
+.admin-invite {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  margin: 8px 0;
+}
+.admin-invite label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-weight: 500;
+  flex: 1 1 160px;
+}
+.admin-invite input,
+.admin-invite select {
+  font: inherit;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.admin-invite .btn-primary {
+  align-self: flex-end;
 }
 
 /* ---------- vitals animations (Home figure callouts) ----------

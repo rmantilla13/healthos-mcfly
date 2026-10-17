@@ -1,6 +1,6 @@
 import os from 'node:os';
 import type { Insight, Latest, Point, RangeStatus, Settings, Summary, TimelineEvent, Trends, Vital, WeekSummary, Workout } from '../shared/types.ts';
-import { type Queryable, getSettings } from './db.ts';
+import { OWNER_ID, type Scope, getSettings, getUserSettings } from './db.ts';
 import { addDays, todayLocal } from './dates.ts';
 
 // Which source wins when more than one has a value for the same day.
@@ -22,31 +22,37 @@ export type Ctx = {
   sleepStarts: { date: string; start: string }[];
 };
 
-export function settingsFrom(map: Map<string, string>, hosted: boolean): Settings {
+/** One person's settings, falling back to the platform defaults an admin sets. */
+export function settingsFrom(mine: Map<string, string>, platform: Map<string, string>, opts: { hosted: boolean; userId: string }): Settings {
   // Hosted, the OS user is the platform's sandbox account, so don't guess a name from it.
-  const fallbackName = hosted ? '' : capitalize(os.userInfo().username);
+  const fallbackName = !opts.hosted && opts.userId === OWNER_ID ? capitalize(os.userInfo().username) : '';
+  const units = mine.get('units') ?? platform.get('default_units');
   return {
-    name: map.get('name') || map.get('whoop_first_name') || fallbackName,
-    stepGoal: Number(map.get('step_goal')) || 10_000,
-    units: map.get('units') === 'imperial' ? 'imperial' : 'metric',
-    demo: (map.get('demo') as Settings['demo']) || 'auto',
-    timeZone: map.get('timezone') ?? null,
+    name: mine.get('name') || mine.get('whoop_first_name') || fallbackName,
+    stepGoal: Number(mine.get('step_goal')) || Number(platform.get('default_step_goal')) || 10_000,
+    units: units === 'imperial' ? 'imperial' : 'metric',
+    demo: (mine.get('demo') as Settings['demo']) || 'auto',
+    timeZone: mine.get('timezone') ?? null,
   };
 }
 
-export async function readSettings(q: Queryable, hosted = false) {
-  return settingsFrom(await getSettings(q), hosted);
+export async function readSettings(scope: Scope, hosted = false) {
+  const [mine, platform] = await Promise.all([getUserSettings(scope.db, scope.userId), getSettings(scope.db)]);
+  return settingsFrom(mine, platform, { hosted, userId: scope.userId });
 }
 
-export async function hasRealData(q: Queryable) {
-  const [row] = await q.query<{ any: boolean }>("SELECT EXISTS (SELECT 1 FROM daily WHERE source IN ('apple', 'whoop')) AS any");
+export async function hasRealData(scope: Scope) {
+  const [row] = await scope.db.query<{ any: boolean }>(
+    "SELECT EXISTS (SELECT 1 FROM daily WHERE user_id = $1 AND source IN ('apple', 'whoop')) AS any",
+    [scope.userId],
+  );
   return Boolean(row?.any);
 }
 
-/** Demo rows only ever exist in a local database, so the hosted app never shows them. */
-export async function demoActive(q: Queryable, settings: Settings, hosted: boolean) {
-  if (hosted) return false;
-  return settings.demo === 'on' || (settings.demo === 'auto' && !(await hasRealData(q)));
+/** Demo rows only ever exist in a local database, seeded for the owner, so nobody else (and nothing hosted) sees them. */
+export async function demoActive(scope: Scope, settings: Settings, hosted: boolean) {
+  if (hosted || scope.userId !== OWNER_ID) return false;
+  return settings.demo === 'on' || (settings.demo === 'auto' && !(await hasRealData(scope)));
 }
 
 const sourceList = (demo: boolean) => (demo ? ['demo'] : ['apple', 'whoop']);
@@ -56,16 +62,15 @@ function sourcesFor(ctx: { demo: boolean }, metric: string): string[] {
   return APPLE_FIRST.has(metric) ? ['apple', 'whoop'] : ['whoop', 'apple'];
 }
 
-async function loadDaily(q: Queryable, demo: boolean, from: string, to: string, metrics?: string[]): Promise<DailyIndex> {
-  const sources = sourceList(demo);
-  const params: unknown[] = [from, to, sources];
+async function loadDaily(scope: Scope, demo: boolean, from: string, to: string, metrics?: string[]): Promise<DailyIndex> {
+  const params: unknown[] = [scope.userId, from, to, sourceList(demo)];
   let filter = '';
   if (metrics) {
     params.push(metrics);
-    filter = 'AND metric = ANY($4)';
+    filter = 'AND metric = ANY($5)';
   }
-  const rows = await q.query<{ date: string; metric: string; source: string; value: number }>(
-    `SELECT date, metric, source, value FROM daily WHERE date BETWEEN $1 AND $2 AND source = ANY($3) ${filter}`,
+  const rows = await scope.db.query<{ date: string; metric: string; source: string; value: number }>(
+    `SELECT date, metric, source, value FROM daily WHERE user_id = $1 AND date BETWEEN $2 AND $3 AND source = ANY($4) ${filter}`,
     params,
   );
   const index: DailyIndex = new Map();
@@ -79,18 +84,26 @@ async function loadDaily(q: Queryable, demo: boolean, from: string, to: string, 
   return index;
 }
 
-async function latestDataDate(q: Queryable, demo: boolean, today: string): Promise<string | null> {
-  const [row] = await q.query<{ d: string | null }>('SELECT MAX(date) AS d FROM daily WHERE source = ANY($1) AND date <= $2', [sourceList(demo), today]);
+async function latestDataDate(scope: Scope, demo: boolean, today: string): Promise<string | null> {
+  const [row] = await scope.db.query<{ d: string | null }>(
+    'SELECT MAX(date) AS d FROM daily WHERE user_id = $1 AND source = ANY($2) AND date <= $3',
+    [scope.userId, sourceList(demo), today],
+  );
   return row?.d ?? null;
 }
 
-async function loadWorkouts(q: Queryable, demo: boolean, from: string, to: string): Promise<Workout[]> {
-  return q.query<Workout>('SELECT * FROM workouts WHERE date BETWEEN $1 AND $2 AND source = ANY($3) ORDER BY start DESC', [from, to, sourceList(demo)]);
+const WORKOUT_FIELDS = 'id, source, sport, start, "end", date, duration_min, energy_kcal, distance_m, avg_hr, max_hr, strain';
+
+async function loadWorkouts(scope: Scope, demo: boolean, from: string, to: string): Promise<Workout[]> {
+  return scope.db.query<Workout>(
+    `SELECT ${WORKOUT_FIELDS} FROM workouts WHERE user_id = $1 AND date BETWEEN $2 AND $3 AND source = ANY($4) ORDER BY start DESC`,
+    [scope.userId, from, to, sourceList(demo)],
+  );
 }
 
-export async function requestContext(q: Queryable, hosted: boolean) {
-  const settings = await readSettings(q, hosted);
-  const demo = await demoActive(q, settings, hosted);
+export async function requestContext(scope: Scope, hosted: boolean) {
+  const settings = await readSettings(scope, hosted);
+  const demo = await demoActive(scope, settings, hosted);
   return { settings, demo, today: todayLocal(settings.timeZone ?? undefined) };
 }
 
@@ -210,18 +223,18 @@ export function mergeWorkouts(list: Workout[]): Workout[] {
   return out.sort((a, b) => Date.parse(b.start) - Date.parse(a.start));
 }
 
-export async function trends(q: Queryable, hosted: boolean, metrics: string[], days: number, asOfParam?: string): Promise<Trends> {
-  const { demo, today } = await requestContext(q, hosted);
+export async function trends(scope: Scope, hosted: boolean, metrics: string[], days: number, asOfParam?: string): Promise<Trends> {
+  const { demo, today } = await requestContext(scope, hosted);
   const asOf = asOfParam ?? today;
   const from = addDays(asOf, -(days - 1));
-  const daily = await loadDaily(q, demo, from, asOf, metrics);
+  const daily = await loadDaily(scope, demo, from, asOf, metrics);
   return Object.fromEntries(metrics.map((m) => [m, series({ daily, demo }, m, from, asOf)]));
 }
 
-export async function workouts(q: Queryable, hosted: boolean, days: number, asOfParam?: string): Promise<Workout[]> {
-  const { demo, today } = await requestContext(q, hosted);
+export async function workouts(scope: Scope, hosted: boolean, days: number, asOfParam?: string): Promise<Workout[]> {
+  const { demo, today } = await requestContext(scope, hosted);
   const asOf = asOfParam ?? today;
-  return mergeWorkouts(await loadWorkouts(q, demo, addDays(asOf, -(days - 1)), asOf));
+  return mergeWorkouts(await loadWorkouts(scope, demo, addDays(asOf, -(days - 1)), asOf));
 }
 
 // ---------- helpers ----------
@@ -269,21 +282,21 @@ function capitalize(s: string) {
 /** Days of history the summary may look at: VO2 max reaches back 120 days, plus the month before it. */
 const SUMMARY_WINDOW = 200;
 
-export async function summary(q: Queryable, hosted: boolean, asOfParam?: string): Promise<Summary> {
-  const { settings, demo, today } = await requestContext(q, hosted);
+export async function summary(scope: Scope, hosted: boolean, asOfParam?: string): Promise<Summary> {
+  const { settings, demo, today } = await requestContext(scope, hosted);
   const asOf = asOfParam && asOfParam <= today ? asOfParam : today;
-  const anchor = await latestDataDate(q, demo, today);
+  const anchor = await latestDataDate(scope, demo, today);
   const insightEnd = anchor && anchor < asOf ? anchor : asOf;
   const from = addDays(insightEnd < asOf ? insightEnd : asOf, -SUMMARY_WINDOW);
 
   const [daily, recentWorkouts, sleepStarts, tl] = await Promise.all([
-    loadDaily(q, demo, from, asOf),
-    loadWorkouts(q, demo, addDays(asOf, -14), asOf),
-    q.query<{ date: string; start: string }>(
-      "SELECT DISTINCT ON (date) date, start FROM events WHERE kind = 'sleep' AND date BETWEEN $1 AND $2 AND source = ANY($3) ORDER BY date, start",
-      [addDays(insightEnd, -13), insightEnd, sourceList(demo)],
+    loadDaily(scope, demo, from, asOf),
+    loadWorkouts(scope, demo, addDays(asOf, -14), asOf),
+    scope.db.query<{ date: string; start: string }>(
+      "SELECT DISTINCT ON (date) date, start FROM events WHERE user_id = $1 AND kind = 'sleep' AND date BETWEEN $2 AND $3 AND source = ANY($4) ORDER BY date, start",
+      [scope.userId, addDays(insightEnd, -13), insightEnd, sourceList(demo)],
     ),
-    timeline(q, demo, asOf),
+    timeline(scope, demo, asOf),
   ]);
   const ctx: Ctx = { settings, demo, today, daily, workouts: mergeWorkouts(recentWorkouts), sleepStarts };
 
@@ -402,19 +415,20 @@ function weekSummary(ctx: Ctx, asOf: string): WeekSummary {
   };
 }
 
-async function timeline(q: Queryable, demo: boolean, asOf: string): Promise<Summary['timeline']> {
+async function timeline(scope: Scope, demo: boolean, asOf: string): Promise<Summary['timeline']> {
   const sources = sourceList(demo);
+  const { db, userId } = scope;
   // Show the chosen day, or the most recent day that has anything on it.
-  const [row] = await q.query<{ d: string | null }>(
-    `SELECT MAX(date) AS d FROM (SELECT date FROM events WHERE source = ANY($1) AND date <= $2
-     UNION ALL SELECT date FROM workouts WHERE source = ANY($1) AND date <= $2) AS days`,
-    [sources, asOf],
+  const [row] = await db.query<{ d: string | null }>(
+    `SELECT MAX(date) AS d FROM (SELECT date FROM events WHERE user_id = $1 AND source = ANY($2) AND date <= $3
+     UNION ALL SELECT date FROM workouts WHERE user_id = $1 AND source = ANY($2) AND date <= $3) AS days`,
+    [userId, sources, asOf],
   );
   const day = row?.d ?? asOf;
 
   const [events, rawWorkouts] = await Promise.all([
-    q.query<TimelineEvent>('SELECT id, kind, title, start, "end" FROM events WHERE date = $1 AND source = ANY($2)', [day, sources]),
-    q.query<Workout>('SELECT * FROM workouts WHERE date = $1 AND source = ANY($2)', [day, sources]),
+    db.query<TimelineEvent>('SELECT id, kind, title, start, "end" FROM events WHERE user_id = $1 AND date = $2 AND source = ANY($3)', [userId, day, sources]),
+    db.query<Workout>(`SELECT ${WORKOUT_FIELDS} FROM workouts WHERE user_id = $1 AND date = $2 AND source = ANY($3)`, [userId, day, sources]),
   ]);
   const ws = mergeWorkouts(rawWorkouts);
 

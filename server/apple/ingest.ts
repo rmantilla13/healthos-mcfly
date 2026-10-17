@@ -4,7 +4,7 @@
 
 import { createHash, timingSafeEqual } from 'node:crypto';
 import express, { type NextFunction, type Request, type Response } from 'express';
-import { type Db, type DailyRow, type EventRow, type WorkoutRow, setSetting, upsertDaily, upsertEvents, upsertWorkouts } from '../db.ts';
+import { type DailyRow, type Db, type EventRow, OWNER_ID, type Scope, type WorkoutRow, setUserSetting, upsertDaily, upsertEvents, upsertWorkouts } from '../db.ts';
 import { SOURCE } from './import.ts';
 
 /** Daily metrics the importer produces (server/apple/import.ts). Anything else is a client bug. */
@@ -18,6 +18,7 @@ export const APPLE_METRICS = new Set([
   'hr_max',
   'resting_hr',
   'hrv_sdnn',
+  'hrv_rmssd_watch',
   'spo2',
   'resp_rate',
   'wrist_temp',
@@ -149,39 +150,44 @@ export function parseIngest(body: unknown): IngestPayload {
 }
 
 /** Upserts a validated push. Each daily row is a complete recomputed day, so it replaces the stored value. */
-export async function ingestApple(db: Db, p: IngestPayload): Promise<IngestResult> {
+export async function ingestApple(scope: Scope, p: IngestPayload): Promise<IngestResult> {
+  const { db, userId } = scope;
   // The app ids workouts and mindful sessions by HealthKit UUID ("hk-..."). The same record from an
   // earlier export.zip import has a hashed id instead, so match it by start instant and replace it.
   // Compare instants, not text: the export writes every date with one fixed UTC offset.
-  const sameInstant = 'abs(extract(epoch from (start::timestamptz - $2::timestamptz))) < 1';
+  const sameInstant = 'abs(extract(epoch from (start::timestamptz - $3::timestamptz))) < 1';
 
   let deleted = 0;
   await db.tx(async (q) => {
     for (const id of p.deleted.workouts) {
-      deleted += (await q.query('DELETE FROM workouts WHERE source = $1 AND id = $2 RETURNING 1', [SOURCE, id])).length;
+      deleted += (await q.query('DELETE FROM workouts WHERE user_id = $1 AND source = $2 AND id = $3 RETURNING 1', [userId, SOURCE, id])).length;
     }
     for (const id of p.deleted.events) {
-      deleted += (await q.query('DELETE FROM events WHERE source = $1 AND id = $2 RETURNING 1', [SOURCE, id])).length;
+      deleted += (await q.query('DELETE FROM events WHERE user_id = $1 AND source = $2 AND id = $3 RETURNING 1', [userId, SOURCE, id])).length;
     }
-    await upsertDaily(q, p.daily);
+    await upsertDaily(q, userId, p.daily);
     for (const w of p.workouts) {
       if (w.id.startsWith('hk-')) {
-        await q.query(`DELETE FROM workouts WHERE source = $1 AND id NOT LIKE 'hk-%' AND sport = $3 AND ${sameInstant}`, [SOURCE, w.start, w.sport]);
+        await q.query(
+          `DELETE FROM workouts WHERE user_id = $1 AND source = $2 AND id NOT LIKE 'hk-%' AND sport = $4 AND ${sameInstant}`,
+          [userId, SOURCE, w.start, w.sport],
+        );
       }
     }
-    await upsertWorkouts(q, p.workouts);
+    await upsertWorkouts(q, userId, p.workouts);
     for (const e of p.events) {
       // Like the importer, keep one Apple sleep event per night: if another source now wins the night, drop the old one.
-      if (e.kind === 'sleep') await q.query("DELETE FROM events WHERE source = $1 AND kind = 'sleep' AND date = $2 AND id <> $3", [SOURCE, e.date, e.id]);
-      else if (e.kind === 'mindful' && e.id.startsWith('hk-')) {
-        await q.query(`DELETE FROM events WHERE source = $1 AND kind = 'mindful' AND id NOT LIKE 'hk-%' AND ${sameInstant}`, [SOURCE, e.start]);
+      if (e.kind === 'sleep') {
+        await q.query("DELETE FROM events WHERE user_id = $1 AND source = $2 AND kind = 'sleep' AND date = $3 AND id <> $4", [userId, SOURCE, e.date, e.id]);
+      } else if (e.kind === 'mindful' && e.id.startsWith('hk-')) {
+        await q.query(`DELETE FROM events WHERE user_id = $1 AND source = $2 AND kind = 'mindful' AND id NOT LIKE 'hk-%' AND ${sameInstant}`, [userId, SOURCE, e.start]);
       }
     }
-    await upsertEvents(q, p.events);
+    await upsertEvents(q, userId, p.events);
   });
   const result = { daily: p.daily.length, workouts: p.workouts.length, events: p.events.length, deleted };
   if (result.daily + result.workouts + result.events + deleted > 0) {
-    await setSetting(db, 'apple_last_sync', JSON.stringify({ ...result, syncedAt: new Date().toISOString() }));
+    await setUserSetting(db, userId, 'apple_last_sync', JSON.stringify({ ...result, syncedAt: new Date().toISOString() }));
   }
   return result;
 }
@@ -193,20 +199,37 @@ function tokenMatches(given: string, expected: string) {
 }
 
 /**
- * POST /apple/ingest. Always requires `Authorization: Bearer <HEALTHOS_INGEST_TOKEN>`;
- * with no token configured the endpoint is off. Mounted on the localhost server and,
- * in LAN mode, on its own listener (see lanIngestApp).
+ * Which account an ingest token belongs to. Each person creates their own token in Settings (only its
+ * hash is stored); the server-wide HEALTHOS_INGEST_TOKEN, from before healthOS was multi-user, is the owner's.
  */
-export function ingestRouter(db: Db, token: string | undefined) {
+async function tokenUser(db: Db, given: string, ownerToken: string | undefined): Promise<string | null> {
+  if (ownerToken && tokenMatches(given, ownerToken)) return OWNER_ID;
+  const [row] = await db.query<{ id: string }>("SELECT id FROM users WHERE ingest_token_hash = $1 AND status = 'active'", [
+    createHash('sha256').update(given).digest('hex'),
+  ]);
+  return row?.id ?? null;
+}
+
+/**
+ * POST /apple/ingest. Always requires `Authorization: Bearer <token>`: a person's own token from Settings,
+ * or the server-wide HEALTHOS_INGEST_TOKEN for the owner. Mounted on the server and, in LAN mode, on its
+ * own listener (see lanIngestApp).
+ */
+export function ingestRouter(db: Db, ownerToken: string | undefined) {
   const router = express.Router();
 
-  const auth = (req: Request, res: Response, next: NextFunction) => {
-    if (!token) return void res.status(503).json({ error: 'Ingest is off. Set HEALTHOS_INGEST_TOKEN (scripts/setup-vercel.sh does this for the hosted app).' });
-    const m = /^Bearer (.+)$/.exec(req.headers.authorization ?? '');
-    if (!m || !tokenMatches(m[1].trim(), token)) {
-      return void res.status(401).set('WWW-Authenticate', 'Bearer').json({ error: 'Missing or wrong ingest token' });
+  const auth = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const m = /^Bearer (.+)$/.exec(req.headers.authorization ?? '');
+      const userId = m ? await tokenUser(db, m[1].trim(), ownerToken) : null;
+      if (!userId) {
+        return void res.status(401).set('WWW-Authenticate', 'Bearer').json({ error: 'Missing or wrong ingest token' });
+      }
+      res.locals.ingestUser = userId;
+      next();
+    } catch (err) {
+      next(err);
     }
-    next();
   };
 
   // A first sync sends years of history in chunks; each chunk can be well over express.json's 100 kB default.
@@ -218,7 +241,7 @@ export function ingestRouter(db: Db, token: string | undefined) {
       if (err instanceof IngestError) return void res.status(400).json({ error: err.message });
       throw err;
     }
-    res.json({ ok: true, ...(await ingestApple(db, payload)) });
+    res.json({ ok: true, ...(await ingestApple({ db, userId: res.locals.ingestUser as string }, payload)) });
   });
 
   router.use((err: Error & { status?: number }, _req: Request, res: Response, _next: NextFunction) => {

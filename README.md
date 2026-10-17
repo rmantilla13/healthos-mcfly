@@ -2,7 +2,7 @@
 
 A personal health dashboard for **Apple Health** and **WHOOP** data. It runs in two places:
 
-- **Hosted** at https://health.mcfly.bot: the `healthos` project on Vercel, behind a password, with a Neon Postgres database. This is where you look at it.
+- **Hosted** at https://health.mcfly.bot: the `healthos` project on Vercel, with a Neon Postgres database. Accounts are invite-only, and each person gets their own private dashboard. This is where you look at it.
 - **Locally** on your Mac. The two jobs that need the Mac happen here: importing an Apple Health export, and processing your photo with Apple Vision. Point the local copy at the hosted database and those land on health.mcfly.bot too.
 
 With no `DATABASE_URL`, the local copy uses its own Postgres (PGlite, under `data/pglite`). It shows clearly labeled demo data until you connect a source.
@@ -48,6 +48,28 @@ How the hosted copy works:
 - The iPhone app posts to `/api/apple/ingest` with its own token.
 - Your photo is served from the database, behind the same sign-in.
 - The only public page is the privacy policy at `/privacy` (`public/privacy.html`), which the WHOOP developer app requires. It holds no data.
+
+## Accounts and the admin panel
+
+healthOS is multi-user and invite-only. There is no open sign-up.
+
+- **First sign-in:** on a database with no accounts yet, sign in with your email and the password from `setup-vercel.sh`. That creates the first admin account, which keeps every row you already had.
+- **Inviting someone:** open **Admin → Invites** and create a link. You can lock it to one email address. Send the link privately. It creates one account and expires after the number of days you set (7 by default).
+- **Forgotten passwords:** there's no email service. An admin creates a reset link under **Admin → People** and passes it on. Using it sets a new password and signs that person out everywhere else.
+- **Admins can:**
+  - change roles
+  - disable and enable accounts (disabling signs the person out at once)
+  - delete accounts (this removes all of that person's data)
+  - close sign-ups
+  - set the default units and step goal
+
+  There is always at least one active admin.
+- **What admins see:** each account's email, name, last sign-in, how many days of data it has, and whether its Apple Health and WHOOP syncs are healthy. The admin screens never show anyone's health values.
+- **Isolation:** every row in `daily`, `workouts`, `events`, `tokens`, `profile_assets` and `user_settings` carries a `user_id`, and every query filters on it. `test/multiuser.test.ts` checks this over HTTP with two accounts.
+- **Each person's data sources:**
+  - WHOOP, connected from **Integrations**.
+  - The iPhone app, using a personal token created under **Integrations → iPhone app**. The token can only write to that person's account.
+- **Mac-only steps:** the Apple Health export import and photo processing run on the Mac. Both go to the owner's account. The terminal import can target someone else: `HEALTHOS_USER_ID=<id> npm run import:apple -- export.zip`.
 
 ## Apple Health
 
@@ -125,7 +147,7 @@ WHOOP reports HRV as RMSSD and Apple Watch reports SDNN. The two aren't comparab
 |---|---|
 | `npm run dev` | App with hot reload on http://localhost:8787 |
 | `npm run build` then `npm start` | Production build |
-| `npm test` | Importer, iPhone ingest and WHOOP mapping tests |
+| `npm test` | Importer, iPhone ingest, WHOOP mapping, data blending, and account isolation tests |
 | `npm run typecheck` | TypeScript check |
 | `npm run sync:whoop -- --full` | Re-sync a full year of WHOOP data from the terminal |
 | `npm run deploy` | Build for Vercel and deploy health.mcfly.bot |
@@ -134,8 +156,8 @@ WHOOP reports HRV as RMSSD and Apple Watch reports SDNN. The two aren't comparab
 ## Privacy
 
 - **Hosted:**
-  - Nothing is readable without signing in.
-  - Only a hash of your password is stored.
+  - Nothing is readable without signing in, and each person reads only their own data.
+  - Only hashes of passwords, invite links and iPhone tokens are stored.
   - Preview deployments and `*.vercel.app` URLs are also behind Vercel's own login.
   - Responses carry strict security headers.
 - **Local:** the server listens only on `127.0.0.1`.

@@ -5,8 +5,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { DATA_DIR, getStore } from '../db.ts';
-import { PHOTO_DIR, storePhoto } from '../photo.ts';
+import { DATA_DIR, OWNER_ID, getStore } from '../db.ts';
+import { photoDir, storePhoto } from '../photo.ts';
 import { insertMany } from '../store.ts';
 
 const file = path.join(DATA_DIR, 'healthos.db');
@@ -18,29 +18,37 @@ const old = new DatabaseSync(file, { readOnly: true });
 const db = await getStore();
 console.log(`Copying ${file} into the ${db.kind === 'neon' ? 'hosted (Neon)' : 'local (PGlite)'} database…`);
 
-const tables: { name: string; cols: string[]; key: string; where?: string }[] = [
-  { name: 'settings', cols: ['key', 'value'], key: 'key' },
-  { name: 'tokens', cols: ['provider', 'access_token', 'refresh_token', 'expires_at', 'scope'], key: 'provider' },
-  { name: 'daily', cols: ['date', 'metric', 'source', 'value'], key: 'date, metric, source', where: "source <> 'demo'" },
+// Everything in the old single-user file belonged to the owner.
+const tables: { name: string; into: string; cols: string[]; key: string; where?: string }[] = [
+  { name: 'settings', into: 'user_settings', cols: ['key', 'value'], key: 'user_id, key' },
+  { name: 'tokens', into: 'tokens', cols: ['provider', 'access_token', 'refresh_token', 'expires_at', 'scope'], key: 'user_id, provider' },
+  { name: 'daily', into: 'daily', cols: ['date', 'metric', 'source', 'value'], key: 'user_id, date, metric, source', where: "source <> 'demo'" },
   {
     name: 'workouts',
+    into: 'workouts',
     cols: ['id', 'source', 'sport', 'start', 'end', 'date', 'duration_min', 'energy_kcal', 'distance_m', 'avg_hr', 'max_hr', 'strain'],
-    key: 'id',
+    key: 'user_id, id',
     where: "source <> 'demo'",
   },
-  { name: 'events', cols: ['id', 'source', 'kind', 'title', 'start', 'end', 'date'], key: 'id', where: "source <> 'demo'" },
+  { name: 'events', into: 'events', cols: ['id', 'source', 'kind', 'title', 'start', 'end', 'date'], key: 'user_id, id', where: "source <> 'demo'" },
 ];
 
 await db.tx(async (q) => {
   for (const t of tables) {
     const rows = old.prepare(`SELECT ${t.cols.map((c) => `"${c}"`).join(', ')} FROM ${t.name}${t.where ? ` WHERE ${t.where}` : ''}`).all() as Record<string, unknown>[];
     const update = t.cols.filter((c) => !t.key.split(', ').includes(c)).map((c) => `"${c}" = excluded."${c}"`).join(', ');
-    await insertMany(q, t.name, t.cols, rows.map((r) => t.cols.map((c) => r[c])), `ON CONFLICT (${t.key}) DO ${update ? `UPDATE SET ${update}` : 'NOTHING'}`);
+    await insertMany(
+      q,
+      t.into,
+      ['user_id', ...t.cols],
+      rows.map((r) => [OWNER_ID, ...t.cols.map((c) => r[c])]),
+      `ON CONFLICT (${t.key}) DO ${update ? `UPDATE SET ${update}` : 'NOTHING'}`,
+    );
     console.log(`  ${t.name}: ${rows.length.toLocaleString()} rows`);
   }
 });
-if (fs.existsSync(path.join(PHOTO_DIR, 'meta.json'))) {
-  await storePhoto(db);
+if (fs.existsSync(path.join(photoDir(OWNER_ID), 'meta.json'))) {
+  await storePhoto({ db, userId: OWNER_ID });
   console.log('  profile photo: stored');
 }
 await db.close();

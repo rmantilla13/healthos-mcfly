@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import type { AddressInfo } from 'node:net';
 import express from 'express';
 import { lanIngestApp, ingestRouter } from '../server/apple/ingest.ts';
-import { type Db, getSetting, upsertDaily, upsertEvents, upsertWorkouts } from '../server/db.ts';
+import { type Db, OWNER_ID, getUserSetting, upsertDaily, upsertEvents, upsertWorkouts } from '../server/db.ts';
 import { openStore } from '../server/store.ts';
 
 const TOKEN = 'test-token-0123456789abcdef';
@@ -62,8 +62,9 @@ const sleep = (id: string) => ({
 
 test('ingest needs a configured token and the right bearer', async () => {
   const db = await openStore();
+  // No server-wide token and nobody has created one: every token is wrong.
   await serve(appFor(db, undefined), async (url) => {
-    assert.equal((await post(url, { daily: [] })).status, 503);
+    assert.equal((await post(url, { daily: [] })).status, 401);
   });
   await serve(appFor(db, TOKEN), async (url) => {
     const row = { daily: [{ date: '2026-10-13', metric: 'steps', value: 1 }] };
@@ -76,7 +77,7 @@ test('ingest needs a configured token and the right bearer', async () => {
 
 test('ingest upserts rows as source apple and replaces a day on re-send', async () => {
   const db = await openStore();
-  await upsertDaily(db, [{ date: '2026-10-13', metric: 'steps', source: 'whoop', value: 42 }]);
+  await upsertDaily(db, OWNER_ID, [{ date: '2026-10-13', metric: 'steps', source: 'whoop', value: 42 }]);
   await serve(appFor(db, TOKEN), async (url) => {
     const res = await post(url, {
       daily: [
@@ -109,15 +110,15 @@ test('ingest upserts rows as source apple and replaces a day on re-send', async 
       await db.query("SELECT id, source FROM events WHERE kind = 'sleep'"),
       [{ id: 's2', source: 'apple' }],
     );
-    assert.equal(JSON.parse((await getSetting(db, 'apple_last_sync'))!).events, 1);
+    assert.equal(JSON.parse((await getUserSetting(db, OWNER_ID, 'apple_last_sync'))!).events, 1);
   });
 });
 
 test('a workout or mindful session from the app replaces the same one from an export import', async () => {
   const db = await openStore();
   // export.zip writes every date with the offset in effect at export time, so a January run reads -05:00.
-  await upsertWorkouts(db, [{ ...workout, id: '0123456789abcdef0123', start: '2026-01-10T18:00:00-05:00', end: '2026-01-10T18:30:00-05:00', date: '2026-01-10' }]);
-  await upsertEvents(db, [{ ...sleep('x'), id: 'fedcba98765432100000', kind: 'mindful', start: '2026-01-10T12:30:00-05:00', end: '2026-01-10T12:40:00-05:00', date: '2026-01-10' }]);
+  await upsertWorkouts(db, OWNER_ID, [{ ...workout, id: '0123456789abcdef0123', start: '2026-01-10T18:00:00-05:00', end: '2026-01-10T18:30:00-05:00', date: '2026-01-10' }]);
+  await upsertEvents(db, OWNER_ID, [{ ...sleep('x'), id: 'fedcba98765432100000', kind: 'mindful', start: '2026-01-10T12:30:00-05:00', end: '2026-01-10T12:40:00-05:00', date: '2026-01-10' }]);
   const run = (id: string, sport = 'Running') => ({ ...workout, id, sport, start: '2026-01-10T17:00:00-06:00', end: '2026-01-10T17:30:00-06:00', date: '2026-01-10' });
   await serve(appFor(db, TOKEN), async (url) => {
     await post(url, {

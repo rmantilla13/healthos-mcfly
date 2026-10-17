@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react';
-import type { Page, Status } from '../shared/types.ts';
+import { useCallback, useEffect, useState } from 'react';
+import type { AuthMe, Page, Status } from '../shared/types.ts';
 import { Icon, type IconName } from './components/Icon.tsx';
-import { UnitsContext, fmtDate, href, notifyDataChanged, sendJson, useApi, useRoute } from './lib.ts';
+import { UnitsContext, fmtDate, href, notifyDataChanged, sendJson, useAccountLink, useApi, useRoute } from './lib.ts';
+import { Admin } from './pages/Admin.tsx';
 import { Activity, Body, Sleep, Vitals } from './pages/Detail.tsx';
 import { Home } from './pages/Home.tsx';
 import { Integrations, SettingsPage } from './pages/Integrations.tsx';
-import { Login } from './pages/Login.tsx';
+import { AccountLinkPage, Login } from './pages/Login.tsx';
 
 const NAV: { page: Page; label: string; icon: IconName }[] = [
   { page: 'home', label: 'Home', icon: 'home' },
@@ -20,32 +21,64 @@ const DATA_NAV: { page: Page; label: string; icon: IconName }[] = [
   { page: 'settings', label: 'Settings', icon: 'settings' },
 ];
 
-type AuthState = 'checking' | 'open' | 'signin' | 'misconfigured';
+const ADMIN_NAV: { page: Page; label: string; icon: IconName }[] = [{ page: 'admin', label: 'Admin', icon: 'shield' }];
 
-/** The hosted app asks for the password first; locally (no password configured) it opens straight away. */
+type AuthState = { state: 'checking' } | { state: 'signin' | 'misconfigured'; setup: boolean } | { state: 'open'; signedIn: boolean };
+
+/** The hosted app asks you to sign in first; locally (no sign-in configured) it opens straight away. */
 export function App() {
-  const [auth, setAuth] = useState<AuthState>('checking');
+  const [auth, setAuth] = useState<AuthState>({ state: 'checking' });
+  const link = useAccountLink();
 
-  useEffect(() => {
+  const check = useCallback(() => {
     fetch('/api/auth/me')
-      .then((r) => r.json() as Promise<{ mode: 'open' | 'required' | 'misconfigured'; authenticated: boolean }>)
-      .then((me) => setAuth(me.mode === 'misconfigured' ? 'misconfigured' : me.authenticated ? 'open' : 'signin'))
-      .catch(() => setAuth('open'));
-    // Any API call that comes back 401 (e.g. the session expired) returns to the sign-in screen.
-    const onSignin = () => setAuth('signin');
-    window.addEventListener('healthos:signin', onSignin);
-    return () => window.removeEventListener('healthos:signin', onSignin);
+      .then((r) => r.json() as Promise<AuthMe>)
+      .then((me) =>
+        setAuth(
+          me.mode === 'misconfigured'
+            ? { state: 'misconfigured', setup: false }
+            : me.authenticated
+              ? { state: 'open', signedIn: me.mode === 'required' }
+              : { state: 'signin', setup: me.setup },
+        ),
+      )
+      .catch(() => setAuth({ state: 'open', signedIn: false }));
   }, []);
 
-  if (auth === 'checking') return null;
-  if (auth !== 'open') return <Login misconfigured={auth === 'misconfigured'} onSignedIn={() => setAuth('open')} />;
-  return <Dashboard />;
+  useEffect(() => {
+    check();
+    // Any API call that comes back 401 (e.g. the session expired) returns to the sign-in screen.
+    const onSignin = () => setAuth({ state: 'signin', setup: false });
+    window.addEventListener('healthos:signin', onSignin);
+    return () => window.removeEventListener('healthos:signin', onSignin);
+  }, [check]);
+
+  // An invite or reset link opens its own page, signed in or not.
+  if (link) {
+    return (
+      <AccountLinkPage
+        key={link.token}
+        kind={link.kind}
+        token={link.token}
+        onDone={() => {
+          // Drop the used token from the address bar and history, then load the (now signed-in) dashboard.
+          history.replaceState(null, '', location.pathname + location.search);
+          window.location.reload();
+        }}
+      />
+    );
+  }
+  if (auth.state === 'checking') return null;
+  if (auth.state !== 'open') return <Login misconfigured={auth.state === 'misconfigured'} setup={auth.setup} onSignedIn={check} />;
+  return <Dashboard signedIn={auth.signedIn} />;
 }
 
-function Dashboard() {
+function Dashboard({ signedIn }: { signedIn: boolean }) {
   const { page, params } = useRoute();
   const { data: status, reload } = useApi<Status>('/status');
   const [date, setDate] = useState<string | null>(null);
+  // Only meaningful when sign-in is on; the server enforces it either way.
+  const isAdmin = signedIn && status?.user.role === 'admin';
 
   // The hosted server runs in UTC; tell it this browser's time zone so "today" is your today.
   useEffect(() => {
@@ -75,7 +108,7 @@ function Dashboard() {
               </a>
             ))}
             <div className="nav-section">Data</div>
-            {DATA_NAV.map((n) => (
+            {[...DATA_NAV, ...(isAdmin ? ADMIN_NAV : [])].map((n) => (
               <a key={n.page} href={href(n.page)} className={page === n.page ? 'nav-item is-active' : 'nav-item'} aria-current={page === n.page ? 'page' : undefined}>
                 <Icon name={n.icon} />
                 <span>{n.label}</span>
@@ -86,16 +119,36 @@ function Dashboard() {
         </aside>
 
         <main className="main">
+          {page === 'home' && status && noSources(status) && (
+            <a className="banner banner-start" href={href('integrations')}>
+              <Icon name="integrations" size={16} /> Your dashboard fills in once you connect WHOOP or the healthOS iPhone app.
+              <Icon name="chevron-right" size={16} />
+            </a>
+          )}
           {page === 'home' && <Home date={date} onDate={setDate} photo={status?.photo ?? null} />}
           {page === 'vitals' && <Vitals />}
           {page === 'sleep' && <Sleep />}
           {page === 'activity' && <Activity stepGoal={status?.settings.stepGoal ?? 10_000} />}
           {page === 'body' && <Body />}
-          {page === 'integrations' && status && <Integrations status={status} params={params} refresh={reload} />}
-          {page === 'settings' && status && <SettingsPage key={status.settings.name} status={status} refresh={reload} />}
+          {page === 'integrations' && status && <Integrations status={status} params={params} refresh={reload} signedIn={signedIn} />}
+          {page === 'settings' && status && <SettingsPage key={status.settings.name} status={status} refresh={reload} signedIn={signedIn} />}
+          {page === 'admin' && (isAdmin ? <Admin me={status!.user} /> : status && <NotAllowed />)}
         </main>
       </div>
     </UnitsContext.Provider>
+  );
+}
+
+const noSources = (s: Status) => !s.demo && !s.apple.lastImport && !s.apple.lastSync && !s.whoop.connected;
+
+function NotAllowed() {
+  return (
+    <div className="page">
+      <section className="card">
+        <h2>Admins only</h2>
+        <p className="muted">This page is for the people who run this healthOS. Your own data is under Home.</p>
+      </section>
+    </div>
   );
 }
 

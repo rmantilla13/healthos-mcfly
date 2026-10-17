@@ -9,8 +9,7 @@ import { lanIngestApp } from './apple/ingest.ts';
 import { createApp } from './app.ts';
 import { seedDemo } from './demo.ts';
 import { refreshPhotoIfStale } from './photo.ts';
-import { requestContext } from './query.ts';
-import { getStore } from './store.ts';
+import { OWNER_ID, getStore } from './store.ts';
 import * as whoop from './whoop.ts';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
@@ -32,7 +31,7 @@ if (LAN && (!INGEST_TOKEN || INGEST_TOKEN.length < 16)) {
 const db = await getStore();
 // Demo rows only ever go into a local database, never the hosted one.
 if (db.kind === 'pglite') await seedDemo(db);
-refreshPhotoIfStale(db).catch((e) => console.error('[photo] reprocessing failed:', e.message));
+refreshPhotoIfStale({ db, userId: OWNER_ID }).catch((e) => console.error('[photo] reprocessing failed:', e.message));
 
 const app = createApp({ db, hosted: false, ingestToken: INGEST_TOKEN });
 const server = http.createServer(app);
@@ -72,9 +71,8 @@ if (LAN) {
 // Keep WHOOP current while the app runs locally. Against the hosted database, the Vercel cron does this.
 if (db.kind === 'pglite') {
   const autoSync = async () => {
-    if (!whoop.isConfigured() || !(await whoop.isConnected(db))) return;
-    const { settings } = await requestContext(db, false);
-    await whoop.syncWhoop(db, { timeZone: settings.timeZone ?? undefined });
+    if (!whoop.isConfigured()) return;
+    await whoop.syncAllWhoop(db);
   };
   const run = () => autoSync().catch((e) => console.error('[whoop] auto sync failed:', e.message));
   setTimeout(run, 5_000);

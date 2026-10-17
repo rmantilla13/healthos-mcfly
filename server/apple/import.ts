@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { SaxesParser, type SaxesTagPlain } from 'saxes';
 import yauzl from 'yauzl';
-import { type Db, type DailyRow, type EventRow, type WorkoutRow, deleteSource, setSetting, upsertDaily, upsertEvents, upsertWorkouts } from '../db.ts';
+import { type DailyRow, type EventRow, type Scope, type WorkoutRow, deleteSource, setUserSetting, upsertDaily, upsertEvents, upsertWorkouts } from '../db.ts';
 import { DAY_ROLLOVER_MS, localDate, parseAppleDate, toLocalIso, type Stamp } from '../dates.ts';
 
 export const SOURCE = 'apple';
@@ -419,7 +419,8 @@ async function openExportXml(file: string): Promise<{ stream: Readable; totalByt
 }
 
 /** Import an Apple Health export.zip or export.xml, replacing any earlier Apple Health import. */
-export async function importAppleHealth(db: Db, file: string, onProgress?: (p: ImportProgress) => void): Promise<ImportResult> {
+export async function importAppleHealth(scope: Scope, file: string, onProgress?: (p: ImportProgress) => void): Promise<ImportResult> {
+  const { db, userId } = scope;
   const { stream, totalBytes } = await openExportXml(file);
   let bytesRead = 0;
   const agg = await parseStream(Readable.from(utf8Safe(stream)), (bytes, records) => {
@@ -429,10 +430,10 @@ export async function importAppleHealth(db: Db, file: string, onProgress?: (p: I
   const { daily, workouts, events } = agg.finish();
 
   await db.tx(async (q) => {
-    await deleteSource(q, SOURCE);
-    await upsertDaily(q, daily);
-    await upsertWorkouts(q, workouts);
-    await upsertEvents(q, events);
+    await deleteSource(q, userId, SOURCE);
+    await upsertDaily(q, userId, daily);
+    await upsertWorkouts(q, userId, workouts);
+    await upsertEvents(q, userId, events);
   });
 
   const dates = [...new Set(daily.map((d) => d.date))].sort();
@@ -444,7 +445,7 @@ export async function importAppleHealth(db: Db, file: string, onProgress?: (p: I
     firstDate: dates[0] ?? null,
     lastDate: dates.at(-1) ?? null,
   };
-  await setSetting(db, 'apple_last_import', JSON.stringify({ ...result, importedAt: new Date().toISOString() }));
+  await setUserSetting(db, userId, 'apple_last_import', JSON.stringify({ ...result, importedAt: new Date().toISOString() }));
   return result;
 }
 

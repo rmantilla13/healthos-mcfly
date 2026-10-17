@@ -16,7 +16,7 @@ async function parse<T>(res: Response): Promise<T> {
 
 export const getJson = <T,>(path: string) => fetch(`/api${path}`).then((r) => parse<T>(r));
 
-export const sendJson = <T,>(method: 'POST' | 'PUT', path: string, body?: unknown) =>
+export const sendJson = <T,>(method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, body?: unknown) =>
   fetch(`/api${path}`, { method, headers: WRITE_HEADERS, body: body === undefined ? undefined : JSON.stringify(body) }).then((r) => parse<T>(r));
 
 export function uploadFile(file: File, onProgress: (sent: number, total: number) => void): Promise<void> {
@@ -67,7 +67,7 @@ export function useApi<T>(path: string | null) {
 
 // ---------- routing ----------
 
-const PAGES: Page[] = ['home', 'vitals', 'sleep', 'activity', 'body', 'integrations', 'settings'];
+const PAGES: Page[] = ['home', 'vitals', 'sleep', 'activity', 'body', 'integrations', 'settings', 'admin'];
 
 function readRoute() {
   const [p, q] = location.hash.replace(/^#\/?/, '').split('?');
@@ -86,6 +86,28 @@ export function useRoute() {
 }
 
 export const href = (page: Page) => `#/${page === 'home' ? '' : page}`;
+
+/** An invite or password-reset link (#/invite/<token>, #/reset/<token>). The token stays in the fragment,
+ * so it never reaches a server log. */
+export function readAccountLink(): { kind: 'invite' | 'reset'; token: string } | null {
+  const m = /^#\/(invite|reset)\/([A-Za-z0-9_-]{16,})$/.exec(location.hash);
+  return m ? { kind: m[1] as 'invite' | 'reset', token: m[2] } : null;
+}
+
+export function useAccountLink() {
+  const [link, setLink] = useState(readAccountLink);
+  useEffect(() => {
+    const on = () => setLink(readAccountLink());
+    window.addEventListener('hashchange', on);
+    return () => window.removeEventListener('hashchange', on);
+  }, []);
+  return link;
+}
+
+export async function copyText(text: string) {
+  if (!navigator.clipboard) throw new Error('Copy is unavailable here. Select the text instead.');
+  await navigator.clipboard.writeText(text);
+}
 
 // ---------- units & formatting ----------
 

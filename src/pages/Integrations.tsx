@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Settings, Status } from '../../shared/types.ts';
 import { Icon } from '../components/Icon.tsx';
-import { fmt, fmtDate, notifyDataChanged, sendJson, uploadFile } from '../lib.ts';
+import { copyText, fmt, fmtDate, notifyDataChanged, sendJson, uploadFile } from '../lib.ts';
 
 function ago(iso: string) {
   const mins = Math.round((Date.now() - Date.parse(iso)) / 60_000);
@@ -13,7 +13,8 @@ function ago(iso: string) {
 
 const mb = (b: number) => `${fmt(b / 1_048_576, b > 100 * 1_048_576 ? 0 : 1)} MB`;
 
-export function Integrations({ status, params, refresh }: { status: Status; params: URLSearchParams; refresh: () => void }) {
+export function Integrations({ status, params, refresh, signedIn }: { status: Status; params: URLSearchParams; refresh: () => void; signedIn: boolean }) {
+  const isAdmin = status.user.role === 'admin';
   const whoopParam = params.get('whoop');
   const job = status.apple.job;
   const busy = job.state === 'uploading' || job.state === 'parsing';
@@ -67,7 +68,7 @@ export function Integrations({ status, params, refresh }: { status: Status; para
       <header className="page-head">
         <div>
           <h1>Integrations</h1>
-          <p>Everything stays on this Mac, in a local database under data/.</p>
+          <p>{status.hosted ? 'Your data is stored privately in your own healthOS account.' : 'Everything stays on this Mac, in a local database under data/.'}</p>
         </div>
       </header>
 
@@ -83,7 +84,8 @@ export function Integrations({ status, params, refresh }: { status: Status; para
       )}
       {whoopParam === 'not-configured' && (
         <div className="banner banner-bad">
-          <Icon name="alert" size={16} /> Add your WHOOP client ID and secret to .env first (steps below).
+          <Icon name="alert" size={16} />{' '}
+          {status.hosted ? "WHOOP isn't set up on this server yet." : 'Add your WHOOP client ID and secret to .env first (steps below).'}
         </div>
       )}
 
@@ -105,8 +107,14 @@ export function Integrations({ status, params, refresh }: { status: Status; para
           </div>
           {status.hosted ? (
             <p className="muted">
-              Apple Health arrives here from the healthOS iPhone app, which syncs on its own. To import a full export.zip, run healthOS on your Mac against this
-              database (<code>vercel env pull .env.local</code>, then <code>npm run import:apple -- ~/Downloads/export.zip</code>).
+              Apple Health arrives here from the healthOS iPhone app, which syncs on its own. Create an app token below and add it in the app.
+              {isAdmin && (
+                <>
+                  {' '}
+                  To import a full export.zip into your own account, run healthOS on your Mac against this database (<code>vercel env pull .env.local</code>, then{' '}
+                  <code>npm run import:apple -- ~/Downloads/export.zip</code>).
+                </>
+              )}
             </p>
           ) : (
             <>
@@ -205,7 +213,10 @@ export function Integrations({ status, params, refresh }: { status: Status; para
             </div>
           </div>
 
-          {!status.whoop.configured && (
+          {!status.whoop.configured && status.hosted && (
+            <p className="muted">{isAdmin ? 'Add WHOOP_CLIENT_ID and WHOOP_CLIENT_SECRET to the Vercel project, then redeploy.' : "The admin hasn't set up WHOOP on this server yet."}</p>
+          )}
+          {!status.whoop.configured && !status.hosted && (
             <ol className="steps">
               <li>
                 Sign in at{' '}
@@ -236,7 +247,9 @@ export function Integrations({ status, params, refresh }: { status: Status; para
 
           {status.whoop.connected && (
             <>
-              <p className="muted">Syncs every 6 hours while the app is running. Each sync rechecks the last few days, since WHOOP rescores recent nights.</p>
+              <p className="muted">
+                Syncs every 6 hours{status.hosted ? '' : ' while the app is running'}. Each sync rechecks the last few days, since WHOOP rescores recent nights.
+              </p>
               <div className="btn-row">
                 <button className="btn btn-primary" disabled={status.whoop.syncing} onClick={() => whoopAction('/whoop/sync')}>
                   <Icon name="refresh" size={15} /> {status.whoop.syncing ? 'Syncing…' : 'Sync now'}
@@ -258,24 +271,103 @@ export function Integrations({ status, params, refresh }: { status: Status; para
         </section>
       </div>
 
-      <DemoCard status={status} refresh={refresh} />
+      {signedIn && <IphoneToken status={status} refresh={refresh} />}
+      {/* Demo rows are seeded only in a local database, for the owner. */}
+      {!status.hosted && status.user.id === 'owner' && <DemoCard status={status} refresh={refresh} />}
     </div>
   );
 }
 
-function CopyField({ value }: { value: string }) {
+/** A personal token for the iPhone app. Shown once; the server keeps only its hash. */
+function IphoneToken({ status, refresh }: { status: Status; refresh: () => void }) {
+  const [token, setToken] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const has = status.apple.iphoneToken;
+
+  async function create() {
+    if (has && !confirm('Create a new token? The iPhone app stops syncing until you paste the new one.')) return;
+    setError(null);
+    try {
+      setToken((await sendJson<{ token: string }>('POST', '/me/ingest-token')).token);
+      refresh();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function revoke() {
+    if (!confirm('Revoke the iPhone app token? The app stops syncing until you create a new one.')) return;
+    setError(null);
+    try {
+      await sendJson('DELETE', '/me/ingest-token');
+      setToken(null);
+      refresh();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  return (
+    <section className="card integration">
+      <div className="integration-head">
+        <span className="integration-logo logo-whoop">
+          <Icon name="link" size={18} />
+        </span>
+        <div>
+          <h2>iPhone app</h2>
+          <p className="muted">{has ? 'Token set. The app can send your Apple Health data here.' : 'No token yet.'}</p>
+        </div>
+      </div>
+      {token ? (
+        <>
+          <p className="muted">In the healthOS iPhone app, open Settings and paste these. The token is shown only now.</p>
+          <div className="settings-row">
+            <span>Server</span>
+            <CopyField value={location.origin} label="Copy server address" />
+          </div>
+          <div className="settings-row">
+            <span>Token</span>
+            <CopyField value={token} label="Copy token" />
+          </div>
+        </>
+      ) : (
+        <p className="muted">The token lets the app write to your account only. It can't read anything back or sign in to the dashboard.</p>
+      )}
+      <div className="btn-row">
+        <button className="btn btn-primary" onClick={create}>
+          {has ? 'Create a new token' : 'Create token'}
+        </button>
+        {has && (
+          <button className="btn btn-quiet" onClick={revoke}>
+            Revoke
+          </button>
+        )}
+      </div>
+      {error && (
+        <p className="note-bad">
+          <Icon name="alert" size={15} /> {error}
+        </p>
+      )}
+    </section>
+  );
+}
+
+export function CopyField({ value, label = 'Copy redirect URL' }: { value: string; label?: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <span className="copy-field">
       <code>{value}</code>
       <button
         className="icon-btn"
-        aria-label="Copy redirect URL"
+        type="button"
+        aria-label={copied ? 'Copied' : label}
         onClick={() => {
-          navigator.clipboard?.writeText(value).then(() => {
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1500);
-          });
+          copyText(value)
+            .then(() => {
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            })
+            .catch(() => {});
         }}
       >
         <Icon name={copied ? 'check' : 'copy'} size={14} />
@@ -397,7 +489,7 @@ function PhotoSettings({ status, refresh }: { status: Status; refresh: () => voi
   );
 }
 
-export function SettingsPage({ status, refresh }: { status: Status; refresh: () => void }) {
+export function SettingsPage({ status, refresh, signedIn }: { status: Status; refresh: () => void; signedIn: boolean }) {
   const [name, setName] = useState(status.settings.name);
   const [goal, setGoal] = useState(String(status.settings.stepGoal));
   const [saved, setSaved] = useState(false);
@@ -415,9 +507,9 @@ export function SettingsPage({ status, refresh }: { status: Status; refresh: () 
       <header className="page-head">
         <div>
           <h1>Settings</h1>
-          <p>{status.hosted ? 'Saved to your healthOS database.' : 'Stored locally with your data.'}</p>
+          <p>{status.hosted ? 'Saved to your healthOS account.' : 'Stored locally with your data.'}</p>
         </div>
-        {status.hosted && (
+        {signedIn && (
           <button
             className="btn"
             onClick={async () => {
@@ -457,7 +549,72 @@ export function SettingsPage({ status, refresh }: { status: Status; refresh: () 
           <Icon name="check" size={14} /> Saved
         </p>
       </section>
+      {signedIn && <AccountSettings status={status} />}
       <PhotoSettings status={status} refresh={refresh} />
     </div>
+  );
+}
+
+function AccountSettings({ status }: { status: Status }) {
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [confirmNext, setConfirmNext] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+  const valid = current.length > 0 && next.length >= 10 && next === confirmNext;
+
+  async function change(e: React.FormEvent) {
+    e.preventDefault();
+    if (!valid) return;
+    setBusy(true);
+    setResult(null);
+    try {
+      await sendJson('POST', '/auth/password', { current, next });
+      setCurrent('');
+      setNext('');
+      setConfirmNext('');
+      setResult({ ok: true, text: 'Password changed. Other devices are signed out.' });
+    } catch (err) {
+      setResult({ ok: false, text: (err as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="card settings">
+      <h2>Account</h2>
+      <div className="settings-row">
+        <span>Email</span>
+        <span className="muted">
+          {status.user.email}
+          {status.user.role === 'admin' && ' · admin'}
+        </span>
+      </div>
+      <form className="settings" onSubmit={change}>
+        <label>
+          <span>Current password</span>
+          <input type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />
+        </label>
+        <label>
+          <span>New password</span>
+          <input type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} />
+          <small className={next && next.length < 10 ? 'note-bad' : 'muted'}>At least 10 characters.</small>
+        </label>
+        <label>
+          <span>Confirm new password</span>
+          <input type="password" autoComplete="new-password" value={confirmNext} onChange={(e) => setConfirmNext(e.target.value)} />
+          {confirmNext && confirmNext !== next && <small className="note-bad">The passwords don't match.</small>}
+        </label>
+        <button className="btn btn-primary" type="submit" disabled={busy || !valid}>
+          {busy ? 'Changing…' : 'Change password'}
+        </button>
+        {result && (
+          <p className={result.ok ? 'note-good' : 'note-bad'} role="status">
+            <Icon name={result.ok ? 'check' : 'alert'} size={15} /> {result.text}
+          </p>
+        )}
+      </form>
+    </section>
   );
 }

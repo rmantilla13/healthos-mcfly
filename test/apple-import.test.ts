@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
-import { type Db } from '../server/db.ts';
+import { type Db, OWNER_ID } from '../server/db.ts';
 import { openStore } from '../server/store.ts';
 import { importAppleHealth, parseStream, sportName } from '../server/apple/import.ts';
 
@@ -18,7 +18,7 @@ async function value(db: Db, date: string, metric: string) {
 
 test('imports export.xml into per-day values', async () => {
   const db = await openStore();
-  const result = await importAppleHealth(db, FIXTURE);
+  const result = await importAppleHealth({ db, userId: OWNER_ID }, FIXTURE);
   assert.equal(result.workouts, 2);
 
   // iPhone 5000 vs Watch 5500 for the same walks: keep the larger source, not 10,500.
@@ -38,7 +38,7 @@ test('imports export.xml into per-day values', async () => {
 
 test('assigns a night that crosses midnight to the wake day and picks one source', async () => {
   const db = await openStore();
-  await importAppleHealth(db, FIXTURE);
+  await importAppleHealth({ db, userId: OWNER_ID }, FIXTURE);
   // Watch: core 2h + deep 1.5h + REM 1.5h + core 2.5h = 7.5h asleep; awake 15m is not sleep.
   assert.equal(await value(db, '2026-10-14', 'sleep_hours'), 7.5);
   assert.equal(await value(db, '2026-10-14', 'sleep_deep'), 1.5);
@@ -53,7 +53,7 @@ test('assigns a night that crosses midnight to the wake day and picks one source
 
 test('reads workouts in both the old and new export formats', async () => {
   const db = await openStore();
-  await importAppleHealth(db, FIXTURE);
+  await importAppleHealth({ db, userId: OWNER_ID }, FIXTURE);
   const rows = await db.query<any>('SELECT sport, date, duration_min, energy_kcal, distance_m, avg_hr FROM workouts ORDER BY start');
   assert.equal(rows[0].sport, 'Running');
   assert.equal(rows[0].duration_min, 30);
@@ -66,8 +66,8 @@ test('reads workouts in both the old and new export formats', async () => {
 
 test('re-importing replaces the earlier import instead of doubling it', async () => {
   const db = await openStore();
-  await importAppleHealth(db, FIXTURE);
-  await importAppleHealth(db, FIXTURE);
+  await importAppleHealth({ db, userId: OWNER_ID }, FIXTURE);
+  await importAppleHealth({ db, userId: OWNER_ID }, FIXTURE);
   assert.equal(await value(db, '2026-10-13', 'steps'), 5500);
   assert.equal((await db.query<{ n: number }>('SELECT COUNT(*)::int AS n FROM workouts'))[0].n, 2);
 });
@@ -81,7 +81,7 @@ test('reads export.xml out of the export.zip, ignoring export_cda.xml', async ()
   execFileSync('zip', ['-qr', 'export.zip', 'apple_health_export'], { cwd: dir });
 
   const db = await openStore();
-  const result = await importAppleHealth(db, path.join(dir, 'export.zip'));
+  const result = await importAppleHealth({ db, userId: OWNER_ID }, path.join(dir, 'export.zip'));
   assert.equal(result.workouts, 2);
   assert.equal(await value(db, '2026-10-13', 'steps'), 5500);
   fs.rmSync(dir, { recursive: true });

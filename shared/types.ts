@@ -29,7 +29,7 @@ export type Insight = {
   page: Page;
 };
 
-export type Page = 'home' | 'vitals' | 'sleep' | 'activity' | 'body' | 'integrations' | 'settings';
+export type Page = 'home' | 'vitals' | 'sleep' | 'activity' | 'body' | 'integrations' | 'settings' | 'admin';
 
 export type Summary = {
   date: string;
@@ -103,10 +103,14 @@ export type PhotoMeta = {
   dots: { temp: [number, number]; breathing: [number, number]; heart: [number, number] };
 };
 
+export type Role = 'admin' | 'user';
+export type SessionUser = { id: string; email: string; name: string; role: Role };
+
 export type Status = {
   /** Running on Vercel: uploads that need the Mac (export import, photo processing) are off. */
   hosted: boolean;
   demo: boolean;
+  user: SessionUser;
   settings: Settings;
   photo: PhotoMeta | null;
   apple: {
@@ -114,6 +118,8 @@ export type Status = {
     /** Last push from the iOS companion app (POST /api/apple/ingest). */
     lastSync: { daily: number; workouts: number; events: number; syncedAt: string } | null;
     job: ImportJob;
+    /** Whether this person has created an iPhone app token. */
+    iphoneToken: boolean;
   };
   whoop: {
     configured: boolean;
@@ -130,3 +136,57 @@ export type ImportJob =
   | { state: 'uploading' | 'parsing'; bytesRead: number; totalBytes: number; records: number }
   | { state: 'done'; records: number; days: number }
   | { state: 'error'; error: string };
+
+// ---------- auth & admin ----------
+
+export type AuthMe = {
+  mode: 'open' | 'required' | 'misconfigured';
+  authenticated: boolean;
+  /** No accounts exist yet: the first sign-in with the original password creates the admin. */
+  setup: boolean;
+  user: SessionUser | null;
+};
+
+export type AdminUser = {
+  id: string;
+  email: string;
+  name: string;
+  role: Role;
+  status: 'active' | 'disabled';
+  createdAt: number;
+  lastLoginAt: number | null;
+  data: { rows: number; days: number; first: string | null; last: string | null };
+  apple: { lastImport: string | null; lastSync: string | null; iphoneToken: boolean };
+  whoop: { connected: boolean; lastSync: string | null; lastError: string | null; historyComplete: boolean };
+  photo: boolean;
+};
+
+export type AdminInvite = {
+  id: string;
+  kind: 'invite' | 'reset';
+  email: string | null;
+  role: Role;
+  userId: string | null;
+  createdAt: number;
+  expiresAt: number;
+  usedAt: number | null;
+  usedBy: string | null;
+  revokedAt: number | null;
+};
+
+export type PlatformSettings = {
+  registration: 'invite' | 'closed';
+  default_units: 'metric' | 'imperial';
+  default_step_goal: string;
+  invite_days: string;
+  mcfly_model: string;
+  mcfly_daily_limit: string;
+};
+
+export type AdminOverview = {
+  users: AdminUser[];
+  invites: AdminInvite[];
+  settings: PlatformSettings;
+  whoop: { configured: boolean; redirectUri: string };
+  mcfly: { configured: boolean };
+};
