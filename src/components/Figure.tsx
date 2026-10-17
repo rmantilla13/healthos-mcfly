@@ -17,11 +17,23 @@ const BODY =
 
 type Callout = { key: keyof Summary['vitals']; dot: [number, number]; anchor: [number, number]; side: 'left' | 'right' };
 
-const CALLOUTS: Callout[] = [
-  { key: 'temp', dot: [258, 128], anchor: [214, 112], side: 'left' },
-  { key: 'breathing', dot: [300, 246], anchor: [214, 230], side: 'left' },
-  { key: 'heart', dot: [332, 372], anchor: [404, 226], side: 'right' },
-];
+const SILHOUETTE: Record<'forehead' | 'wrist', Callout[]> = {
+  forehead: [
+    { key: 'temp', dot: [258, 128], anchor: [214, 112], side: 'left' },
+    { key: 'breathing', dot: [300, 246], anchor: [214, 230], side: 'left' },
+    { key: 'heart', dot: [332, 372], anchor: [404, 226], side: 'right' },
+  ],
+  // The silhouette has no hands, so the dot sits low on the left arm, above where the figure fades out.
+  // Breathing's label moves up to leave the slot below it for temperature.
+  wrist: [
+    { key: 'breathing', dot: [300, 246], anchor: [214, 140], side: 'left' },
+    { key: 'temp', dot: [168, 456], anchor: [214, 230], side: 'left' },
+    { key: 'heart', dot: [332, 372], anchor: [404, 226], side: 'right' },
+  ],
+};
+
+/** Wrist and skin temperature come from a watch or band, so they go at the wrist; body temperature (a thermometer) stays on the forehead. */
+const atWrist = (v: Vital) => v.label === 'Wrist temp' || v.label === 'Skin temp';
 
 const STATUS_TEXT = { low: 'Below your range', normal: 'Normal', high: 'Above your range' } as const;
 
@@ -117,19 +129,45 @@ export function Figure({ vitals, asOf, photo }: { vitals: Summary['vitals']; asO
 }
 
 type Key = Callout['key'];
-type Placed = { key: Key; side: 'left' | 'right'; x: number; y: number; w: number; h: number };
+type Side = 'left' | 'right';
+type Placed = { key: Key; side: Side; x: number; y: number; w: number; h: number };
+type Slot = { key: Key; side: Side; overFade: boolean };
+/** Photos processed since the Vision tool looked for wrists also carry a wrist point (server/photo/cutout.swift). */
+type PhotoDots = PhotoMeta['dots'] & { wrist?: [number, number] };
 
-const LABEL_ORDER: { key: Key; side: 'left' | 'right' }[] = [
-  { key: 'temp', side: 'left' },
-  { key: 'breathing', side: 'left' },
-  { key: 'heart', side: 'right' },
-];
+/** The photo fades out toward the bottom (.figure-photo's mask); from here down it's faint enough to write over. */
+const FADED_FROM = 0.8;
+
+/**
+ * Where each callout points on the photo, and which side its label goes. Wrist temperature uses the wrist when
+ * Vision found one, with its label on the wrist's side; on each side labels run top to bottom by their dots, so
+ * leader lines never cross.
+ */
+function photoLayout(photo: PhotoMeta, wristTemp: boolean) {
+  const wrist = wristTemp ? (photo.dots as PhotoDots).wrist : undefined;
+  const dots: Record<Key, [number, number]> = { temp: wrist ?? photo.dots.temp, breathing: photo.dots.breathing, heart: photo.dots.heart };
+  const slots: Slot[] = [
+    // Below the shoulders the arms fill the width, so a wrist label may sit over the faded bottom instead.
+    { key: 'temp', side: wrist && wrist[0] >= 0.5 ? 'right' : 'left', overFade: !!wrist },
+    { key: 'breathing', side: 'left', overFade: false },
+    { key: 'heart', side: 'right', overFade: false },
+  ];
+  slots.sort((a, b) => dots[a.key][1] - dots[b.key][1]);
+  return { dots, slots };
+}
 
 /**
  * Put each label in empty page space beside the silhouette, as close as possible (vertically) to its dot.
  * Left labels sit left of the outline, right labels right of it; all units are 0–1 of the cut-out.
  */
-function placeLabels(photo: PhotoMeta, sizes: Record<Key, [number, number]>, width: number, height: number): Placed[] {
+function placeLabels(
+  photo: PhotoMeta,
+  dots: Record<Key, [number, number]>,
+  slots: Slot[],
+  sizes: Record<Key, [number, number]>,
+  width: number,
+  height: number,
+): Placed[] {
   const [fx, fy, fw, fh] = photo.face;
   // Older metadata has no outline: treat the face as the obstacle above the shoulders and everything below as body.
   const outline: [number, number][] =
@@ -139,21 +177,29 @@ function placeLabels(photo: PhotoMeta, sizes: Record<Key, [number, number]>, wid
       if (y >= photo.shoulderY - 0.04) return [0, 1];
       return y >= fy - fh * 0.15 ? [fx - fw * 0.1, fx + fw * 1.1] : [1, 0];
     });
-  const rows = (top: number, bottom: number) => outline.slice(Math.max(0, Math.floor(top * 100)), Math.min(100, Math.ceil(bottom * 100)));
+  // Rows the label would cover; with overFade, rows in the faded bottom count as empty page.
+  const rows = (top: number, bottom: number, overFade: boolean) => {
+    const from = Math.max(0, Math.floor(top * 100));
+    return outline
+      .slice(from, Math.min(100, Math.ceil(bottom * 100)))
+      .map((r, i): [number, number] => (overFade && (from + i) / 100 >= FADED_FROM ? [1, 0] : r));
+  };
   const gapX = 12 / width;
   const gapY = 10 / height;
 
   const placed: Placed[] = [];
-  for (const { key, side } of LABEL_ORDER) {
+  for (const { key, side, overFade } of slots) {
     const w = sizes[key][0] / width;
     const h = sizes[key][1] / height;
-    const [dotX, dotY] = photo.dots[key];
-    const minTop = key === 'breathing' ? (placed.find((p) => p.key === 'temp')?.y ?? 0) + (placed.find((p) => p.key === 'temp')?.h ?? 0) + gapY : 0;
+    const [dotX, dotY] = dots[key];
+    // Below the label above it on the same side.
+    const above = placed.filter((p) => p.side === side).at(-1);
+    const minTop = above ? above.y + above.h + gapY : 0;
     let best: Placed | null = null;
     let bestScore = Infinity;
     let widest: Placed | null = null;
     for (let top = minTop; top + h <= 1; top += 0.005) {
-      const span = rows(top, top + h);
+      const span = rows(top, top + h, overFade);
       let x: number;
       let fits: boolean;
       if (side === 'left') {
@@ -182,7 +228,7 @@ function placeLabels(photo: PhotoMeta, sizes: Record<Key, [number, number]>, wid
 
 /**
  * The user's own cut-out photo with the same fade. Callouts are pinned to points Vision found
- * (forehead, throat, chest); labels go in the page space beside the silhouette, measured from its outline.
+ * (forehead or wrist, throat, chest); labels go in the page space beside the silhouette, measured from its outline.
  */
 function PhotoFigure({ vitals, asOf, photo }: { vitals: Summary['vitals']; asOf: string; photo: PhotoMeta }) {
   const ratio = photo.height / photo.width;
@@ -190,12 +236,14 @@ function PhotoFigure({ vitals, asOf, photo }: { vitals: Summary['vitals']; asOf:
   const height = width * ratio;
   const labelEls = useRef<Partial<Record<Key, HTMLDivElement | null>>>({});
   const [sizes, setSizes] = useState<Record<Key, [number, number]>>({ temp: [110, 64], breathing: [100, 64], heart: [100, 64] });
+  const wristTemp = atWrist(vitals.temp);
+  const { dots, slots } = useMemo(() => photoLayout(photo, wristTemp), [photo, wristTemp]);
 
   // Labels are measured after each render (their text and the font size change with data and screen width).
   useLayoutEffect(() => {
     const next = { ...sizes };
     let changed = false;
-    for (const { key } of LABEL_ORDER) {
+    for (const { key } of slots) {
       const el = labelEls.current[key];
       if (!el) continue;
       const m: [number, number] = [el.offsetWidth, el.offsetHeight];
@@ -207,7 +255,10 @@ function PhotoFigure({ vitals, asOf, photo }: { vitals: Summary['vitals']; asOf:
     if (changed) setSizes(next);
   });
 
-  const labels = useMemo(() => (width > 0 ? placeLabels(photo, sizes, width, height) : []), [photo, sizes, width, height]);
+  const labels = useMemo(
+    () => (width > 0 ? placeLabels(photo, dots, slots, sizes, width, height) : []),
+    [photo, dots, slots, sizes, width, height],
+  );
   // Leader lines meet each label beside its value line.
   const lineEnd = (l: Placed): [number, number] => [l.x + (l.side === 'left' ? 6 / width : -6 / width), l.y + 30 / height];
 
@@ -218,7 +269,7 @@ function PhotoFigure({ vitals, asOf, photo }: { vitals: Summary['vitals']; asOf:
       <img className="figure-photo" src={`/api/profile/cutout.png?v=${photo.version}`} alt="" />
       <svg className="figure-svg" viewBox={`0 0 1000 ${1000 * ratio}`} preserveAspectRatio="none" aria-hidden="true">
         {labels.map((l) => {
-          const [dx, dy] = photo.dots[l.key];
+          const [dx, dy] = dots[l.key];
           const [ex, ey] = lineEnd(l);
           // The viewBox scales with the photo; keep dots the same on-screen size as on the silhouette.
           const px = 1000 / width;
@@ -230,7 +281,7 @@ function PhotoFigure({ vitals, asOf, photo }: { vitals: Summary['vitals']; asOf:
           );
         })}
       </svg>
-      {LABEL_ORDER.map(({ key, side }) => {
+      {slots.map(({ key, side }) => {
         const l = labels.find((p) => p.key === key);
         return (
           <CalloutLabel
@@ -282,6 +333,7 @@ function PhotoToneFilters() {
 }
 
 function Silhouette({ vitals, asOf }: { vitals: Summary['vitals']; asOf: string }) {
+  const callouts = SILHOUETTE[atWrist(vitals.temp) ? 'wrist' : 'forehead'];
   return (
     <div className="figure" style={{ aspectRatio: `${VB.w} / ${VB.h}` }}>
       <svg viewBox={`${VB.x} ${VB.y} ${VB.w} ${VB.h}`} className="figure-svg" aria-hidden="true">
@@ -324,14 +376,14 @@ function Silhouette({ vitals, asOf }: { vitals: Summary['vitals']; asOf: string 
             <path d="M270,214 C284,232 316,232 330,214 L331,236 C318,250 282,250 269,236 Z" fill="var(--figure-shade)" opacity="0.5" />
           </g>
         </g>
-        {CALLOUTS.map((c) => (
+        {callouts.map((c) => (
           <g key={c.key}>
             <line x1={c.dot[0]} y1={c.dot[1]} x2={c.anchor[0] + (c.side === 'left' ? 6 : -6)} y2={c.anchor[1] + 26} className="callout-line" />
             <CalloutMark k={c.key} v={vitals[c.key]} cx={c.dot[0]} cy={c.dot[1]} halo={15} dot={5} />
           </g>
         ))}
       </svg>
-      {CALLOUTS.map((c) => (
+      {callouts.map((c) => (
         <CalloutLabel
           key={c.key}
           k={c.key}

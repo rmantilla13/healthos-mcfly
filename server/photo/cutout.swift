@@ -87,8 +87,8 @@ let crop = CGRect(x: cropX0, y: cropY0, width: cropX1 - cropX0, height: cropY1 -
 
 // Body points (when visible) for the throat and heart.
 let joints = (try? pose.results?.first?.recognizedPoints(.all)) ?? [:]
-func joint(_ name: VNHumanBodyPoseObservation.JointName) -> CGPoint? {
-  guard let p = joints[name], p.confidence > 0.3 else { return nil }
+func joint(_ name: VNHumanBodyPoseObservation.JointName, minConfidence: Float = 0.3) -> CGPoint? {
+  guard let p = joints[name], p.confidence > minConfidence else { return nil }
   return px(p.location)
 }
 let neck = joint(.neck)
@@ -105,6 +105,10 @@ let throat = CGPoint(x: chin.x + (neckPoint.x - chin.x) * 0.2, y: chin.y + (neck
 let halfSpan: CGFloat = lShoulder.map { $0.x - neckPoint.x } ?? rShoulder.map { neckPoint.x - $0.x } ?? faceRect.width * 1.3
 let heart = CGPoint(x: neckPoint.x + halfSpan * 0.42, y: neckPoint.y + abs(halfSpan) * 0.5)
 let shoulderTop = [lShoulder?.y, rShoulder?.y].compactMap { $0 }.min() ?? (neckPoint.y + faceRect.height * 0.1)
+// Wrist, for wrist and skin temperature (Apple Watch, WHOOP). Crossed arms tuck the hands away and Vision is
+// unsure there, but even a low-confidence estimate lands on the forearm. Of two, the higher one: the dashboard
+// fades the photo toward the bottom. None (arms out of frame): no wrist point, and temperature stays on the forehead.
+let wrist = [joint(.leftWrist, minConfidence: 0.1), joint(.rightWrist, minConfidence: 0.1)].compactMap { $0 }.min { $0.y < $1.y }
 
 func norm(_ p: CGPoint) -> [Double] {
   [Double((p.x - crop.minX) / crop.width), Double((p.y - crop.minY) / crop.height)]
@@ -206,6 +210,10 @@ let avatarCI = ci.cropped(to: ciSquare)
 guard let avatar = context.createCGImage(avatarCI, from: avatarCI.extent) else { fail("Couldn't build the avatar.") }
 writePNG(avatar, "avatar.png")
 
+// "temp" stays the forehead (body temperature, and photos processed before wrists were found); "wrist" is optional.
+var dots: [String: [Double]] = ["temp": norm(forehead), "breathing": norm(throat), "heart": norm(heart)]
+if let wrist { dots["wrist"] = norm(wrist) }
+
 let meta: [String: Any] = [
   "width": Int(crop.width.rounded()),
   "height": Int(crop.height.rounded()),
@@ -215,7 +223,7 @@ let meta: [String: Any] = [
   ],
   "shoulderY": Double((shoulderTop - crop.minY) / crop.height),
   "outline": outline,
-  "dots": ["temp": norm(forehead), "breathing": norm(throat), "heart": norm(heart)],
+  "dots": dots,
 ]
 let json = try! JSONSerialization.data(withJSONObject: meta, options: [.sortedKeys])
 try! json.write(to: outDir.appendingPathComponent("meta.json"))
