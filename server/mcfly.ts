@@ -391,6 +391,9 @@ async function claimQuestion(db: Db, userId: string, day: string, limit: number)
   return row ? Number(row.questions) : null;
 }
 
+/** The limit counts by UTC date, so changing your own time zone can't reset it. */
+const usageDay = () => new Date().toISOString().slice(0, 10);
+
 async function usedToday(db: Db, userId: string, day: string) {
   const [row] = await db.query<{ questions: number }>('SELECT questions FROM mcfly_usage WHERE user_id = $1 AND day = $2', [userId, day]);
   return row ? Number(row.questions) : 0;
@@ -407,9 +410,9 @@ export function mcflyRouter(db: Db, { hosted, client = defaultClient }: McflyOpt
 
   router.get('/', async (_req: Request, res: Response) => {
     const user = currentUser(res);
-    const [platform, ctx] = await Promise.all([platformSettings(db), requestContext({ db, userId: user.id }, hosted)]);
+    const platform = await platformSettings(db);
     const limit = Number(platform.mcfly_daily_limit);
-    res.json({ configured: Boolean(client()), limit, usedToday: await usedToday(db, user.id, ctx.today) });
+    res.json({ configured: Boolean(client()), limit, usedToday: await usedToday(db, user.id, usageDay()) });
   });
 
   router.post('/chat', async (req: Request, res: Response) => {
@@ -423,7 +426,8 @@ export function mcflyRouter(db: Db, { hosted, client = defaultClient }: McflyOpt
     const [platform, rc] = await Promise.all([platformSettings(db), requestContext(scope, hosted)]);
     const limit = Number(platform.mcfly_daily_limit);
     if (!(limit > 0)) return void res.status(403).json({ error: 'Ask McFly is turned off right now.' });
-    if ((await claimQuestion(db, user.id, rc.today, limit)) === null) {
+    const day = usageDay();
+    if ((await claimQuestion(db, user.id, day, limit)) === null) {
       return void res.status(429).json({ error: `You've asked McFly ${limit} questions today, the daily limit. Ask again tomorrow.` });
     }
 
@@ -533,11 +537,15 @@ export function mcflyRouter(db: Db, { hosted, client = defaultClient }: McflyOpt
         console.error('mcfly:', err instanceof Anthropic.APIError ? `API ${err.status}` : err instanceof Error ? err.name : 'error');
         send('error', { error: message });
       }
+      // A question that failed before any answer doesn't count against the limit.
+      if (!wroteText) {
+        await db.query('UPDATE mcfly_usage SET questions = GREATEST(questions - 1, 0) WHERE user_id = $1 AND day = $2', [user.id, day]).catch(() => {});
+      }
     } finally {
       await db
         .query('UPDATE mcfly_usage SET input_tokens = input_tokens + $3, output_tokens = output_tokens + $4 WHERE user_id = $1 AND day = $2', [
           user.id,
-          rc.today,
+          day,
           inputTokens,
           outputTokens,
         ])

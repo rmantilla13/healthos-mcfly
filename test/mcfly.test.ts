@@ -176,6 +176,14 @@ test('a refusal is reported instead of a partial answer', async () => {
   assert.ok(ev.some((e) => e.event === 'refusal'));
 });
 
+test("a question that fails before any answer doesn't count against the limit", async () => {
+  const before = (await bob.call('GET', '/api/mcfly')).json.usedToday;
+  script = []; // the fake throws: like an API error before any text
+  const ev = events((await bob.ask('Will this fail?')).text);
+  assert.equal(ev.at(-1)?.event, 'error');
+  assert.equal((await bob.call('GET', '/api/mcfly')).json.usedToday, before);
+});
+
 test('the history must be a well-formed conversation ending in a question', async () => {
   assert.equal((await bob.call('POST', '/api/mcfly/chat', { messages: [] })).status, 400);
   assert.equal((await bob.call('POST', '/api/mcfly/chat', { messages: [{ role: 'assistant', content: 'hi' }] })).status, 400);
