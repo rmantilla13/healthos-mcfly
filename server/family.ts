@@ -93,13 +93,13 @@ async function memberTile(db: Db, hosted: boolean, userId: string, o: TileOpts):
     return bed !== undefined && Math.abs(bed - hours) * 60 <= 1;
   };
 
-  // Sleep: last night, against the 28 nights before it.
+  // Sleep: last night, against the 28 nights before it that a watch or WHOOP measured (time in bed runs longer).
   const night = latest(ctx, 'sleep_hours', today, 1);
   const sleep = night
     ? {
         hours: round(night.value, 2),
         date: night.date,
-        usual: nullableRound(usualOf(series(ctx, 'sleep_hours', addDays(night.date, -28), addDays(night.date, -1))), 2),
+        usual: nullableRound(usualOf(series(ctx, 'sleep_hours', addDays(night.date, -28), addDays(night.date, -1)).filter((p) => !inBedOnly(p.date, p.value))), 2),
         inBed: inBedOnly(night.date, night.value),
       }
     : null;
@@ -126,8 +126,13 @@ async function memberTile(db: Db, hosted: boolean, userId: string, o: TileOpts):
     }
   }
 
+  // Resting heart rate against the same device's own history: WHOOP's is measured asleep, Apple Watch's over
+  // the day, so a watch reading that arrives before WHOOP's must not be judged against WHOOP's usual.
   const rhr = latest(ctx, 'resting_hr', today, 3);
-  const rhrStatus = rhr ? against(prior('resting_hr', rhr), rhr.value, 2) : null;
+  const rhrFrom = rhr ? valueOn(ctx, 'resting_hr', rhr.date)?.source : undefined;
+  const own = rhrFrom ? daily.get('resting_hr')?.get(rhrFrom) : undefined;
+  const rhrHistory = rhr && own ? [...own].filter(([d]) => d >= addDays(rhr.date, -30) && d < rhr.date).map(([date, value]) => ({ date, value })) : [];
+  const rhrStatus = rhr ? against(rhrHistory, rhr.value, 2) : null;
   const restingHr = rhr && rhrStatus ? { status: rhrStatus, date: rhr.date } : null;
 
   // Today's steps by the same rule as everywhere else; how far along the day is only from the phone's hours.
@@ -150,7 +155,8 @@ async function memberTile(db: Db, hosted: boolean, userId: string, o: TileOpts):
     today,
     newest,
     wearableNewest: wearable.reduce<string | null>((d, p) => (d === null || p.date > d ? p.date : d), null),
-    fresh: readiness !== null || restingHr !== null || (sleep !== null && !sleep.inBed),
+    // A reading counts as fresh before there's a usual to judge it by (then the status says it's still learning).
+    fresh: readiness !== null || rhr !== null || (sleep !== null && !sleep.inBed),
     baselines: (sleep !== null && !sleep.inBed && sleep.usual !== null) || (readiness?.usual ?? null) !== null || restingHr !== null,
     signals,
   });
@@ -172,7 +178,8 @@ async function memberTile(db: Db, hosted: boolean, userId: string, o: TileOpts):
     latestDataDate: newest,
     quietSince,
     status,
-    reasons: signals.slice(0, 2),
+    // Reasons only next to a status that's about them, never on a stale tile.
+    reasons: status === 'off' || status === 'check' ? signals.slice(0, 2) : [],
     sleep,
     readiness,
     restingHr,

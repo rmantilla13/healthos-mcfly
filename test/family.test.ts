@@ -104,6 +104,7 @@ test('setup: an admin, a WHOOP wearer and an Apple Watch wearer, each with 30 da
     { date: today, metric: 'sleep_in_bed', source: 'apple', value: 7.5 },
     { date: today, metric: 'steps', source: 'apple', value: 4000 },
   ]);
+  await db.query("INSERT INTO profile_assets (user_id, name, mime, data, updated_at) VALUES ($1, 'avatar.png', 'image/png', $2, 99)", [ids.leo, Buffer.from('leo png')]);
   await upsertHourly(db, ids.leo, [
     ...history.slice(0, 10).flatMap((date) => [8, 9, 10, 18].map((hour) => ({ date, hour, metric: 'steps', source: 'apple', value: 1000 }))),
     ...[8, 9, 10].map((hour) => ({ date: today, hour, metric: 'steps', source: 'apple', value: hour === 10 ? 2000 : 1000 })),
@@ -167,7 +168,9 @@ test("the avatar is served only between people who share, never the cut-out, and
 });
 
 test('turning sharing off is mutual: they see no one, and no one sees them or their photo', async () => {
+  assert.equal((await owner.get(`/api/family/${ids.leo}/avatar.png`)).status, 200, 'while both share');
   assert.equal((await leo.call('PUT', '/api/settings', { familySharing: false })).json.settings.familySharing, false);
+  assert.equal((await owner.get(`/api/family/${ids.leo}/avatar.png`)).status, 404, "a sharer can't load the photo of someone who stopped");
   assert.deepEqual(await board(leo), { sharing: false });
   const b = await board(owner);
   assert.deepEqual(
@@ -178,6 +181,7 @@ test('turning sharing off is mutual: they see no one, and no one sees them or th
   assert.equal((await leo.get(`/api/family/${ids.ana}/avatar.png`)).status, 404, 'a non-sharer sees no photos');
   assert.equal((await leo.call('PUT', '/api/settings', { familySharing: true })).json.settings.familySharing, true);
   assert.equal((await board(owner)).members.length, 3);
+  assert.equal((await owner.get(`/api/family/${ids.leo}/avatar.png`)).status, 200);
 });
 
 test('a disabled account leaves the board', async () => {
@@ -186,6 +190,7 @@ test('a disabled account leaves the board', async () => {
     (await board(owner)).members.map((m: FamilyMember) => m.id),
     [ids.owner, ids.ana],
   );
+  assert.equal((await owner.get(`/api/family/${ids.leo}/avatar.png`)).status, 404, "nor a disabled member's photo");
   assert.equal((await owner.call('PATCH', `/api/admin/users/${ids.leo}`, { status: 'active' })).status, 200);
 });
 
@@ -207,6 +212,58 @@ test('a cycle phase shows only with tracking and its own switch on, and either t
   assert.equal((await ana.call('PUT', '/api/settings', { familySharing: false })).json.settings.shareCyclePhase, false, 'sharing off withdraws it too');
   await ana.call('PUT', '/api/settings', { familySharing: true });
   assert.equal(await phase(), undefined);
+});
+
+test('each reading is judged against its own kind: one device, nights a watch measured, a usual before a verdict', async () => {
+  const kai = await join(new Client(), 'kai@example.com', 'Kai');
+  const noa = await join(new Client(), 'noa@example.com', 'Noa');
+  const ivy = await join(new Client(), 'ivy@example.com', 'Ivy');
+  for (const id of [kai, noa, ivy]) await setUserSetting(db, id, 'timezone', 'UTC');
+  const history = Array.from({ length: 30 }, (_, i) => back(i + 1));
+  // Kai wears WHOOP (resting HR asleep, ~52) and an Apple Watch (over the day, ~64). This morning only the
+  // watch has synced: 64 is ordinary for the watch, though far above WHOOP's usual.
+  await upsertDaily(db, kai, [
+    ...history.flatMap((date, i) => [
+      { date, metric: 'resting_hr', source: 'whoop', value: i % 2 ? 51 : 53 },
+      { date, metric: 'resting_hr', source: 'apple', value: i % 2 ? 63 : 65 },
+    ]),
+    { date: today, metric: 'resting_hr', source: 'apple', value: 64 },
+  ]);
+  // Noa's watch is three days old: fresh readings, nothing to compare with yet.
+  await upsertDaily(db, noa, [0, 1, 2].map((n) => ({ date: back(n), metric: 'resting_hr', source: 'apple', value: 60 })));
+  // Ivy charges her watch overnight on alternate nights: the phone then logs time in bed (9 h). Her watch
+  // nights are 7 h; tonight's 6 h 50 m is ordinary for her.
+  await upsertDaily(db, ivy, [
+    ...history.flatMap((date, i) =>
+      i % 2
+        ? [{ date, metric: 'sleep_hours', source: 'apple', value: 9 }, { date, metric: 'sleep_in_bed', source: 'apple', value: 9 }]
+        : [{ date, metric: 'sleep_hours', source: 'apple', value: 7 }, { date, metric: 'sleep_in_bed', source: 'apple', value: 7.6 }],
+    ),
+    { date: today, metric: 'sleep_hours', source: 'apple', value: 6.83 },
+    { date: today, metric: 'sleep_in_bed', source: 'apple', value: 7.4 },
+  ]);
+  const b = await board(owner);
+  assert.deepEqual([member(b, kai).restingHr?.status, member(b, kai).status], ['normal', 'good']);
+  assert.deepEqual([member(b, noa).status, member(b, noa).quietSince], ['learning', null]);
+  assert.deepEqual([member(b, ivy).sleep?.usual, member(b, ivy).status, member(b, ivy).reasons], [7, 'good', []]);
+  for (const id of [kai, noa, ivy]) assert.equal((await owner.call('DELETE', `/api/admin/users/${id}`)).status, 200);
+});
+
+test('a stale tile carries no reasons, whatever its old readings said', async () => {
+  const sam = await join(new Client(), 'sam@example.com', 'Sam');
+  await setUserSetting(db, sam, 'timezone', 'UTC');
+  // Newest data two days ago, and that day's HRV and resting HR were both well off the usual.
+  await upsertDaily(db, sam, [
+    ...Array.from({ length: 30 }, (_, i) => back(i + 3)).flatMap((date, i) => [
+      { date, metric: 'hrv_sdnn', source: 'apple', value: i % 2 ? 48 : 52 },
+      { date, metric: 'resting_hr', source: 'apple', value: i % 2 ? 59 : 61 },
+    ]),
+    { date: back(2), metric: 'hrv_sdnn', source: 'apple', value: 30 },
+    { date: back(2), metric: 'resting_hr', source: 'apple', value: 70 },
+  ]);
+  const m = member(await board(owner), sam);
+  assert.deepEqual([m.status, m.quietSince, m.reasons], ['quiet', back(2), []]);
+  assert.equal((await owner.call('DELETE', `/api/admin/users/${sam}`)).status, 200);
 });
 
 test('the one-time notice is remembered', async () => {

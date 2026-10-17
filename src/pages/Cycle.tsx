@@ -454,7 +454,7 @@ export function CycleSettings({ status, refresh, family = false }: { status: Sta
           <div className="settings-row cycle-switch-row">
             <div>
               <span>Show my cycle phase to family</span>
-              <p className="muted small">One word on your Family board tile (period, follicular or luteal), never dates or logs. Hidden as your next period approaches. Members will know you track your cycle.</p>
+              <p className="muted small">One word on your Family board tile (period, follicular or luteal), never dates or logs. Hidden as your next period approaches. Members will know you track your cycle, and looking day after day shows roughly when your period starts.</p>
             </div>
             <button
               className={`switch ${shareCyclePhase ? 'is-on' : ''}`}

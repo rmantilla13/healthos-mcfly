@@ -10,17 +10,7 @@ const REFRESH_MS = 5 * 60_000;
 /** Everyone who shares, at a glance: each against their own usual, never against each other. */
 export function Family({ isAdmin, refreshStatus }: { isAdmin: boolean; refreshStatus: () => void }) {
   const { data, error, reload } = useApi<FamilyBoard>('/family');
-  useEffect(() => {
-    const onShow = () => document.visibilityState === 'visible' && reload();
-    const t = setInterval(onShow, REFRESH_MS);
-    window.addEventListener('focus', onShow);
-    document.addEventListener('visibilitychange', onShow);
-    return () => {
-      clearInterval(t);
-      window.removeEventListener('focus', onShow);
-      document.removeEventListener('visibilitychange', onShow);
-    };
-  }, [reload]);
+  useFamilyRefresh(reload);
 
   if (error && !data) return <div className="page-message">Couldn't load the family board: {error.message}</div>;
   if (!data) return <div className="page-message">Loading…</div>;
@@ -56,6 +46,25 @@ export function Family({ isAdmin, refreshStatus }: { isAdmin: boolean; refreshSt
   );
 }
 
+/**
+ * Other people's changes don't move your data version, so a cached board could outlive someone turning
+ * sharing off. Re-read it on opening, every few minutes while visible, and on returning to the tab.
+ */
+function useFamilyRefresh(reload: () => void) {
+  useEffect(() => {
+    reload();
+    const onShow = () => document.visibilityState === 'visible' && reload();
+    const t = setInterval(onShow, REFRESH_MS);
+    window.addEventListener('focus', onShow);
+    document.addEventListener('visibilitychange', onShow);
+    return () => {
+      clearInterval(t);
+      window.removeEventListener('focus', onShow);
+      document.removeEventListener('visibilitychange', onShow);
+    };
+  }, [reload]);
+}
+
 const STATUS_ORDER: FamilyStatus[] = ['check', 'off', 'good'];
 const GROUP: Partial<Record<FamilyStatus, string>> = { check: 'Check in', off: 'Off their usual', good: 'All good' };
 
@@ -74,7 +83,7 @@ function Tile({ m, boardToday }: { m: FamilyMember; boardToday: string }) {
   const body = (
     <>
       <div className="family-head">
-        <span className="avatar family-avatar">{m.avatar ? <img src={`/api/family/${encodeURIComponent(m.id)}/avatar.png?v=${m.avatar}`} alt="" /> : initial(m.name)}</span>
+        <Avatar m={m} />
         <div className="family-who">
           <div className="family-name">
             <h2>{m.isYou ? `${m.name} (you)` : m.name}</h2>
@@ -92,7 +101,7 @@ function Tile({ m, boardToday }: { m: FamilyMember; boardToday: string }) {
       {m.reasons.length > 0 && <p className="family-reasons">{m.reasons.map((r) => REASON[r]).join(' · ')}</p>}
       <div className="family-slots">
         <Slot icon="sleep" label="Sleep" value={m.sleep ? hoursMinutes(m.sleep.hours) : null} note={sleepNote(m)} />
-        <Slot icon="heart" label={m.readiness?.kind === 'hrv' ? 'HRV' : 'Recovery'} value={readinessValue(m)} note={readinessNote(m)} />
+        <Slot icon="heart" label={m.readiness ? (m.readiness.kind === 'hrv' ? 'HRV' : 'Recovery') : m.devices.includes('whoop') ? 'Recovery' : 'HRV'} value={readinessValue(m)} note={readinessNote(m)} />
         <Slot icon="steps" label="Steps" value={m.steps ? fmt(m.steps.value) : null} note={stepsNote(m)} />
       </div>
     </>
@@ -104,6 +113,16 @@ function Tile({ m, boardToday }: { m: FamilyMember; boardToday: string }) {
     </a>
   ) : (
     <section className={`card family-tile ${quiet ? 'is-quiet' : ''}`}>{body}</section>
+  );
+}
+
+/** Their photo, or their initial when there's none (or it can't be loaded any more). */
+function Avatar({ m }: { m: FamilyMember }) {
+  const [failed, setFailed] = useState(false);
+  return (
+    <span className="avatar family-avatar">
+      {m.avatar && !failed ? <img src={`/api/family/${encodeURIComponent(m.id)}/avatar.png?v=${m.avatar}`} alt="" onError={() => setFailed(true)} /> : initial(m.name)}
+    </span>
   );
 }
 
@@ -138,7 +157,7 @@ function Slot({ icon, label, value, note }: { icon: IconName; label: string; val
 
 function sleepNote(m: FamilyMember) {
   const s = m.sleep;
-  if (!s) return 'No sleep last night';
+  if (!s) return 'No sleep data for last night';
   // Sleep is dated by the morning you woke: yesterday's means last night's hasn't synced yet.
   const parts = [s.date === m.today ? '' : 'the night before', s.inBed ? 'in bed' : ''];
   if (!s.inBed && s.usual !== null) {
@@ -204,7 +223,7 @@ function SharingOff({ onOn }: { onOn: () => void }) {
 /** "yesterday", a weekday within the week ("Tue"), else a date ("Oct 12"). */
 function since(date: string, today: string) {
   const d = daysBetween(date, today);
-  return d <= 1 ? 'yesterday' : d < 7 ? fmtDate(date, { weekday: 'short' }) : fmtDate(date);
+  return d <= 0 ? 'today' : d === 1 ? 'yesterday' : d < 7 ? fmtDate(date, { weekday: 'short' }) : fmtDate(date);
 }
 
 const initial = (name: string) => (name || '·').slice(0, 1).toUpperCase();
@@ -220,7 +239,8 @@ const REASON: Record<FamilyReason, string> = {
 /** Settings: Share with family. Mutual, so the text says both halves. */
 export function FamilySettings({ status, refresh }: { status: Status; refresh: () => void }) {
   const on = status.settings.familySharing;
-  const { data } = useApi<FamilyBoard>(on ? '/family' : null);
+  const { data, reload } = useApi<FamilyBoard>(on ? '/family' : null);
+  useFamilyRefresh(reload);
   const [busy, setBusy] = useState(false);
   const others = data?.sharing ? data.members.filter((m) => !m.isYou).map((m) => m.name) : [];
   return (
