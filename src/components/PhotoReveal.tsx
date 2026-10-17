@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 
 const played = new Set<number>();
 const RAMP = ' .:-=+*#%@';
-const DURATION = 1800;
+const DURATION = 2160;
 /** The ASCII band's height, as a fraction of the photo. */
 const BAND = 0.2;
 /** Where the edge starts: lower than this the photo's own fade (.figure-photo's mask) leaves too little to see. */
