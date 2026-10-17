@@ -174,6 +174,7 @@ test("the Day view shows one person's own day, next to their typical day", async
   assert.equal(steps.hours.length, 24);
   assert.deepEqual([steps.hours[0], steps.hours[1], steps.hours[8], steps.hours[9], steps.hours[10]], [null, 50, 1500, 300, null]);
   // Running totals by 8 AM on the three days before: 1000, 2000, 3000. By noon: 1500, 2500, 3500.
+  // The other 27 of the 30 days have no rows and are left out: counted as zeros, every median would be 0.
   assert.deepEqual([steps.typical[7], steps.typical[8], steps.typical[12]], [0, 2000, 2500]);
   const hr = json.metrics.heart_rate;
   assert.deepEqual([hr.hours[8], hr.min[8], hr.max[8], hr.typical[8], hr.typical[9]], [72, 58, 131, 62, null]);
@@ -202,7 +203,8 @@ test('the date defaults to today, a future date shows today, and bad requests ar
   const now = await owner.call('GET', '/api/day?metrics=steps');
   assert.equal(now.json.date, now.json.today);
   assert.equal((await owner.call('GET', '/api/day?metrics=steps&date=2999-01-01')).json.date, now.json.today);
-  assert.equal((await owner.call('GET', '/api/day?metrics=sleep')).status, 400);
+  const unknown = await owner.call('GET', '/api/day?metrics=sleep,steps_typo');
+  assert.deepEqual([unknown.status, unknown.json.metrics, unknown.json.asOf], [200, {}, null], 'unknown names are ignored');
   assert.equal((await owner.call('GET', '/api/day?metrics=steps&date=yesterday')).status, 400);
   assert.equal((await new Client().call('GET', '/api/day?metrics=steps')).status, 401);
 });

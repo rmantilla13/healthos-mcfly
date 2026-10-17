@@ -101,9 +101,9 @@ export function createApp({ db, hosted, ingestToken, mcflyClient }: AppOptions) 
   });
 
   api.get('/day', async (req, res) => {
+    // Unknown names are ignored; with none left the answer is simply an empty Day view.
     const asked = String(req.query.metrics ?? DAY_METRICS.join(',')).split(',');
     const metrics = DAY_METRICS.filter((m) => asked.includes(m));
-    if (!metrics.length) return void res.status(400).json({ error: `metrics must include ${DAY_METRICS.join(', ')}` });
     const date = req.query.date === undefined ? undefined : String(req.query.date);
     if (date !== undefined && !DATE.test(date)) return void res.status(400).json({ error: 'date must be YYYY-MM-DD' });
     res.json(await dayView(scopeOf(res), hosted, metrics, date));
