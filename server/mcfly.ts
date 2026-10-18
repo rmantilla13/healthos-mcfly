@@ -3,10 +3,11 @@
 // keeps no conversation: the browser sends the visible history (plain text) with each question.
 import Anthropic from '@anthropic-ai/sdk';
 import express, { type Request, type Response } from 'express';
-import type { Digest, DigestReply, Units } from '../shared/types.ts';
+import type { Digest, DigestReply, NutritionNumbers, Units } from '../shared/types.ts';
 import { platformSettings } from './admin.ts';
 import { currentUser } from './auth.ts';
 import { cycleView } from './cycle/index.ts';
+import { nutritionView } from './nutrition.ts';
 import { addDays } from './dates.ts';
 import { type Db, type Scope, getUserSetting, setUserSetting } from './db.ts';
 import { patterns } from './insights.ts';
@@ -93,8 +94,11 @@ function inUnits(kind: Kind | undefined, value: number, unit: string, units: Uni
 
 const unitOf = (metric: string, units: Units) => inUnits(METRICS[metric]?.kind, 0, METRICS[metric]?.unit ?? '', units).unit;
 
-/** cycle: the person has cycle tracking on, so McFly may read it. */
-type Ctx = { scope: Scope; hosted: boolean; units: Units; today: string; demo: boolean; cycle: boolean };
+/**
+ * cycle: the person has cycle tracking on, so McFly may read it. nutrition: what they chose to see of their food
+ * logs, or null while nutrition is off; McFly reads only that much.
+ */
+type Ctx = { scope: Scope; hosted: boolean; units: Units; today: string; demo: boolean; cycle: boolean; nutrition: NutritionNumbers | null };
 
 const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
 
@@ -383,6 +387,34 @@ const TOOLS: Tool[] = [
       };
     },
   },
+  {
+    name: 'get_nutrition',
+    when: (ctx) => ctx.nutrition !== null,
+    description:
+      "What this person logged in their food app (MyFitnessPal, Cronometer and others, through Apple Health), as daily totals: energy, protein, carbohydrates, fat, fiber, sugar, saturated fat, sodium and alcoholic drinks, as far as their app records them and their setting shows them. One app per day, never a sum of apps. Days with nothing logged are left out: that means nothing was logged, not that nothing was eaten.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        days: { type: 'integer', minimum: 1, maximum: 366, description: 'How many days back from end_date, inclusive. Defaults to 30.' },
+        end_date: { type: 'string', description: 'YYYY-MM-DD. Defaults to today.' },
+      },
+      additionalProperties: false,
+    },
+    label: () => 'Looking at your food log',
+    async run(ctx, input) {
+      if (!ctx.nutrition) throw new ToolInputError('Nutrition is off.');
+      const v = await nutritionView(ctx.scope, ctx.hosted, { days: asDays(input.days, 366, 30), end: asDate(input.end_date, ctx, 'end_date') });
+      const hidden = v.numbers === 'none' ? 'They chose to see no amounts, so none are included: only which days they logged.' : v.numbers === 'no_energy' ? 'They chose not to see calories, so energy is left out.' : null;
+      return {
+        today: v.today,
+        window: { start: v.start, end: v.end },
+        note: `Self-reported and often incomplete. Energy in kcal, masses in grams except sodium (mg), alcohol in drinks.${hidden ? ` ${hidden}` : ''}`,
+        daysLogged: v.days.length,
+        apps: v.apps,
+        days: v.days.map((d) => ({ date: d.date, app: d.app, ...(v.numbers !== 'none' && { values: d.values }) })),
+      };
+    },
+  },
 ];
 
 /** The tools this person's question may use. */
@@ -407,7 +439,20 @@ const BOUNDARIES = `Boundaries
 - You're not a doctor and can't diagnose. Give general, evidence-based wellness context. When something looks concerning, such as a sustained change, a value well outside their usual range, or a symptom they mention, suggest checking with a clinician. If they describe an emergency, tell them to contact emergency services.
 - You can only read this person's own data. You can't change data or settings, see anyone else's data, or browse the web.`;
 
-function systemPrompt(name: string, today: string, timeZone: string | null, units: Units, cycle: boolean) {
+/** Only while nutrition is on. Food logs need care: no targets, no judgement, and nothing the person chose not to see. */
+function nutritionNotes(numbers: NutritionNumbers) {
+  const hidden =
+    numbers === 'none'
+      ? ' They chose to see no amounts: never state or estimate how much they ate or drank, in any unit.'
+      : numbers === 'no_energy'
+        ? ' They chose not to see calories: never state, estimate or compute energy or calories.'
+        : '';
+  return `
+- They log food, and get_nutrition reads it. Logs are self-reported and incomplete, and a day missing means nothing was logged.${hidden}
+- About food: no calorie, weight or macro targets unless they give you one, no "good" or "bad" foods, no comments on body size, and no advice to eat less unless they're following a clinician's plan. Patterns with sleep or recovery are associations, not causes. If they mention distress about food or eating, respond with care and suggest talking to someone they trust or a professional, such as an eating disorder helpline.`;
+}
+
+function systemPrompt(name: string, today: string, timeZone: string | null, units: Units, cycle: boolean, nutrition: NutritionNumbers | null) {
   return `${intro(name, today, timeZone, units)}, and the tools already return values in those units.
 
 How to answer
@@ -421,7 +466,7 @@ ${DATA_NOTES}${
       ? `
 - They track their menstrual cycle, and get_cycle reads it. Its next period, ovulation and fertile days are estimates from their own cycles and temperatures: call them estimates, never call any day safe, and never present them as contraception or a diagnosis.`
       : ''
-  }
+  }${nutrition ? nutritionNotes(nutrition) : ''}
 
 ${BOUNDARIES}`;
 }
@@ -667,11 +712,12 @@ export function mcflyRouter(db: Db, { hosted, client = defaultClient }: McflyOpt
       return void res.status(429).json({ error: `You've asked McFly ${limit} questions today, the daily limit. Ask again tomorrow.` });
     }
 
-    const ctx: Ctx = { scope, hosted, units: rc.settings.units, today: rc.today, demo: rc.demo, cycle: rc.settings.cycleTracking };
+    const nutrition = rc.settings.nutrition ? rc.settings.nutritionNumbers : null;
+    const ctx: Ctx = { scope, hosted, units: rc.settings.units, today: rc.today, demo: rc.demo, cycle: rc.settings.cycleTracking, nutrition };
     const tools = toolsFor(ctx);
     const toolByName = new Map(tools.map((t) => [t.name, t]));
     const messages: BetaMessageParam[] = history.map((t) => ({ role: t.role, content: t.content }));
-    const system = systemPrompt(rc.settings.name, rc.today, rc.settings.timeZone, rc.settings.units, ctx.cycle);
+    const system = systemPrompt(rc.settings.name, rc.today, rc.settings.timeZone, rc.settings.units, ctx.cycle, ctx.nutrition);
 
     res.status(200);
     res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');

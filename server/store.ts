@@ -178,6 +178,19 @@ export const MIGRATIONS: { id: number; name: string; statements: string[] }[] = 
         AND user_id NOT IN (SELECT user_id FROM tokens WHERE provider = 'whoop')`,
     ],
   },
+  {
+    id: 7,
+    name: 'Nutrition: daily totals per person, by app',
+    statements: [
+      // Food logs, kept apart from `daily` like `cycle`, so nothing that reads daily (summaries, patterns, the
+      // digest, the admin view, the Family board, McFly's metric list) can reach them; see server/nutrition.ts.
+      // source is 'apple' like everywhere else, so clearing or re-importing Apple Health replaces these rows too;
+      // app is the app that logged the food in Health. Each app's total is kept, and a day shows one of them.
+      `CREATE TABLE nutrition_daily (
+        user_id TEXT NOT NULL, date TEXT NOT NULL, nutrient TEXT NOT NULL, source TEXT NOT NULL, app TEXT NOT NULL DEFAULT '',
+        value DOUBLE PRECISION NOT NULL, PRIMARY KEY (user_id, date, nutrient, source, app))`,
+    ],
+  },
 ];
 
 async function migrate(db: Db) {

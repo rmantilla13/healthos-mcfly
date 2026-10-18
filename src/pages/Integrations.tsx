@@ -3,6 +3,7 @@ import type { Settings, Status, SyncResult } from '../../shared/types.ts';
 import { Icon } from '../components/Icon.tsx';
 import { copyText, fmt, fmtDate, notifyDataChanged, sendJson, uploadFile } from '../lib.ts';
 import { CycleSettings } from './Cycle.tsx';
+import { NutritionSettings } from './Nutrition.tsx';
 import { FamilySettings } from './Family.tsx';
 
 function ago(iso: string) {
@@ -691,6 +692,7 @@ export function SettingsPage({ status, refresh, signedIn }: { status: Status; re
       </section>
       {signedIn && <FamilySettings status={status} refresh={refresh} />}
       <CycleSettings status={status} refresh={refresh} family={signedIn && status.settings.familySharing} />
+      <NutritionSettings status={status} refresh={refresh} />
       {signedIn && <AccountSettings status={status} />}
       <PhotoSettings status={status} refresh={refresh} />
     </div>

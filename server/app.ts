@@ -14,12 +14,13 @@ import { importAppleHealth } from './apple/import.ts';
 import { ingestRouter } from './apple/ingest.ts';
 import { authRoutes, cronAuthorized, currentUser, publicUser, requireSession, sha256 } from './auth.ts';
 import { cycleRouter } from './cycle/index.ts';
+import { nutritionRouter } from './nutrition.ts';
 import { familyRouter } from './family.ts';
 import { DATA_DIR, type Db, type Scope, bumpDataVersion, deleteSource, getUserSetting, setUserSetting } from './db.ts';
 import { patterns, sleepTiming } from './insights.ts';
 import { type McflyClient, mcflyRouter } from './mcfly.ts';
 import { PHOTO_ASSETS, parsePhotoUpload, photoAsset, photoMeta, processPhoto, removePhoto, storePhotoAssets } from './photo.ts';
-import { readSettings, requestContext, summary, trends, workouts } from './query.ts';
+import { NUMBERS, readSettings, requestContext, summary, trends, workouts } from './query.ts';
 import * as whoop from './whoop.ts';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -97,6 +98,7 @@ export function createApp({ db, hosted, ingestToken, mcflyClient }: AppOptions) 
   api.use('/admin', adminRouter(db));
   api.use('/mcfly', mcflyRouter(db, { hosted, client: mcflyClient }));
   api.use('/cycle', cycleRouter(db, hosted));
+  api.use('/nutrition', nutritionRouter(db, hosted));
   api.use('/family', familyRouter(db, hosted));
 
   const asOf = (req: Request) => (typeof req.query.date === 'string' && DATE.test(req.query.date) ? req.query.date : undefined);
@@ -192,6 +194,11 @@ export function createApp({ db, hosted, ingestToken, mcflyClient }: AppOptions) 
   api.put('/settings', async (req, res) => {
     const { userId } = scopeOf(res);
     const body = req.body as Partial<Settings>;
+    const numbers = NUMBERS.find((n) => n === body.nutritionNumbers);
+    // Checked before anything is saved, so a refused request changes nothing.
+    if (body.nutrition === true && !numbers && !(await readSettings({ db, userId }, hosted)).nutritionNumbers) {
+      return void res.status(400).json({ error: 'Choose what to show before turning nutrition on.' });
+    }
     if (typeof body.name === 'string') {
       const name = body.name.trim().slice(0, 40);
       await setUserSetting(db, userId, 'name', name || null);
@@ -216,6 +223,13 @@ export function createApp({ db, hosted, ingestToken, mcflyClient }: AppOptions) 
       const now = await readSettings({ db, userId }, hosted);
       await setUserSetting(db, userId, 'family_cycle_phase', body.shareCyclePhase && now.cycleTracking && now.familySharing ? 'on' : null);
     }
+    // Nutrition: only the person turns it on, and only after choosing how much they'll see (no default is picked
+    // for them). Off hides what's stored and stops storing more; POST /api/nutrition/delete removes it.
+    if (numbers) await setUserSetting(db, userId, 'nutrition_numbers', numbers);
+    if (body.nutritionApp === null || (typeof body.nutritionApp === 'string' && body.nutritionApp.trim() && body.nutritionApp.length <= 100)) {
+      await setUserSetting(db, userId, 'nutrition_app', body.nutritionApp?.trim() || null);
+    }
+    if (typeof body.nutrition === 'boolean') await setUserSetting(db, userId, 'nutrition', body.nutrition ? 'on' : null);
     // Units, names and time zone change what every view shows, on every device.
     await bumpDataVersion(db, userId);
     res.json(await status(res));

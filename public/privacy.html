@@ -142,6 +142,10 @@
           <strong>Cycle tracking</strong>, which is off unless you turn it on: reproductive-health data, described in its own section below.
         </li>
         <li>
+          <strong>Nutrition</strong>, which is off unless you turn it on: daily totals of what you log in a food app, described in its own
+          section below.
+        </li>
+        <li>
           An optional profile photo. It's cut out on your own device (in your browser, or on a Mac), and only the cut-out, a small
           avatar and the points where your vitals are shown are uploaded, never the original photo.
         </li>
@@ -163,7 +167,8 @@
         to answer it to <strong>Anthropic</strong>'s API, which generates the reply. McFly can only read your own data, never other members',
         and it can't change
         anything. Anthropic handles this data under its commercial terms and privacy policy. If you don't use Ask McFly, nothing is sent to
-        Anthropic. McFly can read your cycle tracking data only while you have cycle tracking turned on.
+        Anthropic. McFly can read your cycle tracking data only while you have cycle tracking turned on, and your nutrition only while nutrition
+        is on, and only as much of it as you chose to see.
       </p>
 
       <h2>Cycle tracking</h2>
@@ -205,6 +210,41 @@
         </li>
       </ul>
 
+      <h2>Nutrition</h2>
+      <p>
+        What you eat and drink is sensitive, so nutrition has the same kind of protections as cycle tracking. It stays off until you turn on
+        <strong>Nutrition</strong> in Settings, and only you can turn it on.
+      </p>
+      <ul>
+        <li>
+          <strong>What it covers</strong>: daily totals of what you log in a food app, such as MyFitnessPal, Cronometer, Lose It!, MacroFactor or
+          Yazio, that writes to Apple Health: calories, protein, carbohydrates, fat, fiber, sugar, saturated fat, sodium and alcoholic drinks,
+          with the name of the app that logged them. It comes from your Apple Health export and, once it reads food, the iPhone app. healthOS
+          doesn't read single foods or meal photos.
+        </li>
+        <li>
+          <strong>What you see</strong>: when you turn it on, you choose everything, everything except calories, or no amounts at all. Whatever
+          you leave out is removed on the server, so it never reaches the page or Ask McFly. healthOS sets no targets.
+        </li>
+        <li>
+          <strong>While it's off</strong>: healthOS doesn't read or keep your food totals. Turning it off hides what's already stored. It
+          doesn't delete it.
+        </li>
+        <li>
+          <strong>Who sees it</strong>: only you. It is kept apart from your other health data. It never appears on the Family board, in your
+          summaries, insights or weekly digest, in the admin screens, in the server's logs, or in web addresses.
+        </li>
+        <li>
+          <strong>Ask McFly</strong>: while nutrition is on, McFly can read it, as much as you chose to see, and the parts it reads to answer a
+          question are sent to Anthropic as described above.
+        </li>
+        <li>
+          <strong>Deleting it</strong>: <strong>Delete all nutrition data</strong> in Settings removes every food total at once, whether nutrition
+          is on or off. Removing your Apple Health data removes it too. With nutrition on, totals still in Apple Health come back with your next
+          import or iPhone sync.
+        </li>
+      </ul>
+
       <h2>Family board</h2>
       <p>
         Members see each other on the <strong>Family board</strong>. Sharing is on unless you turn off <strong>Share with family</strong> in
@@ -219,8 +259,8 @@
           shows those 30 days as charts.
         </li>
         <li>
-          <strong>Never on it</strong>: your email, step goal, workouts, weight, temperature, anything older than 30 days, or anything you ask
-          McFly.
+          <strong>Never on it</strong>: your email, step goal, workouts, weight, temperature, anything about food, drink or nutrition, anything
+          older than 30 days, or anything you ask McFly.
         </li>
         <li>
           <strong>Cycle phase</strong>: only if you also turn on <strong>Show my cycle phase to family</strong>. It shows one word (period,
@@ -239,7 +279,7 @@
           Admins manage accounts. They can see your email, name, role, when you last signed in, and the health of your syncs: how many days of
           data you have and its date range, when Apple Health and WHOOP last synced, whether a sync failed, and how many questions you asked
           McFly. The admin screens don't show your health values or your questions. In the admin screens, admins never see your cycle
-          tracking data, your health profile, or whether you have cycle tracking turned on. An admin who shares sees the Family board like
+          tracking data, your nutrition, your health profile, or whether you have cycle tracking or nutrition turned on. An admin who shares sees the Family board like
           any other member, including a phase you share.
         </li>
         <li>
@@ -268,6 +308,7 @@
         <li>Your data is kept until you remove it or your account is deleted.</li>
         <li>You can remove your Apple Health data from the Integrations page at any time.</li>
         <li>You can delete all your cycle tracking data from Settings or the Cycle page at any time.</li>
+        <li>You can delete all your nutrition data from Settings at any time.</li>
         <li>
           Disconnecting WHOOP in healthOS revokes the app's access with WHOOP and deletes the stored tokens. You can also revoke access from
           WHOOP's own account settings.

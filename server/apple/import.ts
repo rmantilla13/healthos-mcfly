@@ -5,8 +5,9 @@ import { SaxesParser, type SaxesTagPlain } from 'saxes';
 import yauzl from 'yauzl';
 import { type DailyRow, type EventRow, type HourlyRow, type Scope, type WorkoutRow, deleteSource, getUserSetting, setUserSetting, upsertDaily, upsertEvents, upsertHourly, upsertWorkouts, bumpDataVersion } from '../db.ts';
 import { DAY_ROLLOVER_MS, localDate, localHour, parseAppleDate, toLocalIso, type Stamp, zoneOffsets } from '../dates.ts';
-import type { CervicalMucus, Flow, OvulationTest } from '../../shared/types.ts';
+import type { CervicalMucus, Flow, Nutrient, OvulationTest } from '../../shared/types.ts';
 import { type CycleKind, type CycleRow, upsertCycle } from '../cycle/index.ts';
+import { type NutritionRow, upsertNutrition } from '../nutrition.ts';
 
 export const SOURCE = 'apple';
 
@@ -27,6 +28,7 @@ const toKmh = (v: number, unit: string) => (unit === 'mi/hr' ? v * 1.609344 : un
 const toMg = (v: number, unit: string) => (unit === 'g' ? v * 1000 : v);
 const toMl = (v: number, unit: string) =>
   unit === 'L' ? v * 1000 : unit === 'fl_oz_us' ? v * 29.5735295625 : unit === 'fl_oz_imp' ? v * 28.4130625 : v;
+const toGrams = (v: number, unit: string) => (unit === 'mg' ? v / 1000 : unit === 'mcg' ? v / 1e6 : unit === 'kg' ? v * 1000 : unit === 'oz' ? v * 28.349523125 : v);
 
 const QUANTITIES: Record<string, Quantity> = {
   HKQuantityTypeIdentifierStepCount: { metric: 'steps', agg: 'sum' },
@@ -66,6 +68,22 @@ const STAND_HOUR = 'HKCategoryTypeIdentifierAppleStandHour';
 const stood = (v: string | undefined) => v === 'HKCategoryValueAppleStandHourStood' || v === '0';
 
 /**
+ * What food apps log, as daily totals per app (server/nutrition.ts). Kept apart from the daily metrics, and stored
+ * only for people who turned nutrition on. Dated by the sample's start, like the daily quantities.
+ */
+const NUTRITION_TYPES: Record<string, { nutrient: Nutrient; convert?: (value: number, unit: string) => number }> = {
+  HKQuantityTypeIdentifierDietaryEnergyConsumed: { nutrient: 'energy_kcal', convert: toKcal },
+  HKQuantityTypeIdentifierDietaryProtein: { nutrient: 'protein_g', convert: toGrams },
+  HKQuantityTypeIdentifierDietaryCarbohydrates: { nutrient: 'carbs_g', convert: toGrams },
+  HKQuantityTypeIdentifierDietaryFatTotal: { nutrient: 'fat_g', convert: toGrams },
+  HKQuantityTypeIdentifierDietaryFiber: { nutrient: 'fiber_g', convert: toGrams },
+  HKQuantityTypeIdentifierDietarySugar: { nutrient: 'sugar_g', convert: toGrams },
+  HKQuantityTypeIdentifierDietaryFatSaturated: { nutrient: 'sat_fat_g', convert: toGrams },
+  HKQuantityTypeIdentifierDietarySodium: { nutrient: 'sodium_mg', convert: toMg },
+  HKQuantityTypeIdentifierNumberOfAlcoholicBeverages: { nutrient: 'alcohol_drinks' },
+};
+
+/**
  * Types that can also sit inside a <Correlation> (a blood pressure reading, a logged food). The export may write
  * the same sample at the top level too; the parser sees both copies, so the second is dropped (see AppleAggregator.twin).
  */
@@ -74,6 +92,8 @@ const CORRELATED = new Set([
   'HKQuantityTypeIdentifierBloodPressureDiastolic',
   'HKQuantityTypeIdentifierDietaryCaffeine',
   'HKQuantityTypeIdentifierDietaryWater',
+  // A food app's meal is a Food correlation holding these; its copy at the top level mustn't count twice.
+  ...Object.keys(NUTRITION_TYPES),
 ]);
 
 type Stage = 'in_bed' | 'awake' | 'unspecified' | 'light' | 'rem' | 'deep';
@@ -299,6 +319,8 @@ export class AppleAggregator {
   private cycle: CycleRow[] = [];
   // Basal temperature: date -> the day's first reading, the one taken on waking.
   private basalTemp = new Map<string, { ms: number; value: number }>();
+  // Food: date|nutrient|app -> total. Each app's total is kept; a day shows one app's (see pickDays).
+  private nutrition = new Map<string, number>();
 
   onOpenTag(tag: SaxesTagPlain) {
     const a = tag.attributes as Record<string, string>;
@@ -339,6 +361,7 @@ export class AppleAggregator {
     }
     if (type === BASAL_TEMP) return this.basalTempRecord(a);
     if (type === STAND_HOUR) return this.standRecord(a);
+    if (Object.hasOwn(NUTRITION_TYPES, type)) return this.nutritionRecord(a, NUTRITION_TYPES[type]);
 
     const q = QUANTITIES[type];
     if (!q || !a.startDate || a.value === undefined) return;
@@ -468,6 +491,14 @@ export class AppleAggregator {
     }
   }
 
+  private nutritionRecord(a: Record<string, string>, n: (typeof NUTRITION_TYPES)[string]) {
+    const raw = Number(a.value);
+    if (!a.startDate || !Number.isFinite(raw) || raw < 0) return;
+    const value = n.convert ? n.convert(raw, a.unit ?? '') : raw;
+    const k = `${localDate(parseAppleDate(a.startDate))}|${n.nutrient}|${(a.sourceName ?? '').trim() || 'unknown'}`;
+    this.nutrition.set(k, (this.nutrition.get(k) ?? 0) + value);
+  }
+
   private basalTempRecord(a: Record<string, string>) {
     const raw = Number(a.value);
     if (!a.startDate || !Number.isFinite(raw)) return;
@@ -477,7 +508,7 @@ export class AppleAggregator {
     if (!cur || start.ms < cur.ms) this.basalTemp.set(date, { ms: start.ms, value: toCelsius(raw, a.unit ?? '') });
   }
 
-  finish(): { daily: DailyRow[]; hourly: HourlyRow[]; workouts: WorkoutRow[]; events: EventRow[]; cycle: CycleRow[] } {
+  finish(): { daily: DailyRow[]; hourly: HourlyRow[]; workouts: WorkoutRow[]; events: EventRow[]; cycle: CycleRow[]; nutrition: NutritionRow[] } {
     const daily: DailyRow[] = [];
     const push = (date: string, metric: string, value: number) => daily.push({ date, metric, source: SOURCE, value });
 
@@ -564,7 +595,11 @@ export class AppleAggregator {
     }
     const cycle = [...this.cycle];
     for (const [date, { value }] of this.basalTemp) cycle.push({ date, kind: 'bbt', source: SOURCE, value: String(Math.round(value * 100) / 100) });
-    return { daily, hourly, workouts: this.workouts, events, cycle };
+    const nutrition: NutritionRow[] = [...this.nutrition].map(([k, value]) => {
+      const [date, nutrient, ...app] = k.split('|');
+      return { date, nutrient: nutrient as Nutrient, source: SOURCE, app: app.join('|'), value };
+    });
+    return { daily, hourly, workouts: this.workouts, events, cycle, nutrition };
   }
 }
 
@@ -718,13 +753,17 @@ export async function importAppleHealth(scope: Scope, file: string, onProgress?:
     },
     { timeZone },
   );
-  const { daily, hourly, workouts, events, cycle } = agg.finish();
+  const { daily, hourly, workouts, events, cycle, nutrition } = agg.finish();
+  const keepNutrition = (await getUserSetting(db, userId, 'nutrition')) === 'on';
 
   await db.tx(async (q) => {
-    // Clears Apple's rows only, cycle entries included; anything logged by hand stays.
-    await deleteSource(q, userId, SOURCE);
+    // Clears Apple's rows only, cycle entries included; anything logged by hand stays. Food totals are replaced only
+    // while nutrition is on: off, healthOS neither reads them nor touches what it kept from before.
+    await deleteSource(q, userId, SOURCE, keepNutrition ? [] : ['nutrition_daily']);
     // Stored whether or not cycle tracking is on, and hidden until it is.
     await upsertCycle(q, userId, cycle);
+    // Food totals only for people who turned nutrition on; otherwise healthOS keeps none.
+    if (keepNutrition) await upsertNutrition(q, userId, nutrition);
     await upsertDaily(q, userId, daily);
     await upsertHourly(q, userId, hourly);
     await upsertWorkouts(q, userId, workouts);

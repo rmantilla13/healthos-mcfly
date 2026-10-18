@@ -4,6 +4,7 @@ import type { AddressInfo } from 'node:net';
 import express from 'express';
 import { APPLE_METRICS, lanIngestApp, ingestRouter } from '../server/apple/ingest.ts';
 import { type Db, OWNER_ID, getUserSetting, upsertDaily, upsertEvents, upsertWorkouts } from '../server/db.ts';
+import { NUTRIENTS } from '../server/nutrition.ts';
 import { openStore } from '../server/store.ts';
 
 const TOKEN = 'test-token-0123456789abcdef';
@@ -89,7 +90,19 @@ test('ingest upserts rows as source apple and replaces a day on re-send', async 
       events: [sleep('s1')],
     });
     assert.equal(res.status, 200);
-    assert.deepEqual(await res.json(), { ok: true, daily: 2, hourly: 0, workouts: 1, events: 1, deleted: 0, cycle: 0, metrics: [...APPLE_METRICS].sort() });
+    assert.deepEqual(await res.json(), {
+      ok: true,
+      daily: 2,
+      hourly: 0,
+      workouts: 1,
+      events: 1,
+      deleted: 0,
+      cycle: 0,
+      nutrition: 0,
+      metrics: [...APPLE_METRICS].sort(),
+      nutrients: [...NUTRIENTS],
+      nutritionOn: false,
+    });
     assert.deepEqual(await daily(db, '2026-10-13', 'steps'), [
       { source: 'apple', value: 8000 },
       { source: 'whoop', value: 42 },

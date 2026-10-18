@@ -2801,6 +2801,169 @@ td {
   }
 }
 
+/* ---------- Nutrition (src/pages/Nutrition.tsx) ----------
+   Neutral on purpose: the series colours only, never good/warning/critical, no goal bars. */
+.nutrition-card {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--grad-peach);
+}
+.nutrition-card-body {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px 28px;
+  flex-wrap: wrap;
+}
+.nutrition-card-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+.nutrition-values {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 12px 16px;
+  margin: 0;
+}
+.nutrition-values.is-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 28px;
+}
+.nutrition-values dt {
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.nutrition-values dd {
+  margin: 2px 0 0;
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+.nutrition-day,
+.nutrition-logged {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.nutrition-day-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.nutrition-day .chip {
+  background: var(--surface-2);
+}
+.macro-split {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.macro-bar {
+  display: flex;
+  gap: 3px;
+  height: 10px;
+}
+.macro-bar i {
+  border-radius: 5px;
+  min-width: 4px;
+}
+.macro-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.macro-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.macro-legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.logged-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.logged-strip i {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  background: var(--grid);
+}
+.logged-strip i.on {
+  background: var(--bar-accent);
+}
+.logged-strip.is-dense i {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+}
+.logged-strip.is-week i {
+  width: 16px;
+  height: 16px;
+}
+.nutrition-logged .metric-foot {
+  margin-top: 0;
+}
+.nutrition-apps {
+  flex-wrap: wrap;
+  align-self: flex-start;
+}
+.nutrition-empty ul {
+  margin: 8px 0 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.nutrition-foot {
+  max-width: 720px;
+}
+.choice-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.choice {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  font: inherit;
+  color: var(--ink);
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  cursor: pointer;
+}
+.choice:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+.choice.on {
+  border-color: var(--ink);
+  background: var(--surface);
+}
+.choice strong {
+  font-weight: 500;
+}
+@media (max-width: 560px) {
+  .nutrition-card-side {
+    align-items: flex-start;
+  }
+}
+
 /* ---------- family board ---------- */
 .family-greeting h1 {
   font-size: 40px;

@@ -29,7 +29,7 @@ export type Insight = {
   page: Page;
 };
 
-export type Page = 'home' | 'family' | 'vitals' | 'sleep' | 'activity' | 'body' | 'cycle' | 'mcfly' | 'integrations' | 'settings' | 'admin';
+export type Page = 'home' | 'family' | 'vitals' | 'sleep' | 'activity' | 'body' | 'nutrition' | 'cycle' | 'mcfly' | 'integrations' | 'settings' | 'admin';
 
 export type Summary = {
   date: string;
@@ -109,6 +109,12 @@ export type Settings = {
   shareCyclePhase: boolean;
   /** The one-time note that the Family board shows your daily status was dismissed. */
   familyNoticeSeen: boolean;
+  /** Nutrition is on: the Nutrition page, GET /api/nutrition and McFly's nutrition tool. Off by default; only you turn it on. */
+  nutrition: boolean;
+  /** How much of your nutrition you see, McFly included, chosen when you turn it on. Null until chosen. */
+  nutritionNumbers: NutritionNumbers | null;
+  /** The app whose totals to use on a day two apps logged food. Null: whichever logged the most that day. */
+  nutritionApp: string | null;
 };
 
 export type PhotoMeta = {
@@ -571,3 +577,38 @@ export type FamilyHistory = {
 };
 
 export type FamilyBoard = { sharing: false } | { sharing: true; today: string; members: FamilyMember[] };
+
+// ---------- nutrition ----------
+
+/** Daily totals from the apps people log food in. Energy in kcal, masses in g except sodium (mg), alcohol in drinks. */
+export type Nutrient = 'energy_kcal' | 'protein_g' | 'carbs_g' | 'fat_g' | 'fiber_g' | 'sugar_g' | 'sat_fat_g' | 'sodium_mg' | 'alcohol_drinks';
+
+/** What a person chose to see: everything, everything but calories, or no amounts at all. */
+export type NutritionNumbers = 'all' | 'no_energy' | 'none';
+
+/** One day's totals by app, as the iPhone app sends them. A day with no apps clears that day. */
+export type NutritionDayIn = { date: string; apps: { app: string; values: Partial<Record<Nutrient, number>> }[] };
+
+/** One day in the Nutrition view: the app used that day and its totals, as the person's setting allows. */
+export type NutritionDay = {
+  date: string;
+  app: string;
+  /** Never energy in 'no_energy'; empty in 'none'. */
+  values: Partial<Record<Nutrient, number>>;
+  /** Other apps that logged food that day. They're shown, never added in: apps copy each other's logs. */
+  otherApps: string[];
+};
+
+export type NutritionData = {
+  enabled: boolean;
+  numbers: NutritionNumbers | null;
+  today: string;
+  start: string;
+  end: string;
+  /** Apps with data in the window, most days first. */
+  apps: string[];
+  /** The app chosen for days two apps logged, or null for automatic. */
+  app: string | null;
+  /** Days with something logged, oldest first. */
+  days: NutritionDay[];
+};

@@ -154,7 +154,7 @@ export function useApi<T>(path: string | null) {
 
 // ---------- routing ----------
 
-const PAGES: Page[] = ['home', 'family', 'vitals', 'sleep', 'activity', 'body', 'cycle', 'mcfly', 'integrations', 'settings', 'admin'];
+const PAGES: Page[] = ['home', 'family', 'vitals', 'sleep', 'activity', 'body', 'nutrition', 'cycle', 'mcfly', 'integrations', 'settings', 'admin'];
 
 function readRoute() {
   const [p, q] = location.hash.replace(/^#\/?/, '').split('?');

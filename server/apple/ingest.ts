@@ -4,9 +4,10 @@
 
 import { createHash, timingSafeEqual } from 'node:crypto';
 import express, { type NextFunction, type Request, type Response } from 'express';
-import { type DailyRow, type Db, type EventRow, HOURLY_FOLD, type HourlyRow, OWNER_ID, type Scope, type WorkoutRow, setUserSetting, upsertDaily, upsertEvents, upsertHourly, upsertWorkouts, bumpDataVersion } from '../db.ts';
-import type { CycleDay } from '../../shared/types.ts';
+import { type DailyRow, type Db, type EventRow, HOURLY_FOLD, type HourlyRow, OWNER_ID, type Scope, type WorkoutRow, getUserSetting, setUserSetting, upsertDaily, upsertEvents, upsertHourly, upsertWorkouts, bumpDataVersion } from '../db.ts';
+import type { CycleDay, NutritionDayIn } from '../../shared/types.ts';
 import { parseCycleDay, replaceCycleDays } from '../cycle/index.ts';
+import { NUTRIENTS, parseNutritionDay, replaceNutritionDays } from '../nutrition.ts';
 import { SOURCE } from './import.ts';
 
 /** Daily metrics the importer produces (server/apple/import.ts). Anything else is a client bug. */
@@ -76,8 +77,13 @@ export type IngestPayload = {
    * replaces it; a day with only its date clears it. Stored whether or not the person has tracking on.
    */
   cycle: CycleDay[];
+  /**
+   * Food apps' daily totals by app (server/nutrition.ts). Each day sent is that day's complete set from Health and
+   * replaces it; a day with no apps clears it. Stored only while the person has nutrition on, and dropped otherwise.
+   */
+  nutrition: NutritionDayIn[];
 };
-export type IngestResult = { daily: number; hourly: number; workouts: number; events: number; deleted: number; cycle: number };
+export type IngestResult = { daily: number; hourly: number; workouts: number; events: number; deleted: number; cycle: number; nutrition: number };
 
 export class IngestError extends Error {}
 
@@ -188,7 +194,8 @@ export function parseIngest(body: unknown): IngestPayload {
       return id;
     });
   const cycle = list(b, 'cycle').map((raw, i) => parseCycleDay(raw, `cycle[${i}]`, fail));
-  return { daily, hourly, workouts, events, deleted: { workouts: deletedIds('workouts'), events: deletedIds('events') }, cycle };
+  const nutrition = list(b, 'nutrition').map((raw, i) => parseNutritionDay(raw, `nutrition[${i}]`, fail));
+  return { daily, hourly, workouts, events, deleted: { workouts: deletedIds('workouts'), events: deletedIds('events') }, cycle, nutrition };
 }
 
 /** Upserts a validated push. Each daily row is a complete recomputed day, so it replaces the stored value. */
@@ -200,6 +207,8 @@ export async function ingestApple(scope: Scope, p: IngestPayload): Promise<Inges
   const sameInstant = 'abs(extract(epoch from (start::timestamptz - $3::timestamptz))) < 1';
 
   let deleted = 0;
+  // Food totals only for people who turned nutrition on; a phone that sends them anyway has them dropped here.
+  const nutrition = p.nutrition.length && (await getUserSetting(db, userId, 'nutrition')) === 'on' ? p.nutrition : [];
   await db.tx(async (q) => {
     for (const id of p.deleted.workouts) {
       deleted += (await q.query('DELETE FROM workouts WHERE user_id = $1 AND source = $2 AND id = $3 RETURNING 1', [userId, SOURCE, id])).length;
@@ -244,11 +253,12 @@ export async function ingestApple(scope: Scope, p: IngestPayload): Promise<Inges
     }
     await upsertEvents(q, userId, p.events);
     await replaceCycleDays(q, userId, SOURCE, p.cycle);
+    await replaceNutritionDays(q, userId, SOURCE, nutrition);
   });
-  const result = { daily: p.daily.length, hourly: p.hourly.length, workouts: p.workouts.length, events: p.events.length, deleted, cycle: p.cycle.length };
-  if (result.daily + result.hourly + result.workouts + result.events + deleted + result.cycle > 0) {
-    // The saved sync summary leaves out the cycle count: it's shown in places cycle data isn't.
-    const { cycle: _cycle, ...shown } = result;
+  const result = { daily: p.daily.length, hourly: p.hourly.length, workouts: p.workouts.length, events: p.events.length, deleted, cycle: p.cycle.length, nutrition: nutrition.length };
+  if (result.daily + result.hourly + result.workouts + result.events + deleted + result.cycle + result.nutrition > 0) {
+    // The saved sync summary leaves out the cycle and nutrition counts: it's shown in places those aren't.
+    const { cycle: _cycle, nutrition: _nutrition, ...shown } = result;
     await setUserSetting(db, userId, 'apple_last_sync', JSON.stringify({ ...shown, syncedAt: new Date().toISOString() }));
     await bumpDataVersion(db, userId);
   }
@@ -304,7 +314,12 @@ export function ingestRouter(db: Db, ownerToken: string | undefined) {
       if (err instanceof IngestError) return void res.status(400).json({ error: err.message });
       throw err;
     }
-    res.json({ ok: true, ...(await ingestApple({ db, userId: res.locals.ingestUser as string }, payload)), metrics: METRICS });
+    const userId = res.locals.ingestUser as string;
+    const result = await ingestApple({ db, userId }, payload);
+    // nutrients: what this server accepts in `nutrition`, so an app leaves it out against an older one.
+    // nutritionOn: whether to read food from Health at all. Off, the app neither asks for access nor sends any.
+    const nutritionOn = (await getUserSetting(db, userId, 'nutrition')) === 'on';
+    res.json({ ok: true, ...result, metrics: METRICS, nutrients: NUTRIENTS, nutritionOn });
   });
 
   router.use((err: Error & { status?: number }, _req: Request, res: Response, _next: NextFunction) => {

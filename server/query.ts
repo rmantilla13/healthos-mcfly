@@ -41,8 +41,13 @@ export function settingsFrom(mine: Map<string, string>, platform: Map<string, st
     shareCyclePhase: mine.get('family_cycle_phase') === 'on',
     // Version 2: the board now also shows the last 30 days, so everyone hears about it again.
     familyNoticeSeen: mine.get('family_notice_seen') === '2',
+    nutrition: mine.get('nutrition') === 'on',
+    nutritionNumbers: NUMBERS.find((x) => x === mine.get('nutrition_numbers')) ?? null,
+    nutritionApp: mine.get('nutrition_app') ?? null,
   };
 }
+
+export const NUMBERS = ['all', 'no_energy', 'none'] as const;
 
 export async function readSettings(scope: Scope, hosted = false) {
   const [mine, platform] = await Promise.all([getUserSettings(scope.db, scope.userId), getSettings(scope.db)]);

@@ -9,6 +9,7 @@ import { Activity, Body, Sleep, Vitals } from './pages/Detail.tsx';
 import { Home } from './pages/Home.tsx';
 import { Integrations, SettingsPage } from './pages/Integrations.tsx';
 import { McFly } from './pages/McFly.tsx';
+import { Nutrition } from './pages/Nutrition.tsx';
 import { AccountLinkPage, Login } from './pages/Login.tsx';
 
 const NAV: { page: Page; label: string; icon: IconName }[] = [
@@ -23,7 +24,10 @@ const NAV: { page: Page; label: string; icon: IconName }[] = [
 /** Shown after Home to signed-in people who share with family (everyone, unless they turned it off). */
 const FAMILY_NAV: { page: Page; label: string; icon: IconName } = { page: 'family', label: 'Family', icon: 'family' };
 
-/** Shown after Body, only to people who turned cycle tracking on. */
+/** Shown after Body, only to people who turned nutrition on. */
+const NUTRITION_NAV: { page: Page; label: string; icon: IconName } = { page: 'nutrition', label: 'Nutrition', icon: 'nutrition' };
+
+/** Shown after Body (and Nutrition), only to people who turned cycle tracking on. */
 const CYCLE_NAV: { page: Page; label: string; icon: IconName } = { page: 'cycle', label: 'Cycle', icon: 'cycle' };
 
 const DATA_NAV: { page: Page; label: string; icon: IconName }[] = [
@@ -129,7 +133,11 @@ function Dashboard({ signedIn }: { signedIn: boolean }) {
           </a>
           <nav aria-label="Main">
             {NAV.flatMap((n) =>
-              n.page === 'body' && status?.settings.cycleTracking ? [n, CYCLE_NAV] : n.page === 'home' && family ? [n, FAMILY_NAV] : [n],
+              n.page === 'body'
+                ? [n, ...(status?.settings.nutrition ? [NUTRITION_NAV] : []), ...(status?.settings.cycleTracking ? [CYCLE_NAV] : [])]
+                : n.page === 'home' && family
+                  ? [n, FAMILY_NAV]
+                  : [n],
             ).map((n) => (
               <a key={n.page} href={href(n.page)} className={page === n.page ? 'nav-item is-active' : 'nav-item'} aria-current={page === n.page ? 'page' : undefined}>
                 <Icon name={n.icon} />
@@ -155,12 +163,13 @@ function Dashboard({ signedIn }: { signedIn: boolean }) {
             </a>
           )}
           {page === 'home' && status && family && !status.settings.familyNoticeSeen && <FamilyNotice refresh={reload} />}
-          {page === 'home' && <Home date={date} onDate={setDate} photo={status?.photo ?? null} />}
+          {page === 'home' && <Home date={date} onDate={setDate} photo={status?.photo ?? null} nutrition={Boolean(status?.settings.nutrition)} />}
           {page === 'family' && (family ? <Family isAdmin={isAdmin} refreshStatus={reload} params={params} /> : status && <FamilyOff signedIn={signedIn} />)}
           {page === 'vitals' && <Vitals />}
           {page === 'sleep' && <Sleep />}
           {page === 'activity' && <Activity stepGoal={status?.settings.stepGoal ?? 10_000} />}
           {page === 'body' && <Body />}
+          {page === 'nutrition' && status && <Nutrition status={status} />}
           {page === 'cycle' && status && <Cycle status={status} />}
           {page === 'mcfly' && status && <McFly key={status.user.id} me={status.user} />}
           {page === 'integrations' && status && <Integrations status={status} params={params} refresh={reload} signedIn={signedIn} />}

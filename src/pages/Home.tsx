@@ -3,9 +3,10 @@ import type { Insight, PhotoMeta, Summary, TimelineEvent, WeekSummary } from '..
 import { Gauge, MiniBars, MiniDots, MiniLine, RangeScale } from '../charts/Mini.tsx';
 import { Figure } from '../components/Figure.tsx';
 import { Icon, type IconName } from '../components/Icon.tsx';
+import { NutritionCard } from './Nutrition.tsx';
 import { clock, compact, duration, fmt, fmtDate, hoursMinutes, href, minutesOfDay, relativeDay, shiftDate, useApi } from '../lib.ts';
 
-export function Home({ date, onDate, photo }: { date: string | null; onDate: (d: string | null) => void; photo: PhotoMeta | null }) {
+export function Home({ date, onDate, photo, nutrition = false }: { date: string | null; onDate: (d: string | null) => void; photo: PhotoMeta | null; nutrition?: boolean }) {
   const { data, error, loading } = useApi<Summary>(`/summary${date ? `?date=${date}` : ''}`);
   if (error && !data) return <div className="page-message">Couldn't load your data: {error.message}</div>;
   if (!data) return <div className="page-message">Loading…</div>;
@@ -63,6 +64,7 @@ export function Home({ date, onDate, photo }: { date: string | null; onDate: (d:
           <SleepCard s={s} />
           <LoadCard s={s} />
           <ActivityCard s={s} />
+          {nutrition && <NutritionCard />}
         </div>
 
         <div className="lower">
