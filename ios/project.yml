@@ -31,6 +31,7 @@ targets:
         NSHealthShareUsageDescription: healthOS reads your Health data and sends daily summaries to your healthOS dashboard.
         NSHealthUpdateUsageDescription: In the simulator, healthOS can write sample Health data so the sync can be tried end to end.
         NSLocalNetworkUsageDescription: healthOS can send your Health data to a healthOS server on your local network.
+        NSBluetoothAlwaysUsageDescription: healthOS connects to your WHOOP's Heart Rate Broadcast (or another Bluetooth heart rate sensor) to show your heart rate live while that screen is open.
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
         # Only HTTPS via URLSession: exempt from export compliance documentation.

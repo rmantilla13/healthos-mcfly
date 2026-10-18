@@ -55,6 +55,7 @@ struct OrganicPortrait: View {
     @State private var revealed = false
     @State private var cells: RevealCells?
     @State private var width: CGFloat = 360
+    @State private var liveOpen = false
 
     private let figureHeight: CGFloat = 340
     private static var played: Set<String> = []
@@ -81,6 +82,7 @@ struct OrganicPortrait: View {
         .frame(height: Layout(width: width, figureHeight: figureHeight, aspect: aspect).figure.maxY + 72)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         .task(id: "\(photo?.versionKey ?? "none")-\(scheme == .dark)") { await loadPhoto() }
+        .sheet(isPresented: $liveOpen) { LiveHeartRateView() }
     }
 
     private var aspect: CGFloat {
@@ -208,13 +210,21 @@ struct OrganicPortrait: View {
                         VitalDot(color: r.color, pulse: reduceMotion ? 0 : Self.pulse(key, t: t, bpm: bpm, rpm: rpm), key: key)
                             .position(p.dot)
                         VStack(alignment: p.left ? .trailing : .leading, spacing: 1) {
-                            Text(r.name).font(.caption2.weight(.medium)).foregroundStyle(Palette.ink2)
+                            HStack(spacing: 3) {
+                                Text(r.name).font(.caption2.weight(.medium)).foregroundStyle(Palette.ink2)
+                                // The heart reading opens live heart rate.
+                                if key == .heart { Image(systemName: "waveform.path.ecg").font(.caption2).foregroundStyle(Palette.vitalHeart) }
+                            }
                             Text(r.value ?? "—").font(.subheadline.weight(.semibold)).monospacedDigit().foregroundStyle(Palette.ink)
                         }
                         .frame(width: Layout.labelWidth, alignment: p.left ? .trailing : .leading)
+                        .contentShape(Rectangle())
+                        .onTapGesture { if key == .heart { liveOpen = true } }
                         .position(p.label)
                         .accessibilityElement(children: .ignore)
                         .accessibilityLabel(r.a11y)
+                        .accessibilityAddTraits(key == .heart ? .isButton : [])
+                        .accessibilityHint(key == .heart ? "Opens live heart rate" : "")
                     }
                 }
             }

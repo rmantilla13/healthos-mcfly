@@ -31,6 +31,8 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>healthOS connects to your WHOOP's Heart Rate Broadcast (or another Bluetooth heart rate sensor) to show your heart rate live while that screen is open.</string>
 	<key>NSHealthShareUsageDescription</key>
 	<string>healthOS reads your Health data and sends daily summaries to your healthOS dashboard.</string>
 	<key>NSHealthUpdateUsageDescription</key>
