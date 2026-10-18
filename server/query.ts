@@ -37,6 +37,9 @@ export function settingsFrom(mine: Map<string, string>, platform: Map<string, st
     timeZone: mine.get('timezone') ?? null,
     sex: SEXES.find((x) => x === mine.get('sex')) ?? null,
     cycleTracking: mine.get('cycle_tracking') === 'on',
+    familySharing: mine.get('family_sharing') !== 'off',
+    shareCyclePhase: mine.get('family_cycle_phase') === 'on',
+    familyNoticeSeen: mine.get('family_notice_seen') === 'on',
   };
 }
 

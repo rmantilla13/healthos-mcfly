@@ -4,6 +4,7 @@ import { Icon, type IconName } from './components/Icon.tsx';
 import { UnitsContext, clearLoadedData, fmtDate, href, notifyDataChanged, sendJson, useAccountLink, useApi, useBackgroundRefresh, useRoute } from './lib.ts';
 import { Admin } from './pages/Admin.tsx';
 import { Cycle } from './pages/Cycle.tsx';
+import { Family } from './pages/Family.tsx';
 import { Activity, Body, Sleep, Vitals } from './pages/Detail.tsx';
 import { Home } from './pages/Home.tsx';
 import { Integrations, SettingsPage } from './pages/Integrations.tsx';
@@ -18,6 +19,9 @@ const NAV: { page: Page; label: string; icon: IconName }[] = [
   { page: 'body', label: 'Body', icon: 'body' },
   { page: 'mcfly', label: 'Ask McFly', icon: 'spark' },
 ];
+
+/** Shown after Home to signed-in people who share with family (everyone, unless they turned it off). */
+const FAMILY_NAV: { page: Page; label: string; icon: IconName } = { page: 'family', label: 'Family', icon: 'family' };
 
 /** Shown after Body, only to people who turned cycle tracking on. */
 const CYCLE_NAV: { page: Page; label: string; icon: IconName } = { page: 'cycle', label: 'Cycle', icon: 'cycle' };
@@ -98,6 +102,8 @@ function Dashboard({ signedIn }: { signedIn: boolean }) {
   const [date, setDate] = useState<string | null>(null);
   // Only meaningful when sign-in is on; the server enforces it either way.
   const isAdmin = signedIn && status?.user.role === 'admin';
+  // The board needs accounts: without sign-in there's only you.
+  const family = signedIn && Boolean(status?.settings.familySharing);
   useAutoSync(status, reload);
   useBackgroundRefresh();
 
@@ -122,7 +128,9 @@ function Dashboard({ signedIn }: { signedIn: boolean }) {
             <span>healthOS</span>
           </a>
           <nav aria-label="Main">
-            {NAV.flatMap((n) => (n.page === 'body' && status?.settings.cycleTracking ? [n, CYCLE_NAV] : [n])).map((n) => (
+            {NAV.flatMap((n) =>
+              n.page === 'body' && status?.settings.cycleTracking ? [n, CYCLE_NAV] : n.page === 'home' && family ? [n, FAMILY_NAV] : [n],
+            ).map((n) => (
               <a key={n.page} href={href(n.page)} className={page === n.page ? 'nav-item is-active' : 'nav-item'} aria-current={page === n.page ? 'page' : undefined}>
                 <Icon name={n.icon} />
                 <span>{n.label}</span>
@@ -146,7 +154,9 @@ function Dashboard({ signedIn }: { signedIn: boolean }) {
               <Icon name="chevron-right" size={16} />
             </a>
           )}
+          {page === 'home' && status && family && !status.settings.familyNoticeSeen && <FamilyNotice refresh={reload} />}
           {page === 'home' && <Home date={date} onDate={setDate} photo={status?.photo ?? null} />}
+          {page === 'family' && (family ? <Family isAdmin={isAdmin} refreshStatus={reload} /> : status && <FamilyOff signedIn={signedIn} />)}
           {page === 'vitals' && <Vitals />}
           {page === 'sleep' && <Sleep />}
           {page === 'activity' && <Activity stepGoal={status?.settings.stepGoal ?? 10_000} />}
@@ -192,6 +202,41 @@ function useAutoSync(status: Status | undefined, reload: () => void) {
     const t = setInterval(reload, 3000);
     return () => clearInterval(t);
   }, [syncing, reload]);
+}
+
+/** Once, for everyone: sharing is on by default, so say so where people will see it. */
+function FamilyNotice({ refresh }: { refresh: () => void }) {
+  const dismiss = () => sendJson('PUT', '/settings', { familyNoticeSeen: true }).then(refresh);
+  return (
+    <div className="banner banner-start family-notice">
+      <Icon name="family" size={16} />
+      <span>
+        Your family can now see your daily status on the <a href={href('family')}>Family</a> board. Change this in <a href={href('settings')}>Settings</a>.
+      </span>
+      <button className="btn btn-quiet" onClick={dismiss}>
+        Got it
+      </button>
+    </div>
+  );
+}
+
+function FamilyOff({ signedIn }: { signedIn: boolean }) {
+  return (
+    <div className="page">
+      <section className="card">
+        <h2>Family</h2>
+        <p className="muted">
+          {signedIn ? (
+            <>
+              Family is off: you don't see anyone, and nobody sees you. Turn on <a href={href('settings')}>Share with family</a> in Settings.
+            </>
+          ) : (
+            'The Family board needs sign-in, so each person has their own account.'
+          )}
+        </p>
+      </section>
+    </div>
+  );
 }
 
 const noSources = (s: Status) => !s.demo && !s.apple.lastImport && !s.apple.lastSync && !s.whoop.connected;

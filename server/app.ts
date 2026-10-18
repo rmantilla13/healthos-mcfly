@@ -14,6 +14,7 @@ import { importAppleHealth } from './apple/import.ts';
 import { ingestRouter } from './apple/ingest.ts';
 import { authRoutes, cronAuthorized, currentUser, publicUser, requireSession, sha256 } from './auth.ts';
 import { cycleRouter } from './cycle.ts';
+import { familyRouter } from './family.ts';
 import { DATA_DIR, type Db, type Scope, bumpDataVersion, deleteSource, getUserSetting, setUserSetting } from './db.ts';
 import { patterns, sleepTiming } from './insights.ts';
 import { type McflyClient, mcflyRouter } from './mcfly.ts';
@@ -96,6 +97,7 @@ export function createApp({ db, hosted, ingestToken, mcflyClient }: AppOptions) 
   api.use('/admin', adminRouter(db));
   api.use('/mcfly', mcflyRouter(db, { hosted, client: mcflyClient }));
   api.use('/cycle', cycleRouter(db, hosted));
+  api.use('/family', familyRouter(db, hosted));
 
   const asOf = (req: Request) => (typeof req.query.date === 'string' && DATE.test(req.query.date) ? req.query.date : undefined);
   const days = (req: Request) => Math.min(Math.max(Number(req.query.days) || 30, 1), 3650);
@@ -205,6 +207,15 @@ export function createApp({ db, hosted, ingestToken, mcflyClient }: AppOptions) 
     if (body.sex === null || body.sex === 'female' || body.sex === 'male' || body.sex === 'unspecified') await setUserSetting(db, userId, 'sex', body.sex);
     // Off hides cycle data everywhere; it doesn't delete it (POST /api/cycle/delete does).
     if (typeof body.cycleTracking === 'boolean') await setUserSetting(db, userId, 'cycle_tracking', body.cycleTracking ? 'on' : null);
+    // The Family board: sharing is on unless turned off. A shared cycle phase needs both tracking and sharing,
+    // and turning either off withdraws it, so turning them back on doesn't share it again by surprise.
+    if (typeof body.familySharing === 'boolean') await setUserSetting(db, userId, 'family_sharing', body.familySharing ? null : 'off');
+    if (body.familyNoticeSeen === true) await setUserSetting(db, userId, 'family_notice_seen', 'on');
+    if (body.cycleTracking === false || body.familySharing === false) await setUserSetting(db, userId, 'family_cycle_phase', null);
+    else if (typeof body.shareCyclePhase === 'boolean') {
+      const now = await readSettings({ db, userId }, hosted);
+      await setUserSetting(db, userId, 'family_cycle_phase', body.shareCyclePhase && now.cycleTracking && now.familySharing ? 'on' : null);
+    }
     // Units, names and time zone change what every view shows, on every device.
     await bumpDataVersion(db, userId);
     res.json(await status(res));
