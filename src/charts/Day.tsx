@@ -4,6 +4,7 @@ import type { DaySeries } from '../../shared/types.ts';
 import { M, YAxis } from './Charts.tsx';
 import { Tooltip, TooltipRow, niceTicks, smoothPath, useScrub, useWidth } from './core.tsx';
 import { HOURS, cumulative, extent, hourLabel, hourSpan, lastReading } from './day.ts';
+import { EndPulse, type Pulse } from './motion.tsx';
 
 type Pt = [number, number];
 
@@ -37,6 +38,7 @@ export function DayChart({
   height = 220,
   goal,
   label,
+  pulse,
 }: {
   kind: 'running' | 'hourly';
   series: DaySeries;
@@ -47,6 +49,8 @@ export function DayChart({
   height?: number;
   goal?: { value: number; label: string };
   label: string;
+  /** The latest hour's loop (motion.tsx). */
+  pulse?: Pulse;
 }) {
   const [ref, width] = useWidth<HTMLDivElement>();
   const running = kind === 'running';
@@ -122,25 +126,41 @@ export function DayChart({
               </text>
             </g>
           )}
-          {bands.map((d, k) => (
-            <path key={k} d={d} fill={color} opacity={0.16} />
-          ))}
-          {typical.map((r, k) => (
-            <path key={k} d={smoothPath(r)} className="typical-line" />
-          ))}
-          {running &&
-            lines.map((r, k) => <path key={k} d={`${smoothPath(r)} L${r.at(-1)![0]},${baseY} L${r[0][0]},${baseY} Z`} fill={color} opacity={0.1} />)}
-          {lines.map((r, k) =>
-            r.length > 1 ? (
-              <path key={k} d={smoothPath(r)} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-            ) : (
-              <circle key={k} cx={r[0][0]} cy={r[0][1]} r={3} fill={color} />
-            ),
-          )}
-          {index !== null && <line x1={x(index)} x2={x(index)} y1={M.top - 8} y2={baseY} className="crosshair" />}
-          {focusH !== null && focusV !== null && <circle cx={x(focusH)} cy={y(focusV)} r={4.5} fill={color} className="dot-ring" />}
+          {/* Keyed by the day and how far it runs, so the line draws in again for a new day, not on every hover. */}
+          <g key={`${label}:${through}`}>
+            {bands.map((d, k) => (
+              <path key={k} d={d} fill={color} opacity={0.16} className="motion fade-in" />
+            ))}
+            {typical.map((r, k) => (
+              <path key={k} d={smoothPath(r)} className="typical-line motion fade-in" />
+            ))}
+            {running &&
+              lines.map((r, k) => (
+                <path key={k} d={`${smoothPath(r)} L${r.at(-1)![0]},${baseY} L${r[0][0]},${baseY} Z`} fill={color} opacity={0.1} className="motion fade-in" />
+              ))}
+            {lines.map((r, k) =>
+              r.length > 1 ? (
+                <path
+                  key={k}
+                  d={smoothPath(r)}
+                  pathLength={1}
+                  fill="none"
+                  stroke={color}
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="motion draw-in"
+                />
+              ) : (
+                <circle key={k} cx={r[0][0]} cy={r[0][1]} r={3} fill={color} className="motion pop-in" />
+              ),
+            )}
+          </g>
+          {index !== null && <line x1={0} x2={0} y1={M.top - 8} y2={baseY} className="crosshair glide" style={{ transform: `translateX(${x(index)}px)` }} />}
+          {endH !== null && shown[endH] !== null && <EndPulse x={x(endH)} y={y(shown[endH]!)} color={color} pulse={pulse} />}
+          {focusH !== null && focusV !== null && <circle cx={x(focusH)} cy={y(focusV)} r={4.5} fill={color} className="dot-ring motion pop-in after-draw glide" />}
           {index === null && endH !== null && shown[endH] !== null && (
-            <text x={x(endH)} y={y(shown[endH]!) - 12} textAnchor="end" className="end-label">
+            <text x={x(endH)} y={y(shown[endH]!) - 12} textAnchor="end" className="end-label motion fade-in after-draw">
               {format(shown[endH]!)}
             </text>
           )}

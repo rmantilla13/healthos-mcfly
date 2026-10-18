@@ -1913,6 +1913,507 @@ td {
   }
 }
 
+/* ---------- chart motion ----------
+   Entrances and loops for the charts (charts/motion.tsx). Loops run at the person's own numbers, like the figure
+   above: a ring per heartbeat (--beat), a halo per breath (--breath), slower pings elsewhere (--calm). They sit on
+   top of the data as rings, glows and highlights and never move a mark that encodes a value. Every animated element
+   carries .motion, so the one reduced-motion rule at the end of this section holds them all still. */
+:root {
+  --sky-moon: #f2cf63;
+  --sky-star: #3987e5;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --sky-moon: #e9c45a;
+    --sky-star: #86b6ef;
+  }
+}
+
+/* Entrances: lines draw left to right, areas fade up, bars grow from the baseline, dots pop in. The end dot and
+   its label land as the line finishes. */
+.draw-in {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+  animation: draw-in 0.9s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+@keyframes draw-in {
+  from {
+    stroke-dashoffset: 1;
+  }
+}
+.fade-in {
+  animation: fade-in 0.7s ease-out both;
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+.pop-in {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: pop-in 0.45s cubic-bezier(0.3, 1.5, 0.5, 1) both;
+}
+@keyframes pop-in {
+  from {
+    transform: scale(0);
+    opacity: 0;
+  }
+}
+.grow-up {
+  transform-box: fill-box;
+  transform-origin: bottom;
+  animation: grow-up 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes grow-up {
+  from {
+    transform: scaleY(0);
+  }
+}
+.grow-x {
+  transform-origin: left;
+  animation: grow-x 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes grow-x {
+  from {
+    transform: scaleX(0);
+  }
+}
+.after-draw {
+  animation-delay: 0.75s;
+}
+
+/* The latest point: a ring per heartbeat, two rings with uneven spacing for HRV, a halo per breath, or a calm ping. */
+.end-pulse {
+  pointer-events: none;
+}
+.pulse-ring {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.pulse-beat .pulse-ring {
+  animation: pulse-out var(--beat) infinite ease-out;
+}
+.pulse-calm .pulse-ring {
+  animation: pulse-out var(--calm) infinite ease-out 1s;
+}
+.pulse-variability .pulse-ring {
+  animation: pulse-out-short var(--pair) infinite ease-out;
+}
+.pulse-variability .pulse-ring-b {
+  animation-delay: var(--early);
+}
+@keyframes pulse-out {
+  0% {
+    transform: scale(1);
+    opacity: 0;
+  }
+  8% {
+    opacity: 0.8;
+  }
+  70%,
+  100% {
+    transform: scale(3.4);
+    opacity: 0;
+  }
+}
+/* Expands within the first third, so two rings sharing one cycle stay apart. */
+@keyframes pulse-out-short {
+  0% {
+    transform: scale(1);
+    opacity: 0;
+  }
+  4% {
+    opacity: 0.8;
+  }
+  35%,
+  100% {
+    transform: scale(3.4);
+    opacity: 0;
+  }
+}
+/* Breathing: fills on a quicker inhale (40%), empties on a longer exhale, as on the figure. */
+.pulse-halo {
+  fill: currentColor;
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: pulse-breathe var(--breath) infinite;
+}
+@keyframes pulse-breathe {
+  0%,
+  100% {
+    transform: scale(0.35);
+    opacity: 0.06;
+    animation-timing-function: ease-in-out;
+  }
+  40% {
+    transform: scale(1);
+    opacity: 0.26;
+    animation-timing-function: ease-in-out;
+  }
+}
+
+/* A bright core running along a line, then resting off its end: blood oxygen flowing, effort building. */
+.flow {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-opacity: 0.85;
+  stroke-dasharray: 0.08 1.2;
+  stroke-dashoffset: 0.08;
+  pointer-events: none;
+  animation: flow var(--flow) linear infinite 1s;
+}
+.gauge-flow {
+  stroke-width: 3;
+  stroke-dasharray: 0.14 1.2;
+  stroke-dashoffset: 0.14;
+  animation-name: flow-gauge;
+}
+@keyframes flow {
+  from {
+    stroke-dashoffset: 0.08;
+  }
+  to {
+    stroke-dashoffset: -1.2;
+  }
+}
+@keyframes flow-gauge {
+  from {
+    stroke-dashoffset: 0.14;
+  }
+  to {
+    stroke-dashoffset: -1.2;
+  }
+}
+
+/* Temperature: the area under the line warms and cools slowly. */
+.area-shimmer {
+  animation:
+    fade-in 0.7s ease-out both,
+    heat 6s ease-in-out infinite 0.7s;
+}
+@keyframes heat {
+  0%,
+  100% {
+    opacity: 0.1;
+  }
+  50% {
+    opacity: 0.22;
+  }
+}
+
+/* Steps: a glint climbs today's bar, and the goal bar shines, while the count is still going up. */
+.bar-climb {
+  pointer-events: none;
+}
+.bar-climb-glint {
+  animation: bar-climb 2.2s cubic-bezier(0.4, 0, 0.6, 1) infinite 0.8s;
+}
+@keyframes bar-climb {
+  to {
+    transform: translateY(var(--climb));
+  }
+}
+.goal-live {
+  position: relative;
+  overflow: hidden;
+}
+.goal-live::after,
+.tl-live::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.6), transparent);
+  transform: translateX(-100%);
+  animation: goal-shine 3s ease-in-out infinite 1s;
+}
+@keyframes goal-shine {
+  60%,
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* Today's timeline: the now marker pings where it sits on the track, and whatever is in progress (its segment and
+   its dot in the list) keeps a light running across it. */
+.tl-live {
+  overflow: hidden;
+}
+.tl-now-dot {
+  position: absolute;
+  top: 22px;
+  left: -3.5px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ink);
+  color: var(--ink);
+  box-shadow: 0 0 0 2px var(--surface);
+}
+.tl-dot.ping {
+  position: relative;
+}
+.ping::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  opacity: 0;
+  animation: ping-out 2.4s ease-out infinite;
+}
+@keyframes ping-out {
+  0% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+  80%,
+  100% {
+    transform: scale(2.8);
+    opacity: 0;
+  }
+}
+
+/* Insights rise in one after another; a heart insight's icon beats at the resting heart rate. */
+.rise-in {
+  animation: rise-in 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+.insight-beat {
+  display: grid;
+  place-items: center;
+  animation: vital-beat var(--beat) infinite;
+}
+
+/* Scrubbing: the focus dot, crosshair and tooltip ease from point to point instead of jumping. */
+.glide {
+  transition-property: left, top, transform, cx, cy, r;
+  transition-duration: 0.14s;
+  transition-timing-function: ease-out;
+}
+
+/* Recovery: ripples spread from the rings' centre in the zone's colour, stronger the higher the score. */
+.rings-green {
+  --ripple: var(--good);
+}
+.rings-yellow {
+  --ripple: var(--warning);
+}
+.rings-red {
+  --ripple: var(--critical);
+}
+.rings-fitness {
+  --ripple: var(--series-3);
+}
+.rings .rings-ripple {
+  stroke: var(--ripple);
+  stroke-opacity: 1;
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: ripple 4.8s ease-out infinite;
+}
+.rings .rings-ripple-b {
+  animation-delay: 2.4s;
+}
+@keyframes ripple {
+  0% {
+    transform: scale(0.18);
+    opacity: 0;
+  }
+  15% {
+    opacity: var(--ripple-peak, 0.5);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 0;
+  }
+}
+
+/* Sleep: a moon drifting and stars twinkling out of step. */
+.night-sky {
+  display: block;
+  width: 76px;
+  height: 48px;
+  flex: none;
+  pointer-events: none;
+}
+.metric-sky {
+  position: absolute;
+  right: 14px;
+  top: 42px;
+}
+.sky-moon {
+  fill: var(--sky-moon);
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: sky-drift 11s ease-in-out infinite;
+}
+@keyframes sky-drift {
+  50% {
+    transform: translate(-1.5px, 1.5px) rotate(-8deg);
+  }
+}
+.sky-star {
+  fill: var(--sky-star);
+  opacity: 0.6;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: sky-twinkle 5.5s ease-in-out infinite both;
+}
+@keyframes sky-twinkle {
+  0%,
+  100% {
+    opacity: 0.2;
+    transform: scale(0.55);
+  }
+  50% {
+    opacity: 0.95;
+    transform: scale(1);
+  }
+}
+
+/* Heart monitor: a faint copy of the last sweep, and the new trace drawn by a glowing head moving left to right. */
+.heart-trace {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  min-width: 0;
+}
+.heart-trace-screen {
+  width: 100%;
+  overflow: hidden;
+}
+.heart-trace svg {
+  display: block;
+}
+.trace-old,
+.trace-live {
+  fill: none;
+  stroke: currentColor;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.trace-old {
+  stroke-width: 1.5;
+  stroke-opacity: 0.2;
+}
+.trace-live {
+  stroke-width: 1.75;
+}
+.trace-sweep {
+  animation: trace-sweep var(--sweep) linear infinite;
+}
+@keyframes trace-sweep {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(var(--sweep-w));
+  }
+}
+.heart-trace-caption {
+  font-size: 10.5px;
+  color: var(--ink-3);
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Where motifs sit: beside a card's headline value, between it and the chart/table switch. The title and note keep
+   their width; the motif takes what's left, drops its caption when tight, and steps aside when there's no room. */
+.chart-card-head > :first-child {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.chart-card-head .seg {
+  flex: none;
+}
+.chart-card-motif {
+  flex: 1 1 0;
+  display: flex;
+  justify-content: flex-end;
+  align-self: center;
+  min-width: 0;
+  max-width: 280px;
+  margin-left: auto;
+  container-type: inline-size;
+}
+/* A narrow card (a phone) gives the heart monitor its own full-width row under the value rather than hiding it. */
+.chart-card:has(.chart-card-motif) {
+  container-type: inline-size;
+}
+@container (max-width: 440px) {
+  .chart-card-head:has(.heart-trace) {
+    flex-wrap: wrap;
+  }
+  .chart-card-motif:has(.heart-trace) {
+    order: 3;
+    flex-basis: 100%;
+    max-width: none;
+  }
+}
+@container (max-width: 150px) {
+  .heart-trace-caption {
+    display: none;
+  }
+}
+@container (max-width: 75px) {
+  .heart-trace,
+  .night-sky {
+    display: none;
+  }
+}
+@container (max-width: 63px) {
+  .chart-card-motif .rings {
+    display: none;
+  }
+}
+/* Body: the recovery card's rings, at header size, rippling for cardio fitness. */
+.chart-card-motif .rings {
+  position: static;
+  width: 64px;
+  height: 64px;
+  margin: -8px 0;
+}
+.metric-motif {
+  flex: 0 1 58%;
+  min-width: 0;
+  padding-bottom: 2px;
+}
+
+/* Reduced motion: hold everything still. The monitor shows its whole trace; pure-motion rings and glints stay hidden. */
+@media (prefers-reduced-motion: reduce) {
+  .motion,
+  .motion::after {
+    animation: none !important;
+  }
+  .glide {
+    transition: none !important;
+  }
+  .heart-trace .trace-live,
+  .heart-trace .trace-old {
+    mask: none;
+  }
+}
+
 /* ---------- median lines (detail-page charts) ----------
    A dashed line at the median of the plotted range (Charts.tsx, MedianLine). Dashed, so it never reads as a
    grid line or the solid goal line; the label is haloed in the card colour so it stays legible over the data. */

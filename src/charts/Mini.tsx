@@ -3,6 +3,7 @@ import { useCallback } from 'react';
 import type { Point } from '../../shared/types.ts';
 import { fmtDate } from '../lib.ts';
 import { Tooltip, TooltipRow, barPath, smoothPath, useScrub, useWidth } from './core.tsx';
+import { BarClimb, EndPulse, Flow, type Pulse, stagger, useSvgId } from './motion.tsx';
 
 type Fmt = (v: number) => string;
 
@@ -12,12 +13,15 @@ export function MiniBars({
   height = 72,
   tone = 'blue',
   label,
+  live = false,
 }: {
   points: Point[];
   format: Fmt;
   height?: number;
   tone?: 'blue' | 'neutral';
   label: string;
+  /** The last bar is today's and still counting: a highlight keeps climbing it. */
+  live?: boolean;
 }) {
   const [ref, width] = useWidth<HTMLDivElement>();
   const n = points.length;
@@ -27,6 +31,8 @@ export function MiniBars({
   const xOf = useCallback((i: number) => i * slot + slot / 2, [slot]);
   const { index, handlers } = useScrub(n, xOf);
   const yOf = (v: number) => height - (v / max) * (height - 4);
+  const climbId = useSvgId('climb');
+  const lastY = n ? yOf(points[n - 1].value) : height;
 
   return (
     <div className="mini" ref={ref} style={{ height }}>
@@ -39,10 +45,12 @@ export function MiniBars({
               <path
                 key={p.date}
                 d={barPath(x, y, barW, height - y, Math.min(4, barW / 2))}
-                className={i === n - 1 ? 'bar bar-accent' : index === i ? 'bar bar-hover' : 'bar'}
+                className={`${i === n - 1 ? 'bar bar-accent' : index === i ? 'bar bar-hover' : 'bar'} motion grow-up`}
+                style={stagger(i, n)}
               />
             );
           })}
+          {live && n > 0 && <BarClimb id={climbId} x={xOf(n - 1) - barW / 2} y={lastY} w={barW} h={height - lastY} />}
           <rect width={width} height={height} fill="transparent" />
         </svg>
       )}
@@ -62,6 +70,8 @@ export function MiniLine({
   domain,
   color = 'var(--series-1)',
   label,
+  pulse,
+  flow,
 }: {
   points: Point[];
   format: Fmt;
@@ -69,6 +79,10 @@ export function MiniLine({
   domain?: [number, number];
   color?: string;
   label: string;
+  /** The latest point's loop (motion.tsx). */
+  pulse?: Pulse;
+  /** Seconds for a highlight to run along the line, or none. */
+  flow?: number;
 }) {
   const [ref, width] = useWidth<HTMLDivElement>();
   const n = points.length;
@@ -87,12 +101,14 @@ export function MiniLine({
     <div className="mini" ref={ref} style={{ height }}>
       {width > 0 && n > 0 && (
         <svg width={width} height={height} {...handlers} aria-label={label} role="img">
-          <path d={`${line} L${pts.at(-1)![0]},${height} L${pts[0][0]},${height} Z`} fill={color} opacity={0.1} />
-          <path d={line} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-          {index !== null && <line x1={xOf(index)} x2={xOf(index)} y1={0} y2={height} className="crosshair" />}
+          <path d={`${line} L${pts.at(-1)![0]},${height} L${pts[0][0]},${height} Z`} fill={color} opacity={0.1} className="motion fade-in" />
+          <path d={line} pathLength={1} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="motion draw-in" />
+          {flow && n > 1 && <Flow d={line} seconds={flow} />}
+          {index !== null && <line x1={0} x2={0} y1={0} y2={height} className="crosshair glide" style={{ transform: `translateX(${xOf(index)}px)` }} />}
+          <EndPulse x={pts[n - 1][0]} y={pts[n - 1][1]} r={4} color={color} pulse={pulse} />
           {(() => {
             const i = index ?? n - 1;
-            return <circle cx={pts[i][0]} cy={pts[i][1]} r={4} fill={color} className="dot-ring" />;
+            return <circle cx={pts[i][0]} cy={pts[i][1]} r={4} fill={color} className="dot-ring motion pop-in after-draw glide" />;
           })()}
           <rect width={width} height={height} fill="transparent" />
         </svg>
@@ -116,12 +132,15 @@ export function MiniDots({
   format,
   height = 70,
   label,
+  pulse,
 }: {
   points: Point[];
   baseline: number | null;
   format: Fmt;
   height?: number;
   label: string;
+  /** The latest night's loop (motion.tsx). */
+  pulse?: Pulse;
 }) {
   const [ref, width] = useWidth<HTMLDivElement>();
   const n = points.length;
@@ -140,16 +159,18 @@ export function MiniDots({
     <div className="mini" ref={ref} style={{ height }}>
       {width > 0 && n > 0 && (
         <svg width={width} height={height} {...handlers} aria-label={label} role="img">
-          {sd > 0 && <rect x={0} width={width} y={yOf(mean + sd)} height={yOf(mean - sd) - yOf(mean + sd)} className="band" rx={4} />}
+          {sd > 0 && <rect x={0} width={width} y={yOf(mean + sd)} height={yOf(mean - sd) - yOf(mean + sd)} className="band motion fade-in" rx={4} />}
           <line x1={0} x2={width} y1={yOf(mean)} y2={yOf(mean)} className="band-mid" />
-          {index !== null && <line x1={xOf(index)} x2={xOf(index)} y1={0} y2={height} className="crosshair" />}
+          {index !== null && <line x1={0} x2={0} y1={0} y2={height} className="crosshair glide" style={{ transform: `translateX(${xOf(index)}px)` }} />}
+          <EndPulse x={xOf(n - 1)} y={yOf(values[n - 1])} color="var(--bar-accent)" pulse={pulse} />
           {points.map((p, i) => (
             <circle
               key={p.date}
               cx={xOf(i)}
               cy={yOf(p.value)}
               r={i === n - 1 || i === index ? 4.5 : 3}
-              className={i === n - 1 ? 'dot dot-accent dot-ring' : i === index ? 'dot dot-accent' : 'dot'}
+              className={`${i === n - 1 ? 'dot dot-accent dot-ring' : i === index ? 'dot dot-accent' : 'dot'} motion pop-in glide`}
+              style={stagger(i, n)}
             />
           ))}
           <rect width={width} height={height} fill="transparent" />
@@ -165,7 +186,7 @@ export function MiniDots({
 }
 
 /** Half-circle gauge. The track is a lighter step of the fill's own hue. */
-export function Gauge({ value, max, label }: { value: number; max: number; label: string }) {
+export function Gauge({ value, max, label, flow }: { value: number; max: number; label: string; flow?: number }) {
   const w = 168;
   const h = 92;
   const r = 72;
@@ -182,14 +203,15 @@ export function Gauge({ value, max, label }: { value: number; max: number; label
   return (
     <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} role="img" aria-label={label} className="gauge">
       <path d={arc(1)} className="gauge-track" />
-      {t > 0 && <path d={arc(t)} className="gauge-fill" />}
+      {t > 0 && <path d={arc(t)} pathLength={1} className="gauge-fill motion draw-in" />}
+      {t > 0.04 && flow && <Flow d={arc(t)} seconds={flow} className="gauge-flow" />}
       {Array.from({ length: 21 }, (_, i) => {
         const a = Math.PI * (1 - i / 20);
         const r1 = r - 12;
         const r2 = r - (i % 5 === 0 ? 18 : 15);
         return <line key={i} x1={cx + r1 * Math.cos(a)} y1={cy - r1 * Math.sin(a)} x2={cx + r2 * Math.cos(a)} y2={cy - r2 * Math.sin(a)} className="gauge-tick" />;
       })}
-      <circle cx={ex} cy={ey} r={5} className="gauge-dot" />
+      <circle cx={ex} cy={ey} r={5} className="gauge-dot motion pop-in after-draw" />
     </svg>
   );
 }
@@ -220,7 +242,7 @@ export function RangeScale({
           return <span key={z.to} className={`range-zone ${z.className}`} style={{ left: `${left}%`, width: `calc(${w}% - 2px)` }} />;
         })}
       </div>
-      <span className="range-marker" style={{ left: `${t * 100}%` }} />
+      <span className="range-marker motion pop-in after-draw" style={{ left: `${t * 100}%` }} />
     </div>
   );
 }

@@ -1,6 +1,7 @@
-import type { ReactNode } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import type { Insight, PhotoMeta, Summary, TimelineEvent, WeekSummary } from '../../shared/types.ts';
 import { Gauge, MiniBars, MiniDots, MiniLine, RangeScale } from '../charts/Mini.tsx';
+import { HeartTrace, NightSky, Rings, beatVar, effortFlow, oxygenFlow, stagger } from '../charts/motion.tsx';
 import { Figure } from '../components/Figure.tsx';
 import { Icon, type IconName } from '../components/Icon.tsx';
 import { clock, compact, duration, fmt, fmtDate, hoursMinutes, href, minutesOfDay, relativeDay, shiftDate, useApi } from '../lib.ts';
@@ -67,7 +68,7 @@ export function Home({ date, onDate, photo }: { date: string | null; onDate: (d:
 
         <div className="lower">
           <TimelineCard timeline={s.timeline} today={s.today} />
-          <InsightsCard insights={s.insights} today={s.today} />
+          <InsightsCard insights={s.insights} today={s.today} bpm={s.vitals.heart.latest?.value} />
         </div>
       </div>
     </div>
@@ -239,7 +240,7 @@ function ReadinessCard({ s }: { s: Summary }) {
           <small>VO₂ max</small>
         </div>
         {delta !== null && <span className="chip">{signed(delta, 1)} vs last month</span>}
-        <Rings value={Math.min(1, (r.latest.value - 25) / 35)} />
+        <Rings value={Math.min(1, (r.latest.value - 25) / 35)} tone="fitness" />
         <div className="metric-foot">
           <span>mL/kg·min</span>
           <Stale date={r.latest.date} asOf={s.date} />
@@ -258,7 +259,7 @@ function ReadinessCard({ s }: { s: Summary }) {
         <small>%</small>
       </div>
       {delta !== null && <span className="chip">{signed(delta)} vs 30-day avg</span>}
-      <Rings value={r.latest.value / 100} />
+      <Rings value={r.latest.value / 100} tone={r.zone} />
       <RangeScale
         value={r.latest.value}
         min={0}
@@ -281,19 +282,6 @@ function ReadinessCard({ s }: { s: Summary }) {
   );
 }
 
-/** Decorative concentric rings; the dot sits at the score's position on the outer ring. */
-function Rings({ value }: { value: number }) {
-  const a = Math.PI * (0.75 - 1.5 * Math.min(1, Math.max(0, value)));
-  return (
-    <svg className="rings" viewBox="0 0 120 120" aria-hidden="true">
-      {[56, 44, 32, 20].map((r) => (
-        <circle key={r} cx="60" cy="60" r={r} />
-      ))}
-      <circle cx={60 + 56 * Math.cos(a)} cy={60 - 56 * Math.sin(a)} r="3.5" className="rings-dot" />
-    </svg>
-  );
-}
-
 function Spo2Card({ s }: { s: Summary }) {
   const l = s.spo2.latest;
   return (
@@ -308,7 +296,16 @@ function Spo2Card({ s }: { s: Summary }) {
             </div>
             <span className="metric-status">{s.spo2.status === 'low' ? 'Below your range' : 'Normal'}</span>
           </div>
-          <MiniLine points={s.spo2.series} format={(v) => `${fmt(v, 1)}%`} domain={[90, 100]} color="var(--series-2)" height={58} label="Blood oxygen, last 30 days" />
+          <MiniLine
+            points={s.spo2.series}
+            format={(v) => `${fmt(v, 1)}%`}
+            domain={[90, 100]}
+            color="var(--series-2)"
+            height={58}
+            label="Blood oxygen, last 30 days"
+            flow={oxygenFlow(s.vitals.heart.latest?.value)}
+            pulse={{ kind: 'calm' }}
+          />
           <RangeScale value={l.value} min={90} max={100} label={`Blood oxygen ${fmt(l.value, 1)}% on a 90 to 100 scale`} />
           <div className="metric-foot">
             <span>90</span>
@@ -326,16 +323,31 @@ function Spo2Card({ s }: { s: Summary }) {
 function HrvCard({ s }: { s: Summary }) {
   const l = s.hrv.latest;
   const statusText = { optimal: 'Optimal', normal: 'Normal', low: 'Below baseline' };
+  const bpm = s.vitals.heart.latest?.value;
   return (
     <article className="card metric">
       <CardHead title="HRV" to={href('vitals')} />
       {l ? (
         <>
-          <div className="metric-value">
-            {fmt(l.value)}
-            <small>ms</small>
+          <div className="metric-value-row">
+            <div className="metric-value">
+              {fmt(l.value)}
+              <small>ms</small>
+            </div>
+            {bpm ? (
+              <div className="metric-motif">
+                <HeartTrace bpm={bpm} hrvMs={l.value} rpm={s.vitals.breathing.latest?.value} height={34} caption={`Simulated · ${fmt(bpm)} bpm`} />
+              </div>
+            ) : null}
           </div>
-          <MiniDots points={s.hrv.series} baseline={s.hrv.baseline} format={(v) => `${fmt(v)} ms`} label="Heart rate variability, last 21 nights, with your usual range" height={70} />
+          <MiniDots
+            points={s.hrv.series}
+            baseline={s.hrv.baseline}
+            format={(v) => `${fmt(v)} ms`}
+            label="Heart rate variability, last 21 nights, with your usual range"
+            height={70}
+            pulse={bpm ? { kind: 'variability', bpm, hrvMs: l.value } : { kind: 'calm' }}
+          />
           <div className="metric-foot">
             <span className="metric-strong">{s.hrv.status ? statusText[s.hrv.status] : 'Building baseline'}</span>
             <span className="band-key" title={s.hrv.metric === 'hrv_rmssd' ? 'WHOOP measures RMSSD during sleep' : 'Apple Watch measures SDNN'}>
@@ -358,11 +370,12 @@ function SleepCard({ s }: { s: Summary }) {
       <CardHead title="Sleep" to={href('sleep')} />
       {l ? (
         <>
+          <NightSky className="metric-sky" />
           <div className="metric-value">
             {fmt(l.value, 1)}
             <small>hours</small>
           </div>
-          <MiniLine points={s.sleep.series} format={hoursMinutes} color="var(--series-1)" height={58} label="Sleep duration, last 14 nights" />
+          <MiniLine points={s.sleep.series} format={hoursMinutes} color="var(--series-1)" height={58} label="Sleep duration, last 14 nights" pulse={{ kind: 'calm', seconds: 5.5 }} />
           <div className="metric-foot">
             <span className="metric-strong">
               {quality}
@@ -400,7 +413,7 @@ function LoadCard({ s }: { s: Summary }) {
         <small>{strain ? 'of 21' : 'kcal'}</small>
       </div>
       <div className="gauge-wrap">
-        <Gauge value={v} max={max} label={strain ? `Strain ${fmt(v, 1)} of 21` : `${fmt(v)} kcal`} />
+        <Gauge value={v} max={max} label={strain ? `Strain ${fmt(v, 1)} of 21` : `${fmt(v)} kcal`} flow={effortFlow(v / max)} />
       </div>
       <div className="metric-foot">
         <span className="metric-strong">
@@ -416,6 +429,8 @@ function LoadCard({ s }: { s: Summary }) {
 function ActivityCard({ s }: { s: Summary }) {
   const l = s.activity.latest;
   const pct = l ? Math.min(1, l.value / s.stepGoal) : 0;
+  // Today's steps are still adding up, so today's bar and the goal bar keep moving; a past day's are final.
+  const live = s.date === s.today && s.activity.series.at(-1)?.date === s.today;
   return (
     <article className="card metric">
       <CardHead title="Activity" to={href('activity')} />
@@ -425,14 +440,14 @@ function ActivityCard({ s }: { s: Summary }) {
             {fmt(l.value)}
             <small>steps</small>
           </div>
-          <MiniBars points={s.activity.series} format={(v) => `${fmt(v)} steps`} tone="neutral" label="Steps, last 7 days" height={52} />
+          <MiniBars points={s.activity.series} format={(v) => `${fmt(v)} steps`} tone="neutral" label="Steps, last 7 days" height={52} live={live} />
           <div className="goal">
             <div className="goal-text">
               <span>{Math.round((l.value / s.stepGoal) * 100)}% of goal</span>
               <span>{compact(s.stepGoal)}</span>
             </div>
             <div className="goal-track" role="progressbar" aria-valuenow={Math.round(pct * 100)} aria-valuemin={0} aria-valuemax={100} aria-label="Step goal">
-              <div className="goal-fill" style={{ width: `${pct * 100}%` }} />
+              <div className={`goal-fill motion grow-x${live && pct > 0 ? ' goal-live' : ''}`} style={{ width: `${pct * 100}%` }} />
             </div>
           </div>
         </>
@@ -452,9 +467,21 @@ const KIND_COLOR: Record<TimelineEvent['kind'], string> = {
   mindful: 'var(--series-3)',
 };
 
+/** The current time, refreshed every 30 s while `live`, so today's now marker and each event's state move on their own. */
+function useNow(live: boolean) {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    if (!live) return;
+    setNow(new Date());
+    const id = setInterval(() => setNow(new Date()), 30_000);
+    return () => clearInterval(id);
+  }, [live]);
+  return now;
+}
+
 function TimelineCard({ timeline, today }: { timeline: Summary['timeline']; today: string }) {
   const isToday = timeline.date === today;
-  const now = new Date();
+  const now = useNow(isToday);
   const nowMin = now.getHours() * 60 + now.getMinutes();
   const nowIso = `${today}T${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
   const pos = (m: number) => `${(m / 1440) * 100}%`;
@@ -479,13 +506,14 @@ function TimelineCard({ timeline, today }: { timeline: Summary['timeline']; toda
       </div>
       <div className="tl-track-wrap">
         <div className="tl-track">
-          {timeline.events.map((e) => {
+          {/* Segments sweep in through the day in order; whatever is happening now keeps a light running across it. */}
+          {timeline.events.map((e, i) => {
             const [a, b] = span(e);
             return (
               <span
                 key={e.id}
-                className="tl-seg"
-                style={{ left: pos(a), width: `calc(${pos(b - a)} - 2px)`, background: KIND_COLOR[e.kind] }}
+                className={`tl-seg motion grow-x${state(e) === 'In progress' ? ' tl-live' : ''}`}
+                style={{ left: pos(a), width: `calc(${pos(b - a)} - 2px)`, background: KIND_COLOR[e.kind], ...stagger(i, timeline.events.length, 600) }}
                 title={`${e.title} ${clock(e.start)}–${clock(e.end)}`}
               />
             );
@@ -494,6 +522,7 @@ function TimelineCard({ timeline, today }: { timeline: Summary['timeline']; toda
         {isToday && (
           <div className="tl-now" style={{ left: pos(nowMin) }}>
             <span>{clock(nowIso + ':00')}</span>
+            <i className="tl-now-dot motion ping" aria-hidden="true" />
           </div>
         )}
         <div className="tl-ticks">
@@ -510,7 +539,10 @@ function TimelineCard({ timeline, today }: { timeline: Summary['timeline']; toda
           const st = state(e);
           return (
             <li key={e.id}>
-              <span className="tl-dot" style={{ background: KIND_COLOR[e.kind] }} />
+              <span
+                className={`tl-dot${st === 'In progress' ? ' motion ping' : ''}`}
+                style={{ background: KIND_COLOR[e.kind], color: KIND_COLOR[e.kind] }}
+              />
               <div>
                 <div className="tl-title">{e.title}</div>
                 <div className="tl-time">
@@ -539,7 +571,9 @@ const INSIGHT_TONE: Record<Insight['icon'], string> = {
   heart: 'tone-pink',
 };
 
-function InsightsCard({ insights, today }: { insights: Insight[]; today: string }) {
+/** Insights rise in one after another; a heart insight's icon beats at the latest resting heart rate. */
+function InsightsCard({ insights, today, bpm }: { insights: Insight[]; today: string; bpm: number | undefined }) {
+  const beat = beatVar(bpm);
   return (
     <section className="card insights">
       <div className="card-title-row">
@@ -547,11 +581,17 @@ function InsightsCard({ insights, today }: { insights: Insight[]; today: string 
       </div>
       {insights.length === 0 && <p className="tl-empty">Insights appear after a week or two of data.</p>}
       <ul>
-        {insights.map((i) => (
-          <li key={i.id}>
+        {insights.map((i, k) => (
+          <li key={i.id} className="motion rise-in" style={stagger(k, insights.length, 320)}>
             <a href={href(i.page)}>
               <span className={`insight-icon ${INSIGHT_TONE[i.icon]}`}>
-                <Icon name={i.icon as IconName} size={17} />
+                {i.icon === 'heart' && beat ? (
+                  <span className="motion insight-beat" style={beat}>
+                    <Icon name="heart" size={17} />
+                  </span>
+                ) : (
+                  <Icon name={i.icon as IconName} size={17} />
+                )}
               </span>
               <span className="insight-text">
                 <span>{i.text}</span>

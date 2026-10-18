@@ -3,6 +3,7 @@
 // dashboard (or Ask McFly's summary tool) carries it.
 import { useState } from 'react';
 import type { CervicalMucus, CycleData, CycleFields, CycleLogDay, Flow, OvulationTest, Settings, SexualActivity, Status } from '../../shared/types.ts';
+import { stagger } from '../charts/motion.tsx';
 import { Icon } from '../components/Icon.tsx';
 import { daysBetween, fmt, fmtDate, href, notifyDataChanged, sendJson, shiftDate, temp, useApi, useUnits } from '../lib.ts';
 
@@ -170,11 +171,11 @@ function HistoryCard({ data }: { data: CycleData }) {
       </div>
       {recent.length > 0 && (
         <ul className="cycle-bars" aria-label="Recent cycle lengths">
-          {recent.map((c) => (
+          {recent.map((c, i) => (
             <li key={c.start}>
               <span className="muted small">{fmtDate(c.start)}</span>
               <span className="cycle-bar">
-                <span style={{ width: `${Math.min(100, (c.days / longest) * 100)}%` }} />
+                <span className="motion grow-x" style={{ width: `${Math.min(100, (c.days / longest) * 100)}%`, ...stagger(i, recent.length, 300) }} />
               </span>
               <span className="small">{c.days} d</span>
             </li>
