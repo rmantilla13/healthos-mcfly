@@ -316,6 +316,13 @@ test('history picks: the device used now, phone nights marked, nothing older tha
   await upsertDaily(db, people.bo, days(40).map((date, i) => ({ date, metric: 'strain', source: 'whoop', value: 10 + (i % 3) })));
   // Pat has only an iPhone: time in bed every night.
   await upsertDaily(db, people.pat, days(30).flatMap((date) => [{ date, metric: 'sleep_hours', source: 'apple', value: 8 }, { date, metric: 'sleep_in_bed', source: 'apple', value: 8 }]));
+  // Pat's partner slept with a Watch until three weeks ago; since then only the phone logs nights.
+  people.zoe = await join(new Client(), 'zoe@example.com', 'zoe');
+  await setUserSetting(db, people.zoe, 'timezone', 'UTC');
+  await upsertDaily(db, people.zoe, [
+    ...days(9, 21).flatMap((date) => [{ date, metric: 'sleep_hours', source: 'apple', value: 7 }, { date, metric: 'sleep_in_bed', source: 'apple', value: 7.6 }]),
+    ...days(21).flatMap((date) => [{ date, metric: 'sleep_hours', source: 'apple', value: 8.5 }, { date, metric: 'sleep_in_bed', source: 'apple', value: 8.5 }]),
+  ]);
   // Kim has a Watch but no sleep at all.
   await upsertDaily(db, people.kim, days(10).map((date) => ({ date, metric: 'resting_hr', source: 'apple', value: 58 })));
 
@@ -331,6 +338,10 @@ test('history picks: the device used now, phone nights marked, nothing older tha
   assert.deepEqual(member(b, people.pat).history.sleep.inBed, true);
   assert.equal(member(b, people.pat).history.sleep.points.length, 30);
   assert.deepEqual(member(b, people.kim).history.sleep, { inBed: false, points: [] }, 'no nights is not time in bed');
+  const zoe = member(b, people.zoe).history.sleep;
+  assert.equal(zoe.inBed, true, 'old watch nights give way to the recent phone nights');
+  assert.equal(zoe.points.length, 21);
+  assert.equal(zoe.points.at(-1)?.date, today);
   for (const id of Object.values(people)) assert.equal((await owner.call('DELETE', `/api/admin/users/${id}`)).status, 200);
 });
 

@@ -170,6 +170,7 @@ async function memberTile(db: Db, hosted: boolean, userId: string, o: TileOpts):
   const nights = series(ctx, 'sleep_hours', historyFrom, today);
   const measured = nights.filter((p) => !inBedOnly(p.date, p.value));
   const newestOf = (points: Point[]) => points.at(-1)?.date ?? '';
+  const useMeasured = measured.length > 0 && newestOf(measured) >= addDays(newestOf(nights), -3);
   // Of several metrics, the one with the newest reading in the window (a device used now, not one put away).
   const freshest = <M extends string>(metrics: readonly M[]) =>
     metrics.map((m) => ({ m, points: span(m) })).filter((x) => x.points.length).sort((a, b) => newestOf(b.points).localeCompare(newestOf(a.points)))[0];
@@ -191,8 +192,11 @@ async function memberTile(db: Db, hosted: boolean, userId: string, o: TileOpts):
   const loadKind = latest(ctx, 'strain', today, 3) ? 'strain' : latest(ctx, 'active_energy', today, 3) ? 'energy' : newestOf(strain) >= newestOf(energy) ? 'strain' : 'energy';
   const loadPoints = loadKind === 'strain' ? strain : energy;
   const history: FamilyHistory = {
-    // Phone-only people get their time in bed, marked; with no nights at all there's nothing to mark.
-    sleep: measured.length || !nights.length ? { inBed: false, points: measured.map((p) => ({ date: p.date, value: round(p.value, 2) })) } : { inBed: true, points: nights.map((p) => ({ date: p.date, value: round(p.value, 2) })) },
+    // Nights a watch or WHOOP measured, while they're current; once only the phone logs nights (or only ever
+    // did), its time in bed, marked as such. No nights at all: nothing to mark.
+    sleep: useMeasured || !nights.length
+      ? { inBed: false, points: measured.map((p) => ({ date: p.date, value: round(p.value, 2) })) }
+      : { inBed: true, points: nights.filter((p) => inBedOnly(p.date, p.value)).map((p) => ({ date: p.date, value: round(p.value, 2) })) },
     readiness: readinessPick ? { kind: readinessPick.m, points: readinessPick.points } : null,
     steps: span('steps').map((p) => ({ ...p, value: Math.round(p.value) })),
     restingHr: rhrPick?.points ?? [],

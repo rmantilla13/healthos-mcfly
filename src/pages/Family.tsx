@@ -241,7 +241,7 @@ function MemberPage({ m, boardToday }: { m: FamilyMember; boardToday: string }) 
           value={m.sleep ? hoursMinutes(m.sleep.hours) : '—'}
           note={
             m.sleep?.inBed && !h.sleep.inBed
-              ? 'last night in bed (phone), not in the chart'
+              ? `${m.sleep.date === m.today ? 'last night' : 'the night before'} in bed (phone), not in the chart`
               : m.sleep?.usual != null && !m.sleep.inBed
                 ? `usual ${hoursMinutes(m.sleep.usual)}`
                 : h.sleep.inBed
