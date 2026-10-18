@@ -76,5 +76,5 @@ if (db.kind === 'pglite') {
   };
   const run = () => autoSync().catch((e) => console.error('[whoop] auto sync failed:', e.message));
   setTimeout(run, 5_000);
-  setInterval(run, 6 * 3_600_000).unref();
+  setInterval(run, 3_600_000).unref();
 }

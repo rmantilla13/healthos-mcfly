@@ -73,7 +73,8 @@ export function Login({ misconfigured, setup, onSignedIn }: { misconfigured: boo
   if (misconfigured) {
     return (
       <Shell>
-        <p className="muted">Sign-in isn't set up on this server yet. Run scripts/setup-vercel.sh on your Mac, then redeploy.</p>
+        {/* Anyone can land here, before we know who they are. The fix (scripts/setup-vercel.sh) is in the server logs. */}
+        <p className="muted">Sign-in isn't available right now. Please try again later.</p>
       </Shell>
     );
   }

@@ -102,7 +102,9 @@ export async function processPhoto(file: File, onStep: (step: string) => void = 
   const H = image.height;
 
   onStep('Loading the on-device models…');
-  const { faces, segmenter, pose } = await models();
+  const { faces, segmenter, pose } = await models().catch(() => {
+    throw new PhotoError("Couldn't load the photo tools. Check your connection and try again.");
+  });
   try {
     onStep('Finding you in the photo…');
     const detections = faces.detect(image).detections;

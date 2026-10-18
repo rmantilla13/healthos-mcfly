@@ -56,8 +56,9 @@ fs.writeFileSync(
         { src: '^/privacy/?$', dest: '/privacy.html' },
         { src: '/(.*)', dest: '/index.html' },
       ],
-      // WHOOP sync every 6 hours (also keeps the rotating refresh token fresh).
-      crons: [{ path: '/api/cron/whoop', schedule: '15 */6 * * *' }],
+      // WHOOP sync every hour (also keeps the rotating refresh token fresh). More often than daily needs
+      // Vercel Pro: Hobby projects can't deploy a cron that runs more than once a day.
+      crons: [{ path: '/api/cron/whoop', schedule: '15 * * * *' }],
     },
     null,
     2,

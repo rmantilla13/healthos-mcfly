@@ -167,7 +167,7 @@ final class AppModel {
     private func syncWhoop() async -> SourcesSyncStatus.Part {
         guard let client = APIClient.current() else { return .skipped("Add your healthOS address in Settings.") }
         if dashboard?.phase == .signIn {
-            return .skipped("Sign in to refresh it now. The server also syncs WHOOP every 6 hours.")
+            return .skipped("Sign in to refresh it now. The server also syncs WHOOP every hour.")
         }
         do {
             await ServerSync.shared.markRequested()
@@ -186,7 +186,7 @@ final class AppModel {
             if status.whoop?.syncing == true { return .skipped("Still syncing on the server. It'll show up soon.") }
             return .ok
         } catch APIError.signInRequired {
-            return .skipped("Sign in to refresh it now. The server also syncs WHOOP every 6 hours.")
+            return .skipped("Sign in to refresh it now. The server also syncs WHOOP every hour.")
         } catch {
             return .failed(error.localizedDescription)
         }

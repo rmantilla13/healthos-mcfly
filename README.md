@@ -44,7 +44,7 @@ npm run migrate:sqlite
 How the hosted copy works:
 
 - Every API call needs your session (a signed, HttpOnly cookie, valid for 30 days). Failed sign-ins lock out the guessing address for 15 minutes.
-- WHOOP syncs every 6 hours from a Vercel cron.
+- WHOOP syncs every hour from a Vercel cron.
 - The iPhone app posts to `/api/apple/ingest` with its own token.
 - Your photo is served from the database, behind the same sign-in.
 - The only public page is the privacy policy at `/privacy` (`public/privacy.html`), which the WHOOP developer app requires. It holds no data.
@@ -145,7 +145,7 @@ WHOOP data comes from the official [WHOOP API](https://developer.whoop.com) (v2)
 4. Hosted: give the client ID and secret to `scripts/setup-vercel.sh`. Local: put `WHOOP_CLIENT_ID` and `WHOOP_CLIENT_SECRET` in `.env`.
 5. Click **Connect WHOOP** on the Integrations page.
 
-The first sync pulls the last year. After that it syncs every 6 hours (a Vercel cron when hosted, a timer when local), and on demand. Each sync re-reads the last few days, because WHOOP rescores recent nights.
+The first sync pulls the last year. After that it syncs every hour (a Vercel cron when hosted, a timer when local), and on demand. Each sync re-reads the last few days, because WHOOP rescores recent nights.
 
 ## Profile photo
 
