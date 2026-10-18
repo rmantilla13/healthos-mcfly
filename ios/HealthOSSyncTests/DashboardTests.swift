@@ -431,7 +431,261 @@ final class FamilyBoardTests: XCTestCase {
         XCTAssertEqual(FamilyText.initial(""), "·")
 
         let spoken = FamilyText.accessibilitySummary(maria, boardToday: "2026-10-17")
+        XCTAssertEqual(spoken, "Maria. Apple Watch · their Sun. No new data since Tue. Sleep none, No sleep data for last night. HRV none, None in the last few days. Steps none, None yet today. Resting heart rate 59 bpm · Tue")
+    }
+
+    // MARK: The last 30 days
+
+    /// The fixture as an older server sends it: no history, and resting heart rate as a verdict only.
+    private func olderBoard() throws -> FamilyBoard {
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: fixture("family")) as? [String: Any])
+        json["members"] = (json["members"] as? [[String: Any]])?.map { m -> [String: Any] in
+            var m = m
+            m["history"] = nil
+            if var r = m["restingHr"] as? [String: Any] {
+                r["value"] = nil
+                r["usual"] = nil
+                m["restingHr"] = r
+            }
+            return m
+        }
+        return try JSONDecoder().decode(FamilyBoard.self, from: JSONSerialization.data(withJSONObject: json))
+    }
+
+    func testDecodesTheirThirtyDays() throws {
+        let b = try board()
+        let (sam, ana, leo, maria) = (b.members[0], b.members[1], b.members[2], b.members[3])
+        let h = try XCTUnwrap(sam.history)
+        XCTAssertEqual(h.sleep?.inBed, false)
+        XCTAssertEqual(h.sleep?.points.count, 10)
+        XCTAssertEqual(h.sleep?.points.first, Point(date: "2026-10-08", value: 7.2), "oldest first")
+        XCTAssertEqual(h.readiness?.kind, "recovery")
+        XCTAssertEqual(h.readiness?.points.last?.value, 41)
+        XCTAssertEqual(h.steps.map(\.value), [8200, 10400, 7600, 5234])
+        XCTAssertEqual(h.restingHr.count, 5)
+        XCTAssertEqual(h.load?.kind, "strain")
+        XCTAssertEqual(sam.restingHr?.value, 57)
+        XCTAssertEqual(sam.restingHr?.usual, 55)
+
+        XCTAssertEqual(ana.history?.readiness?.kind, "hrv_sdnn")
+        XCTAssertEqual(ana.history?.load?.kind, "energy")
+        XCTAssertEqual(leo.history?.sleep?.inBed, true, "phone only: time in bed, marked as such")
+        XCTAssertNil(leo.history?.readiness, "null on the wire")
+        XCTAssertEqual(leo.history?.restingHr, [])
+        XCTAssertNil(maria.history?.load)
+        XCTAssertEqual(maria.history?.steps, [])
+    }
+
+    func testAnOlderServerKeepsTheTileAsItWas() throws {
+        let b = try olderBoard()
+        XCTAssertEqual(b.members.map(\.name), ["Sam", "Ana", "Leo", "Maria"])
+        for m in b.members {
+            XCTAssertNil(m.history)
+            for metric in [FamilyChartData.Metric.sleep, .readiness, .steps, .restingHr] {
+                XCTAssertNil(FamilyCharts.spark(metric, m), "no small charts without history")
+            }
+            XCTAssertTrue(FamilyCharts.page(m).isEmpty, "and no page to open")
+        }
+        let sam = b.members[0]
+        XCTAssertEqual(sam.restingHr?.status, "normal")
+        XCTAssertNil(sam.restingHr?.value)
+        // Wording stays as before: no resting heart rate figure, so VoiceOver doesn't read one either.
+        XCTAssertEqual(FamilyText.readinessNote(sam), "usual 68%")
+        let spoken = FamilyText.accessibilitySummary(b.members[3], boardToday: "2026-10-17")
         XCTAssertEqual(spoken, "Maria. Apple Watch · their Sun. No new data since Tue. Sleep none, No sleep data for last night. HRV none, None in the last few days. Steps none, None yet today")
+    }
+
+    func testOddHistoryDropsOnlyTheOddPart() throws {
+        let m = try member(#"""
+        {"id":"x","name":"Kai","isYou":false,"today":"2026-10-17","devices":[],
+         "history":{"sleep":"unexpected","readiness":{"kind":"readiness_v3","points":[{"date":"2026-10-16","value":5},{"date":"2026-10-17","value":6}]},
+                    "steps":[{"date":"2026-10-16","value":"many"},{"date":"2026-10-17","value":4000},{"date":"17 Oct","value":1},{"value":3}],
+                    "restingHr":null,"load":{"points":[{"date":"2026-10-17","value":3}]},"somethingNew":[1]}}
+        """#)
+        let h = try XCTUnwrap(m.history, "one odd part doesn't lose the rest")
+        XCTAssertNil(h.sleep)
+        XCTAssertEqual(h.readiness?.kind, "readiness_v3", "kept as a string")
+        XCTAssertNil(FamilyText.readinessHistory(m), "but not drawn: the app doesn't know that kind")
+        XCTAssertEqual(h.steps.map(\.date), ["2026-10-17", "17 Oct"], "unreadable points drop themselves")
+        XCTAssertEqual(FamilyCharts.clean(h.steps).map(\.date), ["2026-10-17"], "and a date that isn't a day never reaches a chart")
+        XCTAssertEqual(h.restingHr, [])
+        XCTAssertNil(h.load, "no kind: nothing to say what it is")
+        XCTAssertEqual(FamilyText.readinessLabel(m), "HRV")
+        XCTAssertEqual(FamilyCharts.page(m).map(\.id), ["sleep", "readiness", "steps", "restingHr"])
+
+        let noInBed = try member(#"{"id":"y","name":"Y","isYou":false,"today":"2026-10-17","history":{"sleep":{"points":[{"date":"2026-10-17","value":7}]}}}"#)
+        XCTAssertEqual(noInBed.history?.sleep?.inBed, false)
+        XCTAssertEqual(noInBed.history?.steps, [])
+        let notAnObject = try member(#"{"id":"z","name":"Z","isYou":false,"today":"2026-10-17","history":"soon"}"#)
+        XCTAssertNil(notAnObject.history)
+        // A day that can't be read (lenient decoding allows "") never crashes the date maths.
+        let noToday = try member(#"{"id":"w","name":"W","isYou":false,"today":"","history":{"restingHr":[{"date":"2026-10-12","value":60},{"date":"2026-10-13","value":61}]}}"#)
+        XCTAssertEqual(FamilyText.restingNote(noToday), "bpm")
+        XCTAssertEqual(FamilyCharts.spark(.restingHr, noToday)?.points.count, 2)
+        _ = FamilyCharts.window(noToday)
+    }
+
+    func testSparksShowTheirLastSevenDays() throws {
+        let b = try board()
+        let (sam, ana, leo, maria) = (b.members[0], b.members[1], b.members[2], b.members[3])
+
+        let sleep = try XCTUnwrap(FamilyCharts.spark(.sleep, sam))
+        XCTAssertEqual(sleep.kind, .bars)
+        XCTAssertEqual(sleep.points.map(\.date), ["2026-10-11", "2026-10-12", "2026-10-13", "2026-10-14", "2026-10-15", "2026-10-16", "2026-10-17"])
+        XCTAssertEqual(sleep.domain, 0...8.1, "bars from zero")
+        let readiness = try XCTUnwrap(FamilyCharts.spark(.readiness, sam))
+        XCTAssertEqual(readiness.kind, .line)
+        XCTAssertEqual(readiness.points.count, 7)
+        XCTAssertEqual(readiness.domain.lowerBound, 41 - 7.75, accuracy: 0.001, "a quarter of the 41–72 span below")
+        XCTAssertEqual(readiness.domain.upperBound, 72 + 7.75, accuracy: 0.001)
+        XCTAssertEqual(FamilyCharts.spark(.steps, sam)?.points.count, 4)
+        XCTAssertEqual(FamilyCharts.spark(.restingHr, sam)?.points.map(\.value), [54, 56, 55, 57], "Oct 10 is eight days back")
+
+        XCTAssertNil(FamilyCharts.spark(.steps, ana), "one day isn't a chart")
+        XCTAssertEqual(FamilyCharts.spark(.restingHr, ana)?.domain, 51...54, "a flat-ish run still gets room")
+        XCTAssertNil(FamilyCharts.spark(.readiness, leo), "phone only: nothing to draw")
+        XCTAssertNil(FamilyCharts.spark(.restingHr, leo))
+        XCTAssertEqual(FamilyCharts.spark(.steps, leo)?.points.count, 7)
+
+        // Maria's today is a day ahead of the board's: her week is hers, so Oct 11 is out.
+        XCTAssertEqual(FamilyCharts.spark(.sleep, maria)?.points.map(\.date), ["2026-10-12", "2026-10-13"])
+        XCTAssertEqual(FamilyCharts.week(maria.history?.sleep?.points ?? [], today: "2026-10-17").map(\.date), ["2026-10-11", "2026-10-12", "2026-10-13"])
+        XCTAssertNil(FamilyCharts.spark(.steps, maria))
+    }
+
+    func testRestingHeartRateReadsLikeTheWeb() throws {
+        let b = try board()
+        let (sam, ana, leo, maria) = (b.members[0], b.members[1], b.members[2], b.members[3])
+        XCTAssertEqual(FamilyText.restingValue(sam), "57")
+        XCTAssertEqual(FamilyText.restingNote(sam), "bpm · about usual")
+        XCTAssertEqual(FamilyText.restingNote(ana), "bpm · below usual 56")
+        XCTAssertNil(FamilyText.restingValue(leo))
+        XCTAssertEqual(FamilyText.restingNote(leo), "None lately")
+        XCTAssertEqual(FamilyText.restingValue(maria), "59", "the latest of the 30 days")
+        XCTAssertEqual(FamilyText.restingNote(maria), "bpm · Tue", "not recent: say when")
+
+        let high = try member(#"{"id":"h","name":"H","isYou":false,"today":"2026-10-17","restingHr":{"status":"high","date":"2026-10-17","value":64,"usual":55},"history":{}}"#)
+        XCTAssertEqual(FamilyText.restingNote(high), "bpm · above usual 55")
+        let noUsual = try member(#"{"id":"n","name":"N","isYou":false,"today":"2026-10-17","restingHr":{"status":"normal","date":"2026-10-17","value":60,"usual":null},"history":{}}"#)
+        XCTAssertEqual(FamilyText.restingNote(noUsual), "bpm")
+        let fresh = try member(#"{"id":"f","name":"F","isYou":false,"today":"2026-10-17","restingHr":null,"history":{"restingHr":[{"date":"2026-10-16","value":58}]}}"#)
+        XCTAssertEqual(FamilyText.restingNote(fresh), "bpm · no usual yet", "too new to have a usual")
+        XCTAssertEqual(FamilyText.restingValue(fresh), "58")
+
+        XCTAssertEqual(FamilyText.accessibilitySummary(sam, boardToday: "2026-10-17").components(separatedBy: ". ").last, "Resting heart rate 57 bpm · about usual")
+        XCTAssertEqual(FamilyText.accessibilitySummary(leo, boardToday: "2026-10-17").components(separatedBy: ". ").last, "Resting heart rate none, None lately")
+    }
+
+    func testReadinessLabelFallsBackToTheThirtyDays() throws {
+        // No reading today: the 30 days say which it is, before the devices do.
+        let whoop = try member(#"{"id":"r","name":"R","isYou":false,"today":"2026-10-17","devices":["watch"],"readiness":null,"history":{"readiness":{"kind":"recovery","points":[]}}}"#)
+        XCTAssertEqual(FamilyText.readinessLabel(whoop), "Recovery")
+        XCTAssertEqual(FamilyText.readinessFormat(whoop, 63), "63%")
+        let hrv = try member(#"{"id":"s","name":"S","isYou":false,"today":"2026-10-17","devices":["whoop"],"readiness":null,"history":{"readiness":{"kind":"hrv_rmssd","points":[]}}}"#)
+        XCTAssertEqual(FamilyText.readinessLabel(hrv), "HRV")
+        XCTAssertEqual(FamilyText.readinessFormat(hrv, 61.4), "61 ms")
+        let neither = try member(#"{"id":"t","name":"T","isYou":false,"today":"2026-10-17","devices":["whoop"],"readiness":null,"history":{"readiness":null}}"#)
+        XCTAssertEqual(FamilyText.readinessLabel(neither), "Recovery")
+    }
+
+    func testThePersonPageChartsEachAgainstTheirOwnUsual() throws {
+        let b = try board()
+        let (sam, ana, leo, maria) = (b.members[0], b.members[1], b.members[2], b.members[3])
+
+        let charts = FamilyCharts.page(sam)
+        XCTAssertEqual(charts.map(\.id), ["sleep", "readiness", "steps", "restingHr", "load"])
+        let (sleep, readiness, steps, resting, load) = (charts[0], charts[1], charts[2], charts[3], charts[4])
+
+        XCTAssertEqual(sleep.title, "Sleep")
+        XCTAssertEqual(sleep.value, "6h 24m")
+        XCTAssertEqual(sleep.note, "usual 7h 30m")
+        XCTAssertEqual(sleep.kind, .bars)
+        XCTAssertEqual(sleep.points.count, 10, "all 30 days, not just the week")
+        XCTAssertEqual(try XCTUnwrap(sleep.median), 7.3, accuracy: 0.0001, "even count: the mean of the middle two")
+        XCTAssertNil(sleep.usual)
+        XCTAssertEqual(sleep.label, "Sam's sleep per night, median 7h 18m")
+        XCTAssertEqual(sleep.axis(8), "8h")
+
+        XCTAssertEqual(readiness.title, "WHOOP recovery")
+        XCTAssertEqual(readiness.value, "41%")
+        XCTAssertEqual(readiness.note, "usual 68%")
+        XCTAssertEqual(readiness.kind, .line)
+        XCTAssertNil(readiness.median, "lines carry the usual, not a median")
+        XCTAssertEqual(readiness.usual, 68)
+        XCTAssertTrue(readiness.domain.contains(68) && readiness.domain.contains(41), "the usual line is never off the chart")
+        XCTAssertEqual(readiness.format(60), "60%")
+
+        XCTAssertEqual(steps.value, "5,234")
+        XCTAssertEqual(steps.note, "today so far")
+        XCTAssertNil(steps.median, "four days: too few for a typical level")
+        XCTAssertEqual(steps.format(8200), "8,200 steps")
+        XCTAssertEqual(steps.axis(12_000), "12K")
+
+        XCTAssertEqual(resting.title, "Resting heart rate")
+        XCTAssertEqual(resting.value, "57 bpm")
+        XCTAssertEqual(resting.note, "usual 55 bpm")
+        XCTAssertEqual(resting.usual, 55)
+        XCTAssertEqual(FamilyCharts.segments(resting.points), [0, 0, 1, 1, 1], "the line breaks over Oct 12–14")
+        XCTAssertEqual(resting.axis(55), "55")
+        XCTAssertEqual(resting.axis(55.5), "55.5")
+
+        XCTAssertEqual(load.title, "Day strain")
+        XCTAssertEqual(load.value, "6.1")
+        XCTAssertEqual(load.note, "WHOOP, 0–21")
+
+        let anaCharts = FamilyCharts.page(ana)
+        XCTAssertEqual(anaCharts[1].title, "Heart rate variability")
+        XCTAssertEqual(anaCharts[1].value, "48 ms")
+        XCTAssertEqual(anaCharts[1].note, "usual 45 ms")
+        XCTAssertEqual(anaCharts[0].note, "usual 7h 00m")
+        XCTAssertEqual(anaCharts[3].note, "usual 56 bpm")
+        XCTAssertEqual(anaCharts[4].title, "Active energy")
+        XCTAssertEqual(anaCharts[4].value, "380 kcal")
+        XCTAssertEqual(anaCharts[4].note, "Apple Watch or iPhone")
+
+        let leoCharts = FamilyCharts.page(leo)
+        XCTAssertEqual(leoCharts[0].title, "Time in bed")
+        XCTAssertEqual(leoCharts[0].note, "from the iPhone")
+        XCTAssertEqual(leoCharts[1].value, "—")
+        XCTAssertNil(leoCharts[1].note)
+        XCTAssertTrue(leoCharts[1].points.isEmpty)
+        XCTAssertEqual(leoCharts[3].value, "—")
+        XCTAssertEqual(leoCharts[2].median, 9100, "seven days: the middle one")
+
+        XCTAssertEqual(FamilyCharts.page(maria).map(\.id), ["sleep", "readiness", "steps", "restingHr"], "no load: no load chart")
+        XCTAssertEqual(FamilyCharts.page(maria)[3].value, "59 bpm")
+
+        // Last night came from the phone while the chart holds watch nights: say why it's missing.
+        let phoneNight = try member(#"{"id":"p","name":"P","isYou":false,"today":"2026-10-17","sleep":{"hours":8.6,"date":"2026-10-17","usual":null,"inBed":true},"history":{"sleep":{"inBed":false,"points":[]}}}"#)
+        XCTAssertEqual(FamilyCharts.page(phoneNight)[0].note, "last night in bed (phone), not in the chart")
+        XCTAssertEqual(FamilyCharts.page(phoneNight)[0].title, "Sleep")
+    }
+
+    func testThePersonPageWindowIsTheirThirtyDays() throws {
+        let b = try board()
+        let sam = b.members[0], maria = b.members[3]
+        let half: TimeInterval = 12 * 3600
+        let window = FamilyCharts.window(sam)
+        XCTAssertEqual(window.lowerBound, Fmt.chartDate("2026-09-18").addingTimeInterval(-half))
+        XCTAssertEqual(window.upperBound, Fmt.chartDate("2026-10-17").addingTimeInterval(half))
+        XCTAssertEqual(FamilyCharts.window(maria).upperBound, Fmt.chartDate("2026-10-18").addingTimeInterval(half), "to her today, not the board's")
+        XCTAssertEqual(FamilyCharts.window(maria).lowerBound, Fmt.chartDate("2026-09-19").addingTimeInterval(-half))
+
+        XCTAssertEqual(FamilyText.pageDevicesLine(sam, boardToday: "2026-10-17"), "WHOOP + iPhone · last 30 days")
+        XCTAssertEqual(FamilyText.pageDevicesLine(maria, boardToday: "2026-10-17"), "Apple Watch · their Sun · last 30 days")
+        XCTAssertEqual(String(FamilyText.pageFoot(sam).characters), "Dashed lines are the median of these 30 days; “usual” lines are your average of the 30 days before the latest reading. Open your full dashboard")
+        XCTAssertEqual(String(FamilyText.pageFoot(maria).characters), "Dashed lines are the median of these 30 days; “usual” lines are their average of the 30 days before the latest reading. Only what they share is here.")
+    }
+
+    func testMedianAndRunsMatchTheWebCharts() {
+        let p = { (d: String, v: Double) in Point(date: d, value: v) }
+        XCTAssertNil(FamilyCharts.median([p("2026-10-01", 1), p("2026-10-02", 2), p("2026-10-03", 3), p("2026-10-04", 4)]))
+        XCTAssertEqual(FamilyCharts.median([p("2026-10-01", 5), p("2026-10-02", 1), p("2026-10-03", 4), p("2026-10-04", 2), p("2026-10-05", 3)]), 3)
+        let runs = [p("2026-10-01", 1), p("2026-10-04", 1), p("2026-10-08", 1), p("2026-10-09", 1), p("2026-10-20", 1)]
+        let segments = FamilyCharts.segments(runs)
+        XCTAssertEqual(segments, [0, 0, 1, 1, 2], "3 days apart joins; 4 breaks")
+        XCTAssertEqual(runs.indices.map { FamilyCharts.isAlone($0, in: segments) }, [false, false, false, false, true])
+        XCTAssertEqual(FamilyCharts.padded([], by: 0.15), 0...1)
     }
 
     func testStatusCarriesTheFamilySettings() throws {
@@ -569,6 +823,65 @@ final class FamilyStateTests: XCTestCase {
         XCTAssertEqual(describe(d.familyDisplay), "loading")
     }
 
+    func testAPersonPageShowsOnlyWhoTheBoardShows() throws {
+        let d = try sharingDashboard()
+        XCTAssertEqual(d.familyPerson("u2").member?.name, "Ana")
+        guard case .shown(_, let boardToday) = d.familyPerson("u4") else { return XCTFail("Maria is on the board") }
+        XCTAssertEqual(boardToday, "2026-10-17", "the viewer's today, so her page says \"their Sun\"")
+
+        // Ana stops sharing: the next read leaves her out, and her page says so.
+        let url = Bundle(for: Self.self).url(forResource: "family", withExtension: "json")
+            ?? URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/family.json")
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        json["members"] = (json["members"] as? [[String: Any]])?.filter { $0["id"] as? String != "u2" }
+        d.receiveFamily(try JSONDecoder().decode(FamilyBoard.self, from: JSONSerialization.data(withJSONObject: json)))
+        guard case .notOnBoard = d.familyPerson("u2") else { return XCTFail("Ana isn't on the board any more") }
+        XCTAssertNotNil(d.familyPerson("u3").member)
+
+        // Asked to sign in again: the board is still in memory, but no page shows from it.
+        d.phase = .signIn
+        XCTAssertNotNil(d.familyBoard)
+        guard case .noBoard = d.familyPerson("u3") else { return XCTFail("nothing behind a sign-in screen") }
+
+        // Back in, then sharing goes off: no one's page either.
+        d.phase = .ready
+        XCTAssertNotNil(d.familyPerson("u3").member)
+        d.apply(status: try status(sharing: false))
+        guard case .noBoard = d.familyPerson("u3") else { return XCTFail("sharing off shows no one") }
+    }
+
+    func testTheNoticeShowsOnceMoreAndStaysDismissed() throws {
+        // The server now keeps "seen" as version 2, so everyone who dismissed the old note gets false and sees it again.
+        let d = Dashboard()
+        d.authMode = "required"
+        d.signedIn()
+        d.apply(status: try status(sharing: true, noticeSeen: false))
+        XCTAssertTrue(d.showsFamilyNotice)
+
+        // "Got it": gone at once, before the PUT answers.
+        d.hideFamilyNotice()
+        XCTAssertFalse(d.showsFamilyNotice)
+        // The PUT's answer says seen.
+        d.apply(status: try status(sharing: true, noticeSeen: true))
+        XCTAssertFalse(d.showsFamilyNotice)
+        // A status read that started before the PUT lands late: still gone.
+        d.apply(status: try status(sharing: true, noticeSeen: false))
+        XCTAssertFalse(d.showsFamilyNotice)
+        // Next launch, with the server saying seen: not shown.
+        let next = Dashboard()
+        next.authMode = "required"
+        next.signedIn()
+        next.apply(status: try status(sharing: true, noticeSeen: true))
+        XCTAssertFalse(next.showsFamilyNotice)
+        // Not while sharing is off.
+        next.apply(status: try status(sharing: false, noticeSeen: false))
+        XCTAssertFalse(next.showsFamilyNotice)
+
+        // What "Got it" sends: a JSON true, which is what the server stores version 2 for (it checks === true).
+        let body = try JSONSerialization.data(withJSONObject: ["familyNoticeSeen": true])
+        XCTAssertEqual(String(decoding: body, as: UTF8.self), #"{"familyNoticeSeen":true}"#)
+    }
+
     func testAnUnavailableServerSaysSoInsteadOfSpinning() throws {
         // Sign-in misconfigured on the server, with a status cached from when it worked: the tab shows, but nothing
         // will be read until the server is fixed.
@@ -587,12 +900,13 @@ final class FamilyStateTests: XCTestCase {
     }
 
     func testTheTileSharesOnlyWhatSettingsDescribes() throws {
-        // Settings: "last night's sleep, recovery or HRV, today's steps, and how they compare with your own usual".
-        // Resting heart rate shows only as a reason next to Off or Check in, as on the web.
+        // Settings: "last night's sleep, recovery or HRV, today's steps, resting heart rate and training load, the last
+        // 30 days of each". With the 30-day board, resting heart rate is a figure of its own, as on the web.
         func member(_ json: String) throws -> FamilyMember { try JSONDecoder().decode(FamilyMember.self, from: Data(json.utf8)) }
         let sam = try board().members[0]
         XCTAssertEqual(sam.restingHr?.status, "normal")
-        XCTAssertFalse(FamilyText.accessibilitySummary(sam, boardToday: "2026-10-17").contains("Resting heart rate"))
+        XCTAssertTrue(FamilyText.accessibilitySummary(sam, boardToday: "2026-10-17").contains("Resting heart rate 57 bpm"))
+        // From an older server (no history, no value): only as a reason next to Off or Check in, as that web did.
         let low = try member(#"{"id":"l","name":"L","isYou":false,"today":"2026-10-17","status":"good","reasons":[],"restingHr":{"status":"low","date":"2026-10-17"}}"#)
         XCTAssertFalse(FamilyText.accessibilitySummary(low, boardToday: "2026-10-17").contains("Resting heart rate"))
         let quiet = try member(#"{"id":"q","name":"Q","isYou":false,"today":"2026-10-17","status":"quiet","quietSince":"2026-10-14","reasons":[],"restingHr":{"status":"high","date":"2026-10-15"}}"#)
@@ -630,6 +944,25 @@ final class FamilyLayoutTests: XCTestCase {
             let s = fit(FamilyBoardView(board: board).padding(16), width: 375, size)
             XCTAssertLessThanOrEqual(s.width, 375.5, "nothing runs off the screen at \(size)")
         }
+    }
+
+    func testTheThirtyDayTileFitsAPhoneAtEveryTextSize() throws {
+        // Two by two with a small chart under each figure, from a server with the 30-day board.
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(try member())) as? [String: Any])
+        let week = (11...17).map { ["date": "2026-10-\($0)", "value": Double($0)] }
+        json["history"] = ["sleep": ["inBed": false, "points": week], "readiness": ["kind": "recovery", "points": week], "steps": week, "restingHr": week]
+        json["restingHr"] = ["status": "high", "date": "2026-10-17", "value": 64, "usual": 55]
+        let rich = try JSONDecoder().decode(FamilyMember.self, from: JSONSerialization.data(withJSONObject: json))
+        XCTAssertNotNil(FamilyCharts.spark(.restingHr, rich))
+        let board = FamilyBoard(sharing: true, today: "2026-10-17", members: [rich])
+        for size in sizes + [.accessibility5] {
+            let s = fit(FamilyBoardView(board: board).padding(16), width: 375, size)
+            XCTAssertLessThanOrEqual(s.width, 375.5, "nothing runs off the screen at \(size)")
+        }
+        // The sparks add height, not width: the tile is taller than the same person without history.
+        let plain = fit(FamilyTile(member: try member(), boardToday: "2026-10-17"), width: 343, .large).height
+        let withCharts = fit(FamilyTile(member: rich, boardToday: "2026-10-17"), width: 343, .large).height
+        XCTAssertGreaterThan(withCharts, plain + FamilySpark.height)
     }
 
     func testThePillsWrapBelowTheNameInsteadOfCuttingIt() throws {

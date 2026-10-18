@@ -235,7 +235,7 @@ private struct FamilySection: View {
         } header: {
             Text("Family")
         } footer: {
-            Text("Your Family board tile: last night's sleep, recovery or HRV, today's steps, and how they compare with your own usual.")
+            Text("Your Family board tile: last night's sleep, recovery or HRV, today's steps, resting heart rate and training load, the last 30 days of each, and how they compare with your own usual.")
         }
         // For "Sharing with: …"; the board keeps itself fresh while the Family tab is open.
         .task(id: settings?.familySharing == true) {
@@ -244,7 +244,7 @@ private struct FamilySection: View {
     }
 
     private func sharingNote(on: Bool) -> String {
-        var note = "Members who share see your daily tile. Turn it off and you see no one, and no one sees you."
+        var note = "Members who share see your tile and its last 30 days. Turn it off and you see no one, and no one sees you."
         if on, let board = dashboard.familyBoard, board.sharing {
             let others = board.members.filter { !$0.isYou }.map(FamilyText.name)
             if !others.isEmpty { note += " Sharing with: \(others.joined(separator: ", "))." }

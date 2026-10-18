@@ -16,8 +16,15 @@
       "reasons": ["recovery"],
       "sleep": { "hours": 6.4, "date": "2026-10-17", "usual": 7.5, "inBed": false },
       "readiness": { "kind": "recovery", "value": 41, "date": "2026-10-17", "usual": 68 },
-      "restingHr": { "status": "normal", "date": "2026-10-17" },
-      "steps": { "value": 5234, "source": "whoop", "asOfHour": null, "usualByNow": null }
+      "restingHr": { "status": "normal", "date": "2026-10-17", "value": 57, "usual": 55 },
+      "steps": { "value": 5234, "source": "whoop", "asOfHour": null, "usualByNow": null },
+      "history": {
+        "sleep": { "inBed": false, "points": [{ "date": "2026-10-08", "value": 7.2 }, { "date": "2026-10-09", "value": 7.8 }, { "date": "2026-10-10", "value": 6.9 }, { "date": "2026-10-11", "value": 7.5 }, { "date": "2026-10-12", "value": 8.1 }, { "date": "2026-10-13", "value": 7.0 }, { "date": "2026-10-14", "value": 7.4 }, { "date": "2026-10-15", "value": 7.9 }, { "date": "2026-10-16", "value": 7.1 }, { "date": "2026-10-17", "value": 6.4 }] },
+        "readiness": { "kind": "recovery", "points": [{ "date": "2026-10-11", "value": 70 }, { "date": "2026-10-12", "value": 66 }, { "date": "2026-10-13", "value": 72 }, { "date": "2026-10-14", "value": 64 }, { "date": "2026-10-15", "value": 69 }, { "date": "2026-10-16", "value": 60 }, { "date": "2026-10-17", "value": 41 }] },
+        "steps": [{ "date": "2026-10-14", "value": 8200 }, { "date": "2026-10-15", "value": 10400 }, { "date": "2026-10-16", "value": 7600 }, { "date": "2026-10-17", "value": 5234 }],
+        "restingHr": [{ "date": "2026-10-10", "value": 55 }, { "date": "2026-10-11", "value": 54 }, { "date": "2026-10-15", "value": 56 }, { "date": "2026-10-16", "value": 55 }, { "date": "2026-10-17", "value": 57 }],
+        "load": { "kind": "strain", "points": [{ "date": "2026-10-15", "value": 12.4 }, { "date": "2026-10-16", "value": 9.8 }, { "date": "2026-10-17", "value": 6.1 }] }
+      }
     },
     {
       "id": "u2",
@@ -33,9 +40,16 @@
       "reasons": [],
       "sleep": { "hours": 7.2, "date": "2026-10-17", "usual": 7.0, "inBed": false },
       "readiness": { "kind": "hrv", "metric": "hrv_sdnn", "value": 48, "date": "2026-10-17", "usual": 45 },
-      "restingHr": { "status": "normal", "date": "2026-10-17" },
+      "restingHr": { "status": "low", "date": "2026-10-17", "value": 52, "usual": 56 },
       "steps": { "value": 8120, "source": "apple", "asOfHour": 15, "usualByNow": null },
-      "cyclePhase": "luteal"
+      "cyclePhase": "luteal",
+      "history": {
+        "sleep": { "inBed": false, "points": [{ "date": "2026-10-15", "value": 7.0 }, { "date": "2026-10-16", "value": 6.8 }, { "date": "2026-10-17", "value": 7.2 }] },
+        "readiness": { "kind": "hrv_sdnn", "points": [{ "date": "2026-10-16", "value": 44 }, { "date": "2026-10-17", "value": 48 }] },
+        "steps": [{ "date": "2026-10-17", "value": 8120 }],
+        "restingHr": [{ "date": "2026-10-16", "value": 53 }, { "date": "2026-10-17", "value": 52 }],
+        "load": { "kind": "energy", "points": [{ "date": "2026-10-16", "value": 420 }, { "date": "2026-10-17", "value": 380 }] }
+      }
     },
     {
       "id": "u3",
@@ -52,7 +66,14 @@
       "sleep": { "hours": 7.9, "date": "2026-10-17", "usual": null, "inBed": true },
       "readiness": null,
       "restingHr": null,
-      "steps": { "value": 9800, "source": "apple", "asOfHour": 16, "usualByNow": 7420 }
+      "steps": { "value": 9800, "source": "apple", "asOfHour": 16, "usualByNow": 7420 },
+      "history": {
+        "sleep": { "inBed": true, "points": [{ "date": "2026-10-15", "value": 8.1 }, { "date": "2026-10-16", "value": 7.6 }, { "date": "2026-10-17", "value": 7.9 }] },
+        "readiness": null,
+        "steps": [{ "date": "2026-10-11", "value": 6100 }, { "date": "2026-10-12", "value": 11200 }, { "date": "2026-10-13", "value": 8800 }, { "date": "2026-10-14", "value": 7400 }, { "date": "2026-10-15", "value": 9100 }, { "date": "2026-10-16", "value": 10300 }, { "date": "2026-10-17", "value": 9800 }],
+        "restingHr": [],
+        "load": { "kind": "energy", "points": [{ "date": "2026-10-16", "value": 210 }, { "date": "2026-10-17", "value": 260 }] }
+      }
     },
     {
       "id": "u4",
@@ -69,7 +90,14 @@
       "sleep": null,
       "readiness": null,
       "restingHr": null,
-      "steps": null
+      "steps": null,
+      "history": {
+        "sleep": { "inBed": false, "points": [{ "date": "2026-10-06", "value": 7.1 }, { "date": "2026-10-09", "value": 6.9 }, { "date": "2026-10-11", "value": 7.4 }, { "date": "2026-10-12", "value": 7.3 }, { "date": "2026-10-13", "value": 7.0 }] },
+        "readiness": { "kind": "hrv_sdnn", "points": [{ "date": "2026-10-12", "value": 39 }, { "date": "2026-10-13", "value": 41 }] },
+        "steps": [],
+        "restingHr": [{ "date": "2026-10-12", "value": 58 }, { "date": "2026-10-13", "value": 59 }],
+        "load": null
+      }
     }
   ]
 }

@@ -10,8 +10,40 @@
 # Bumps CURRENT_PROJECT_VERSION in project.yml first, since every upload needs a new build number.
 # `./testflight.sh --same-build` retries the current number (after an upload that failed).
 # The archive is kept in Xcode's Archives folder, so a failed upload can still go out from Organizer.
+#
+# It builds what's on disk, so it stops when ios/ has uncommitted changes (another session's work in progress
+# would ship otherwise). A leftover build-number bump from a failed upload doesn't count.
+# `--allow-dirty` builds anyway.
 set -euo pipefail
 cd "$(dirname "$0")"
+
+same_build=false
+allow_dirty=false
+for arg in "$@"; do
+  case "$arg" in
+    --same-build) same_build=true ;;
+    --allow-dirty) allow_dirty=true ;;
+    *) echo "Unknown option: $arg (use --same-build and/or --allow-dirty)" >&2; exit 2 ;;
+  esac
+done
+
+# Uncommitted or untracked files under ios/, except project files whose only change is the build number.
+dirty=()
+while IFS= read -r line; do
+  [[ -z "$line" ]] && continue
+  path="${line:3}"
+  case "$path" in
+    ios/project.yml | ios/HealthOSSync.xcodeproj/project.pbxproj)
+      if ! git diff HEAD -U0 -- "../$path" | grep -E '^[-+][^-+]' | grep -qv 'CURRENT_PROJECT_VERSION'; then continue; fi ;;
+  esac
+  dirty+=("$path")
+done < <(git -C .. status --porcelain --untracked-files=all -- ios)
+if [[ ${#dirty[@]} -gt 0 && "$allow_dirty" != true ]]; then
+  echo "ios/ has uncommitted changes, so this build would include them:" >&2
+  printf '  %s\n' "${dirty[@]}" >&2
+  echo "Commit them first, or run with --allow-dirty to build them anyway." >&2
+  exit 1
+fi
 
 auth=()
 env_file="$HOME/.appstoreconnect/healthos.env"
@@ -28,7 +60,7 @@ if [[ -f "$env_file" ]]; then
 fi
 
 current=$(sed -nE 's/^ *CURRENT_PROJECT_VERSION: "?([0-9]+)"?/\1/p' project.yml)
-if [[ "${1:-}" == "--same-build" ]]; then
+if [[ "$same_build" == true ]]; then
   next=$current
 else
   next=$((current + 1))

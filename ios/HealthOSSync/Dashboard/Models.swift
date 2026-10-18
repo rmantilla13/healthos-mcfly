@@ -461,10 +461,13 @@ struct FamilyMember: Codable, Identifiable {
         let usual: Double?
     }
 
-    /// Against their usual only ("low" | "normal" | "high"); the value itself isn't shared.
+    /// Against their usual from the same device ("low" | "normal" | "high"), once there's a week to compare with.
+    /// value and usual (whole bpm) are nil from servers older than the 30-day board.
     struct RestingHr: Codable {
         let status: String
         let date: String?
+        let value: Double?
+        let usual: Double?
     }
 
     /// Today's steps. asOfHour and usualByNow only when the phone or Watch counted them hour by hour.
@@ -499,14 +502,64 @@ struct FamilyMember: Codable, Identifiable {
     let steps: Steps?
     /// "period" | "follicular" | "luteal"; absent near the next period, so it can never imply "late".
     let cyclePhase: String?
+    /// The last 30 days, for the tile's small charts and the person's page; nil from servers older than that board.
+    let history: History?
 
     /// The avatar URL's `v`: an integer, never "1.7e+12".
     var avatarKey: String? { avatar.map { String(Int64($0)) } }
+
+    /// The last 30 days of each metric, oldest first, as the person's own dashboard shows it. Each part decodes on
+    /// its own: one the app can't read is empty or nil, and the rest still draw.
+    struct History: Codable {
+        /// Nights a watch or WHOOP measured; `inBed` when only the phone logged them (time in bed, marked as such).
+        struct Sleep: Codable {
+            let inBed: Bool
+            @LossyArray var points: [Point]
+
+            init(inBed: Bool, points: [Point]) {
+                self.inBed = inBed
+                self.points = points
+            }
+
+            init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                inBed = (try? c.decodeIfPresent(Bool.self, forKey: .inBed)) ?? false
+                _points = try c.decode(LossyArray<Point>.self, forKey: .points)
+            }
+        }
+
+        /// readiness: "recovery" | "hrv_rmssd" | "hrv_sdnn"; load: "strain" (WHOOP, 0–21) | "energy" (active kcal).
+        struct Series: Codable {
+            let kind: String
+            @LossyArray var points: [Point]
+
+            init(kind: String, points: [Point]) {
+                self.kind = kind
+                self.points = points
+            }
+        }
+
+        @Lossy var sleep: Sleep?
+        @Lossy var readiness: Series?
+        @LossyArray var steps: [Point]
+        /// From one device: the one the latest reading came from.
+        @LossyArray var restingHr: [Point]
+        @Lossy var load: Series?
+
+        init(sleep: Sleep?, readiness: Series?, steps: [Point], restingHr: [Point], load: Series?) {
+            self.sleep = sleep
+            self.readiness = readiness
+            self.steps = steps
+            self.restingHr = restingHr
+            self.load = load
+        }
+    }
 }
 
 extension FamilyMember {
     private enum CodingKeys: String, CodingKey {
-        case id, name, isYou, demo, today, avatar, devices, latestDataDate, quietSince, status, reasons, sleep, readiness, restingHr, steps, cyclePhase
+        case id, name, isYou, demo, today, avatar, devices, latestDataDate, quietSince, status, reasons, sleep, readiness, restingHr, steps, cyclePhase,
+             history
     }
 
     /// Only the id is required; anything else missing or unreadable falls back, so one odd field can't hide a person.
@@ -529,7 +582,8 @@ extension FamilyMember {
             readiness: value(.readiness),
             restingHr: value(.restingHr),
             steps: value(.steps),
-            cyclePhase: value(.cyclePhase))
+            cyclePhase: value(.cyclePhase),
+            history: value(.history))
     }
 }
 
