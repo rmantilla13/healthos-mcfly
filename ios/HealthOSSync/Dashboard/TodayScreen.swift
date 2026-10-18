@@ -230,7 +230,7 @@ private struct FamilyNotice: View {
         let tone = Tone.blue
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "person.2").font(.subheadline.weight(.semibold)).accessibilityHidden(true)
-            Text("Your family can now see your daily status on the **[Family](healthos://family)** board. Change this in **[Settings](healthos://settings)**.")
+            Text("Your family can see your daily status and your last 30 days on the **[Family](healthos://family)** board. Change this in **[Settings](healthos://settings)**.")
                 .font(.footnote)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
