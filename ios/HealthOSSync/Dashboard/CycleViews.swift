@@ -618,7 +618,6 @@ private struct CycleCalendarCard: View {
     let cycle: CycleData
 
     private static let weekdays = ["M", "T", "W", "T", "F", "S", "S"]
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 7)
 
     var body: some View {
         let dates = Self.dates(cycle)
@@ -631,12 +630,20 @@ private struct CycleCalendarCard: View {
                     Text(CycleText.range(first, last)).font(.caption).foregroundStyle(Palette.ink3)
                 }
             }
-            LazyVGrid(columns: columns, spacing: 6) {
-                ForEach(Array(Self.weekdays.enumerated()), id: \.offset) { _, w in
-                    Text(w).font(.caption2.weight(.medium)).foregroundStyle(Palette.ink3).accessibilityHidden(true)
+            // A plain Grid, not a lazy one: inside the Trends scroll view a lazy grid sizes its rows as they scroll in,
+            // and everything below it jumps.
+            Grid(horizontalSpacing: 4, verticalSpacing: 6) {
+                GridRow {
+                    ForEach(Array(Self.weekdays.enumerated()), id: \.offset) { _, w in
+                        Text(w).font(.caption2.weight(.medium)).foregroundStyle(Palette.ink3).frame(maxWidth: .infinity).accessibilityHidden(true)
+                    }
                 }
-                ForEach(dates, id: \.self) { date in
-                    cell(date, day: byDate[date])
+                ForEach(Array(stride(from: 0, to: dates.count, by: 7)), id: \.self) { row in
+                    GridRow {
+                        ForEach(dates[row..<min(row + 7, dates.count)], id: \.self) { date in
+                            cell(date, day: byDate[date])
+                        }
+                    }
                 }
             }
             legend
@@ -726,11 +733,17 @@ private struct CycleCalendarCard: View {
             LegendItem(label: "Ovulation", shape: AnyView(Circle().strokeBorder(Palette.fertilePeak, lineWidth: 1.5))),
         ]
         // Without an estimate only logged periods can show.
-        return LazyVGrid(columns: [GridItem(.adaptive(minimum: 130), spacing: 8, alignment: .leading)], alignment: .leading, spacing: 6) {
-            ForEach(cycle.shownEstimate == nil ? Array(keys.prefix(1)) : keys) { key in
-                HStack(spacing: 6) {
-                    key.shape.frame(width: 12, height: 12)
-                    Text(key.label).font(.caption2).foregroundStyle(Palette.ink3)
+        let shown = cycle.shownEstimate == nil ? Array(keys.prefix(1)) : keys
+        return Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 6) {
+            ForEach(Array(stride(from: 0, to: shown.count, by: 2)), id: \.self) { i in
+                GridRow {
+                    ForEach(shown[i..<min(i + 2, shown.count)]) { key in
+                        HStack(spacing: 6) {
+                            key.shape.frame(width: 12, height: 12)
+                            Text(key.label).font(.caption2).foregroundStyle(Palette.ink3)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }
             }
         }
@@ -780,12 +793,14 @@ private struct CycleHistoryCard: View {
                 Spacer()
                 Text("\(CycleText.plural(cycle.periods.count, "period")) logged").font(.caption).foregroundStyle(Palette.ink3)
             }
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), alignment: .topLeading)], alignment: .leading, spacing: 12) {
-                stat("Typical cycle", cycle.stats?.cycleDays.map { "\($0) days" } ?? "–", note: range)
-                stat("Period", cycle.stats?.periodDays.map { CycleText.plural($0, "day") } ?? "–", note: nil)
-                if let luteal = cycle.stats?.lutealDays { stat("After ovulation", CycleText.plural(luteal, "day"), note: nil) }
-                if let regular = cycle.stats?.regular {
-                    stat("Regularity", regular ? "Regular" : "Variable", note: cycle.stats?.variation.map { "Varies by \(CycleText.plural($0, "day"))" })
+            let stats = statItems
+            Grid(alignment: .topLeading, horizontalSpacing: 16, verticalSpacing: 12) {
+                ForEach(Array(stride(from: 0, to: stats.count, by: 2)), id: \.self) { i in
+                    GridRow(alignment: .top) {
+                        ForEach(stats[i..<min(i + 2, stats.count)], id: \.title) { item in
+                            stat(item.title, item.value, note: item.note).frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
                 }
             }
             if rows.isEmpty {
@@ -855,6 +870,24 @@ private struct CycleHistoryCard: View {
         return "\(lo)–\(hi) days"
     }
 
+    private struct StatItem {
+        let title: String
+        let value: String
+        let note: String?
+    }
+
+    private var statItems: [StatItem] {
+        var items = [
+            StatItem(title: "Typical cycle", value: cycle.stats?.cycleDays.map { "\($0) days" } ?? "–", note: range),
+            StatItem(title: "Period", value: cycle.stats?.periodDays.map { CycleText.plural($0, "day") } ?? "–", note: nil),
+        ]
+        if let luteal = cycle.stats?.lutealDays { items.append(StatItem(title: "After ovulation", value: CycleText.plural(luteal, "day"), note: nil)) }
+        if let regular = cycle.stats?.regular {
+            items.append(StatItem(title: "Regularity", value: regular ? "Regular" : "Variable", note: cycle.stats?.variation.map { "Varies by \(CycleText.plural($0, "day"))" }))
+        }
+        return items
+    }
+
     private func stat(_ title: String, _ value: String, note: String?) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title).font(.caption).foregroundStyle(Palette.ink3)
@@ -892,17 +925,22 @@ private struct CyclePatternsCard: View {
                 Divider()
             }
             if !insights.symptoms.isEmpty {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 8, alignment: .leading)], alignment: .leading, spacing: 8) {
-                    ForEach(insights.symptoms.prefix(6), id: \.symptom) { s in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(CycleText.symptom(s.symptom)).font(.footnote.weight(.semibold)).foregroundStyle(Tone.peach.ink)
-                            Text("\(s.phase.map { "mostly \(Self.phase($0))" } ?? "at different points") · \(CycleText.plural(s.cycles, "cycle"))")
-                                .font(.caption2).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
+                let symptoms = Array(insights.symptoms.prefix(6))
+                Grid(alignment: .topLeading, horizontalSpacing: 8, verticalSpacing: 8) {
+                    ForEach(Array(stride(from: 0, to: symptoms.count, by: 2)), id: \.self) { i in
+                        GridRow {
+                            ForEach(symptoms[i..<min(i + 2, symptoms.count)], id: \.symptom) { s in
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(CycleText.symptom(s.symptom)).font(.footnote.weight(.semibold)).foregroundStyle(Tone.peach.ink)
+                                    Text("\(s.phase.map { "mostly \(Self.phase($0))" } ?? "at different points") · \(CycleText.plural(s.cycles, "cycle"))")
+                                        .font(.caption2).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
+                                }
+                                .padding(.horizontal, 10).padding(.vertical, 8)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                                .background(Tone.peach.background, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                .accessibilityElement(children: .combine)
+                            }
                         }
-                        .padding(.horizontal, 10).padding(.vertical, 8)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Tone.peach.background, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .accessibilityElement(children: .combine)
                     }
                 }
             }
