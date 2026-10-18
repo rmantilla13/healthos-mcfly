@@ -1,7 +1,7 @@
 import Charts
 import SwiftUI
 
-/// Vitals, Sleep, Activity and Body over 30 days, 90 days or a year (src/pages/Detail.tsx), and Cycle while tracking is on.
+/// Vitals, Sleep, Activity and Body over 7 days, 30 days, 90 days or a year (src/pages/Detail.tsx), and Cycle while tracking is on.
 struct TrendsScreen: View {
     @Environment(Dashboard.self) private var dashboard
     @AppStorage("trendsDays") private var days = 30
@@ -24,6 +24,7 @@ struct TrendsScreen: View {
                                 // The cycle view has its own span.
                                 if dashboard.trendsSection != .cycle {
                                     Picker("Range", selection: $days) {
+                                        Text("7 days").tag(7)
                                         Text("30 days").tag(30)
                                         Text("90 days").tag(90)
                                         Text("1 year").tag(365)
@@ -116,10 +117,15 @@ private struct TrendsLoader<Content: View>: View {
             }
         }
         .task(id: "\(days)|\(dashboard.summary?.date ?? "")|\(dashboard.generation)") {
+            // A new load clears an old failure, so a retry shows progress rather than the stale message.
+            if trends == nil { error = nil }
             do {
                 trends = try await dashboard.trends(metrics, days: days)
                 error = nil
+            } catch is CancellationError {
+                // Replaced by a newer load (a refresh landed, or the range changed): not a failure.
             } catch {
+                guard !Task.isCancelled else { return }
                 self.error = error.localizedDescription
             }
         }

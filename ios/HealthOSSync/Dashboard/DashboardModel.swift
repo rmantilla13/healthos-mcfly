@@ -354,6 +354,8 @@ final class Dashboard {
             let board = try await fetch { try await $0.family() }
             guard request == familyRequest else { return }
             receiveFamily(board)
+        } catch is CancellationError {
+            // Superseded or the screen went away: not a failure to show.
         } catch {
             guard request == familyRequest else { return }
             if case .signIn = phase { return }
