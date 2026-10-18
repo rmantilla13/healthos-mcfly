@@ -156,7 +156,7 @@ function Dashboard({ signedIn }: { signedIn: boolean }) {
           )}
           {page === 'home' && status && family && !status.settings.familyNoticeSeen && <FamilyNotice refresh={reload} />}
           {page === 'home' && <Home date={date} onDate={setDate} photo={status?.photo ?? null} />}
-          {page === 'family' && (family ? <Family isAdmin={isAdmin} refreshStatus={reload} /> : status && <FamilyOff signedIn={signedIn} />)}
+          {page === 'family' && (family ? <Family isAdmin={isAdmin} refreshStatus={reload} params={params} /> : status && <FamilyOff signedIn={signedIn} />)}
           {page === 'vitals' && <Vitals />}
           {page === 'sleep' && <Sleep />}
           {page === 'activity' && <Activity stepGoal={status?.settings.stepGoal ?? 10_000} />}
@@ -211,7 +211,7 @@ function FamilyNotice({ refresh }: { refresh: () => void }) {
     <div className="banner banner-start family-notice">
       <Icon name="family" size={16} />
       <span>
-        Your family can now see your daily status on the <a href={href('family')}>Family</a> board. Change this in <a href={href('settings')}>Settings</a>.
+        Your family can see your daily status and your last 30 days on the <a href={href('family')}>Family</a> board. Change this in <a href={href('settings')}>Settings</a>.
       </span>
       <button className="btn btn-quiet" onClick={dismiss}>
         Got it

@@ -134,7 +134,7 @@ test("a tile: each person against their own usual, with only what's listed", asy
   assert.equal(a.status, 'check');
   assert.deepEqual(a.reasons, ['recovery', 'resting_hr'], 'the first two of three');
   assert.deepEqual(a.readiness, { kind: 'recovery', value: 30, date: today, usual: 65 });
-  assert.deepEqual(a.restingHr, { status: 'high', date: today });
+  assert.deepEqual(a.restingHr, { status: 'high', date: today, value: 62, usual: 53 });
   assert.deepEqual(a.sleep, { hours: 5.6, date: today, usual: 7.5, inBed: false });
   assert.deepEqual(a.steps, { value: 9000, source: 'whoop', asOfHour: null, usualByNow: null });
   assert.deepEqual(a.devices, ['whoop']);
@@ -152,7 +152,7 @@ test("a tile: each person against their own usual, with only what's listed", asy
   assert.deepEqual([o.status, o.quietSince, o.sleep, o.steps], ['quiet', null, null, null]);
 
   // Nothing beyond the listed fields: no email, no weight, no history.
-  const allowed = ['id', 'name', 'isYou', 'demo', 'today', 'avatar', 'devices', 'latestDataDate', 'quietSince', 'status', 'reasons', 'sleep', 'readiness', 'restingHr', 'steps', 'cyclePhase'];
+  const allowed = ['id', 'name', 'isYou', 'demo', 'today', 'avatar', 'devices', 'latestDataDate', 'quietSince', 'status', 'reasons', 'sleep', 'readiness', 'restingHr', 'steps', 'cyclePhase', 'history'];
   for (const m of b.members) for (const k of Object.keys(m)) assert.ok(allowed.includes(k), `unexpected field ${k}`);
   const text = JSON.stringify(b);
   assert.ok(!text.includes('@example.com') && !text.includes('61.5'), 'no email or weight');
@@ -266,7 +266,27 @@ test('a stale tile carries no reasons, whatever its old readings said', async ()
   assert.equal((await owner.call('DELETE', `/api/admin/users/${sam}`)).status, 200);
 });
 
-test('the one-time notice is remembered', async () => {
+test("each tile carries 30 days of the metrics it shows, and nothing else", async () => {
+  const b = await board(owner);
+  const a = member(b, ids.ana);
+  assert.equal(a.history.sleep.points.length, 30, 'the last 30 nights, today included');
+  assert.equal(a.history.sleep.points.at(-1)?.date, today);
+  assert.equal(a.history.sleep.points[0].date, back(29));
+  assert.equal(a.history.sleep.inBed, false);
+  assert.deepEqual(a.history.readiness?.kind, 'recovery');
+  assert.equal(a.history.readiness?.points.at(-1)?.value, 30);
+  assert.deepEqual(a.history.steps, [{ date: today, value: 9000 }]);
+  assert.equal(a.history.restingHr.length, 30);
+  assert.equal(a.history.load, null, 'no strain or active energy recorded');
+  const l = member(b, ids.leo);
+  assert.equal(l.history.readiness?.kind, 'hrv_sdnn');
+  assert.equal(l.history.steps.length, 30);
+  // Weight was recorded for Ana; it is in no history.
+  assert.ok(!JSON.stringify(b).includes('61.5'));
+});
+
+test('the one-time notice is remembered, and shown again for the bigger board', async () => {
+  await setUserSetting(db, ids.ana, 'family_notice_seen', 'on'); // dismissed before the board showed 30 days
   assert.equal((await ana.get('/api/status')).json.settings.familyNoticeSeen, false);
   assert.equal((await ana.call('PUT', '/api/settings', { familyNoticeSeen: true })).json.settings.familyNoticeSeen, true);
 });

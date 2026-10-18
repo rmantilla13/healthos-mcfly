@@ -2463,7 +2463,7 @@ td {
 }
 .family-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr));
   gap: 14px;
 }
 .family-tile {
@@ -2556,8 +2556,8 @@ a.family-tile:hover {
 }
 .family-slots {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 14px 12px;
   padding-top: 12px;
   border-top: 1px solid var(--border);
 }
@@ -2581,6 +2581,32 @@ a.family-tile:hover {
 }
 .family-slot .small {
   overflow-wrap: anywhere;
+}
+.family-slot .mini {
+  margin-top: 6px;
+}
+.family-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-start;
+  color: var(--ink-2);
+  font-weight: 500;
+}
+.family-person-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.family-person-head .family-avatar {
+  width: 72px;
+  height: 72px;
+  font-size: 26px;
+}
+.family-person-head h1 {
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
 }
 .family-empty {
   display: flex;
