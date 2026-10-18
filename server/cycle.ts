@@ -6,7 +6,7 @@
 //   cycle_tracking setting first.
 // - Nothing here logs values or errors' text, and dates travel in request bodies, never in URLs.
 import express, { type NextFunction, type Request, type Response } from 'express';
-import type { CervicalMucus, CycleData, CycleDay, CycleEstimate, CycleFields, CycleLogDay, Flow, OvulationTest, SexualActivity } from '../shared/types.ts';
+import type { CervicalMucus, CycleData, CycleDay, CycleEstimate, CycleFields, CycleLogDay, CyclePhase, Flow, OvulationTest, SexualActivity } from '../shared/types.ts';
 import { currentUser } from './auth.ts';
 import { addDays } from './dates.ts';
 import { type Db, type Queryable, type Scope, bumpDataVersion } from './db.ts';
@@ -295,6 +295,36 @@ export function analyzeCycle(days: CycleDay[], today: string): Omit<CycleData, '
   return { periods, cycles, stats, current, estimate, noEstimate, ovulations };
 }
 
+/** A period this many days long when the person's own history doesn't say. */
+const PERIOD_DAYS = 5;
+
+/**
+ * Where today falls in the current cycle, from analyzeCycle's output and the days it was given. Menstrual while
+ * today is in the period's logged bleeding run, or within the usual period length once bleeding was logged in
+ * it; ovulatory in the fertile window; luteal after this cycle's ovulation (detected, else estimated); otherwise
+ * follicular. null with no current cycle, or one so long past that it isn't really current.
+ */
+export function cyclePhase(a: ReturnType<typeof analyzeCycle>, days: CycleDay[], today: string): CyclePhase | null {
+  const { current, estimate } = a;
+  if (!current || a.noEstimate === 'stale' || current.day > PLAUSIBLE_CYCLE[1]) return null;
+  // A period that's late reads as due today rather than a negative count.
+  const nextPeriodIn = estimate ? Math.max(0, between(today, estimate.nextPeriod.date)) : null;
+  const phase = (name: CyclePhase['name'], basis: CyclePhase['basis']): CyclePhase => ({ name, day: current.day, nextPeriodIn, basis });
+
+  const period = a.periods.find((p) => p.start === current.start);
+  const bled = days.some((d) => d.date >= current.start && d.date <= today && isBleeding(d));
+  if (bled && ((period && today <= period.end) || current.day <= (a.stats.periodDays ?? PERIOD_DAYS))) return phase('menstrual', 'logged');
+
+  // This cycle's own ovulation sign wins over the calendar (the estimate already follows it when there is one).
+  const detected = a.ovulations.filter((o) => o.date >= current.start).at(-1);
+  const ovulation = detected?.date ?? estimate?.ovulation;
+  const fertile = detected ? { start: addDays(detected.date, -5), end: addDays(detected.date, 1) } : estimate?.fertile;
+  const basis = detected ? 'logged' : 'estimate';
+  if (fertile && today >= fertile.start && today <= fertile.end) return phase('ovulatory', basis);
+  if (ovulation && today > ovulation) return phase('luteal', basis);
+  return phase('follicular', basis);
+}
+
 // ---------- reading ----------
 
 const empty = (today: string): CycleData => ({
@@ -308,6 +338,7 @@ const empty = (today: string): CycleData => ({
   estimate: null,
   noEstimate: null,
   ovulations: [],
+  phase: null,
 });
 
 /**
@@ -323,7 +354,8 @@ export async function cycleView(scope: Scope, hosted: boolean, opts: { days?: nu
   const all = logDays(rows);
   const end = opts.end && opts.end < today ? opts.end : today;
   const from = addDays(end, -((opts.days ?? 400) - 1));
-  return { enabled: true, today, days: all.filter((d) => d.date >= from && d.date <= end), ...analyzeCycle(all, today) };
+  const analysis = analyzeCycle(all, today);
+  return { enabled: true, today, days: all.filter((d) => d.date >= from && d.date <= end), ...analysis, phase: cyclePhase(analysis, all, today) };
 }
 
 // ---------- the router ----------

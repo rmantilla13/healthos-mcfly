@@ -11,7 +11,7 @@ import type { CycleDay } from '../shared/types.ts';
 import { importAppleHealth, parseStream } from '../server/apple/import.ts';
 import { createApp } from '../server/app.ts';
 import { hashPassword } from '../server/auth.ts';
-import { analyzeCycle, temperatureShift, upsertCycle } from '../server/cycle.ts';
+import { analyzeCycle, cyclePhase, temperatureShift, upsertCycle } from '../server/cycle.ts';
 import { addDays, todayLocal } from '../server/dates.ts';
 import { OWNER_ID, deleteSource } from '../server/db.ts';
 import type { McflyClient } from '../server/mcfly.ts';
@@ -106,6 +106,38 @@ test('a basal temperature rise (three over six) marks ovulation the day before i
   );
   assert.equal(a.estimate?.basis, 'bbt');
   assert.equal(a.estimate?.ovulation, '2026-09-06');
+});
+
+// ---------- where today falls ----------
+
+const phaseOn = (days: CycleDay[], today: string) => cyclePhase(analyzeCycle(days, today), days, today);
+
+test('the phase follows the cycle: menstrual, follicular, ovulatory, luteal', () => {
+  const days = periodsFrom('2026-07-01', '2026-07-29', '2026-08-26');
+  // Next period estimated 09-23, ovulation 09-09, fertile 09-04 to 09-10.
+  assert.deepEqual(phaseOn(days, '2026-08-27'), { name: 'menstrual', day: 2, nextPeriodIn: 27, basis: 'logged' });
+  assert.deepEqual(phaseOn(days, '2026-09-01'), { name: 'follicular', day: 7, nextPeriodIn: 22, basis: 'estimate' });
+  assert.deepEqual(phaseOn(days, '2026-09-06'), { name: 'ovulatory', day: 12, nextPeriodIn: 17, basis: 'estimate' });
+  assert.deepEqual(phaseOn(days, '2026-09-15'), { name: 'luteal', day: 21, nextPeriodIn: 8, basis: 'estimate' });
+  // A late period reads as due, not a negative count.
+  assert.equal(phaseOn(days, '2026-09-27')?.nextPeriodIn, 0);
+});
+
+test('menstrual needs bleeding logged this period; an LH surge makes the luteal phase logged; no cycle, no phase', () => {
+  const history = periodsFrom('2026-07-01', '2026-07-29');
+  // Only the first day logged so far: still menstrual within the usual 5 days, not after.
+  const firstDay: CycleDay[] = [...history, { date: '2026-08-26', flow: 'medium' }];
+  assert.equal(phaseOn(firstDay, '2026-08-29')?.name, 'menstrual');
+  assert.equal(phaseOn(firstDay, '2026-09-01')?.name, 'follicular');
+  // A start marked with no bleeding logged isn't a period day.
+  assert.equal(phaseOn([...history, { date: '2026-08-26', periodStart: true }], '2026-08-27')?.name, 'follicular');
+
+  const surged = [...periodsFrom('2026-07-01', '2026-07-29', '2026-08-26'), { date: '2026-09-11', ovulationTest: 'lh_surge' as const }];
+  assert.deepEqual(phaseOn(surged, '2026-09-12'), { name: 'ovulatory', day: 18, nextPeriodIn: 14, basis: 'logged' });
+  assert.deepEqual(phaseOn(surged, '2026-09-14'), { name: 'luteal', day: 20, nextPeriodIn: 12, basis: 'logged' });
+
+  assert.equal(phaseOn([], '2026-09-10'), null);
+  assert.equal(phaseOn(periodsFrom('2026-07-01', '2026-07-29', '2026-08-26'), '2026-12-01'), null, 'long past');
 });
 
 // ---------- Apple Health export ----------
@@ -311,6 +343,12 @@ test('turning tracking on shows the history and estimates', async () => {
   assert.equal(view.estimate.nextPeriod.date, addDays(ago(2), 28));
   const tested = view.days.find((d: CycleDay) => d.date === ago(10));
   assert.deepEqual(tested, { date: ago(10), ovulationTest: 'lh_surge', sexualActivity: 'protected', bbt: 36.6, apple: { ovulationTest: 'lh_surge', sexualActivity: 'protected', bbt: 36.6 } });
+});
+
+test('the cycle view says where today falls, and nothing while tracking is off', async () => {
+  // Two days of bleeding logged per period, and today is day 3: past this person's usual period length.
+  assert.deepEqual((await owner.get('/api/cycle')).json.phase, { name: 'follicular', day: 3, nextPeriodIn: 26, basis: 'estimate' });
+  assert.equal((await bob.get('/api/cycle')).json.phase, null);
 });
 
 test('entries made by hand override Apple Health field by field, and validate without echoing values', async () => {

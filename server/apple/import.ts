@@ -10,7 +10,9 @@ import { type CycleKind, type CycleRow, upsertCycle } from '../cycle.ts';
 
 export const SOURCE = 'apple';
 
-type Agg = 'sum' | 'avg' | 'last';
+// sum keeps the best single source per day (iPhone and Watch count the same walk); sumAll adds every source,
+// for things logged by hand in different apps (a coffee in one, water in another).
+type Agg = 'sum' | 'sumAll' | 'avg' | 'last';
 type Quantity = { metric: string; agg: Agg; convert?: (value: number, unit: string) => number };
 
 const toKcal = (v: number, unit: string) => (unit === 'kJ' ? v / 4.184 : v);
@@ -18,6 +20,12 @@ const toPercent = (v: number) => (v <= 1.5 ? v * 100 : v);
 const toCelsius = (v: number, unit: string) => (unit === 'degF' ? ((v - 32) * 5) / 9 : v);
 const toKg = (v: number, unit: string) => (unit === 'lb' ? v * 0.45359237 : unit === 'g' ? v / 1000 : v);
 const toKm = (v: number, unit: string) => (unit === 'mi' ? v * 1.609344 : unit === 'm' ? v / 1000 : v);
+// mmol/L prints with glucose's molar mass, e.g. "mmol<180.1558800000541>/L".
+const toMgDl = (v: number, unit: string) => (unit.startsWith('mmol') ? v * 18.0156 : v);
+const toKmh = (v: number, unit: string) => (unit === 'mi/hr' ? v * 1.609344 : unit === 'm/s' ? v * 3.6 : v);
+const toMg = (v: number, unit: string) => (unit === 'g' ? v * 1000 : v);
+const toMl = (v: number, unit: string) =>
+  unit === 'L' ? v * 1000 : unit === 'fl_oz_us' ? v * 29.5735295625 : unit === 'fl_oz_imp' ? v * 28.4130625 : v;
 
 const QUANTITIES: Record<string, Quantity> = {
   HKQuantityTypeIdentifierStepCount: { metric: 'steps', agg: 'sum' },
@@ -38,7 +46,34 @@ const QUANTITIES: Record<string, Quantity> = {
   HKQuantityTypeIdentifierBodyFatPercentage: { metric: 'body_fat', agg: 'last', convert: toPercent },
   HKQuantityTypeIdentifierLeanBodyMass: { metric: 'lean_mass', agg: 'last', convert: toKg },
   HKQuantityTypeIdentifierVO2Max: { metric: 'vo2max', agg: 'last' },
+  HKQuantityTypeIdentifierBloodPressureSystolic: { metric: 'blood_pressure_systolic', agg: 'avg' },
+  HKQuantityTypeIdentifierBloodPressureDiastolic: { metric: 'blood_pressure_diastolic', agg: 'avg' },
+  HKQuantityTypeIdentifierBloodGlucose: { metric: 'glucose', agg: 'avg', convert: toMgDl },
+  HKQuantityTypeIdentifierWalkingSpeed: { metric: 'walking_speed', agg: 'avg', convert: toKmh },
+  // About one reading a week, so the latest one is the day's.
+  HKQuantityTypeIdentifierAppleWalkingSteadiness: { metric: 'walking_steadiness', agg: 'last', convert: toPercent },
+  HKQuantityTypeIdentifierWalkingAsymmetryPercentage: { metric: 'walking_asymmetry', agg: 'avg', convert: toPercent },
+  HKQuantityTypeIdentifierTimeInDaylight: { metric: 'daylight_min', agg: 'sum' },
+  HKQuantityTypeIdentifierFlightsClimbed: { metric: 'flights', agg: 'sum' },
+  HKQuantityTypeIdentifierAppleSleepingBreathingDisturbances: { metric: 'breathing_disturbances', agg: 'avg' },
+  HKQuantityTypeIdentifierDietaryCaffeine: { metric: 'caffeine_mg', agg: 'sumAll', convert: toMg },
+  HKQuantityTypeIdentifierDietaryWater: { metric: 'water_ml', agg: 'sumAll', convert: toMl },
 };
+
+/** An hour the Watch counted as stood (Idle is the other value), by name or as the raw value 0. */
+const STAND_HOUR = 'HKCategoryTypeIdentifierAppleStandHour';
+const stood = (v: string | undefined) => v === 'HKCategoryValueAppleStandHourStood' || v === '0';
+
+/**
+ * Types that can also sit inside a <Correlation> (a blood pressure reading, a logged food). The export may write
+ * the same sample at the top level too; the parser sees both copies, so the second is dropped (see AppleAggregator.twin).
+ */
+const CORRELATED = new Set([
+  'HKQuantityTypeIdentifierBloodPressureSystolic',
+  'HKQuantityTypeIdentifierBloodPressureDiastolic',
+  'HKQuantityTypeIdentifierDietaryCaffeine',
+  'HKQuantityTypeIdentifierDietaryWater',
+]);
 
 type Stage = 'in_bed' | 'awake' | 'unspecified' | 'light' | 'rem' | 'deep';
 
@@ -56,13 +91,43 @@ const SLEEP_STAGE: Record<string, Stage> = {
 const STAGE_PRIORITY: Stage[] = ['deep', 'rem', 'light', 'unspecified', 'awake'];
 // Longer than any real night: such records are app bugs, not sleep.
 const MAX_SEGMENT_MS = 20 * 3_600_000;
+// Longer than this with nothing recorded, asleep or awake, and it's two sleeps (a night and a nap), not one.
+const SLEEP_GAP_MS = 2 * 3_600_000;
 
 type SleepSegment = { start: Stamp; end: Stamp; stage: Stage };
 type SleepNight = { light: number; deep: number; rem: number; awake: number; in_bed: number; start?: Stamp; end?: Stamp };
 
 /**
+ * The main sleep among one source's segments for a date: segments (asleep or awake) with gaps of up to
+ * SLEEP_GAP_MS between them are one sleep, and the one that spans longest asleep wins. It starts and ends
+ * at its first and last asleep moment. A nap the same app wrote for the same day is a sleep of its own.
+ */
+function mainSleep(segments: SleepSegment[]): { start: Stamp; end: Stamp } | undefined {
+  type Run = { reach: number; start?: Stamp; end?: Stamp };
+  let best: { start: Stamp; end: Stamp } | undefined;
+  const keep = (run: Run) => {
+    if (run.start && run.end && (!best || run.end.ms - run.start.ms > best.end.ms - best.start.ms)) best = { start: run.start, end: run.end };
+  };
+  let run: Run | undefined;
+  for (const s of [...segments].sort((a, b) => a.start.ms - b.start.ms)) {
+    if (run && s.start.ms - run.reach > SLEEP_GAP_MS) {
+      keep(run);
+      run = undefined;
+    }
+    run ??= { reach: s.end.ms };
+    run.reach = Math.max(run.reach, s.end.ms);
+    if (s.stage === 'awake') continue;
+    run.start ??= s.start;
+    if (!run.end || s.end.ms > run.end.ms) run.end = s.end;
+  }
+  if (run) keep(run);
+  return best;
+}
+
+/**
  * Minutes per stage for one source's night, counting overlapping time once. Sleep apps
  * (SleepWatch, Oura, Clock) often write the same night several times or in overlapping pieces.
+ * A same-day nap's minutes count too, as WHOOP's do, but the night's start and end are its main sleep's.
  */
 export function resolveNight(segments: SleepSegment[]): SleepNight {
   const night: SleepNight = { light: 0, deep: 0, rem: 0, awake: 0, in_bed: 0 };
@@ -96,12 +161,11 @@ export function resolveNight(segments: SleepSegment[]): SleepNight {
     },
   );
 
-  for (const s of segments) {
-    if (s.stage === 'awake' || s.stage === 'in_bed') continue;
-    if (!night.start || s.start.ms < night.start.ms) night.start = s.start;
-    if (!night.end || s.end.ms > night.end.ms) night.end = s.end;
-  }
-  if (!night.start) {
+  const main = mainSleep(segments.filter((s) => s.stage !== 'in_bed'));
+  if (main) {
+    night.start = main.start;
+    night.end = main.end;
+  } else {
     for (const s of segments) {
       if (!night.start || s.start.ms < night.start.ms) night.start = s.start;
       if (!night.end || s.end.ms > night.end.ms) night.end = s.end;
@@ -189,9 +253,10 @@ const HOURLY_SUMS = new Set(['steps', 'active_energy']);
 /** Accumulates Apple Health records into per-day values. Kept separate from I/O so tests can drive it. */
 export class AppleAggregator {
   /**
-   * With the person's time zone, hourly buckets use the local hour the zone had at each instant. Apple's
-   * export prints every timestamp with one fixed offset, so for half the year its own wall clock is an
-   * hour off. Days keep the export's own dates, as before.
+   * With the person's time zone, local times use the offset the zone had at each instant: hourly buckets,
+   * cycle days, and the times and dates of sleep, workouts and mindful sessions. Apple's export prints every
+   * timestamp with one fixed offset, so for half the year its own wall clock is an hour off. Daily quantities
+   * keep the export's own dates, as before.
    */
   constructor(opts: { timeZone?: string | null } = {}) {
     if (opts.timeZone) {
@@ -212,6 +277,13 @@ export class AppleAggregator {
   private avgs = new Map<string, { sum: number; n: number }>();
   private hrRange = new Map<string, { min: number; max: number }>();
   private lasts = new Map<string, { ms: number; value: number }>();
+  // sumAll metrics: date|metric -> total across every source.
+  private totals = new Map<string, number>();
+  // stand hours: date -> local hours stood, by any source.
+  private standHours = new Map<string, Set<number>>();
+  // Correlated records still waiting for their other copy, by where they were seen (see twin).
+  private twins = { nested: new Map<string, number>(), top: new Map<string, number>() };
+  private inCorrelation = false;
   // hourly sums: date|metric -> source -> hour -> total, so each day can keep its best single source, as days do.
   private hourSums = new Map<string, Map<string, Map<number, number>>>();
   // hourly heart rate: date|hour -> running average, low and high.
@@ -235,18 +307,20 @@ export class AppleAggregator {
       return;
     }
     if (tag.name === 'Record') this.record(a);
+    else if (tag.name === 'Correlation') this.inCorrelation = true;
     else if (tag.name === 'Workout') this.openWorkout = { attrs: a, stats: [] };
     else if (tag.name === 'WorkoutStatistics' && this.openWorkout) this.openWorkout.stats.push(a);
     else if (tag.name === 'MetadataEntry' && this.openCycle && a.key) this.openCycle.meta[a.key] = a.value;
   }
 
   onCloseTag(tag: SaxesTagPlain) {
+    if (tag.name === 'Correlation') this.inCorrelation = false;
     if (tag.name === 'Record' && this.openCycle) {
       this.cycleRecord(this.openCycle.attrs, this.openCycle.meta);
       this.openCycle = null;
     }
     if (tag.name === 'Workout' && this.openWorkout) {
-      const w = buildWorkout(this.openWorkout.attrs, this.openWorkout.stats);
+      const w = buildWorkout(this.openWorkout.attrs, this.openWorkout.stats, (st) => this.zoned(st));
       if (w) this.workouts.push(w);
       this.openWorkout = null;
     }
@@ -255,6 +329,7 @@ export class AppleAggregator {
   private record(a: Record<string, string>) {
     this.records++;
     const type = a.type;
+    if (CORRELATED.has(type) && this.twin(a)) return;
     if (type === 'HKCategoryTypeIdentifierSleepAnalysis') return this.sleepRecord(a);
     if (type === 'HKCategoryTypeIdentifierMindfulSession') return this.mindfulRecord(a);
     if (Object.hasOwn(CYCLE_TYPES, type)) {
@@ -262,6 +337,7 @@ export class AppleAggregator {
       return;
     }
     if (type === BASAL_TEMP) return this.basalTempRecord(a);
+    if (type === STAND_HOUR) return this.standRecord(a);
 
     const q = QUANTITIES[type];
     if (!q || !a.startDate || a.value === undefined) return;
@@ -296,6 +372,9 @@ export class AppleAggregator {
       const byMetric = getOr(this.sums, date, () => new Map());
       const bySource = getOr(byMetric, q.metric, () => new Map());
       bySource.set(source, (bySource.get(source) ?? 0) + value);
+    } else if (q.agg === 'sumAll') {
+      const k = `${date}|${q.metric}`;
+      this.totals.set(k, (this.totals.get(k) ?? 0) + value);
     } else if (q.agg === 'avg') {
       const k = `${date}|${q.metric}`;
       const cur = getOr(this.avgs, k, () => ({ sum: 0, n: 0 }));
@@ -313,11 +392,35 @@ export class AppleAggregator {
     }
   }
 
+  /**
+   * Whether this is the second copy of a correlated sample: the same record nested in a <Correlation> and at
+   * the top level, in either order. Identical records on the same side are separate samples and both count.
+   */
+  private twin(a: Record<string, string>): boolean {
+    const key = [a.type, a.sourceName, a.startDate, a.endDate, a.value].join('|');
+    const [mine, other] = this.inCorrelation ? [this.twins.nested, this.twins.top] : [this.twins.top, this.twins.nested];
+    const waiting = other.get(key) ?? 0;
+    if (waiting > 0) {
+      if (waiting === 1) other.delete(key);
+      else other.set(key, waiting - 1);
+      return true;
+    }
+    mine.set(key, (mine.get(key) ?? 0) + 1);
+    return false;
+  }
+
+  private standRecord(a: Record<string, string>) {
+    if (!stood(a.value) || !a.startDate) return;
+    // Dated by start, like the quantities. Two watches can both log the same hour; it counts once.
+    const start = parseAppleDate(a.startDate);
+    getOr(this.standHours, localDate(start), () => new Set()).add(localHour(start));
+  }
+
   private sleepRecord(a: Record<string, string>) {
     const stage = SLEEP_STAGE[a.value];
     if (!stage || !a.startDate || !a.endDate) return;
-    const start = parseAppleDate(a.startDate);
-    const end = parseAppleDate(a.endDate);
+    const start = this.zoned(parseAppleDate(a.startDate));
+    const end = this.zoned(parseAppleDate(a.endDate));
     const span = end.ms - start.ms;
     if (span <= 0 || span > MAX_SEGMENT_MS) return;
     getOr(getOr(this.sleep, localDate(end, DAY_ROLLOVER_MS), () => new Map()), a.sourceName ?? 'unknown', () => []).push({ start, end, stage });
@@ -325,8 +428,8 @@ export class AppleAggregator {
 
   private mindfulRecord(a: Record<string, string>) {
     if (!a.startDate || !a.endDate) return;
-    const start = parseAppleDate(a.startDate);
-    const end = parseAppleDate(a.endDate);
+    const start = this.zoned(parseAppleDate(a.startDate));
+    const end = this.zoned(parseAppleDate(a.endDate));
     this.mindful.push({
       id: hashId(SOURCE, 'mindful', a.sourceName ?? '', a.startDate),
       source: SOURCE,
@@ -339,8 +442,9 @@ export class AppleAggregator {
   }
 
   /**
-   * The stamp in the person's own zone, when known. Cycle entries are whole days logged at local midnight,
-   * so the export's one fixed offset would put half the year's entries on the day before.
+   * The stamp in the person's own zone, when known: the same instant, with the offset the zone had then.
+   * Cycle entries are whole days logged at local midnight, so the export's one fixed offset would put half
+   * the year's entries on the day before; a bedtime or a workout's end would read an hour off.
    */
   private zoned(st: Stamp): Stamp {
     return this.offsetAt ? { ms: st.ms, offsetMin: this.offsetAt(st.ms) } : st;
@@ -391,6 +495,11 @@ export class AppleAggregator {
       const [date, metric] = k.split('|');
       push(date, metric, value);
     }
+    for (const [k, total] of this.totals) {
+      const [date, metric] = k.split('|');
+      push(date, metric, total);
+    }
+    for (const [date, hours] of this.standHours) push(date, 'stand_hours', hours.size);
 
     const hourly: HourlyRow[] = [];
     for (const [k, bySource] of this.hourSums) {
@@ -458,10 +567,10 @@ export class AppleAggregator {
   }
 }
 
-function buildWorkout(a: Record<string, string>, stats: Record<string, string>[]): WorkoutRow | null {
+function buildWorkout(a: Record<string, string>, stats: Record<string, string>[], zoned: (st: Stamp) => Stamp): WorkoutRow | null {
   if (!a.startDate || !a.endDate) return null;
-  const start = parseAppleDate(a.startDate);
-  const end = parseAppleDate(a.endDate);
+  const start = zoned(parseAppleDate(a.startDate));
+  const end = zoned(parseAppleDate(a.endDate));
   const stat = (suffix: string) => stats.find((s) => s.type?.endsWith(suffix));
 
   let durationMin = Number(a.duration);

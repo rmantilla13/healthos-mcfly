@@ -1,7 +1,7 @@
 import Charts
 import SwiftUI
 
-/// Vitals, Sleep, Activity and Body over 30 days, 90 days or a year (src/pages/Detail.tsx).
+/// Vitals, Sleep, Activity and Body over 30 days, 90 days or a year (src/pages/Detail.tsx), and Cycle while tracking is on.
 struct TrendsScreen: View {
     @Environment(Dashboard.self) private var dashboard
     @AppStorage("trendsDays") private var days = 30
@@ -17,25 +17,26 @@ struct TrendsScreen: View {
                 } else {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 14) {
-                            Picker("Section", selection: $dashboard.trendsSection) {
-                                ForEach(TrendsSection.allCases) { Text($0.rawValue).tag($0) }
-                            }
-                            .pickerStyle(.segmented)
+                            TrendsSectionChips(selection: $dashboard.trendsSection, sections: TrendsSection.visible(cycleTracking: dashboard.cycleTrackingOn))
                             HStack {
                                 Text(subtitle).font(.footnote).foregroundStyle(Palette.ink3)
                                 Spacer()
-                                Picker("Range", selection: $days) {
-                                    Text("30 days").tag(30)
-                                    Text("90 days").tag(90)
-                                    Text("1 year").tag(365)
+                                // The cycle view has its own span.
+                                if dashboard.trendsSection != .cycle {
+                                    Picker("Range", selection: $days) {
+                                        Text("30 days").tag(30)
+                                        Text("90 days").tag(90)
+                                        Text("1 year").tag(365)
+                                    }
+                                    .pickerStyle(.menu)
                                 }
-                                .pickerStyle(.menu)
                             }
                             switch dashboard.trendsSection {
                             case .vitals: VitalsTrends(days: days)
                             case .sleep: SleepTrends(days: days)
                             case .activity: ActivityTrends(days: days)
                             case .body: BodyTrends(days: days)
+                            case .cycle: CycleTrends()
                             }
                         }
                         .padding(16)
@@ -55,6 +56,42 @@ struct TrendsScreen: View {
         case .sleep: "Each night counts on the day you wake up."
         case .activity: "Movement from iPhone and Apple Watch, strain from WHOOP."
         case .body: "Weight and composition from Apple Health."
+        case .cycle: "Cycle days and estimates from what you log."
+        }
+    }
+}
+
+/// The sections as a row of chips that scrolls sideways, so a fifth (Cycle) still fits at phone width.
+private struct TrendsSectionChips: View {
+    @Binding var selection: TrendsSection
+    let sections: [TrendsSection]
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(sections) { s in
+                        let on = s == selection
+                        Button { selection = s } label: {
+                            Text(s.rawValue)
+                                .font(.subheadline.weight(.medium))
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .foregroundStyle(on ? Palette.surface : Palette.ink2)
+                                .background(on ? Palette.ink : Palette.surface, in: Capsule())
+                                .overlay(Capsule().strokeBorder(on ? Color.clear : Palette.border))
+                        }
+                        .buttonStyle(.plain)
+                        .id(s)
+                        .accessibilityAddTraits(on ? .isSelected : [])
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
+            // Edge to edge, past the screen padding, so chips scroll under the margins.
+            .padding(.horizontal, -16)
+            .onAppear { proxy.scrollTo(selection, anchor: .center) }
+            .onChange(of: selection) { _, s in withAnimation { proxy.scrollTo(s, anchor: .center) } }
         }
     }
 }
@@ -94,9 +131,13 @@ private struct TrendsLoader<Content: View>: View {
 private struct VitalsTrends: View {
     let days: Int
     @Environment(Dashboard.self) private var dashboard
+    /// Temperatures from 30 days before the range, for the nightly deviation (its own request).
+    @State private var tempHistory: Trends?
 
     var body: some View {
-        TrendsLoader(metrics: ["resting_hr", "hrv_rmssd", "hrv_sdnn", "spo2", "resp_rate", "wrist_temp", "skin_temp", "body_temp", "recovery"], days: days) { t in
+        // 13 metrics; the server takes at most 20 per request.
+        TrendsLoader(metrics: ["resting_hr", "hrv_rmssd", "hrv_sdnn", "spo2", "resp_rate", "wrist_temp", "skin_temp", "body_temp", "recovery",
+                               "blood_pressure_systolic", "blood_pressure_diastolic", "glucose", "breathing_disturbances"], days: days) { t in
             let has = { (m: String) in !(t[m]?.isEmpty ?? true) }
             let units = dashboard.units
             let temp = { (c: Double) in units.temp(c).text(1) }
@@ -108,15 +149,25 @@ private struct VitalsTrends: View {
             if has("hrv_sdnn") { TrendCard(title: "HRV (SDNN)", points: t["hrv_sdnn"]!, format: { "\(Fmt.number($0)) ms" }, note: "Apple Watch") }
             TrendCard(title: "Blood oxygen", points: t["spo2"] ?? [], format: { "\(Fmt.number($0, 1))%" }, color: Palette.series2)
             TrendCard(title: "Respiratory rate", points: t["resp_rate"] ?? [], format: { "\(Fmt.number($0, 1)) rpm" })
+            if let tempHistory { TempDeviationCard(trends: tempHistory, days: days, end: dashboard.summary?.today ?? Day.today(), units: units) }
             if has("body_temp") { TrendCard(title: "Body temperature", points: t["body_temp"]!, format: temp) }
             if has("wrist_temp") { TrendCard(title: "Wrist temperature", points: t["wrist_temp"]!, format: temp, note: "Apple Watch, during sleep") }
             if has("skin_temp") { TrendCard(title: "Skin temperature", points: t["skin_temp"]!, format: temp, note: "WHOOP") }
+            BloodPressureCard(systolic: t["blood_pressure_systolic"] ?? [], diastolic: t["blood_pressure_diastolic"] ?? [])
+            GlucoseCard(points: t["glucose"] ?? [])
+            BreathingDisturbancesCard(points: t["breathing_disturbances"] ?? [])
+        }
+        .task(id: "\(days)|\(dashboard.generation)") {
+            tempHistory = try? await dashboard.trends(TempDeviationCard.metrics, days: days + 30)
         }
     }
 }
 
 private struct SleepTrends: View {
     let days: Int
+    @Environment(Dashboard.self) private var dashboard
+    /// Bed and wake times (GET /api/sleep); stays nil on servers without it, which hides the card.
+    @State private var timing: SleepTiming?
 
     static let stages: [(key: String, label: String, color: Color)] = [
         ("sleep_deep", "Deep", Palette.stageDeep),
@@ -129,12 +180,16 @@ private struct SleepTrends: View {
         TrendsLoader(metrics: ["sleep_hours", "sleep_deep", "sleep_light", "sleep_rem", "sleep_awake", "sleep_performance", "sleep_efficiency"], days: days) { t in
             let hours = t["sleep_hours"] ?? []
             StagesCard(trends: t, days: days, average: hours.average)
+            if let timing { SleepConsistencyCard(timing: timing) }
             TrendCard(title: "Time asleep", points: hours, format: Fmt.hoursMinutes)
             if !(t["sleep_performance"]?.isEmpty ?? true) {
                 TrendCard(title: "Sleep performance", points: t["sleep_performance"]!, format: { "\(Fmt.number($0))%" }, note: "WHOOP: sleep vs sleep needed", color: Palette.series3)
             } else {
                 TrendCard(title: "Sleep efficiency", points: t["sleep_efficiency"] ?? [], format: { "\(Fmt.number($0))%" }, color: Palette.series3)
             }
+        }
+        .task(id: "\(days)|\(dashboard.generation)") {
+            timing = try? await dashboard.sleepTiming(days: min(max(days, 7), 365))
         }
     }
 
@@ -181,10 +236,14 @@ private struct SleepTrends: View {
 private struct ActivityTrends: View {
     let days: Int
     @Environment(Dashboard.self) private var dashboard
+    /// Strain and active energy over a fixed 16 weeks for the weekly load, whatever the range (its own request).
+    @State private var load: Trends?
 
     var body: some View {
-        TrendsLoader(metrics: ["steps", "strain", "active_energy", "exercise_min"], days: days) { t in
+        TrendsLoader(metrics: ["steps", "strain", "active_energy", "exercise_min",
+                               "walking_speed", "walking_steadiness", "walking_asymmetry", "flights", "stand_hours", "daylight_min"], days: days) { t in
             StepsCard(points: t["steps"] ?? [], days: days, goal: dashboard.stepGoal)
+            if let load { WeeklyLoadCard(strain: load["strain"] ?? [], energy: load["active_energy"] ?? [], today: dashboard.summary?.today ?? Day.today()) }
             if !(t["strain"]?.isEmpty ?? true) {
                 TrendCard(title: "Day strain", points: t["strain"]!, format: { Fmt.number($0, 1) }, note: "WHOOP, 0–21", color: Palette.series2, zero: true)
             }
@@ -192,7 +251,13 @@ private struct ActivityTrends: View {
             if !(t["exercise_min"]?.isEmpty ?? true) {
                 TrendCard(title: "Exercise minutes", points: t["exercise_min"]!, format: { "\(Fmt.number($0)) min" }, color: Palette.series3, zero: true)
             }
+            MobilityCard(speed: t["walking_speed"] ?? [], steadiness: t["walking_steadiness"] ?? [], asymmetry: t["walking_asymmetry"] ?? [], units: dashboard.units)
+            FlightsStandCard(flights: t["flights"] ?? [], standHours: t["stand_hours"] ?? [], days: days)
+            DaylightCard(points: t["daylight_min"] ?? [], days: days)
             WorkoutsCard(days: days)
+        }
+        .task(id: dashboard.generation) {
+            load = try? await dashboard.trends(["strain", "active_energy"], days: WeeklyLoadCard.days)
         }
     }
 
@@ -326,14 +391,25 @@ private struct WorkoutListRow: View {
 private struct BodyTrends: View {
     let days: Int
     @Environment(Dashboard.self) private var dashboard
+    /// VO₂ max over a year when the range is shorter: it moves over months, not weeks.
+    @State private var vo2Year: [Point]?
 
     var body: some View {
-        TrendsLoader(metrics: ["weight", "body_fat", "lean_mass", "vo2max"], days: days) { t in
+        TrendsLoader(metrics: ["weight", "body_fat", "lean_mass", "vo2max", "caffeine_mg", "water_ml"], days: days) { t in
             let units = dashboard.units
-            TrendCard(title: "Weight", points: t["weight"] ?? [], format: { units.mass($0).text(1) })
-            TrendCard(title: "Body fat", points: t["body_fat"] ?? [], format: { "\(Fmt.number($0, 1))%" }, color: Palette.series2)
-            TrendCard(title: "Cardio fitness (VO₂ max)", points: t["vo2max"] ?? [], format: { Fmt.number($0, 1) }, note: "mL/kg·min", color: Palette.series3)
-            if !(t["lean_mass"]?.isEmpty ?? true) { TrendCard(title: "Lean body mass", points: t["lean_mass"]!, format: { units.mass($0).text(1) }) }
+            let weight = t["weight"] ?? [], fat = t["body_fat"] ?? [], lean = t["lean_mass"] ?? []
+            let vo2Long = days < 365 ? vo2Year : nil
+            TrendCard(title: "Weight", points: weight, format: { units.mass($0).text(1) }, smoothed: weight.rolling(days: 7))
+            TrendCard(title: "Body fat", points: fat, format: { "\(Fmt.number($0, 1))%" }, color: Palette.series2, smoothed: fat.rolling(days: 7))
+            TrendCard(title: "Cardio fitness (VO₂ max)", points: vo2Long ?? t["vo2max"] ?? [], format: { Fmt.number($0, 1) },
+                      note: vo2Long == nil ? "mL/kg·min" : "mL/kg·min · last 12 months, since it changes slowly", color: Palette.series3)
+            if !lean.isEmpty { TrendCard(title: "Lean body mass", points: lean, format: { units.mass($0).text(1) }, smoothed: lean.rolling(days: 7)) }
+            CaffeineCard(points: t["caffeine_mg"] ?? [], days: days)
+            WaterCard(points: t["water_ml"] ?? [], days: days, units: units)
+        }
+        .task(id: "\(days)|\(dashboard.generation)") {
+            guard days < 365 else { return }
+            vo2Year = try? await dashboard.trends(["vo2max"], days: 365)["vo2max"]
         }
     }
 }
@@ -348,6 +424,8 @@ struct TrendCard: View {
     var note: String?
     var color: Color = Palette.series1
     var zero = false
+    /// Drawn as the line instead, with each reading a faint dot (weight and body composition: a 7-day rolling mean).
+    var smoothed: [Point]? = nil
     @State private var selected: Date?
 
     var body: some View {
@@ -367,6 +445,7 @@ struct TrendCard: View {
         var s = Fmt.day(last.date)
         if let avg { s += " · average \(format(avg))" }
         if let note { s += " · \(note)" }
+        if smoothed != nil { s += " · line: 7-day average" }
         return s
     }
 
@@ -378,13 +457,29 @@ struct TrendCard: View {
         let picked = selected.flatMap { s in points.min { abs(Fmt.chartDate($0.date).timeIntervalSince(s)) < abs(Fmt.chartDate($1.date).timeIntervalSince(s)) } }
         return Chart {
             ForEach(points) { p in
-                AreaMark(x: .value("Day", Fmt.chartDate(p.date)), yStart: .value("Base", domain.lowerBound), yEnd: .value(title, p.value))
-                    .foregroundStyle(LinearGradient(colors: [color.opacity(0.22), color.opacity(0)], startPoint: .top, endPoint: .bottom))
-                    .interpolationMethod(.monotone)
-                LineMark(x: .value("Day", Fmt.chartDate(p.date)), y: .value(title, p.value))
-                    .foregroundStyle(color)
-                    .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round))
-                    .interpolationMethod(.monotone)
+                if smoothed == nil {
+                    AreaMark(x: .value("Day", Fmt.chartDate(p.date)), yStart: .value("Base", domain.lowerBound), yEnd: .value(title, p.value))
+                        .foregroundStyle(LinearGradient(colors: [color.opacity(0.22), color.opacity(0)], startPoint: .top, endPoint: .bottom))
+                        .interpolationMethod(.monotone)
+                    LineMark(x: .value("Day", Fmt.chartDate(p.date)), y: .value(title, p.value))
+                        .foregroundStyle(color)
+                        .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round))
+                        .interpolationMethod(.monotone)
+                } else {
+                    PointMark(x: .value("Day", Fmt.chartDate(p.date)), y: .value(title, p.value))
+                        .foregroundStyle(color.opacity(0.4))
+                        .symbolSize(18)
+                }
+            }
+            if let smoothed {
+                ForEach(smoothed) { p in
+                    LineMark(x: .value("Day", Fmt.chartDate(p.date)), y: .value("7-day average", p.value))
+                        .foregroundStyle(color)
+                        .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round))
+                        .interpolationMethod(.monotone)
+                        .accessibilityLabel("7-day average, \(Fmt.day(p.date))")
+                        .accessibilityValue(format(p.value))
+                }
             }
             if let picked {
                 RuleMark(x: .value("Day", Fmt.chartDate(picked.date)))
@@ -408,7 +503,7 @@ struct TrendCard: View {
             AxisValueLabel().foregroundStyle(Palette.ink3)
         } }
         .chartXAxis { dateAxis() }
-        .accessibilityLabel("\(title) trend")
+        .accessibilityLabel(smoothed == nil ? "\(title) trend" : "\(title) trend, each reading with a 7-day average line")
     }
 }
 

@@ -84,6 +84,13 @@ struct SleepRecord {
     let source: SampleSource
 }
 
+/// One Watch stand-hour record as the aggregation sees it.
+struct StandRecord {
+    let start: Stamp
+    let stood: Bool
+    let source: SampleSource
+}
+
 struct SleepNight {
     var light = 0.0, deep = 0.0, rem = 0.0, awake = 0.0, inBed = 0.0 // minutes
     var start: Stamp?
@@ -107,6 +114,10 @@ final class DayAggregator {
     // "date|hour" -> heart rate that hour, over every non-WHOOP source.
     private var hourlyHR: [String: (sum: Double, n: Int, min: Double, max: Double)] = [:]
     private var lasts: [String: (at: Date, value: Double)] = [:] // "date|metric"
+    // "date|metric" -> total over every source: a coffee logged in one app and another in a second app both count.
+    private var totals: [String: Double] = [:]
+    // date -> local hours stood. Two watches can log the same hour; it counts once.
+    private var standHours: [String: Set<Int>] = [:]
     // wake date -> source -> segments. The source with the most sleep wins the night.
     private var sleep: [String: [String: [SleepSegment]]] = [:]
     private var mindful: [EventRow] = []
@@ -146,6 +157,8 @@ final class DayAggregator {
                 if Self.hourlySumMetrics.contains(q.metric) {
                     hourlySums[date, default: [:]][q.metric, default: [:]][p.source.name, default: [:]][hour, default: 0] += value
                 }
+            case .sumAll:
+                totals[key, default: 0] += value
             case .avg:
                 averages[key, default: (0, 0)].sum += value
                 averages[key, default: (0, 0)].n += 1
@@ -216,6 +229,21 @@ final class DayAggregator {
         }
     }
 
+    func add(standHours samples: [HKCategorySample]) {
+        add(standRecords: samples.map {
+            StandRecord(start: $0.startStamp, stood: $0.value == HKCategoryValueAppleStandHour.stood.rawValue, source: $0.writtenBy)
+        })
+    }
+
+    /// Hours stood, dated by start like the quantities (server/apple/import.ts `standRecord`).
+    func add(standRecords records: [StandRecord]) {
+        for r in records where r.stood && !r.source.isReadDirectly {
+            let date = r.start.localDate()
+            guard dates.contains(date) else { continue }
+            standHours[date, default: []].insert(r.start.localHour)
+        }
+    }
+
     func add(workouts list: [HKWorkout]) {
         let distanceTypes: [HKQuantityTypeIdentifier] = [.distanceWalkingRunning, .distanceCycling, .distanceSwimming, .distanceWheelchair, .distanceDownhillSnowSports]
         for w in list where !w.writtenBy.isReadDirectly {
@@ -271,6 +299,11 @@ final class DayAggregator {
             let (date, metric) = split(key)
             push(date, metric, l.value)
         }
+        for (key, total) in totals {
+            let (date, metric) = split(key)
+            push(date, metric, total)
+        }
+        for (date, hours) in standHours { push(date, "stand_hours", Double(hours.count)) }
 
         p.events = mindful
         for (date, bySource) in sleep {
@@ -338,13 +371,44 @@ final class DayAggregator {
             }
         }
 
-        func extend(with s: SleepSegment) {
-            if night.start == nil || s.start.date < night.start!.date { night.start = s.start }
-            if night.end == nil || s.end.date > night.end!.date { night.end = s.end }
+        // A same-day nap's minutes count, as WHOOP's do, but the night's start and end are its main sleep's.
+        if let main = mainSleep(segments.filter { $0.stage != .inBed }) {
+            night.start = main.start
+            night.end = main.end
+        } else {
+            for s in segments {
+                if night.start == nil || s.start.date < night.start!.date { night.start = s.start }
+                if night.end == nil || s.end.date > night.end!.date { night.end = s.end }
+            }
         }
-        segments.filter { $0.stage != .awake && $0.stage != .inBed }.forEach(extend)
-        if night.start == nil { segments.forEach(extend) }
         return night
+    }
+
+    /// Gaps longer than this split a source's segments into separate sleeps (server SLEEP_GAP_MS).
+    static let sleepGap: TimeInterval = 2 * 3600
+
+    /// The longest run of segments with gaps of at most `sleepGap`, from its first asleep moment to its last.
+    /// Port of `mainSleep` in server/apple/import.ts.
+    static func mainSleep(_ segments: [SleepSegment]) -> (start: Stamp, end: Stamp)? {
+        var best: (start: Stamp, end: Stamp)?
+        var reach: Date?, start: Stamp?, end: Stamp?
+        func keep() {
+            if let start, let end, best.map({ end.date.timeIntervalSince(start.date) > $0.end.date.timeIntervalSince($0.start.date) }) ?? true {
+                best = (start, end)
+            }
+        }
+        for s in segments.sorted(by: { $0.start.date < $1.start.date }) {
+            if let r = reach, s.start.date.timeIntervalSince(r) > sleepGap {
+                keep()
+                reach = nil; start = nil; end = nil
+            }
+            reach = max(reach ?? s.end.date, s.end.date)
+            if s.stage == .awake { continue }
+            if start == nil { start = s.start }
+            if end == nil || s.end.date > end!.date { end = s.end }
+        }
+        keep()
+        return best
     }
 }
 

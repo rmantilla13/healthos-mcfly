@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE HealthData [
+<!ELEMENT HealthData (ExportDate,Me,(Record|Correlation|Workout|ActivitySummary|ClinicalRecord|Audiogram|VisionPrescription)*)>
+<!ATTLIST HealthData locale CDATA #REQUIRED>
+<!ELEMENT Record ((MetadataEntry|HeartRateVariabilityMetadataList)*)>
+<!ELEMENT Correlation ((MetadataEntry|Record)*)>
+<!ATTLIST Correlation
+  type          CDATA #REQUIRED
+  sourceName    CDATA #REQUIRED
+  sourceVersion CDATA #IMPLIED
+  device        CDATA #IMPLIED
+  creationDate  CDATA #IMPLIED
+  startDate     CDATA #REQUIRED
+  endDate       CDATA #REQUIRED
+>
+]>
+<HealthData locale="en_US">
+ <ExportDate value="2026-10-15 09:00:00 -0700"/>
+ <Me HKCharacteristicTypeIdentifierDateOfBirth="1990-01-01"/>
+ <!-- Blood pressure. The morning reading was saved as a correlation, so its two samples are here and again
+      inside the <Correlation> further down, as the export may write them. The evening one was saved on its own. -->
+ <Record type="HKQuantityTypeIdentifierBloodPressureSystolic" sourceName="Omron" sourceVersion="7.2" unit="mmHg" creationDate="2026-10-13 08:01:10 -0700" startDate="2026-10-13 08:00:00 -0700" endDate="2026-10-13 08:00:00 -0700" value="120">
+  <MetadataEntry key="HKWasUserEntered" value="0"/>
+ </Record>
+ <Record type="HKQuantityTypeIdentifierBloodPressureSystolic" sourceName="Health" sourceVersion="18.1" unit="mmHg" creationDate="2026-10-13 20:02:00 -0700" startDate="2026-10-13 20:00:00 -0700" endDate="2026-10-13 20:00:00 -0700" value="132">
+  <MetadataEntry key="HKWasUserEntered" value="1"/>
+ </Record>
+ <Record type="HKQuantityTypeIdentifierBloodPressureDiastolic" sourceName="Omron" sourceVersion="7.2" unit="mmHg" creationDate="2026-10-13 08:01:10 -0700" startDate="2026-10-13 08:00:00 -0700" endDate="2026-10-13 08:00:00 -0700" value="78">
+  <MetadataEntry key="HKWasUserEntered" value="0"/>
+ </Record>
+ <Record type="HKQuantityTypeIdentifierBloodPressureDiastolic" sourceName="Health" sourceVersion="18.1" unit="mmHg" creationDate="2026-10-13 20:02:00 -0700" startDate="2026-10-13 20:00:00 -0700" endDate="2026-10-13 20:00:00 -0700" value="86">
+  <MetadataEntry key="HKWasUserEntered" value="1"/>
+ </Record>
+ <!-- Glucose in both units Health writes. -->
+ <Record type="HKQuantityTypeIdentifierBloodGlucose" sourceName="Dexcom G7" unit="mg/dL" creationDate="2026-10-13 07:05:00 -0700" startDate="2026-10-13 07:00:00 -0700" endDate="2026-10-13 07:00:00 -0700" value="92"/>
+ <Record type="HKQuantityTypeIdentifierBloodGlucose" sourceName="Dexcom G7" unit="mg/dL" creationDate="2026-10-13 13:05:00 -0700" startDate="2026-10-13 13:00:00 -0700" endDate="2026-10-13 13:00:00 -0700" value="108"/>
+ <Record type="HKQuantityTypeIdentifierBloodGlucose" sourceName="Contour" unit="mmol&lt;180.1558800000541&gt;/L" creationDate="2026-10-14 07:05:00 -0700" startDate="2026-10-14 07:00:00 -0700" endDate="2026-10-14 07:00:00 -0700" value="5.5"/>
+ <!-- Mobility: walking speed in km/hr from this iPhone, mi/hr from an older one, m/s from another app. -->
+ <Record type="HKQuantityTypeIdentifierWalkingSpeed" sourceName="Ricky’s iPhone" unit="km/hr" creationDate="2026-10-13 09:10:00 -0700" startDate="2026-10-13 09:00:00 -0700" endDate="2026-10-13 09:05:00 -0700" value="4.8"/>
+ <Record type="HKQuantityTypeIdentifierWalkingSpeed" sourceName="Old iPhone" unit="mi/hr" creationDate="2026-10-13 12:10:00 -0700" startDate="2026-10-13 12:00:00 -0700" endDate="2026-10-13 12:05:00 -0700" value="3"/>
+ <Record type="HKQuantityTypeIdentifierWalkingSpeed" sourceName="Gait Lab" unit="m/s" creationDate="2026-10-13 15:10:00 -0700" startDate="2026-10-13 15:00:00 -0700" endDate="2026-10-13 15:05:00 -0700" value="1.25"/>
+ <Record type="HKQuantityTypeIdentifierAppleWalkingSteadiness" sourceName="Ricky’s iPhone" unit="%" creationDate="2026-10-13 06:00:00 -0700" startDate="2026-10-13 06:00:00 -0700" endDate="2026-10-13 06:00:00 -0700" value="0.85"/>
+ <Record type="HKQuantityTypeIdentifierAppleWalkingSteadiness" sourceName="Ricky’s iPhone" unit="%" creationDate="2026-10-13 18:00:00 -0700" startDate="2026-10-13 18:00:00 -0700" endDate="2026-10-13 18:00:00 -0700" value="0.9"/>
+ <Record type="HKQuantityTypeIdentifierWalkingAsymmetryPercentage" sourceName="Ricky’s iPhone" unit="%" creationDate="2026-10-13 09:10:00 -0700" startDate="2026-10-13 09:00:00 -0700" endDate="2026-10-13 09:05:00 -0700" value="0.02"/>
+ <Record type="HKQuantityTypeIdentifierWalkingAsymmetryPercentage" sourceName="Ricky’s iPhone" unit="%" creationDate="2026-10-13 17:10:00 -0700" startDate="2026-10-13 17:00:00 -0700" endDate="2026-10-13 17:05:00 -0700" value="0.04"/>
+ <!-- Daylight and flights from two devices: the day keeps the larger one, as steps do. -->
+ <Record type="HKQuantityTypeIdentifierTimeInDaylight" sourceName="Ricky’s Apple Watch" unit="min" creationDate="2026-10-13 10:30:00 -0700" startDate="2026-10-13 10:00:00 -0700" endDate="2026-10-13 10:20:00 -0700" value="20"/>
+ <Record type="HKQuantityTypeIdentifierTimeInDaylight" sourceName="Ricky’s Apple Watch" unit="min" creationDate="2026-10-13 16:30:00 -0700" startDate="2026-10-13 16:00:00 -0700" endDate="2026-10-13 16:15:00 -0700" value="15"/>
+ <Record type="HKQuantityTypeIdentifierTimeInDaylight" sourceName="Old Apple Watch" unit="min" creationDate="2026-10-13 10:30:00 -0700" startDate="2026-10-13 10:00:00 -0700" endDate="2026-10-13 10:10:00 -0700" value="10"/>
+ <Record type="HKQuantityTypeIdentifierFlightsClimbed" sourceName="Ricky’s iPhone" unit="count" creationDate="2026-10-13 08:40:00 -0700" startDate="2026-10-13 08:30:00 -0700" endDate="2026-10-13 08:35:00 -0700" value="3"/>
+ <Record type="HKQuantityTypeIdentifierFlightsClimbed" sourceName="Ricky’s iPhone" unit="count" creationDate="2026-10-13 18:40:00 -0700" startDate="2026-10-13 18:30:00 -0700" endDate="2026-10-13 18:35:00 -0700" value="4"/>
+ <Record type="HKQuantityTypeIdentifierFlightsClimbed" sourceName="Ricky’s Apple Watch" unit="count" creationDate="2026-10-13 08:40:00 -0700" startDate="2026-10-13 08:30:00 -0700" endDate="2026-10-13 08:35:00 -0700" value="5"/>
+ <Record type="HKQuantityTypeIdentifierAppleSleepingBreathingDisturbances" sourceName="Ricky’s Apple Watch" unit="count" creationDate="2026-10-13 07:00:00 -0700" startDate="2026-10-13 00:30:00 -0700" endDate="2026-10-13 06:30:00 -0700" value="4"/>
+ <!-- Caffeine and water logged in different apps all add up. The 80 mg from a logged meal also sits in the
+      Food correlation below, and must count once. -->
+ <Record type="HKQuantityTypeIdentifierDietaryCaffeine" sourceName="Caffeine Tracker" unit="mg" creationDate="2026-10-13 08:15:00 -0700" startDate="2026-10-13 08:15:00 -0700" endDate="2026-10-13 08:15:00 -0700" value="95"/>
+ <Record type="HKQuantityTypeIdentifierDietaryCaffeine" sourceName="MyFitnessPal" unit="g" creationDate="2026-10-13 13:00:00 -0700" startDate="2026-10-13 12:30:00 -0700" endDate="2026-10-13 12:30:00 -0700" value="0.08"/>
+ <Record type="HKQuantityTypeIdentifierDietaryWater" sourceName="WaterMinder" unit="mL" creationDate="2026-10-13 09:00:00 -0700" startDate="2026-10-13 09:00:00 -0700" endDate="2026-10-13 09:00:00 -0700" value="500"/>
+ <Record type="HKQuantityTypeIdentifierDietaryWater" sourceName="WaterMinder" unit="fl_oz_us" creationDate="2026-10-13 14:00:00 -0700" startDate="2026-10-13 14:00:00 -0700" endDate="2026-10-13 14:00:00 -0700" value="8"/>
+ <Record type="HKQuantityTypeIdentifierDietaryWater" sourceName="Health" unit="L" creationDate="2026-10-13 19:00:00 -0700" startDate="2026-10-13 19:00:00 -0700" endDate="2026-10-13 19:00:00 -0700" value="0.25"/>
+ <!-- WHOOP's copy of the water is skipped: only steps compete with WHOOP's own data. -->
+ <Record type="HKQuantityTypeIdentifierDietaryWater" sourceName="WHOOP" unit="mL" creationDate="2026-10-13 11:00:00 -0700" startDate="2026-10-13 11:00:00 -0700" endDate="2026-10-13 11:00:00 -0700" value="1000"/>
+ <!-- Stand hours from two watches: 9:00 stood on both counts once, 10:00 idle doesn't count. -->
+ <Record type="HKCategoryTypeIdentifierAppleStandHour" sourceName="Ricky’s Apple Watch" creationDate="2026-10-13 09:00:10 -0700" startDate="2026-10-13 08:00:00 -0700" endDate="2026-10-13 09:00:00 -0700" value="HKCategoryValueAppleStandHourStood"/>
+ <Record type="HKCategoryTypeIdentifierAppleStandHour" sourceName="Ricky’s Apple Watch" creationDate="2026-10-13 10:00:10 -0700" startDate="2026-10-13 09:00:00 -0700" endDate="2026-10-13 10:00:00 -0700" value="HKCategoryValueAppleStandHourStood"/>
+ <Record type="HKCategoryTypeIdentifierAppleStandHour" sourceName="Ricky’s Apple Watch" creationDate="2026-10-13 11:00:10 -0700" startDate="2026-10-13 10:00:00 -0700" endDate="2026-10-13 11:00:00 -0700" value="HKCategoryValueAppleStandHourIdle"/>
+ <Record type="HKCategoryTypeIdentifierAppleStandHour" sourceName="Ricky’s Apple Watch" creationDate="2026-10-13 12:00:10 -0700" startDate="2026-10-13 11:00:00 -0700" endDate="2026-10-13 12:00:00 -0700" value="HKCategoryValueAppleStandHourStood"/>
+ <Record type="HKCategoryTypeIdentifierAppleStandHour" sourceName="Old Apple Watch" creationDate="2026-10-13 10:00:20 -0700" startDate="2026-10-13 09:00:00 -0700" endDate="2026-10-13 10:00:00 -0700" value="HKCategoryValueAppleStandHourStood"/>
+ <Record type="HKCategoryTypeIdentifierAppleStandHour" sourceName="Old Apple Watch" creationDate="2026-10-13 15:00:20 -0700" startDate="2026-10-13 14:00:00 -0700" endDate="2026-10-13 15:00:00 -0700" value="HKCategoryValueAppleStandHourStood"/>
+ <Correlation type="HKCorrelationTypeIdentifierBloodPressure" sourceName="Omron" sourceVersion="7.2" creationDate="2026-10-13 08:01:10 -0700" startDate="2026-10-13 08:00:00 -0700" endDate="2026-10-13 08:00:00 -0700">
+  <MetadataEntry key="HKWasUserEntered" value="0"/>
+  <Record type="HKQuantityTypeIdentifierBloodPressureDiastolic" sourceName="Omron" sourceVersion="7.2" unit="mmHg" creationDate="2026-10-13 08:01:10 -0700" startDate="2026-10-13 08:00:00 -0700" endDate="2026-10-13 08:00:00 -0700" value="78">
+   <MetadataEntry key="HKWasUserEntered" value="0"/>
+  </Record>
+  <Record type="HKQuantityTypeIdentifierBloodPressureSystolic" sourceName="Omron" sourceVersion="7.2" unit="mmHg" creationDate="2026-10-13 08:01:10 -0700" startDate="2026-10-13 08:00:00 -0700" endDate="2026-10-13 08:00:00 -0700" value="120">
+   <MetadataEntry key="HKWasUserEntered" value="0"/>
+  </Record>
+ </Correlation>
+ <Correlation type="HKCorrelationTypeIdentifierFood" sourceName="MyFitnessPal" sourceVersion="24.1" creationDate="2026-10-13 13:00:00 -0700" startDate="2026-10-13 12:30:00 -0700" endDate="2026-10-13 12:30:00 -0700">
+  <MetadataEntry key="HKFoodType" value="Lunch"/>
+  <Record type="HKQuantityTypeIdentifierDietaryCaffeine" sourceName="MyFitnessPal" sourceVersion="24.1" unit="g" creationDate="2026-10-13 13:00:00 -0700" startDate="2026-10-13 12:30:00 -0700" endDate="2026-10-13 12:30:00 -0700" value="0.08"/>
+  <Record type="HKQuantityTypeIdentifierDietaryEnergyConsumed" sourceName="MyFitnessPal" sourceVersion="24.1" unit="Cal" creationDate="2026-10-13 13:00:00 -0700" startDate="2026-10-13 12:30:00 -0700" endDate="2026-10-13 12:30:00 -0700" value="540"/>
+ </Correlation>
+</HealthData>

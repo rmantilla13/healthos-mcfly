@@ -1,5 +1,5 @@
 import os from 'node:os';
-import type { Insight, Latest, Point, RangeStatus, Settings, Summary, TimelineEvent, Trends, Vital, WeekSummary, Workout } from '../shared/types.ts';
+import type { Flag, Insight, Latest, Point, RangeStatus, Settings, Summary, TimelineEvent, Trends, Vital, WeekSummary, Workout } from '../shared/types.ts';
 import { OWNER_ID, type Scope, getSettings, getUserSettings } from './db.ts';
 import { addDays, todayLocal } from './dates.ts';
 
@@ -59,14 +59,14 @@ export async function demoActive(scope: Scope, settings: Settings, hosted: boole
   return settings.demo === 'on' || (settings.demo === 'auto' && !(await hasRealData(scope)));
 }
 
-const sourceList = (demo: boolean) => (demo ? ['demo'] : ['apple', 'whoop']);
+export const sourceList = (demo: boolean) => (demo ? ['demo'] : ['apple', 'whoop']);
 
 function sourcesFor(ctx: { demo: boolean }, metric: string): string[] {
   if (ctx.demo) return ['demo'];
   return APPLE_FIRST.has(metric) ? ['apple', 'whoop'] : ['whoop', 'apple'];
 }
 
-async function loadDaily(scope: Scope, demo: boolean, from: string, to: string, metrics?: string[]): Promise<DailyIndex> {
+export async function loadDaily(scope: Scope, demo: boolean, from: string, to: string, metrics?: string[]): Promise<DailyIndex> {
   const params: unknown[] = [scope.userId, from, to, sourceList(demo)];
   let filter = '';
   if (metrics) {
@@ -88,7 +88,7 @@ async function loadDaily(scope: Scope, demo: boolean, from: string, to: string, 
   return index;
 }
 
-async function latestDataDate(scope: Scope, demo: boolean, today: string): Promise<string | null> {
+export async function latestDataDate(scope: Scope, demo: boolean, today: string): Promise<string | null> {
   const [row] = await scope.db.query<{ d: string | null }>(
     'SELECT MAX(date) AS d FROM daily WHERE user_id = $1 AND source = ANY($2) AND date <= $3',
     [scope.userId, sourceList(demo), today],
@@ -98,7 +98,7 @@ async function latestDataDate(scope: Scope, demo: boolean, today: string): Promi
 
 const WORKOUT_FIELDS = 'id, source, sport, start, "end", date, duration_min, energy_kcal, distance_m, avg_hr, max_hr, strain';
 
-async function loadWorkouts(scope: Scope, demo: boolean, from: string, to: string): Promise<Workout[]> {
+export async function loadWorkouts(scope: Scope, demo: boolean, from: string, to: string): Promise<Workout[]> {
   return scope.db.query<Workout>(
     `SELECT ${WORKOUT_FIELDS} FROM workouts WHERE user_id = $1 AND date BETWEEN $2 AND $3 AND source = ANY($4) ORDER BY start DESC`,
     [scope.userId, from, to, sourceList(demo)],
@@ -196,6 +196,19 @@ export function series(ctx: Snapshot, metric: string, from: string, to: string):
 }
 
 /**
+ * Metrics whose two sources measure different things, so a reading is judged against the same device's own
+ * history. The daily resting heart rate falls back from WHOOP's sleeping measure to the Watch's daytime one,
+ * ~7 bpm higher, and a few days without the strap would otherwise read as a heart rate that went up.
+ */
+const OWN_BASELINE = new Set(['resting_hr']);
+
+/** The snapshot narrowed to one source's values of a metric. */
+function fromSource(ctx: Snapshot, metric: string, source: string): Snapshot {
+  const byDate = ctx.daily.get(metric)?.get(source);
+  return { demo: ctx.demo, daily: new Map(byDate ? [[metric, new Map([[source, byDate]])]] : []) };
+}
+
+/**
  * The most recent value within the lookback window, from any source, so a stale reading from one
  * device never hides a fresher one (e.g. a WHOOP left in a drawer while the Apple Watch keeps recording).
  */
@@ -262,18 +275,19 @@ export async function workouts(scope: Scope, hosted: boolean, days: number, asOf
 
 // ---------- helpers ----------
 
-const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+export const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
 
-function sd(xs: number[]) {
+export function sd(xs: number[]) {
   const m = mean(xs);
   if (m === null || xs.length < 2) return null;
   return Math.sqrt(xs.reduce((a, x) => a + (x - m) ** 2, 0) / (xs.length - 1));
 }
 
-/** Compare a value with the 30 days before it. Needs a week of history to say anything. */
-function rangeStatus(ctx: Ctx, metric: string, l: Latest | null, minSpread: number): RangeStatus | null {
+/** Compare a value with the 30 days before it (from its own device, for OWN_BASELINE metrics). Needs a week of history to say anything. */
+export function rangeStatus(ctx: Ctx, metric: string, l: Latest | null, minSpread: number): RangeStatus | null {
   if (!l) return null;
-  const history = series(ctx, metric, addDays(l.date, -30), addDays(l.date, -1)).map((p) => p.value);
+  const own = OWN_BASELINE.has(metric) ? fromSource(ctx, metric, l.source) : ctx;
+  const history = series(own, metric, addDays(l.date, -30), addDays(l.date, -1)).map((p) => p.value);
   const m = mean(history);
   if (m === null || history.length < 7) return null;
   const band = Math.max(sd(history) ?? 0, minSpread);
@@ -287,7 +301,7 @@ function windowMean(points: Point[], from: string, to: string) {
 }
 
 /** Of several ways to measure the same thing (HRV as RMSSD or SDNN, temperatures), the one measured most recently. */
-function pickMetric(ctx: Ctx, candidates: string[], asOf: string, lookback = 30) {
+export function pickMetric(ctx: Ctx, candidates: string[], asOf: string, lookback = 30) {
   let pick: { metric: string; latest: Latest | null } = { metric: candidates[0], latest: null };
   for (const m of candidates) {
     const l = latest(ctx, m, asOf, lookback);
@@ -380,6 +394,8 @@ export async function summary(scope: Scope, hosted: boolean, asOfParam?: string)
     }
   }
 
+  const heads = flags(ctx, asOf);
+
   return {
     date: asOf,
     today,
@@ -397,7 +413,63 @@ export async function summary(scope: Scope, hosted: boolean, asOfParam?: string)
     timeline: tl,
     insights: anchor ? insights(ctx, insightEnd) : [],
     week: weekSummary(ctx, asOf),
+    ...(heads.length ? { flags: heads } : {}),
   };
+}
+
+/** How far above the month before it a resting heart rate reading has to be to count as up. */
+const RHR_UP_BPM = 5;
+const TEMPS = ['body_temp', 'wrist_temp', 'skin_temp'];
+
+/**
+ * Resting heart rate well above the person's usual for days running, with or without a raised temperature.
+ * "Readings" are days that have one, newest first, from the device behind the latest reading, and the baseline
+ * is that device's too (see OWN_BASELINE). Nothing here looks at cycle data: Summary stays cycle-free.
+ */
+function flags(ctx: Ctx, asOf: string): Flag[] {
+  const newest = latest(ctx, 'resting_hr', asOf, 4);
+  if (!newest) return [];
+  const own = fromSource(ctx, 'resting_hr', newest.source);
+  const readings = series(own, 'resting_hr', addDays(asOf, -4), asOf).reverse();
+  // The last `count` readings, the oldest of them on or after `since`, each 5 bpm or more over the mean of the
+  // 30 days before the oldest (at least 14 values). Returns how far over they are on average, or null.
+  const elevated = (count: number, since: string) => {
+    const last = readings.slice(0, count);
+    if (last.length < count || last[count - 1].date < since) return null;
+    const first = last[count - 1].date;
+    const history = series(own, 'resting_hr', addDays(first, -30), addDays(first, -1)).map((p) => p.value);
+    const baseline = mean(history);
+    if (baseline === null || history.length < 14 || last.some((p) => p.value < baseline + RHR_UP_BPM)) return null;
+    return Math.round(mean(last.map((p) => p.value))! - baseline);
+  };
+
+  const temp = pickMetric(ctx, TEMPS, asOf, 2);
+  const tempHigh = rangeStatus(ctx, temp.metric, temp.latest, 0.3) === 'high';
+  const two = readings[0] && readings[0].date >= addDays(asOf, -2) ? elevated(2, addDays(asOf, -3)) : null;
+  if (two !== null && tempHigh) {
+    return [
+      {
+        id: 'rhr_temp',
+        tone: 'caution',
+        title: 'Your body may be under strain',
+        text: `Resting heart rate has been about ${two} bpm above your usual for 2 days and your temperature is up. Your body may be fighting something or recovering from strain, so an easier day could help.`,
+        page: 'vitals',
+      },
+    ];
+  }
+  const three = elevated(3, addDays(asOf, -4));
+  if (three !== null) {
+    return [
+      {
+        id: 'rhr_up',
+        tone: 'info',
+        title: 'Resting heart rate is up',
+        text: `Resting heart rate has been about ${three} bpm above your usual for 3 days. Hard training, short sleep, stress or alcohol can all nudge it up, so an easier day may help.`,
+        page: 'vitals',
+      },
+    ];
+  }
+  return [];
 }
 
 function weekSummary(ctx: Ctx, asOf: string): WeekSummary {

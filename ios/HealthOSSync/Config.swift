@@ -80,6 +80,10 @@ enum Config {
         set { defaults.set(newValue, forKey: "serverStoresCycle") }
     }
 
+    /// The daily metrics the server listed in its last ingest reply (nil: an older server that doesn't list them).
+    /// Kept with the sync state, which starts over when the server changes.
+    static var serverMetrics: [String]? { SyncState.load().acceptedMetrics }
+
     static var healthRequested: Bool {
         get { defaults.bool(forKey: "healthRequested") }
         set { defaults.set(newValue, forKey: "healthRequested") }

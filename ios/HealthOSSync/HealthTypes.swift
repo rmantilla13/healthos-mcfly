@@ -1,6 +1,8 @@
 import HealthKit
 
-enum Aggregation { case sum, avg, last }
+/// `sum` keeps a day's best single source (iPhone and Watch both count the same walk); `sumAll` adds every source,
+/// for things logged once each, like a coffee in one app and a glass of water in another.
+enum Aggregation { case sum, sumAll, avg, last }
 
 /// One HealthKit quantity type and the daily metric it feeds. Same table as QUANTITIES in server/apple/import.ts.
 struct QuantityMetric {
@@ -23,6 +25,10 @@ enum HealthTypes {
             // separate from WHOOP's nightly hrv_rmssd (server/apple/import.ts does the same).
             list.append(.init(identifier: .heartRateVariabilityRMSSD, metric: "hrv_rmssd_watch", aggregation: .avg, unit: .secondUnit(with: .milli)))
         }
+        if #available(iOS 18.0, *) {
+            // The Watch's nightly count, dated by when the night's reading starts, like every other quantity.
+            list.append(.init(identifier: .appleSleepingBreathingDisturbances, metric: "breathing_disturbances", aggregation: .avg, unit: .count()))
+        }
         return list
     }()
 
@@ -42,21 +48,53 @@ enum HealthTypes {
         .init(identifier: .bodyFatPercentage, metric: "body_fat", aggregation: .last, unit: .percent(), scale: 100),
         .init(identifier: .leanBodyMass, metric: "lean_mass", aggregation: .last, unit: .gramUnit(with: .kilo)),
         .init(identifier: .vo2Max, metric: "vo2max", aggregation: .last, unit: HKUnit(from: "ml/kg*min")),
+        .init(identifier: .bloodPressureSystolic, metric: "blood_pressure_systolic", aggregation: .avg, unit: .millimeterOfMercury()),
+        .init(identifier: .bloodPressureDiastolic, metric: "blood_pressure_diastolic", aggregation: .avg, unit: .millimeterOfMercury()),
+        .init(identifier: .bloodGlucose, metric: "glucose", aggregation: .avg, unit: HKUnit(from: "mg/dL")),
+        .init(identifier: .walkingSpeed, metric: "walking_speed", aggregation: .avg, unit: .meter().unitDivided(by: .second()), scale: 3.6),
+        // About one reading a week, so the latest one is the day's.
+        .init(identifier: .appleWalkingSteadiness, metric: "walking_steadiness", aggregation: .last, unit: .percent(), scale: 100),
+        .init(identifier: .walkingAsymmetryPercentage, metric: "walking_asymmetry", aggregation: .avg, unit: .percent(), scale: 100),
+        .init(identifier: .timeInDaylight, metric: "daylight_min", aggregation: .sum, unit: .minute()),
+        .init(identifier: .flightsClimbed, metric: "flights", aggregation: .sum, unit: .count()),
+        .init(identifier: .dietaryCaffeine, metric: "caffeine_mg", aggregation: .sumAll, unit: .gramUnit(with: .milli)),
+        .init(identifier: .dietaryWater, metric: "water_ml", aggregation: .sumAll, unit: .literUnit(with: .milli)),
     ]
 
     static let sleep = HKCategoryType(.sleepAnalysis)
     static let mindful = HKCategoryType(.mindfulSession)
     static let workout = HKWorkoutType.workoutType()
+    /// The Watch's hourly "stood / didn't" record; a day's stand hours are the hours stood.
+    static let standHour = HKCategoryType(.appleStandHour)
 
     /// Cycle types join only once cycle tracking is on (and the server stores cycle days).
-    static var sampleTypes: [HKSampleType] { quantities.map(\.type) + [sleep, mindful, workout] + (CycleTypes.active ? CycleTypes.all : []) }
+    static var sampleTypes: [HKSampleType] { quantities.map(\.type) + [sleep, mindful, workout, standHour] + (CycleTypes.active ? CycleTypes.all : []) }
     static var readTypes: Set<HKObjectType> { Set(sampleTypes) }
 
+    /// The type a daily metric is read from (nil for one this build doesn't read on this iOS version).
+    static func type(producing metric: String) -> HKSampleType? {
+        if let q = quantities.first(where: { $0.metric == metric }) { return q.type }
+        if metric == "hr_min" || metric == "hr_max" { return HKQuantityType(.heartRate) }
+        if metric.hasPrefix("sleep_") { return sleep }
+        if metric == "stand_hours" { return standHour }
+        return nil
+    }
+
+    /// Names that read better than the metric's own ("daylight min" → "time in daylight").
+    private static let names: [String: String] = [
+        "blood_pressure_systolic": "blood pressure (systolic)", "blood_pressure_diastolic": "blood pressure (diastolic)",
+        "glucose": "blood glucose", "daylight_min": "time in daylight", "flights": "flights climbed",
+        "caffeine_mg": "caffeine", "water_ml": "water",
+    ]
+
     static func label(_ type: HKSampleType) -> String {
-        if let q = quantities.first(where: { $0.type == type }) { return q.metric.replacingOccurrences(of: "_", with: " ") }
+        if let q = quantities.first(where: { $0.type == type }) { return names[q.metric] ?? q.metric.replacingOccurrences(of: "_", with: " ") }
         if type == sleep { return "sleep" }
         if type == mindful { return "mindfulness" }
-        return "workouts"
+        if type == standHour { return "stand hours" }
+        if type == workout { return "workouts" }
+        if CycleTypes.all.contains(type) { return "cycle" }
+        return "health data"
     }
 }
 

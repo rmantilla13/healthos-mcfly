@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import UserNotifications
 
 @main
 struct HealthOSSyncApp: App {
@@ -23,9 +24,18 @@ struct RootView: View {
             TodayScreen()
                 .tabItem { Label("Today", systemImage: "heart.text.square") }
                 .tag(AppTab.today)
+            // Only on servers with the Family board (older ones don't name the setting, and answer 404).
+            if dashboard.familyAvailable {
+                FamilyScreen()
+                    .tabItem { Label("Family", systemImage: "person.2") }
+                    .tag(AppTab.family)
+            }
             TrendsScreen()
                 .tabItem { Label("Trends", systemImage: "chart.xyaxis.line") }
                 .tag(AppTab.trends)
+            InsightsScreen()
+                .tabItem { Label("Insights", systemImage: "lightbulb") }
+                .tag(AppTab.insights)
             SettingsScreen()
                 .tabItem { Label("Settings", systemImage: "gearshape") }
                 .tag(AppTab.settings)
@@ -36,7 +46,20 @@ struct RootView: View {
         .onAppear {
             sync.dashboard = dashboard
             KeyboardDismisser.install()
+            openDigestIfTapped()
         }
+        // The Family tab went away (another server, or one without the board) while it was showing.
+        .onChange(of: dashboard.familyAvailable) { _, available in
+            if !available, dashboard.tab == .family { dashboard.tab = .today }
+        }
+        // A server whose status doesn't name familySharing may still have the board: ask once, so the tab can show.
+        .task(id: dashboard.generation) {
+            if dashboard.status != nil, dashboard.status?.settings?.familySharing == nil, !dashboard.familyMissing, dashboard.familyBoard == nil {
+                await dashboard.loadFamily()
+            }
+        }
+        // The weekly digest notification was tapped: show it on the Insights tab.
+        .onReceive(NotificationCenter.default.publisher(for: .openWeeklyDigest)) { _ in openDigestIfTapped() }
         // On open and on every return to the app: one Sync for Apple Health and WHOOP.
         .onChange(of: scenePhase, initial: true) { _, phase in
             if phase == .background { Background.schedule() }
@@ -58,10 +81,16 @@ struct RootView: View {
             }
         }
     }
+
+    private func openDigestIfTapped() {
+        if DigestNotifications.takeOpenRequest() { dashboard.tab = .insights }
+    }
 }
 
-final class AppDelegate: NSObject, UIApplicationDelegate {
+final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        // Before launch finishes, so a tap that launches the app still reaches didReceive.
+        UNUserNotificationCenter.current().delegate = self
         #if targetEnvironment(simulator)
         // Scripted runs: `xcrun simctl launch booted health.mcfly.sync -healthosToken <token>`.
         if let token = UserDefaults.standard.string(forKey: "healthosToken") { Config.token = token }
@@ -71,5 +100,17 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         Background.register()
         Background.apply()
         return true
+    }
+
+    /// The weekly digest reminder shows even while the app is open.
+    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([.banner, .sound, .list])
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
+        if response.notification.request.identifier == DigestNotifications.id {
+            Task { @MainActor in DigestNotifications.requestOpen() }
+        }
+        completionHandler()
     }
 }

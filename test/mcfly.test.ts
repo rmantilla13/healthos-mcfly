@@ -4,8 +4,9 @@ import assert from 'node:assert/strict';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app.ts';
 import { hashPassword } from '../server/auth.ts';
-import { OWNER_ID, upsertDaily } from '../server/db.ts';
-import type { McflyClient } from '../server/mcfly.ts';
+import { addDays, todayLocal } from '../server/dates.ts';
+import { OWNER_ID, getUserSetting, setUserSetting, upsertDaily } from '../server/db.ts';
+import { type McflyClient, digestWeek } from '../server/mcfly.ts';
 import { openStore } from '../server/store.ts';
 
 process.env.SESSION_SECRET = 'mcfly-test-secret-'.padEnd(64, 'x');
@@ -28,9 +29,18 @@ const reply = (content: Block[], stop_reason: string) => ({
 let script: ReturnType<typeof reply>[] = [];
 const requests: any[] = [];
 let configured = true;
+/** The digest's (non-streaming) call waits on this, so a test can hold it open. */
+let gate: Promise<void> = Promise.resolve();
 const fake = {
   beta: {
     messages: {
+      async create(params: unknown) {
+        requests.push(structuredClone(params));
+        await gate;
+        const msg = script.shift();
+        if (!msg) throw new Error('fake Claude ran out of scripted replies');
+        return msg;
+      },
       stream(params: unknown) {
         requests.push(structuredClone(params));
         const msg = script.shift();
@@ -236,4 +246,241 @@ test('admins see how much each person used McFly, never what they asked', async 
 
 test('only members can use McFly', async () => {
   assert.equal((await new Client().ask('hello')).status, 401);
+});
+
+test("the owner's walking speed comes back in their units", async () => {
+  await upsertDaily(db, OWNER_ID, [14, 15, 16].map((d) => ({ date: day(d), metric: 'walking_speed', source: 'apple', value: 4.8 })));
+  requests.length = 0;
+  script = [
+    reply([{ type: 'tool_use', id: 'tu_4', name: 'get_metric_history', input: { metrics: ['walking_speed'], days: 7, end_date: day(16) } }], 'tool_use'),
+    reply([{ type: 'text', text: 'ok' }], 'end_turn'),
+  ];
+  await owner.ask('How fast do I walk?');
+  const result = JSON.parse(requests[1].messages.at(-1).content[0].content);
+  assert.deepEqual([result.metrics[0].label, result.metrics[0].unit, result.metrics[0].mean], ['Walking speed', 'mph', 2.98]);
+});
+
+// ---------- the weekly digest ----------
+
+test('the digest covers the last completed Monday to Sunday', () => {
+  assert.deepEqual(digestWeek('2026-10-19'), { start: '2026-10-12', end: '2026-10-18' }, 'on a Monday, the week that ended yesterday');
+  assert.deepEqual(digestWeek('2026-10-18'), { start: '2026-10-05', end: '2026-10-11' }, 'on a Sunday, not the week still running');
+  assert.deepEqual(digestWeek('2026-10-17'), { start: '2026-10-05', end: '2026-10-11' });
+});
+
+const ZONE = 'America/Chicago';
+const week = digestWeek(todayLocal(ZONE));
+const inWeek = (i: number) => addDays(week.start, i);
+
+async function member(name: string) {
+  const inv = await owner.call('POST', '/api/admin/invites', {});
+  const c = new Client();
+  const token = inv.json.url.split('/').at(-1);
+  assert.equal((await c.call('POST', '/api/auth/invite', { token, email: `${name.toLowerCase()}@example.com`, name, password: `${name} password 123` })).status, 200);
+  assert.equal((await c.call('PUT', '/api/settings', { timeZone: ZONE })).status, 200);
+  return { c, id: (await c.call('GET', '/api/auth/me')).json.user.id as string };
+}
+
+const digest = (c: Client) => c.call('GET', '/api/mcfly/digest');
+const used = async (c: Client) => (await c.call('GET', '/api/mcfly')).json.usedToday as number;
+const recap = (text: string) => reply([{ type: 'text', text }], 'end_turn');
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+let carol: Awaited<ReturnType<typeof member>>;
+
+test('setup: a member with last week and the week before on record', async () => {
+  carol = await member('Carol');
+  const rows = [];
+  for (let i = -7; i < 6; i++) {
+    rows.push(
+      { date: inWeek(i), metric: 'steps', source: 'apple', value: i < 0 ? 7000 : 9500 },
+      { date: inWeek(i), metric: 'sleep_hours', source: 'apple', value: i < 0 ? 6.5 : 7.25 },
+      { date: inWeek(i), metric: 'resting_hr', source: 'apple', value: 58 },
+    );
+  }
+  await upsertDaily(db, carol.id, rows);
+});
+
+test("the digest isn't offered until an API key is configured", async () => {
+  configured = false;
+  requests.length = 0;
+  const res = await digest(carol.c);
+  assert.deepEqual([res.status, res.json], [200, { configured: false, digest: null, reason: 'not_configured' }]);
+  assert.equal(requests.length, 0);
+  configured = true;
+});
+
+test('the digest is written once for the week, then kept', async () => {
+  requests.length = 0;
+  const before = await used(carol.c);
+  script = [recap('A **steadier** week: more steps and more sleep than the week before.')];
+  const first = await digest(carol.c);
+  assert.equal(first.status, 200);
+  assert.equal(first.json.configured, true);
+  assert.equal(first.json.reason, undefined);
+  assert.deepEqual([first.json.digest.weekStart, first.json.digest.weekEnd], [week.start, week.end]);
+  assert.match(first.json.digest.text, /steadier/);
+
+  // One non-streaming call: the platform model, fallbacks on, no tools, the chat's persona, the week as JSON.
+  assert.equal(requests.length, 1);
+  const sent = requests[0];
+  assert.equal(sent.model, 'claude-opus-5-5');
+  assert.equal(sent.fallbacks, 'default');
+  assert.equal(sent.tools, undefined);
+  assert.match(sent.system, /You are McFly/);
+  assert.match(sent.system, /talking with Carol/);
+  assert.match(sent.system, /not a doctor/);
+  const input = JSON.parse(sent.messages[0].content.slice(sent.messages[0].content.indexOf('{')));
+  assert.deepEqual(input.week, { start: week.start, end: week.end, daysWithData: 6 });
+  assert.deepEqual(input.steps, { dailyAverage: 9500, weekBefore: 7000, goal: 10_000, daysAtGoal: 0, daysWithSteps: 6 });
+  assert.deepEqual(input.sleepHoursPerNight, { thisWeek: 7.25, weekBefore: 6.5 });
+  assert.equal(input.whoopRecoveryPercent, undefined, 'metrics with no data are left out');
+  assert.ok(Array.isArray(input.insights) && Array.isArray(input.patterns));
+
+  // Counted like a question, with its tokens.
+  assert.equal(await used(carol.c), before + 1);
+  const [usage] = await db.query<{ input_tokens: number; output_tokens: number }>('SELECT input_tokens, output_tokens FROM mcfly_usage WHERE user_id = $1', [carol.id]);
+  assert.deepEqual([Number(usage.input_tokens), Number(usage.output_tokens)], [100, 20]);
+
+  // Opening it again reads the kept copy: no model call, no charge.
+  const again = await digest(carol.c);
+  assert.deepEqual(again.json, first.json);
+  assert.equal(requests.length, 1);
+  assert.equal(await used(carol.c), before + 1);
+});
+
+test("a digest for an older week is replaced by the next week's", async () => {
+  const old = { weekStart: addDays(week.start, -7), weekEnd: addDays(week.end, -7), text: 'Last time.', generatedAt: '2026-01-01T09:00:00.000Z' };
+  await setUserSetting(db, carol.id, 'mcfly_digest', JSON.stringify(old));
+  requests.length = 0;
+  script = [recap('This week, new words.')];
+  const res = await digest(carol.c);
+  assert.equal(requests.length, 1);
+  assert.deepEqual([res.json.digest.weekEnd, res.json.digest.text], [week.end, 'This week, new words.']);
+  assert.equal(JSON.parse((await getUserSetting(db, carol.id, 'mcfly_digest'))!).weekEnd, week.end);
+});
+
+test('the digest never sees cycle data, even with tracking on and days logged', async () => {
+  assert.equal((await carol.c.call('PUT', '/api/settings', { cycleTracking: true })).status, 200);
+  assert.equal((await carol.c.call('POST', '/api/cycle/day', { date: inWeek(1), periodStart: true, flow: 'heavy', bbt: 36.71 })).status, 200);
+  assert.equal((await carol.c.call('POST', '/api/cycle/day', { date: inWeek(3), ovulationTest: 'lh_surge', mucus: 'egg_white', sexualActivity: 'protected' })).status, 200);
+  await setUserSetting(db, carol.id, 'mcfly_digest', null);
+  requests.length = 0;
+  script = [recap('ok')];
+  assert.equal((await digest(carol.c)).status, 200);
+  assert.equal(requests.length, 1);
+  const sent = JSON.stringify(requests[0]);
+  assert.doesNotMatch(sent, /cycle|period|menstru|ovulat|fertile|luteal|follicular|mucus|egg_white|lh_surge|36\.71|heavy|\bflow\b|sexual|protected/i);
+});
+
+test('two clients opening the digest at once share one model call and one charge', async () => {
+  await setUserSetting(db, carol.id, 'mcfly_digest', null);
+  requests.length = 0;
+  const before = await used(carol.c);
+  script = [recap('Shared.'), recap('A second copy that should never be written.')];
+  let open!: () => void;
+  gate = new Promise((r) => (open = r));
+  const both = Promise.all([digest(carol.c), digest(carol.c)]);
+  await sleep(300); // both requests are in by now, the first held at the model call
+  open();
+  const [a, b] = await both;
+  gate = Promise.resolve();
+  assert.deepEqual([a.status, b.status], [200, 200]);
+  assert.deepEqual(a.json, b.json);
+  assert.equal(a.json.digest.text, 'Shared.');
+  assert.equal(requests.length, 1);
+  assert.equal(await used(carol.c), before + 1);
+  script = [];
+});
+
+test("a digest that couldn't be written isn't charged or kept", async () => {
+  await setUserSetting(db, carol.id, 'mcfly_digest', null);
+  const before = await used(carol.c);
+  script = []; // the fake throws, like an API error
+  const failed = await digest(carol.c);
+  assert.equal(failed.status, 503);
+  assert.match(failed.json.error, /digest/);
+  script = [reply([{ type: 'text', text: 'Partial' }], 'refusal')];
+  assert.equal((await digest(carol.c)).status, 503);
+  assert.equal(await used(carol.c), before);
+  assert.equal(await getUserSetting(db, carol.id, 'mcfly_digest'), undefined);
+});
+
+test('a week with fewer than 3 days of data gets no digest, and no charge', async () => {
+  const dave = await member('Dave');
+  await upsertDaily(db, dave.id, [inWeek(0), inWeek(4)].map((date) => ({ date, metric: 'steps', source: 'apple', value: 5000 })));
+  requests.length = 0;
+  const res = await digest(dave.c);
+  assert.deepEqual([res.status, res.json], [200, { configured: true, digest: null, reason: 'no_data' }]);
+  assert.equal(requests.length, 0);
+  assert.equal(await used(dave.c), 0);
+});
+
+test('over the daily limit: the last digest written (or none), without calling the model; 0 turns it off', async () => {
+  const old = { weekStart: addDays(week.start, -7), weekEnd: addDays(week.end, -7), text: 'Last time.', generatedAt: '2026-01-01T09:00:00.000Z' };
+  await setUserSetting(db, carol.id, 'mcfly_digest', JSON.stringify(old));
+  await owner.call('PUT', '/api/admin/settings', { mcfly_daily_limit: await used(carol.c) });
+  requests.length = 0;
+  const limited = await digest(carol.c);
+  assert.deepEqual([limited.status, limited.json], [200, { configured: true, digest: old, reason: 'limit' }]);
+  await setUserSetting(db, carol.id, 'mcfly_digest', null);
+  assert.deepEqual((await digest(carol.c)).json, { configured: true, digest: null, reason: 'limit' });
+  assert.equal(requests.length, 0);
+
+  await owner.call('PUT', '/api/admin/settings', { mcfly_daily_limit: 0 });
+  assert.deepEqual((await digest(carol.c)).json, { configured: true, digest: null, reason: 'off' });
+  await owner.call('PUT', '/api/admin/settings', { mcfly_daily_limit: 50 });
+});
+
+test("a digest of the demo data isn't kept as the owner's own week once demo is off", async () => {
+  // The owner (local, no time zone set) has demo rows and their own rows in last week.
+  const ownerWeek = digestWeek(todayLocal());
+  const dates = [0, 1, 2, 3, 4].map((i) => addDays(ownerWeek.start, i));
+  await upsertDaily(
+    db,
+    OWNER_ID,
+    dates.flatMap((date) => [
+      { date, metric: 'steps', source: 'demo', value: 12_000 },
+      { date, metric: 'steps', source: 'apple', value: 4000 },
+    ]),
+  );
+  const kept = async () => JSON.parse((await getUserSetting(db, OWNER_ID, 'mcfly_digest'))!);
+  requests.length = 0;
+
+  assert.equal((await owner.call('PUT', '/api/settings', { demo: 'on' })).status, 200);
+  script = [recap('A demo week.')];
+  assert.equal((await digest(owner)).json.digest.text, 'A demo week.');
+  assert.match(requests[0].messages[0].content, /"dailyAverage":12000/);
+  assert.equal((await kept()).demo, true);
+
+  // Demo off: the owner's own week is written, not the demo one served until next Monday.
+  assert.equal((await owner.call('PUT', '/api/settings', { demo: 'auto' })).status, 200);
+  script = [recap('Your own week.')];
+  const real = await digest(owner);
+  assert.equal(requests.length, 2);
+  assert.equal(real.json.digest.text, 'Your own week.');
+  assert.match(requests[1].messages[0].content, /"dailyAverage":4000/);
+  assert.deepEqual(Object.keys(real.json.digest).sort(), ['generatedAt', 'text', 'weekEnd', 'weekStart'], 'the reply keeps its shape');
+  assert.equal((await kept()).demo, false);
+  // Then kept as usual.
+  assert.deepEqual((await digest(owner)).json, real.json);
+  assert.equal(requests.length, 2);
+});
+
+test('a digest kept before demo was noted counts as real; over the limit, a demo one is never shown', async () => {
+  const current = { weekStart: week.start, weekEnd: week.end, text: 'Kept.', generatedAt: '2026-01-01T09:00:00.000Z' };
+  await setUserSetting(db, carol.id, 'mcfly_digest', JSON.stringify(current));
+  requests.length = 0;
+  assert.deepEqual((await digest(carol.c)).json, { configured: true, digest: current });
+
+  await setUserSetting(db, carol.id, 'mcfly_digest', JSON.stringify({ ...current, demo: true }));
+  await owner.call('PUT', '/api/admin/settings', { mcfly_daily_limit: await used(carol.c) });
+  assert.deepEqual((await digest(carol.c)).json, { configured: true, digest: null, reason: 'limit' });
+  assert.equal(requests.length, 0);
+  await owner.call('PUT', '/api/admin/settings', { mcfly_daily_limit: 50 });
+  await setUserSetting(db, carol.id, 'mcfly_digest', null);
+});
+
+test('only members can read a digest', async () => {
+  assert.equal((await new Client().call('GET', '/api/mcfly/digest')).status, 401);
 });

@@ -15,6 +15,7 @@ import { ingestRouter } from './apple/ingest.ts';
 import { authRoutes, cronAuthorized, currentUser, publicUser, requireSession, sha256 } from './auth.ts';
 import { cycleRouter } from './cycle.ts';
 import { DATA_DIR, type Db, type Scope, bumpDataVersion, deleteSource, getUserSetting, setUserSetting } from './db.ts';
+import { patterns, sleepTiming } from './insights.ts';
 import { type McflyClient, mcflyRouter } from './mcfly.ts';
 import { PHOTO_ASSETS, parsePhotoUpload, photoAsset, photoMeta, processPhoto, removePhoto, storePhotoAssets } from './photo.ts';
 import { readSettings, requestContext, summary, trends, workouts } from './query.ts';
@@ -124,6 +125,14 @@ export function createApp({ db, hosted, ingestToken, mcflyClient }: AppOptions) 
 
   api.get('/workouts', async (req, res) => {
     res.json(await workouts(scopeOf(res), hosted, days(req), asOf(req)));
+  });
+
+  api.get('/sleep', async (req, res) => {
+    res.json(await sleepTiming(scopeOf(res), hosted, Math.min(Math.max(Number(req.query.days) || 30, 7), 365)));
+  });
+
+  api.get('/patterns', async (_req, res) => {
+    res.json(await patterns(scopeOf(res), hosted));
   });
 
   // ---------- status, settings, account ----------

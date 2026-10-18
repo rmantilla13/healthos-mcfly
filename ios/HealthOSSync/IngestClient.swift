@@ -19,6 +19,18 @@ struct IngestClient {
         let hourly: Int?
         /// Only servers that store cycle days report this.
         let cycle: Int?
+        /// Every daily metric the server takes. Older servers don't list them (SyncState.legacyMetrics).
+        let metrics: [String]?
+    }
+
+    /// A reply other than 2xx, with the server's own message.
+    struct Rejected: LocalizedError {
+        let status: Int
+        let detail: String
+        var errorDescription: String? { "Server answered \(status): \(detail)" }
+        /// The server refused a daily metric by name (`daily[i].metric: unknown metric "x"`), e.g. after it went back to
+        /// a version that takes fewer. Hourly rows fail with "unknown hourly metric", which no filter here can fix.
+        var unknownMetric: Bool { status == 400 && detail.contains("unknown metric \"") }
     }
 
     private struct ErrorBody: Decodable { let error: String }
@@ -45,7 +57,7 @@ struct IngestClient {
             let detail = (try? JSONDecoder().decode(ErrorBody.self, from: data))?.error
                 ?? String(data: data, encoding: .utf8)?.prefix(200).description
                 ?? HTTPURLResponse.localizedString(forStatusCode: http.statusCode)
-            throw SyncError("Server answered \(http.statusCode): \(detail)")
+            throw Rejected(status: http.statusCode, detail: detail)
         }
         return try JSONDecoder().decode(Response.self, from: data)
     }

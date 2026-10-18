@@ -3,13 +3,14 @@
 // keeps no conversation: the browser sends the visible history (plain text) with each question.
 import Anthropic from '@anthropic-ai/sdk';
 import express, { type Request, type Response } from 'express';
-import type { Units } from '../shared/types.ts';
+import type { Digest, DigestReply, Units } from '../shared/types.ts';
 import { platformSettings } from './admin.ts';
 import { currentUser } from './auth.ts';
 import { cycleView } from './cycle.ts';
 import { addDays } from './dates.ts';
-import type { Db, Scope } from './db.ts';
-import { requestContext, summary, trends, workouts } from './query.ts';
+import { type Db, type Scope, getUserSetting, setUserSetting } from './db.ts';
+import { patterns } from './insights.ts';
+import { requestContext, sourceList, summary, trends, workouts } from './query.ts';
 
 type BetaMessageParam = Anthropic.Beta.BetaMessageParam;
 type BetaTool = Anthropic.Beta.BetaTool;
@@ -28,7 +29,7 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 // ---------- the data McFly can read ----------
 
-type Kind = 'temp' | 'mass' | 'distance';
+type Kind = 'temp' | 'mass' | 'distance' | 'speed';
 type MetricInfo = { label: string; unit: string; kind?: Kind };
 
 /** Every metric the importers write, as stored (metric units). */
@@ -65,6 +66,18 @@ export const METRICS: Record<string, MetricInfo> = {
   sleep_consistency: { label: 'Sleep consistency (WHOOP)', unit: '%' },
   recovery: { label: 'Recovery (WHOOP)', unit: '%' },
   strain: { label: 'Day strain (WHOOP, 0 to 21)', unit: '' },
+  blood_pressure_systolic: { label: 'Blood pressure, systolic (upper number)', unit: 'mmHg' },
+  blood_pressure_diastolic: { label: 'Blood pressure, diastolic (lower number)', unit: 'mmHg' },
+  glucose: { label: 'Blood glucose', unit: 'mg/dL' },
+  walking_speed: { label: 'Walking speed', unit: 'km/h', kind: 'speed' },
+  walking_steadiness: { label: 'Walking steadiness (Apple)', unit: '%' },
+  walking_asymmetry: { label: 'Walking asymmetry', unit: '%' },
+  daylight_min: { label: 'Time in daylight', unit: 'min' },
+  flights: { label: 'Flights climbed', unit: 'flights' },
+  stand_hours: { label: 'Stand hours (Apple ring)', unit: 'hours' },
+  breathing_disturbances: { label: 'Breathing disturbances during sleep (Apple Watch)', unit: '' },
+  caffeine_mg: { label: 'Caffeine', unit: 'mg' },
+  water_ml: { label: 'Water', unit: 'mL' },
 };
 
 const round = (v: number) => Math.round(v * 100) / 100;
@@ -74,6 +87,7 @@ function inUnits(kind: Kind | undefined, value: number, unit: string, units: Uni
   if (units === 'imperial' && kind === 'temp') return { value: round((value * 9) / 5 + 32), unit: '°F' };
   if (units === 'imperial' && kind === 'mass') return { value: round(value / 0.45359237), unit: 'lb' };
   if (units === 'imperial' && kind === 'distance') return { value: round(value / 1.609344), unit: 'mi' };
+  if (units === 'imperial' && kind === 'speed') return { value: round(value / 1.609344), unit: 'mph' };
   return { value: round(value), unit };
 }
 
@@ -374,9 +388,24 @@ const toolsFor = (ctx: Ctx) => TOOLS.filter((t) => !t.when || t.when(ctx));
 /** What the API sees: the definitions without our run/label functions. Eager streaming, so we validate inputs ourselves. */
 const apiTools = (tools: Tool[]): BetaTool[] => tools.map(({ name, description, input_schema }) => ({ name, description, input_schema, eager_input_streaming: true }));
 
-function systemPrompt(name: string, today: string, timeZone: string | null, units: Units, cycle: boolean) {
+/** Who McFly is, who it's talking with and when: the opening of both the chat's and the weekly digest's instructions. */
+function intro(name: string, today: string, timeZone: string | null, units: Units) {
   const weekday = new Date(`${today}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' });
-  return `You are McFly, the health assistant in healthOS, a private dashboard that brings together one person's Apple Health and WHOOP data. You're talking with ${name || 'the person who owns this account'}. Today is ${weekday}, ${today}${timeZone ? ` (${timeZone})` : ''}. They use ${units === 'imperial' ? 'imperial units (°F, lb, miles)' : 'metric units (°C, kg, km)'}, and the tools already return values in those units.
+  return `You are McFly, the health assistant in healthOS, a private dashboard that brings together one person's Apple Health and WHOOP data. You're talking with ${name || 'the person who owns this account'}. Today is ${weekday}, ${today}${timeZone ? ` (${timeZone})` : ''}. They use ${units === 'imperial' ? 'imperial units (°F, lb, miles)' : 'metric units (°C, kg, km)'}`;
+}
+
+const DATA_NOTES = `About the data
+- Daily values are what the dashboard shows. On days both devices measured blood oxygen, respiratory rate or sleep, the two are averaged when they agree, and WHOOP's value is used when they don't.
+- Resting heart rate comes from WHOOP (measured asleep) when present and otherwise from Apple Watch (measured during the day), so it can shift a few bpm when the source changes.
+- HRV is either RMSSD (WHOOP, or newer Apple Watch) or SDNN (Apple Watch). The two measures aren't comparable, so don't compare one with the other.
+- Recovery, strain, and sleep performance, efficiency and consistency are WHOOP's own scores.`;
+
+const BOUNDARIES = `Boundaries
+- You're not a doctor and can't diagnose. Give general, evidence-based wellness context. When something looks concerning, such as a sustained change, a value well outside their usual range, or a symptom they mention, suggest checking with a clinician. If they describe an emergency, tell them to contact emergency services.
+- You can only read this person's own data. You can't change data or settings, see anyone else's data, or browse the web.`;
+
+function systemPrompt(name: string, today: string, timeZone: string | null, units: Units, cycle: boolean) {
+  return `${intro(name, today, timeZone, units)}, and the tools already return values in those units.
 
 How to answer
 - Look numbers up with the tools before answering. Don't estimate or invent values, and mention the dates (and the source, when it matters) of the figures you use.
@@ -384,20 +413,31 @@ How to answer
 - Lead with the answer, then the few numbers that support it. Keep it short: a few sentences or a short list. Use **bold** and "- " bullets sparingly, and no tables or headings.
 - Where you can, compare with their own history (their usual range, recent weeks) rather than population norms.
 
-About the data
-- Daily values are what the dashboard shows. On days both devices measured blood oxygen, respiratory rate or sleep, the two are averaged when they agree, and WHOOP's value is used when they don't.
-- Resting heart rate comes from WHOOP (measured asleep) when present and otherwise from Apple Watch (measured during the day), so it can shift a few bpm when the source changes.
-- HRV is either RMSSD (WHOOP, or newer Apple Watch) or SDNN (Apple Watch). The two measures aren't comparable, so don't compare one with the other.
-- Recovery, strain, and sleep performance, efficiency and consistency are WHOOP's own scores.${
+${DATA_NOTES}${
     cycle
       ? `
 - They track their menstrual cycle, and get_cycle reads it. Its next period, ovulation and fertile window are estimates from their own past cycles: call them estimates, and never present them as contraception or a diagnosis.`
       : ''
   }
 
-Boundaries
-- You're not a doctor and can't diagnose. Give general, evidence-based wellness context. When something looks concerning, such as a sustained change, a value well outside their usual range, or a symptom they mention, suggest checking with a clinician. If they describe an emergency, tell them to contact emergency services.
-- You can only read this person's own data. You can't change data or settings, see anyone else's data, or browse the web.`;
+${BOUNDARIES}`;
+}
+
+/** The weekly digest's instructions: the chat's persona and boundaries, no tools, and nothing about cycle tracking. */
+function digestPrompt(name: string, today: string, timeZone: string | null, units: Units) {
+  return `${intro(name, today, timeZone, units)}.
+
+This time you're writing their weekly digest, a short recap of last week that they'll read in the app rather than a chat. Their week arrives as JSON: daily averages next to the week before, workouts, the dashboard's insights, patterns from their own history, and any heads-ups about recent readings.
+
+How to write it
+- 3 to 5 warm, plain sentences on how the week went, using a few of the numbers given (rounded), then one gentle, concrete suggestion for the week ahead.
+- 120 words at most. Light markdown: **bold** for a number or two, and no headings, bullets or tables. No greeting or sign-off.
+- Use only what's in the JSON. Leave out anything that isn't there rather than guessing.
+- Patterns are correlations in their own history: say what tends to go together, never that one thing causes another. Prefer "may" and "tends to", and never word anything as a diagnosis.
+
+${DATA_NOTES}
+
+${BOUNDARIES}`;
 }
 
 // ---------- the conversation the browser sends ----------
@@ -445,6 +485,75 @@ async function usedToday(db: Db, userId: string, day: string) {
   return row ? Number(row.questions) : 0;
 }
 
+// ---------- the weekly digest ----------
+
+const DIGEST_KEY = 'mcfly_digest';
+/** A week with fewer days of data than this gets no digest, and costs nothing. */
+const DIGEST_MIN_DAYS = 3;
+
+/** The last completed Monday to Sunday before `today`: on a Monday, the week that ended yesterday. */
+export function digestWeek(today: string) {
+  const end = addDays(weekStart(today), -1);
+  return { start: addDays(end, -6), end };
+}
+
+/** The kept digest, and whether it was written from demo data (one kept before that was known counts as real). */
+async function cachedDigest(db: Db, userId: string): Promise<{ digest: Digest; demo: boolean } | null> {
+  const raw = await getUserSetting(db, userId, DIGEST_KEY);
+  if (!raw) return null;
+  try {
+    const d = JSON.parse(raw) as Partial<Digest> & { demo?: unknown };
+    if (typeof d.weekStart !== 'string' || typeof d.weekEnd !== 'string' || typeof d.text !== 'string' || typeof d.generatedAt !== 'string') return null;
+    return { digest: { weekStart: d.weekStart, weekEnd: d.weekEnd, text: d.text, generatedAt: d.generatedAt }, demo: d.demo === true };
+  } catch {
+    return null;
+  }
+}
+
+/** Days in the week with anything recorded: a daily value, a workout, or a sleep, nap or mindful session. Never the cycle log. */
+async function daysWithData(scope: Scope, demo: boolean, week: { start: string; end: string }) {
+  const [row] = await scope.db.query<{ n: number }>(
+    `SELECT COUNT(DISTINCT date)::int AS n FROM (
+       SELECT date FROM daily WHERE user_id = $1 AND date BETWEEN $2 AND $3 AND source = ANY($4)
+       UNION ALL SELECT date FROM workouts WHERE user_id = $1 AND date BETWEEN $2 AND $3 AND source = ANY($4)
+       UNION ALL SELECT date FROM events WHERE user_id = $1 AND date BETWEEN $2 AND $3 AND source = ANY($4)) AS days`,
+    [scope.userId, week.start, week.end, sourceList(demo)],
+  );
+  return row ? Number(row.n) : 0;
+}
+
+/**
+ * What the digest is written from: the summary as of the week's Sunday (its week against the week before,
+ * insights and heads-ups) and the patterns in the person's history. Summary and patterns never read the
+ * cycle log, and nothing here does either.
+ */
+async function digestInput(scope: Scope, hosted: boolean, week: { start: string; end: string }, days: number) {
+  const [s, p] = await Promise.all([summary(scope, hosted, week.end), patterns(scope, hosted)]);
+  const r = (v: number | null, places = 1) => (v === null ? null : Math.round(v * 10 ** places) / 10 ** places);
+  const pair = (x: { avg: number | null; prev: number | null }, places = 1) =>
+    x.avg === null && x.prev === null ? undefined : { thisWeek: r(x.avg, places), weekBefore: r(x.prev, places) };
+  const w = s.week;
+  return {
+    week: { start: week.start, end: week.end, daysWithData: days },
+    ...(w && {
+      sleepHoursPerNight: pair(w.sleep, 2),
+      steps:
+        w.steps.avg === null && w.steps.prev === null
+          ? undefined
+          : { dailyAverage: r(w.steps.avg, 0), weekBefore: r(w.steps.prev, 0), goal: s.stepGoal, daysAtGoal: w.steps.goalDays, daysWithSteps: w.steps.daysWithData },
+      workouts: { count: w.workouts.count, minutes: Math.round(w.workouts.minutes) },
+      hrvMs: pair(w.hrv) && { measure: s.hrv.metric === 'hrv_rmssd' ? 'RMSSD' : 'SDNN', ...pair(w.hrv) },
+      restingHeartRateBpm: pair(w.restingHr),
+      whoopRecoveryPercent: pair(w.recovery, 0),
+    }),
+    insights: s.insights.map((i) => i.text),
+    patterns: p.patterns.map((x) => x.text),
+    headsUps: (s.flags ?? []).map((f) => `${f.title}. ${f.text}`),
+  };
+}
+
+type DigestResult = { status: number; body: DigestReply | { error: string } };
+
 // ---------- the router ----------
 
 export type McflyOptions = { hosted: boolean; client?: () => McflyClient | null };
@@ -459,6 +568,84 @@ export function mcflyRouter(db: Db, { hosted, client = defaultClient }: McflyOpt
     const platform = await platformSettings(db);
     const limit = Number(platform.mcfly_daily_limit);
     res.json({ configured: Boolean(client()), limit, usedToday: await usedToday(db, user.id, usageDay()) });
+  });
+
+  /** Last week's digest, written at most once per person per week and kept in user_settings. */
+  async function weeklyDigest(userId: string): Promise<DigestResult> {
+    const anthropic = client();
+    if (!anthropic) return { status: 200, body: { configured: false, digest: null, reason: 'not_configured' } };
+    const scope: Scope = { db, userId };
+    const [platform, rc, kept] = await Promise.all([platformSettings(db), requestContext(scope, hosted), cachedDigest(db, userId)]);
+    const limit = Number(platform.mcfly_daily_limit);
+    if (!(limit > 0)) return { status: 200, body: { configured: true, digest: null, reason: 'off' } };
+    // A digest of the demo data isn't this person's week once their own data arrives (or the other way round).
+    const cached = kept && kept.demo === rc.demo ? kept.digest : null;
+    const week = digestWeek(rc.today);
+    if (cached && cached.weekEnd >= week.end) return { status: 200, body: { configured: true, digest: cached } };
+    const days = await daysWithData(scope, rc.demo, week);
+    if (days < DIGEST_MIN_DAYS) return { status: 200, body: { configured: true, digest: null, reason: 'no_data' } };
+    // Claimed before the model is called, like a question, so the limit holds whatever happens next.
+    const day = usageDay();
+    if ((await claimQuestion(db, userId, day, limit)) === null) return { status: 200, body: { configured: true, digest: cached, reason: 'limit' } };
+
+    let inputTokens = 0;
+    let outputTokens = 0;
+    try {
+      const input = await digestInput(scope, hosted, week, days);
+      // No cache_control: each digest's prompt is read once.
+      const message = await anthropic.beta.messages.create({
+        model: platform.mcfly_model,
+        max_tokens: 16_000,
+        output_config: { effort: 'medium' },
+        betas: ['server-side-fallback-2026-07-01'],
+        fallbacks: 'default',
+        system: digestPrompt(rc.settings.name, rc.today, rc.settings.timeZone, rc.settings.units),
+        messages: [{ role: 'user', content: `Write my digest for the week of ${week.start} to ${week.end}.\n\n${JSON.stringify(input)}` }],
+      });
+      inputTokens = message.usage.input_tokens + (message.usage.cache_read_input_tokens ?? 0) + (message.usage.cache_creation_input_tokens ?? 0);
+      outputTokens = message.usage.output_tokens;
+      const text =
+        message.stop_reason === 'refusal'
+          ? ''
+          : message.content
+              .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === 'text')
+              .map((b) => b.text)
+              .join('')
+              .trim();
+      if (!text) throw new Error(message.stop_reason === 'refusal' ? 'refusal' : 'empty');
+      const digest: Digest = { weekStart: week.start, weekEnd: week.end, text, generatedAt: new Date().toISOString() };
+      await setUserSetting(db, userId, DIGEST_KEY, JSON.stringify({ ...digest, demo: rc.demo }));
+      return { status: 200, body: { configured: true, digest } };
+    } catch (err) {
+      // Log the kind of failure only: never the data or the digest.
+      console.error('mcfly digest:', err instanceof Anthropic.APIError ? `API ${err.status}` : err instanceof Error ? err.message : 'error');
+      // A digest that wasn't written doesn't count against the limit.
+      await db.query('UPDATE mcfly_usage SET questions = GREATEST(questions - 1, 0) WHERE user_id = $1 AND day = $2', [userId, day]).catch(() => {});
+      return { status: 503, body: { error: "McFly couldn't write this week's digest right now. Try again later." } };
+    } finally {
+      await db
+        .query('UPDATE mcfly_usage SET input_tokens = input_tokens + $3, output_tokens = output_tokens + $4 WHERE user_id = $1 AND day = $2', [
+          userId,
+          day,
+          inputTokens,
+          outputTokens,
+        ])
+        .catch(() => {});
+    }
+  }
+
+  // One digest at a time per person: clients opening at once share it, and the one charge for it.
+  const digesting = new Map<string, Promise<DigestResult>>();
+
+  router.get('/digest', async (_req: Request, res: Response) => {
+    const user = currentUser(res);
+    let job = digesting.get(user.id);
+    if (!job) {
+      job = weeklyDigest(user.id).finally(() => digesting.delete(user.id));
+      digesting.set(user.id, job);
+    }
+    const { status, body } = await job;
+    res.status(status).json(body);
   });
 
   router.post('/chat', async (req: Request, res: Response) => {

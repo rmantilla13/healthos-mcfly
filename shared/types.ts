@@ -55,7 +55,11 @@ export type Summary = {
   insights: Insight[];
   /** Missing from servers older than this field. */
   week?: WeekSummary;
+  /** Gentle heads-ups about the latest readings. Absent when there are none, or from older servers. */
+  flags?: Flag[];
 };
+
+export type Flag = { id: string; tone: 'caution' | 'info'; title: string; text: string; page: 'vitals' };
 
 /** Monday through the summary's date, each figure next to the same weekdays of the week before. */
 export type WeekSummary = {
@@ -211,6 +215,21 @@ export type AdminOverview = {
 export type McflyStatus = { configured: boolean; limit: number; usedToday: number };
 export type McflyTurn = { role: 'user' | 'assistant'; content: string };
 
+/** McFly's recap of the last completed Monday–Sunday. Never draws on cycle data. */
+export type Digest = {
+  weekStart: string;
+  weekEnd: string;
+  /** Light markdown, about 120 words at most. */
+  text: string;
+  generatedAt: string;
+};
+
+/**
+ * GET /api/mcfly/digest. digest is null when there's nothing to show; with reason 'limit' it's the last
+ * digest written (an older week), if any.
+ */
+export type DigestReply = { configured: boolean; digest: Digest | null; reason?: 'not_configured' | 'off' | 'limit' | 'no_data' };
+
 // ---------- Day view (GET /api/day) ----------
 
 export type DayMetric = 'steps' | 'active_energy' | 'heart_rate';
@@ -245,6 +264,73 @@ export type DayData = {
   /** Only metrics the person has hourly data for at all; an empty object means "no Day view". */
   metrics: Partial<Record<DayMetric, DaySeries>>;
 };
+
+// ---------- Sleep timing (GET /api/sleep) ----------
+
+/** One night: the longest sleep that ended on its wake date, from any source. Naps aren't nights. */
+export type SleepNight = {
+  /** The wake date. */
+  date: string;
+  /** ISO timestamps with the local offset they were recorded in. */
+  bed: string;
+  wake: string;
+  /** Minutes after 18:00 local the evening before the wake date (23:30 → 330, 01:10 → 430). */
+  bedMin: number;
+  /** Minutes after midnight local of the wake date. */
+  wakeMin: number;
+  /** The middle of the night, minutes after 18:00 like bedMin. */
+  midMin: number;
+  /** The day's sleep_hours as Home shows it, else the event's length. */
+  hours: number | null;
+  /** The wake date is a Saturday or Sunday. */
+  weekend: boolean;
+};
+
+export type SleepTiming = {
+  /** Oldest first. */
+  nights: SleepNight[];
+  stats: {
+    nights: number;
+    avgBedMin: number | null;
+    avgWakeMin: number | null;
+    /** Standard deviations in minutes; need 7 nights. */
+    bedSd: number | null;
+    wakeSd: number | null;
+    /** Average midpoint (minutes after 18:00) on weekday and weekend wake dates; need 2 nights each. */
+    midWeekday: number | null;
+    midWeekend: number | null;
+    /** midWeekend − midWeekday, minutes. */
+    socialJetlag: number | null;
+    /** Hours: the median of the last 60 nights, held within 7–9; needs 14 nights. */
+    need: number | null;
+    /** Hours short of `need`, added up over the nights of the last 7 days. */
+    debt: number | null;
+    /** How many nights `debt` adds up. */
+    debtNights: number;
+  };
+};
+
+// ---------- Patterns (GET /api/patterns) ----------
+
+/** Something that tends to go together in a person's own history. Correlation only, never cause. */
+export type Pattern = {
+  id: string;
+  icon: 'moon' | 'heart' | 'steps' | 'sun' | 'spark' | 'trend-up' | 'trend-down';
+  /** One sentence. */
+  text: string;
+  /** What it rests on: how many days in each group, over what window. */
+  detail: string;
+  /** Days in the smaller group. */
+  n: number;
+  /** Signed difference, in `unit`: the days that meet the condition less the days that don't. */
+  effect: number;
+  /** 'min' | 'ms' | '%' | 'bpm' | 'points' */
+  unit: string;
+  page: 'vitals' | 'sleep' | 'activity' | 'body';
+};
+
+/** At most six, strongest first, over the 180 days to the latest data date. */
+export type Patterns = { start: string; end: string; patterns: Pattern[] };
 
 // ---------- Cycle tracking (GET /api/cycle) ----------
 // Reproductive-health data: opt-in per person, never part of /api/summary or the admin view.
@@ -304,4 +390,16 @@ export type CycleData = {
   noEstimate: 'cycles' | 'stale' | null;
   /** Ovulation inferred after the fact, per cycle: a basal temperature rise, or the day after an LH surge. */
   ovulations: { date: string; basis: 'bbt' | 'lh_test' }[];
+  /** Where today falls in the current cycle. null with no current cycle; missing from older servers. */
+  phase?: CyclePhase | null;
+};
+
+export type CyclePhase = {
+  name: 'menstrual' | 'follicular' | 'ovulatory' | 'luteal';
+  /** Cycle day, 1 on the first day of the period. */
+  day: number;
+  /** Days to the estimated next period; null without an estimate. */
+  nextPeriodIn: number | null;
+  /** logged: from this cycle's own records (bleeding, an LH surge, a temperature rise); estimate: from past cycles. */
+  basis: 'logged' | 'estimate';
 };

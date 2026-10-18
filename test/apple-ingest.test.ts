@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { AddressInfo } from 'node:net';
 import express from 'express';
-import { lanIngestApp, ingestRouter } from '../server/apple/ingest.ts';
+import { APPLE_METRICS, lanIngestApp, ingestRouter } from '../server/apple/ingest.ts';
 import { type Db, OWNER_ID, getUserSetting, upsertDaily, upsertEvents, upsertWorkouts } from '../server/db.ts';
 import { openStore } from '../server/store.ts';
 
@@ -89,7 +89,7 @@ test('ingest upserts rows as source apple and replaces a day on re-send', async 
       events: [sleep('s1')],
     });
     assert.equal(res.status, 200);
-    assert.deepEqual(await res.json(), { ok: true, daily: 2, hourly: 0, workouts: 1, events: 1, deleted: 0, cycle: 0 });
+    assert.deepEqual(await res.json(), { ok: true, daily: 2, hourly: 0, workouts: 1, events: 1, deleted: 0, cycle: 0, metrics: [...APPLE_METRICS].sort() });
     assert.deepEqual(await daily(db, '2026-10-13', 'steps'), [
       { source: 'apple', value: 8000 },
       { source: 'whoop', value: 42 },
@@ -110,7 +110,9 @@ test('ingest upserts rows as source apple and replaces a day on re-send', async 
       await db.query("SELECT id, source FROM events WHERE kind = 'sleep'"),
       [{ id: 's2', source: 'apple' }],
     );
-    assert.equal(JSON.parse((await getUserSetting(db, OWNER_ID, 'apple_last_sync'))!).events, 1);
+    const lastSync = JSON.parse((await getUserSetting(db, OWNER_ID, 'apple_last_sync'))!);
+    assert.equal(lastSync.events, 1);
+    assert.equal(lastSync.metrics, undefined);
   });
 });
 
@@ -165,6 +167,33 @@ test('ingest rejects malformed rows and writes nothing from that request', async
     }
   });
   assert.equal(await count(db, 'daily'), 0);
+});
+
+// What installed apps sent before blood pressure, glucose, mobility, daylight, stand hours, caffeine and water.
+const LEGACY = ['steps', 'active_energy', 'exercise_min', 'distance_km', 'hr_avg', 'hr_min', 'hr_max', 'resting_hr', 'hrv_sdnn', 'hrv_rmssd_watch', 'spo2', 'resp_rate', 'wrist_temp', 'body_temp', 'weight', 'body_fat', 'lean_mass', 'vo2max', 'sleep_hours', 'sleep_in_bed', 'sleep_deep', 'sleep_rem', 'sleep_light', 'sleep_awake'];
+const ADDED = ['blood_pressure_systolic', 'blood_pressure_diastolic', 'glucose', 'walking_speed', 'walking_steadiness', 'walking_asymmetry', 'daylight_min', 'flights', 'stand_hours', 'breathing_disturbances', 'caffeine_mg', 'water_ml'];
+
+test('ingest takes the newer daily metrics and lists every metric it accepts', async () => {
+  const db = await openStore();
+  await serve(appFor(db, TOKEN), async (url) => {
+    const res = await post(url, { daily: ADDED.map((metric, i) => ({ date: '2026-10-13', metric, value: i + 1 })) });
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as { daily: number; metrics: string[] };
+    assert.equal(body.daily, ADDED.length);
+    assert.deepEqual(body.metrics, [...LEGACY, ...ADDED].sort());
+
+    // The app probes with an empty push before sending; the list comes back with it.
+    const probe = (await (await post(url, {})).json()) as { daily: number; metrics: string[] };
+    assert.equal(probe.daily, 0);
+    assert.deepEqual(probe.metrics, body.metrics);
+
+    const unknown = await post(url, { daily: [{ date: '2026-10-13', metric: 'stand_minutes', value: 1 }] });
+    assert.equal(unknown.status, 400);
+    assert.match(((await unknown.json()) as { error: string }).error, /daily\[0\]\.metric: unknown metric "stand_minutes"/);
+  });
+  assert.equal(await count(db, 'daily'), ADDED.length);
+  assert.deepEqual(await daily(db, '2026-10-13', 'water_ml'), [{ source: 'apple', value: 12 }]);
+  assert.deepEqual(await daily(db, '2026-10-13', 'stand_hours'), [{ source: 'apple', value: 9 }]);
 });
 
 test('ingest takes a large first-sync chunk', async () => {

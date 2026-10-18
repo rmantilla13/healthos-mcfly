@@ -154,6 +154,31 @@ test('a record longer than any real night is ignored', async () => {
   assert.equal(v.sleep_hours, 7);
 });
 
+const sleepEvents = async (xml: string) =>
+  (await parseStream(Readable.from([Buffer.from(xml)]))).finish().events.filter((e) => e.kind === 'sleep').map(({ start, end, date }) => ({ start, end, date }));
+
+test("a nap the same app wrote for the wake day adds to the day's sleep but not to the night's span", async () => {
+  const xml = sleepXml([
+    ['Watch', 'AsleepCore', '14 22:30:00', '15 06:00:00'],
+    ['Watch', 'AsleepCore', '15 13:00:00', '15 14:00:00'],
+  ]);
+  // Naps count toward the day's total, as WHOOP's do.
+  assert.equal((await nightValues(xml)).sleep_hours, 8.5);
+  // The night still ends at 06:00, so bed and wake times aren't stretched to the end of the nap.
+  assert.deepEqual(await sleepEvents(xml), [{ start: '2026-10-14T22:30:00-07:00', end: '2026-10-15T06:00:00-07:00', date: '2026-10-15' }]);
+});
+
+test('a long wake recorded in the night, or a short gap with nothing recorded, is still one night', async () => {
+  const xml = sleepXml([
+    ['Watch', 'AsleepCore', '14 22:00:00', '15 01:00:00'],
+    ['Watch', 'Awake', '15 01:00:00', '15 03:30:00'],
+    // An hour with nothing recorded (the watch on its charger), then back to sleep.
+    ['Watch', 'AsleepCore', '15 04:30:00', '15 07:00:00'],
+  ]);
+  assert.equal((await nightValues(xml)).sleep_hours, 5.5);
+  assert.deepEqual(await sleepEvents(xml), [{ start: '2026-10-14T22:00:00-07:00', end: '2026-10-15T07:00:00-07:00', date: '2026-10-15' }]);
+});
+
 test("WHOOP's own copies in Apple Health are skipped (WHOOP is read from its API)", async () => {
   const xml = `<?xml version="1.0"?><HealthData>
     <Record type="HKQuantityTypeIdentifierRestingHeartRate" sourceName="WHOOP" unit="count/min" startDate="2026-10-13 00:00:00 -0700" endDate="2026-10-13 00:00:00 -0700" value="49"/>
@@ -173,4 +198,149 @@ test("WHOOP's own copies in Apple Health are skipped (WHOOP is read from its API
   assert.equal(v('hrv_rmssd_watch'), 42);
   assert.equal(workouts.length, 0);
   assert.equal(agg.skipped, 3);
+});
+
+// ---- blood pressure, glucose, mobility, daylight, stand hours, caffeine and water ----
+
+const METRICS_FIXTURE = path.join(import.meta.dirname, 'fixtures', 'export-metrics.xml');
+const round = (v: number | undefined, places = 2) => (v === undefined ? undefined : Math.round(v * 10 ** places) / 10 ** places);
+
+test('imports the newer Health types in the units healthOS stores', async () => {
+  const db = await openStore();
+  const result = await importAppleHealth({ db, userId: OWNER_ID }, METRICS_FIXTURE);
+  assert.equal(result.skipped, 1, "WHOOP's water");
+  const v = async (metric: string, date = '2026-10-13') => round(await value(db, date, metric));
+  assert.equal(await v('glucose'), 100);
+  assert.equal(await v('glucose', '2026-10-14'), 99.09, '5.5 mmol/L');
+  assert.equal(await v('walking_speed'), 4.71, '4.8 km/h, 3 mph and 1.25 m/s');
+  assert.equal(await v('walking_steadiness'), 90, 'the later reading, as a percent');
+  assert.equal(await v('walking_asymmetry'), 3);
+  assert.equal(await v('daylight_min'), 35, 'the Watch with the most, not both added');
+  assert.equal(await v('flights'), 7);
+  assert.equal(await v('breathing_disturbances'), 4);
+  assert.equal(await v('stand_hours'), 4);
+  assert.equal(await v('caffeine_mg'), 175, '95 mg in one app and 0.08 g in another, the meal counted once');
+  assert.equal(await v('water_ml'), 986.59, '500 mL + 8 US fl oz + 0.25 L, without WHOOP');
+});
+
+test('a blood pressure reading inside a correlation counts once', async () => {
+  const db = await openStore();
+  await importAppleHealth({ db, userId: OWNER_ID }, METRICS_FIXTURE);
+  // 120/78 is in the export twice (top level and in its correlation), 132/86 once. Twice would give 124/80.67.
+  assert.equal(await value(db, '2026-10-13', 'blood_pressure_systolic'), 126);
+  assert.equal(await value(db, '2026-10-13', 'blood_pressure_diastolic'), 82);
+});
+
+async function dailyOf(records: string[]) {
+  const agg = await parseStream(Readable.from([Buffer.from(`<?xml version="1.0"?><HealthData>${records.join('')}</HealthData>`)]));
+  return Object.fromEntries(agg.finish().daily.map((d) => [d.metric, round(d.value)]));
+}
+
+const sample = (type: string, source: string, time: string, value: string | number, unit = '') =>
+  `<Record type="HKQuantityTypeIdentifier${type}" sourceName="${source}" unit="${unit}" startDate="2026-10-13 ${time} -0700" endDate="2026-10-13 ${time} -0700" value="${value}"/>`;
+
+test('caffeine and water add up across apps; flights and daylight keep one device', async () => {
+  const v = await dailyOf([
+    sample('DietaryCaffeine', 'Caffeine Tracker', '08:00:00', 100, 'mg'),
+    sample('DietaryCaffeine', 'Coffee App', '14:00:00', 150, 'mg'),
+    sample('DietaryWater', 'WaterMinder', '09:00:00', 1, 'L'),
+    sample('DietaryWater', 'Health', '12:00:00', 300, 'mL'),
+    sample('FlightsClimbed', 'iPhone', '08:00:00', 6, 'count'),
+    sample('FlightsClimbed', 'Watch', '08:00:00', 5, 'count'),
+    sample('TimeInDaylight', 'Watch', '10:00:00', 30, 'min'),
+    sample('TimeInDaylight', 'Old Watch', '10:00:00', 25, 'min'),
+  ]);
+  assert.equal(v.caffeine_mg, 250);
+  assert.equal(v.water_ml, 1300);
+  assert.equal(v.flights, 6);
+  assert.equal(v.daylight_min, 30);
+});
+
+test('stand hours count each local hour once across watches, and idle hours not at all', async () => {
+  const hour = (source: string, h: number, value: string) =>
+    `<Record type="HKCategoryTypeIdentifierAppleStandHour" sourceName="${source}" startDate="2026-10-13 ${String(h).padStart(2, '0')}:00:00 -0700" endDate="2026-10-13 ${String(h + 1).padStart(2, '0')}:00:00 -0700" value="${value}"/>`;
+  const v = await dailyOf([
+    hour('Watch', 9, 'HKCategoryValueAppleStandHourStood'),
+    hour('Old Watch', 9, 'HKCategoryValueAppleStandHourStood'),
+    hour('Watch', 10, 'HKCategoryValueAppleStandHourIdle'),
+    hour('Watch', 11, '0'),
+  ]);
+  assert.equal(v.stand_hours, 2);
+});
+
+test('a correlated sample counts once whichever copy comes first; separate identical samples both count', async () => {
+  const sys = (value: number) => sample('BloodPressureSystolic', 'Omron', '08:00:00', value, 'mmHg');
+  const v = await dailyOf([
+    `<Correlation type="HKCorrelationTypeIdentifierBloodPressure" sourceName="Omron" startDate="2026-10-13 08:00:00 -0700" endDate="2026-10-13 08:00:00 -0700">`,
+    `<MetadataEntry key="HKWasUserEntered" value="0"/>${sys(110)}</Correlation>`,
+    sys(110),
+    sample('BloodPressureSystolic', 'Health', '20:00:00', 140, 'mmHg'),
+    // The same glass logged twice at the same moment, neither in a correlation.
+    sample('DietaryWater', 'WaterMinder', '09:00:00', 250, 'mL'),
+    sample('DietaryWater', 'WaterMinder', '09:00:00', 250, 'mL'),
+  ]);
+  assert.equal(v.blood_pressure_systolic, 125);
+  assert.equal(v.water_ml, 500);
+});
+
+test("WHOOP's copies of the newer types are skipped too", async () => {
+  const v = await dailyOf([
+    sample('FlightsClimbed', 'WHOOP', '08:00:00', 9, 'count'),
+    sample('FlightsClimbed', 'iPhone', '08:00:00', 2, 'count'),
+    sample('DietaryCaffeine', 'WHOOP', '08:00:00', 200, 'mg'),
+  ]);
+  assert.equal(v.flights, 2);
+  assert.equal(v.caffeine_mg, undefined);
+});
+
+// ---- times in the person's own zone ----
+
+test("with the person's zone, sleep, workouts and mindful sessions keep the local time they happened at", async () => {
+  // Exported in October (CDT, -0500), so a February evening (CST, -0600) prints an hour late: a night slept
+  // 23:30 to 07:00, a run ending 20:30, a late session from 23:30 past midnight, and breathing at 23:15.
+  const xml = `<?xml version="1.0"?><HealthData>
+    <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Watch" startDate="2026-02-11 00:30:00 -0500" endDate="2026-02-11 08:00:00 -0500" value="HKCategoryValueSleepAnalysisAsleepCore"/>
+    <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Watch" startDate="2026-10-14 23:30:00 -0500" endDate="2026-10-15 07:00:00 -0500" value="HKCategoryValueSleepAnalysisAsleepCore"/>
+    <Workout workoutActivityType="HKWorkoutActivityTypeRunning" duration="45" durationUnit="min" sourceName="Watch" startDate="2026-02-11 20:45:00 -0500" endDate="2026-02-11 21:30:00 -0500"/>
+    <Workout workoutActivityType="HKWorkoutActivityTypeYoga" duration="45" durationUnit="min" sourceName="Watch" startDate="2026-02-12 00:30:00 -0500" endDate="2026-02-12 01:15:00 -0500"/>
+    <Record type="HKCategoryTypeIdentifierMindfulSession" sourceName="Breathe" startDate="2026-02-11 00:15:00 -0500" endDate="2026-02-11 00:20:00 -0500" value="HKCategoryValueNotApplicable"/>
+  </HealthData>`;
+  const run = async (timeZone?: string) => {
+    const { events, workouts, daily } = (await parseStream(Readable.from([Buffer.from(xml)]), undefined, { timeZone })).finish();
+    const pick = (x: { start: string; end: string; date: string }) => ({ start: x.start, end: x.end, date: x.date });
+    return {
+      sleep: events.filter((e) => e.kind === 'sleep').map(pick).sort((a, b) => a.date.localeCompare(b.date)),
+      mindful: events.filter((e) => e.kind === 'mindful').map(pick),
+      workouts: workouts.map(pick),
+      sleepDays: daily.filter((d) => d.metric === 'sleep_hours').map((d) => d.date).sort(),
+      ids: [...events, ...workouts].map((x) => x.id).sort(),
+    };
+  };
+
+  const zoned = await run('America/Chicago');
+  assert.deepEqual(zoned.sleep, [
+    { start: '2026-02-10T23:30:00-06:00', end: '2026-02-11T07:00:00-06:00', date: '2026-02-11' },
+    // October already had the export's offset, so it's as written.
+    { start: '2026-10-14T23:30:00-05:00', end: '2026-10-15T07:00:00-05:00', date: '2026-10-15' },
+  ]);
+  assert.deepEqual(zoned.workouts, [
+    { start: '2026-02-11T19:45:00-06:00', end: '2026-02-11T20:30:00-06:00', date: '2026-02-11' },
+    // Started at 23:30 on the 11th, so it's the 11th's, and it ended past midnight (a late workout).
+    { start: '2026-02-11T23:30:00-06:00', end: '2026-02-12T00:15:00-06:00', date: '2026-02-11' },
+  ]);
+  assert.deepEqual(zoned.mindful, [{ start: '2026-02-10T23:15:00-06:00', end: '2026-02-10T23:20:00-06:00', date: '2026-02-10' }]);
+  assert.deepEqual(zoned.sleepDays, ['2026-02-11', '2026-10-15']);
+
+  // Without a zone, the export's own offsets, as before.
+  const plain = await run();
+  assert.deepEqual(plain.sleep[0], { start: '2026-02-11T00:30:00-05:00', end: '2026-02-11T08:00:00-05:00', date: '2026-02-11' });
+  assert.deepEqual(plain.workouts[1], { start: '2026-02-12T00:30:00-05:00', end: '2026-02-12T01:15:00-05:00', date: '2026-02-12' });
+  // The same instants and ids either way, so an iPhone push of the same records still finds and replaces them.
+  for (const k of ['sleep', 'workouts', 'mindful'] as const) {
+    assert.deepEqual(
+      zoned[k].map((x) => [Date.parse(x.start), Date.parse(x.end)]),
+      plain[k].map((x) => [Date.parse(x.start), Date.parse(x.end)]),
+    );
+  }
+  assert.deepEqual(zoned.ids, plain.ids);
 });

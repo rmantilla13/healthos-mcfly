@@ -1,0 +1,36 @@
+{
+  "start": "2026-04-20",
+  "end": "2026-10-16",
+  "patterns": [
+    {
+      "id": "steps_sleep",
+      "icon": "moon",
+      "text": "On days with 10k+ steps, you tend to sleep 24 min longer that night.",
+      "detail": "Based on 41 days with 10k+ steps and 96 without, last 180 days.",
+      "n": 41,
+      "effect": 24,
+      "unit": "min",
+      "page": "sleep"
+    },
+    {
+      "id": "late_workout_hrv",
+      "icon": "trend-down",
+      "text": "After workouts that end after 8 pm, your next-morning HRV tends to be 6% lower.",
+      "detail": "Based on 12 late workouts and 38 earlier ones, last 180 days.",
+      "n": 12,
+      "effect": -6.2,
+      "unit": "%",
+      "page": "vitals"
+    },
+    {
+      "id": "short_sleep_rhr",
+      "icon": "heart",
+      "text": "After nights under 6 hours, your resting heart rate tends to be 2.4 bpm higher.",
+      "detail": "Based on 9 short nights and 88 nights of 7 hours or more, last 180 days.",
+      "n": 9,
+      "effect": 2.4,
+      "unit": "bpm",
+      "page": "vitals"
+    }
+  ]
+}

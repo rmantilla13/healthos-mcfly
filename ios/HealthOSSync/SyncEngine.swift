@@ -31,6 +31,8 @@ struct SyncState: Codable {
     /// The one-time re-read of history that gives already-synced days their hours, once the server stores them.
     var hourlyBackfillStarted = false
     var hourlyBackfillDone = false
+    /// The daily metrics the server listed in its last reply; nil for an older server that doesn't list them.
+    var acceptedMetrics: [String]?
 
     init(server: String = "", since: Date? = nil, last: SyncReport? = nil) {
         self.server = server
@@ -55,6 +57,59 @@ struct SyncState: Codable {
         last = try c.decodeIfPresent(SyncReport.self, forKey: .last)
         hourlyBackfillStarted = try c.decodeIfPresent(Bool.self, forKey: .hourlyBackfillStarted) ?? false
         hourlyBackfillDone = try c.decodeIfPresent(Bool.self, forKey: .hourlyBackfillDone) ?? false
+        acceptedMetrics = try c.decodeIfPresent([String].self, forKey: .acceptedMetrics)
+    }
+
+    /// Daily metrics every server took before replies listed them (APPLE_METRICS in server/apple/ingest.ts before iOS 1.1).
+    static let legacyMetrics: Set<String> = [
+        "steps", "active_energy", "exercise_min", "distance_km", "hr_avg", "hr_min", "hr_max", "resting_hr", "hrv_sdnn",
+        "hrv_rmssd_watch", "spo2", "resp_rate", "wrist_temp", "body_temp", "weight", "body_fat", "lean_mass", "vo2max",
+        "sleep_hours", "sleep_in_bed", "sleep_deep", "sleep_rem", "sleep_light", "sleep_awake",
+    ]
+
+    /// The daily metrics this server takes: what its last reply listed, else the legacy set.
+    var accepted: Set<String> { acceptedMetrics.map(Set.init) ?? Self.legacyMetrics }
+
+    /// One unknown metric fails a whole ingest, so rows this server wouldn't take are left out.
+    func filtered(_ payload: IngestPayload) -> IngestPayload {
+        let accepted = accepted
+        var p = payload
+        p.daily.removeAll { !accepted.contains($0.metric) }
+        return p
+    }
+
+    /// Learns from a reply which metrics the server takes. One it takes for the first time had its days read (and its
+    /// rows left out) while it didn't, so the anchors of the types it comes from are cleared, once, and their history
+    /// goes up again through the recent month and the backfill. Returns the identifiers of the types cleared.
+    @discardableResult
+    mutating func noteAccepted(_ metrics: [String]?, typeOf: (String) -> String? = { HealthTypes.type(producing: $0)?.identifier }) -> Set<String> {
+        let added = Set(metrics ?? []).subtracting(accepted)
+        acceptedMetrics = metrics
+        let types = Set(added.compactMap(typeOf))
+        for id in types { anchors[id] = nil }
+        return types
+    }
+
+    /// Every push goes through here: rows this server wouldn't take are left out, and its reply says what it takes now.
+    /// A server that refuses a metric it listed before (it went back to an older version) is asked again, with an empty
+    /// push, which it takes; the rows then go up once more without the ones it no longer takes.
+    @discardableResult
+    mutating func push(_ payload: IngestPayload, send: (IngestPayload) async throws -> IngestClient.Response) async throws -> (reply: IngestClient.Response, rows: Int) {
+        var sent = filtered(payload)
+        let reply: IngestClient.Response
+        do {
+            reply = try await send(sent)
+        } catch let error as IngestClient.Rejected where error.unknownMetric {
+            let probe = try await send(IngestPayload())
+            noteAccepted(probe.metrics)
+            let fewer = filtered(payload)
+            // Nothing more to leave out: the same rows would be refused again.
+            guard fewer.daily.map(\.metric) != sent.daily.map(\.metric) else { throw error }
+            sent = fewer
+            reply = try await send(sent)
+        }
+        noteAccepted(reply.metrics)
+        return (reply, sent.rowCount)
     }
 
     /// Days only go up again when they change, so hours a server dropped (it didn't store them yet) would never
@@ -220,10 +275,11 @@ actor SyncEngine {
             }
 
             let client = IngestClient(base: base, token: token)
-            // Ask (with an empty push, which writes nothing) whether this server stores hours yet.
+            // Ask (with an empty push, which writes nothing) whether this server stores hours yet, and which daily
+            // metrics it takes, before reading changes: a metric it takes for the first time clears its types' anchors.
             var storedHours = false
-            if !state.hourlyBackfillDone || !Config.serverStoresCycle {
-                let probe = try await client.send(IngestPayload())
+            if !state.hourlyBackfillDone || !Config.serverStoresCycle || state.acceptedMetrics == nil {
+                let probe = try await push(IngestPayload(), via: client, state: &state).reply
                 storedHours = probe.hourly != nil
                 state.startHourlyBackfill(serverStoresHours: storedHours)
                 // Cycle types start with no anchor, so their whole history goes up the first time they're read.
@@ -283,7 +339,7 @@ actor SyncEngine {
             // 2. Re-read each pending day in full and upload it, newest week first.
             if !state.deletedWorkouts.isEmpty || !state.deletedEvents.isEmpty {
                 await emit(.progress("Removing deleted workouts and sessions"))
-                try await client.send(IngestPayload(deleted: .init(workouts: state.deletedWorkouts, events: state.deletedEvents)))
+                try await push(IngestPayload(deleted: .init(workouts: state.deletedWorkouts, events: state.deletedEvents)), via: client, state: &state)
                 state.deletedWorkouts = []
                 state.deletedEvents = []
                 try state.save()
@@ -293,14 +349,14 @@ actor SyncEngine {
             for (i, window) in windows.enumerated() {
                 await emit(.progress(windows.count == 1 && window.count == 1 ? "Uploading \(window[0])" : "Uploading \(window.first!) – \(window.last!) (\(i + 1)/\(windows.count))"))
                 let payload = try await Health.shared.payload(for: window, clearCycle: Set(state.cycleClear))
-                let reply = try await client.send(payload)
+                let (reply, sentRows) = try await push(payload, via: client, state: &state)
                 storedHours = reply.hourly != nil
                 let sent = Set(window)
                 state.pending.removeAll { sent.contains($0) }
                 state.cycleClear.removeAll { sent.contains($0) }
                 try state.save()
                 days += window.count
-                rows += payload.rowCount
+                rows += sentRows
             }
             state.finishHourlyBackfill(serverStoredHours: storedHours)
             let left = state.backfill.count
@@ -326,7 +382,7 @@ actor SyncEngine {
             for window in Self.windows(state.backfill).prefix(Self.backfillWindowsPerPass) {
                 await emit(.backfill(left: state.backfill.count, at: window.first!))
                 let payload = try await Health.shared.payload(for: window, clearCycle: Set(state.cycleClear))
-                let reply = try await client.send(payload)
+                let reply = try await push(payload, via: client, state: &state).reply
                 let sent = Set(window)
                 state.backfill.removeAll { sent.contains($0) }
                 state.cycleClear.removeAll { sent.contains($0) }
@@ -349,6 +405,12 @@ actor SyncEngine {
         }
         await emit(.backfill(left: state.backfill.count, at: nil))
         return !state.backfill.isEmpty
+    }
+
+    /// Every push goes through `SyncState.push`, which leaves out rows the server wouldn't take.
+    @discardableResult
+    private func push(_ payload: IngestPayload, via client: IngestClient, state: inout SyncState) async throws -> (reply: IngestClient.Response, rows: Int) {
+        try await state.push(payload, send: client.send)
     }
 
     private static func describe(_ error: Error) -> String {

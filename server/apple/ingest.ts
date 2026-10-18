@@ -35,7 +35,25 @@ export const APPLE_METRICS = new Set([
   'sleep_rem',
   'sleep_light',
   'sleep_awake',
+  'blood_pressure_systolic',
+  'blood_pressure_diastolic',
+  'glucose',
+  'walking_speed',
+  'walking_steadiness',
+  'walking_asymmetry',
+  'daylight_min',
+  'flights',
+  'stand_hours',
+  'breathing_disturbances',
+  'caffeine_mg',
+  'water_ml',
 ]);
+
+/**
+ * Sent back with every push, an empty one included, so a newer app can leave out metrics an older server
+ * would reject (one unknown name fails the whole request).
+ */
+const METRICS = [...APPLE_METRICS].sort();
 
 /** Hourly metrics the app may send for the Day view: sums per hour, and heart rate's average, low and high. */
 export const HOURLY_METRICS = new Set(Object.keys(HOURLY_FOLD));
@@ -279,7 +297,7 @@ export function ingestRouter(db: Db, ownerToken: string | undefined) {
       if (err instanceof IngestError) return void res.status(400).json({ error: err.message });
       throw err;
     }
-    res.json({ ok: true, ...(await ingestApple({ db, userId: res.locals.ingestUser as string }, payload)) });
+    res.json({ ok: true, ...(await ingestApple({ db, userId: res.locals.ingestUser as string }, payload)), metrics: METRICS });
   });
 
   router.use((err: Error & { status?: number }, _req: Request, res: Response, _next: NextFunction) => {

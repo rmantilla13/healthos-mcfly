@@ -4,10 +4,18 @@ import HealthKit
 /// Simulator only: fills the simulator's empty Health store with two weeks of plausible data, so the
 /// sync can be tried end to end. Device builds never ask for write access.
 enum SampleData {
-    // Apple-computed types (exercise minutes, sleeping wrist temperature) can't be written by apps.
+    // Apple-computed types (exercise minutes, sleeping wrist temperature, walking metrics, daylight, breathing
+    // disturbances, the Watch's RMSSD) can't be written by apps, and asking to share one fails the request.
+    // Stand hours aren't asked for either (not a quantity here). Raw values for types newer than iOS 17.
+    private static let appleComputed: Set<String> = [
+        HKQuantityTypeIdentifier.appleExerciseTime.rawValue, HKQuantityTypeIdentifier.appleSleepingWristTemperature.rawValue,
+        HKQuantityTypeIdentifier.walkingSpeed.rawValue, HKQuantityTypeIdentifier.appleWalkingSteadiness.rawValue,
+        HKQuantityTypeIdentifier.walkingAsymmetryPercentage.rawValue, HKQuantityTypeIdentifier.timeInDaylight.rawValue,
+        "HKQuantityTypeIdentifierHeartRateVariabilityRMSSD", "HKQuantityTypeIdentifierAppleSleepingBreathingDisturbances",
+    ]
     static let shareTypes: Set<HKSampleType> = Set(
         HealthTypes.quantities.map(\.identifier)
-            .filter { $0 != .appleExerciseTime && $0 != .appleSleepingWristTemperature && $0.rawValue != "HKQuantityTypeIdentifierHeartRateVariabilityRMSSD" }
+            .filter { !appleComputed.contains($0.rawValue) }
             .map { HKQuantityType($0) as HKSampleType }
     ).union([HealthTypes.sleep, HealthTypes.mindful, HealthTypes.workout])
 
@@ -45,6 +53,7 @@ enum SampleData {
                 quantity(.stepCount, steps, .count(), start, end, "steps-\(key)-\(h)")
                 quantity(.distanceWalkingRunning, steps * 0.76, .meter(), start, end, "dist-\(key)-\(h)")
                 quantity(.activeEnergyBurned, steps * 0.045 + 4, .kilocalorie(), start, end, "energy-\(key)-\(h)")
+                if h % 3 == 0 { quantity(.flightsClimbed, (random.next() * 4).rounded(), .count(), start, end, "flights-\(key)-\(h)") }
             }
             // Heart rate every 20 minutes, lower at night.
             for m in stride(from: 0, to: 24 * 60, by: 20) {
@@ -65,6 +74,12 @@ enum SampleData {
             quantity(.bodyFatPercentage, fat, .percent(), at(7.25), nil, "fat-\(key)")
             quantity(.leanBodyMass, weight * (1 - fat), .gramUnit(with: .kilo), at(7.25), nil, "lean-\(key)")
             if d % 7 == 0 { quantity(.vo2Max, 44 + random.next() * 2, HKUnit(from: "ml/kg*min"), at(19), nil, "vo2-\(key)") }
+            quantity(.bloodGlucose, (86 + random.next() * 14).rounded(), HKUnit(from: "mg/dL"), at(7.1), nil, "glucose-\(key)")
+            quantity(.dietaryCaffeine, 95, .gramUnit(with: .milli), at(8), nil, "coffee-\(key)")
+            if d % 3 == 0 { quantity(.dietaryCaffeine, 64, .gramUnit(with: .milli), at(14.5), nil, "coffee2-\(key)") }
+            for (i, h) in [9.0, 12.5, 16.0, 19.5].enumerated() {
+                quantity(.dietaryWater, 250 + (random.next() * 4).rounded() * 50, .literUnit(with: .milli), at(h), nil, "water-\(key)-\(i)")
+            }
 
             // The night that ends this morning: in bed 22:45-06:45, with stages.
             let sleep = HealthTypes.sleep
@@ -81,7 +96,9 @@ enum SampleData {
             if d % 2 == 1, at(18.6) <= now { runs.append((at(18), key)) }
         }
 
-        try await store.save(samples)
+        // Types added in a newer build may not be allowed yet: write the rest rather than nothing.
+        samples = samples.filter { store.authorizationStatus(for: $0.sampleType) == .sharingAuthorized }
+        if !samples.isEmpty { try await store.save(samples) }
         for run in runs { try await saveRun(store: store, start: run.start, key: run.key, random: &random) }
         return samples.count + runs.count
     }

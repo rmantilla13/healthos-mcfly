@@ -2,10 +2,10 @@ import Foundation
 import Observation
 import UIKit
 
-enum AppTab: Hashable { case today, trends, settings }
+enum AppTab: Hashable { case today, family, trends, insights, settings }
 
 enum TrendsSection: String, CaseIterable, Identifiable {
-    case vitals = "Vitals", sleep = "Sleep", activity = "Activity", body = "Body"
+    case vitals = "Vitals", sleep = "Sleep", activity = "Activity", body = "Body", cycle = "Cycle"
     var id: String { rawValue }
 
     /// Web pages an insight can link to.
@@ -15,8 +15,14 @@ enum TrendsSection: String, CaseIterable, Identifiable {
         case "sleep": self = .sleep
         case "activity": self = .activity
         case "body": self = .body
+        case "cycle": self = .cycle
         default: return nil
         }
+    }
+
+    /// The sections to offer: Cycle only while cycle tracking is on.
+    static func visible(cycleTracking: Bool) -> [TrendsSection] {
+        cycleTracking ? allCases : allCases.filter { $0 != .cycle }
     }
 }
 
@@ -65,10 +71,49 @@ final class Dashboard {
     private var server: URL?
     private var trendCache: [String: Trends] = [:]
     private var workoutCache: [Int: [Workout]] = [:]
+    // Newer endpoints. A cached nil means the server doesn't have it (404), so it isn't asked again until the next load.
+    private var dayCache: [String: DayData?] = [:]
+    private var cycleCache: [Int: CycleData?] = [:]
+    private var sleepCache: [Int: SleepTiming?] = [:]
+    private var patternsCache: Patterns?? = .none
+    private var digestCache: DigestReply?? = .none
+
+    // The Family board lives apart from the caches a load clears: other people's changes don't move your data
+    // version, so it's re-read on its own schedule (opening the tab, returning to the app, every few minutes
+    // while it's on screen, pull to refresh). Memory only: never written to disk.
+    /// The last board read; nil before the first read, or when the server has no Family board (`familyMissing`).
+    private(set) var familyBoard: FamilyBoard?
+    /// The server answered 404 for GET /api/family: it predates the Family board.
+    private(set) var familyMissing = false
+    /// The last read failed (offline, server error); what's on screen stays.
+    private(set) var familyError: String?
+    private(set) var familyLoading = false
+    /// When the board on screen was read; nil means the next look reads it again.
+    private(set) var familyReadAt: Date?
+    /// Avatars by "id|version", only for people on the board; a cached nil means there's none to show.
+    private(set) var familyAvatarCache: [String: Data?] = [:]
+    /// The one-time Family notice was dismissed here, before the server's status says so.
+    private(set) var familyNoticeDismissed = false
+    /// Counts board reads, so a slower, older one can't replace a newer one (or land after a sign-out).
+    private var familyRequest = 0
 
     var units: Units { Units(rawValue: status?.settings?.units ?? "") ?? .metric }
     var stepGoal: Double { summary?.stepGoal ?? status?.settings?.stepGoal ?? 10_000 }
+    /// Cycle tracking is on (set on the web or in Settings): the Cycle card, the Cycle trends section and GET /api/cycle.
+    var cycleTrackingOn: Bool { status?.settings?.cycleTracking == true }
     var signInRequired: Bool { phase == .signIn }
+    /// The server has the Family board: its status names the setting, or the board itself was read.
+    var familyAvailable: Bool { status?.settings?.familySharing != nil || familyBoard != nil }
+    /// Show the one-time "your family can see your status" note on Today. Not without sign-in: no one else is on
+    /// the board there, and Settings has no Family section to change.
+    var showsFamilyNotice: Bool {
+        status?.settings?.familySharing == true && status?.settings?.familyNoticeSeen == false && !familyNoticeDismissed && authMode != "open"
+    }
+    /// What the Family tab shows now.
+    var familyDisplay: FamilyDisplay {
+        FamilyDisplay.resolve(authMode: authMode, phase: phase, sharing: status?.settings?.familySharing, board: familyBoard,
+                              missing: familyMissing, error: familyError)
+    }
 
     /// Connects to the configured server if it changed since the last start.
     func startIfNeeded() async {
@@ -101,6 +146,8 @@ final class Dashboard {
             case "required": phase = auth.authenticated ? .ready : .signIn
             default: phase = .unavailable("Sign-in isn't set up on \(client.base.host ?? "the server") yet.")
             }
+        } catch is CancellationError {
+            return
         } catch {
             // Offline: keep showing the last summary if there is one.
             phase = summary == nil ? .unavailable(error.localizedDescription) : .ready
@@ -133,8 +180,7 @@ final class Dashboard {
         if summary == nil || version == nil || version != dataVersion || rolledOver {
             await load(knownVersion: version)
         } else if includeStatus, let status = try? await client.status() {
-            self.status = status
-            if let on = status.settings?.cycleTracking { Config.cycleTracking = on }
+            apply(status: status)
             if date == nil, let summary { SummaryCache.save(summary: summary, status: status, version: dataVersion, loadedOn: loadedOn, for: client.base) }
         }
     }
@@ -152,13 +198,12 @@ final class Dashboard {
             if let knownVersion { version = knownVersion } else { version = try? await client.dataVersion() }
             let (summary, status) = try await (s, st)
             self.summary = summary
-            self.status = status
-            // Cycle tracking turned on (on the web): the next Sync asks Health for those types, then sends their history.
-            if let on = status.settings?.cycleTracking { Config.cycleTracking = on }
+            apply(status: status)
             error = nil
             if case .unavailable = phase { phase = .ready }
-            trendCache = [:]
-            workoutCache = [:]
+            clearCaches()
+            // Your own tile changed with your data: read the board again next time, keeping it on screen until then.
+            familyReadAt = nil
             generation += 1
             dataVersion = version
             if date == nil {
@@ -167,6 +212,8 @@ final class Dashboard {
             }
         } catch APIError.signInRequired {
             phase = .signIn
+        } catch is CancellationError {
+            // Interrupted, not failed: what's on screen stays, and the next check loads it.
         } catch {
             self.error = error.localizedDescription
         }
@@ -182,7 +229,7 @@ final class Dashboard {
             usesAccounts = auth.usesAccounts
             account = auth.user
         }
-        phase = .ready
+        signedIn()
         await load()
     }
 
@@ -191,8 +238,15 @@ final class Dashboard {
         try await client.acceptInvite(code: code, email: email, name: name, password: password)
         Config.lastEmail = email
         account = (try? await client.authState())?.user
-        phase = .ready
+        signedIn()
         await load()
+    }
+
+    /// A new session (sign-in or a new account from an invite), maybe as someone else after the last one expired:
+    /// nothing of the last person's Family board, photos or dismissed notice carries over.
+    func signedIn() {
+        resetFamily()
+        phase = .ready
     }
 
     func signOut() async {
@@ -211,7 +265,7 @@ final class Dashboard {
     }
 
     func open(_ section: TrendsSection) {
-        trendsSection = section
+        trendsSection = section == .cycle && !cycleTrackingOn ? .vitals : section
         tab = .trends
     }
 
@@ -237,6 +291,184 @@ final class Dashboard {
         return w
     }
 
+    // The accessors below return nil when the server doesn't have the feature (an older server): hide it, no error.
+    // They throw only for real failures (offline, server errors).
+
+    /// One day by hour; nil date means today.
+    func day(date: String?) async throws -> DayData? {
+        let key = date ?? "today"
+        if let hit = dayCache[key] { return hit }
+        let d = try await fetch { try await $0.day(date: date) }
+        dayCache[key] = d
+        return d
+    }
+
+    /// The cycle view over the last `days` days; nil without asking while cycle tracking is off.
+    func cycle(days: Int = 120) async throws -> CycleData? {
+        guard cycleTrackingOn else { return nil }
+        if let hit = cycleCache[days] { return hit }
+        let c = try await fetch { try await $0.cycle(days: days) }
+        let shown = c?.enabled == true ? c : nil
+        cycleCache[days] = shown
+        return shown
+    }
+
+    func sleepTiming(days: Int) async throws -> SleepTiming? {
+        if let hit = sleepCache[days] { return hit }
+        let s = try await fetch { try await $0.sleepTiming(days: days) }
+        sleepCache[days] = s
+        return s
+    }
+
+    func patterns() async throws -> Patterns? {
+        if let hit = patternsCache { return hit }
+        let p = try await fetch { try await $0.patterns() }
+        patternsCache = .some(p)
+        return p
+    }
+
+    /// The weekly digest reply; check `configured` and `digest` before showing it.
+    func digest() async throws -> DigestReply? {
+        if let hit = digestCache { return hit }
+        let d = try await fetch { try await $0.digest() }
+        digestCache = .some(d)
+        return d
+    }
+
+    // MARK: Family
+
+    /// Reads the Family board unless it was read moments ago (`force` always reads). Opening the tab, returning to
+    /// the app and the five-minute timer call it; pull to refresh forces it. Failures keep what's on screen.
+    func loadFamily(force: Bool = false) async {
+        guard phase == .ready else { return }
+        if !force {
+            if familyLoading { return }
+            if let at = familyReadAt, Date().timeIntervalSince(at) < Self.familyFresh { return }
+        }
+        // A forced read (after a settings change) overtakes one already on its way; only the newest is shown.
+        familyRequest += 1
+        let request = familyRequest
+        familyLoading = true
+        defer { if request == familyRequest { familyLoading = false } }
+        do {
+            let board = try await fetch { try await $0.family() }
+            guard request == familyRequest else { return }
+            receiveFamily(board)
+        } catch {
+            guard request == familyRequest else { return }
+            if case .signIn = phase { return }
+            familyError = error.localizedDescription
+        }
+    }
+
+    /// Shows a board just read (nil: the server has no Family board).
+    func receiveFamily(_ board: FamilyBoard?) {
+        familyMissing = board == nil
+        familyBoard = board
+        familyError = nil
+        familyReadAt = Date()
+        // Avatars of people no longer on the board (or after sharing went off) go.
+        familyAvatarCache = familyAvatarCache.filter { familyShows(avatar: $0.key) }
+    }
+
+    /// The board on screen has this person with this photo version ("id|version").
+    private func familyShows(avatar key: String) -> Bool {
+        guard let board = familyBoard, board.sharing else { return false }
+        return board.members.contains { m in m.avatarKey.map { "\(m.id)|\($0)" } == key }
+    }
+
+    /// Reads it again shortly: what a look within this many seconds of the last read shows.
+    static let familyFresh: TimeInterval = 30
+    /// How often an open Family tab reads the board again.
+    static let familyRefresh: TimeInterval = 5 * 60
+
+    /// A family member's avatar (PNG), nil when there's none. Cached in memory for this board only.
+    func familyAvatar(id: String, version: String) async -> Data? {
+        let key = "\(id)|\(version)"
+        if let hit = familyAvatarCache[key] { return hit }
+        guard let client = APIClient.current() else { return nil }
+        do {
+            let data = try await client.familyAvatar(id: id, version: version)
+            rememberFamilyAvatar(data, id: id, version: version)
+            return data
+        } catch {
+            return nil // offline: the initial shows, and the next look tries again
+        }
+    }
+
+    /// Keeps a photo only while its person is still on the board: one arriving after sharing went off is shown to no
+    /// one and isn't kept.
+    func rememberFamilyAvatar(_ data: Data?, id: String, version: String) {
+        let key = "\(id)|\(version)"
+        if familyShows(avatar: key) { familyAvatarCache[key] = data }
+    }
+
+    /// Turns sharing on or off (it's mutual), then reads the board again. Throws so the caller can roll back.
+    /// The status the server answers with drops the board from before at once (see `apply(status:)`), so a read
+    /// that fails afterwards can't leave everyone on screen.
+    func setFamilySharing(_ on: Bool) async throws {
+        try await updateSettings(["familySharing": on])
+        await loadFamily(force: true)
+    }
+
+    /// Shows or hides your cycle phase on your tile; the server keeps it off unless tracking and sharing are on.
+    func setShareCyclePhase(_ on: Bool) async throws {
+        try await updateSettings(["shareCyclePhase": on])
+        if familyBoard?.sharing == true { await loadFamily(force: true) }
+    }
+
+    /// The one-time Today note: gone at once, and for good once the server has it.
+    func dismissFamilyNotice() async {
+        hideFamilyNotice()
+        do {
+            try await updateSettings(["familyNoticeSeen": true])
+        } catch {
+            familyNoticeDismissed = false
+        }
+    }
+
+    func hideFamilyNotice() { familyNoticeDismissed = true }
+
+    /// PUT /api/settings, then shows the status it answers with.
+    private func updateSettings(_ fields: [String: Any]) async throws {
+        let status = try await fetch { try await $0.updateSettings(fields) }
+        apply(status: status)
+        if date == nil, let summary, let client = APIClient.current() {
+            SummaryCache.save(summary: summary, status: status, version: dataVersion, loadedOn: loadedOn, for: client.base)
+        }
+    }
+
+    /// Shows a status from the server: settings, the photo, and whether you share with family.
+    func apply(status: ServerStatus) {
+        self.status = status
+        // Cycle tracking turned on (on the web): the next Sync asks Health for those types, then sends their history.
+        if let on = status.settings?.cycleTracking { Config.cycleTracking = on }
+        if !cycleTrackingOn, trendsSection == .cycle { trendsSection = .vitals }
+        // Sharing changed (here, on the web or on another phone) since the board was read: that board, and the photos
+        // on it, go at once, so turned off nobody stays on screen, offline or not. The next look reads it again.
+        if let on = status.settings?.familySharing, let board = familyBoard, board.sharing != on { dropFamilyBoard() }
+    }
+
+    private func fetch<T>(_ request: (APIClient) async throws -> T) async throws -> T {
+        guard let client = APIClient.current() else { throw APIError.network("No server configured.") }
+        do {
+            return try await request(client)
+        } catch APIError.signInRequired {
+            phase = .signIn
+            throw APIError.signInRequired
+        }
+    }
+
+    private func clearCaches() {
+        trendCache = [:]
+        workoutCache = [:]
+        dayCache = [:]
+        cycleCache = [:]
+        sleepCache = [:]
+        patternsCache = .none
+        digestCache = .none
+    }
+
     private func clearData() {
         summary = nil
         status = nil
@@ -244,8 +476,52 @@ final class Dashboard {
         error = nil
         dataVersion = nil
         loadedOn = nil
-        trendCache = [:]
-        workoutCache = [:]
+        clearCaches()
+        resetFamily()
+    }
+
+    /// Forgets the board and its photos; a read already on its way is dropped when it lands.
+    private func dropFamilyBoard() {
+        familyBoard = nil
+        familyError = nil
+        familyReadAt = nil
+        familyAvatarCache = [:]
+        familyRequest += 1
+        familyLoading = false
+    }
+
+    /// Everything Family for this person, for a sign-out, another server or another person signing in.
+    private func resetFamily() {
+        dropFamilyBoard()
+        familyMissing = false
+        familyNoticeDismissed = false
+    }
+}
+
+/// What the Family tab shows, first match wins.
+enum FamilyDisplay {
+    /// The server has no sign-in (a local one): the board needs a person per account.
+    case needsAccounts
+    /// You turned sharing off (here or anywhere else): you see no one, whatever was read before.
+    case sharingOff
+    case board(FamilyBoard)
+    /// The server predates the Family board.
+    case missing
+    /// The read failed and there's nothing to keep on screen.
+    case failed(String)
+    /// The dashboard can't load at all (sign-in isn't set up on the server, or it can't be reached): nothing will be
+    /// read until that's fixed, so say why instead of spinning.
+    case unavailable(String)
+    case loading
+
+    static func resolve(authMode: String?, phase: Dashboard.Phase, sharing: Bool?, board: FamilyBoard?, missing: Bool, error: String?) -> FamilyDisplay {
+        if authMode == "open" { return .needsAccounts }
+        if sharing == false { return .sharingOff }
+        if let board { return board.sharing ? .board(board) : .sharingOff }
+        if missing { return .missing }
+        if let error { return .failed(error) }
+        if case .unavailable(let message) = phase { return .unavailable(message) }
+        return .loading
     }
 }
 

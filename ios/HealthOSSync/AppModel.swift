@@ -187,6 +187,8 @@ final class AppModel {
             return .ok
         } catch APIError.signInRequired {
             return .skipped("Sign in to refresh it now. The server also syncs WHOOP every hour.")
+        } catch is CancellationError {
+            return .skipped("The refresh was interrupted. Pull down to try again.")
         } catch {
             return .failed(error.localizedDescription)
         }

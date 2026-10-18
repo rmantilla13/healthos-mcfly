@@ -1,0 +1,176 @@
+{
+  "enabled": true,
+  "today": "2026-10-16",
+  "days": [
+    {
+      "date": "2026-08-30",
+      "flow": "medium",
+      "periodStart": true,
+      "apple": {
+        "flow": "medium",
+        "periodStart": true
+      }
+    },
+    {
+      "date": "2026-08-31",
+      "flow": "heavy",
+      "apple": {
+        "flow": "heavy"
+      }
+    },
+    {
+      "date": "2026-09-01",
+      "flow": "medium",
+      "apple": {
+        "flow": "medium"
+      }
+    },
+    {
+      "date": "2026-09-02",
+      "flow": "light",
+      "apple": {
+        "flow": "light"
+      }
+    },
+    {
+      "date": "2026-09-03",
+      "flow": "light",
+      "apple": {
+        "flow": "light"
+      }
+    },
+    {
+      "date": "2026-09-14",
+      "ovulationTest": "lh_surge",
+      "apple": {
+        "ovulationTest": "lh_surge"
+      }
+    },
+    {
+      "date": "2026-09-28",
+      "flow": "medium",
+      "periodStart": true,
+      "apple": {
+        "flow": "medium",
+        "periodStart": true
+      }
+    },
+    {
+      "date": "2026-09-29",
+      "flow": "heavy",
+      "apple": {
+        "flow": "heavy"
+      }
+    },
+    {
+      "date": "2026-09-30",
+      "flow": "medium",
+      "apple": {
+        "flow": "medium"
+      }
+    },
+    {
+      "date": "2026-10-01",
+      "flow": "light",
+      "manual": {
+        "flow": "light"
+      }
+    },
+    {
+      "date": "2026-10-02",
+      "flow": "light",
+      "apple": {
+        "flow": "light"
+      }
+    },
+    {
+      "date": "2026-10-09",
+      "spotting": true,
+      "apple": {
+        "spotting": true
+      }
+    },
+    {
+      "date": "2026-10-12",
+      "mucus": "egg_white",
+      "bbt": 36.42,
+      "apple": {
+        "mucus": "egg_white",
+        "bbt": 36.42
+      }
+    }
+  ],
+  "periods": [
+    {
+      "start": "2026-07-03",
+      "end": "2026-07-07",
+      "days": 5
+    },
+    {
+      "start": "2026-08-01",
+      "end": "2026-08-05",
+      "days": 5
+    },
+    {
+      "start": "2026-08-30",
+      "end": "2026-09-03",
+      "days": 5
+    },
+    {
+      "start": "2026-09-28",
+      "end": "2026-10-02",
+      "days": 5
+    }
+  ],
+  "cycles": [
+    {
+      "start": "2026-07-03",
+      "days": 29
+    },
+    {
+      "start": "2026-08-01",
+      "days": 29
+    },
+    {
+      "start": "2026-08-30",
+      "days": 29
+    }
+  ],
+  "stats": {
+    "cycleDays": 29,
+    "periodDays": 5,
+    "shortest": 29,
+    "longest": 29
+  },
+  "current": {
+    "start": "2026-09-28",
+    "day": 19
+  },
+  "estimate": {
+    "nextPeriod": {
+      "date": "2026-10-27",
+      "earliest": "2026-10-25",
+      "latest": "2026-10-29"
+    },
+    "ovulation": "2026-10-13",
+    "fertile": {
+      "start": "2026-10-08",
+      "end": "2026-10-14"
+    },
+    "basis": "calendar",
+    "cycles": 3
+  },
+  "noEstimate": null,
+  "ovulations": [
+    {
+      "date": "2026-09-15",
+      "basis": "lh_test"
+    }
+  ],
+  "phase": {
+    "name": "luteal",
+    "day": 19,
+    "nextPeriodIn": 11,
+    "basis": "estimate"
+  }
+}

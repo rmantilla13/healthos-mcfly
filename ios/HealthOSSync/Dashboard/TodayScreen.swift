@@ -39,6 +39,7 @@ struct TodayScreen: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Palette.page)
             .toolbar(.hidden, for: .navigationBar)
+            .navigationDestination(for: DayScreen.Route.self) { DayScreen(date: $0.date) }
         }
         .task { await dashboard.startIfNeeded() }
         .onReceive(NotificationCenter.default.publisher(for: .healthOSSynced)) { _ in
@@ -53,10 +54,19 @@ private struct TodayContent: View {
     @Environment(AppModel.self) private var sync
     @State private var mcfly = McFlyChat()
     @State private var chatOpen = false
+    /// The day by hour (GET /api/day) and the cycle (GET /api/cycle): nil hides their cards.
+    @State private var day: DayData?
+    @State private var cycle: CycleData?
 
     private let columns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
 
+    /// Under a resting heart rate flag, in the luteal or menstrual phase. The summary never mentions the cycle.
+    private static let cycleNote = "Temperature and resting heart rate often run a little higher in this part of your cycle."
+
     var body: some View {
+        let isToday = summary.date == summary.today
+        // The phase is about today, so it says nothing about a past day on screen.
+        let phase = isToday && dashboard.cycleTrackingOn ? cycle?.phase : nil
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 OrganicHeader(summary: summary, name: summary.name ?? dashboard.status?.settings?.name)
@@ -64,8 +74,15 @@ private struct TodayContent: View {
                 if summary.demo == true {
                     Banner(text: "Showing demo data. Connect Apple Health or WHOOP to see your own.", icon: "sparkles", tone: .blue)
                 }
+                ForEach(summary.flags) { flag in
+                    let showNote = flag.id.hasPrefix("rhr") && phase?.luteal == true
+                    FlagBanner(flag: flag, note: showNote ? Self.cycleNote : nil)
+                }
+                if dashboard.showsFamilyNotice { FamilyNotice() }
                 OrganicPortrait(summary: summary, photo: dashboard.status?.photo, units: dashboard.units, stepGoal: dashboard.stepGoal)
                 if let timeline = summary.timeline { TodayPath(timeline: timeline) }
+                if let cycle, let phase { CycleCard(cycle: cycle, phase: phase) }
+                if let day, !day.metrics.isEmpty { DayCard(data: day, date: isToday ? nil : summary.date) }
                 if let week = summary.week { WeekCard(week: week, stepGoal: dashboard.stepGoal) }
                 LazyVGrid(columns: columns, spacing: 12) {
                     ReadinessCard(summary: summary)
@@ -90,6 +107,13 @@ private struct TodayContent: View {
         }
         .sheet(isPresented: $chatOpen) { McFlySheet(chat: mcfly) }
         .task(id: dashboard.generation) { await mcfly.refreshStatus() }
+        // Newer endpoints: a server without them, or a failed fetch, just hides the card.
+        .task(id: "\(summary.date)|\(dashboard.generation)") {
+            day = try? await dashboard.day(date: summary.date == summary.today ? nil : summary.date)
+        }
+        .task(id: "\(dashboard.generation)|\(dashboard.cycleTrackingOn)") {
+            cycle = try? await dashboard.cycle()
+        }
     }
 }
 
@@ -160,6 +184,69 @@ private struct Banner: View {
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(tone.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+}
+
+/// A gentle heads-up from the summary (resting heart rate up, maybe with a raised temperature). Opens Vitals.
+private struct FlagBanner: View {
+    let flag: Flag
+    /// Cycle context the app adds itself.
+    let note: String?
+    @Environment(Dashboard.self) private var dashboard
+
+    var body: some View {
+        let tone: Tone = flag.caution ? .peach : .blue
+        let section = flag.page.flatMap(TrendsSection.init(page:)) ?? .vitals
+        Button { dashboard.open(section) } label: {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: flag.caution ? "heart.text.square" : "waveform.path.ecg").font(.subheadline.weight(.semibold))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(flag.title).font(.subheadline.weight(.semibold))
+                    Text(flag.text).font(.footnote)
+                    if let note { Text(note).font(.footnote).opacity(0.85).padding(.top, 3) }
+                }
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right").font(.caption.weight(.semibold)).opacity(0.6)
+            }
+            .foregroundStyle(tone.ink)
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(tone.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Opens \(section.rawValue)")
+    }
+}
+
+/// Once, for everyone: sharing is on by default, so say so where people will see it.
+private struct FamilyNotice: View {
+    @Environment(Dashboard.self) private var dashboard
+
+    var body: some View {
+        let tone = Tone.blue
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "person.2").font(.subheadline.weight(.semibold)).accessibilityHidden(true)
+            Text("Your family can now see your daily status on the **[Family](healthos://family)** board. Change this in **[Settings](healthos://settings)**.")
+                .font(.footnote)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .environment(\.openURL, OpenURLAction { url in
+                    dashboard.tab = url.host == "settings" ? .settings : .family
+                    return .handled
+                })
+            Button("Got it") { Task { await dashboard.dismissFamilyNotice() } }
+                .font(.footnote.weight(.semibold))
+                .buttonStyle(.plain)
+                .accessibilityHint("Hides this note")
+        }
+        .foregroundStyle(tone.ink)
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(tone.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }
 

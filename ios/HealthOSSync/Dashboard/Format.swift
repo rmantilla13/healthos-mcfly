@@ -36,6 +36,13 @@ enum Fmt {
         return value > 0 ? "+\(v)" : value < 0 ? "−\(v)" : v
     }
 
+    /// A signed difference in minutes: "+24 min", "−1h 05m", "0 min".
+    static func signedMinutes(_ minutes: Double) -> String {
+        let m = minutes.rounded()
+        let size = abs(m) < 60 ? "\(Int(abs(m))) min" : duration(minutes: abs(m))
+        return m > 0 ? "+\(size)" : m < 0 ? "−\(size)" : size
+    }
+
     private static var dateFormatters: [String: DateFormatter] = [:]
 
     /// Formats a "YYYY-MM-DD" day with a template such as "MMMd" or "EEEEMMMMd".
@@ -70,6 +77,15 @@ enum Fmt {
         return c.count == 2 ? c[0] * 60 + c[1] : 0
     }
 
+    /// Minutes after midnight as a 24-hour clock, wrapping past midnight: 390 -> "06:30", 1500 -> "01:00".
+    static func clock(minutesOfDay minutes: Double) -> String {
+        let m = (Int(minutes.rounded()) % 1440 + 1440) % 1440
+        return String(format: "%02d:%02d", m / 60, m % 60)
+    }
+
+    /// Bedtimes from /api/sleep count minutes after 18:00 so a night doesn't wrap at midnight: 330 -> "23:30", 430 -> "01:10".
+    static func eveningClock(minutesAfter18 minutes: Double) -> String { clock(minutesOfDay: 18 * 60 + minutes) }
+
     /// Plots a "YYYY-MM-DD" day at local noon, so chart axes label it with the right date in any time zone.
     static func chartDate(_ day: String) -> Date {
         let p = day.split(separator: "-").compactMap { Int($0) }
@@ -81,6 +97,13 @@ struct Measure {
     let value: Double
     let unit: String
     func text(_ digits: Int) -> String { "\(Fmt.number(value, digits)) \(unit)" }
+
+    /// "+0.4 °C", "−0.7 °F", "0.0 °C": the sign follows the rounded value, so a tiny change reads as no change.
+    func signed(_ digits: Int) -> String {
+        let scale = pow(10, Double(digits))
+        let rounded = (value * scale).rounded() / scale
+        return "\(Fmt.signed(rounded == 0 ? 0 : rounded, digits)) \(unit)"
+    }
 }
 
 enum Units: String {
@@ -89,6 +112,8 @@ enum Units: String {
     func temp(_ celsius: Double) -> Measure { self == .imperial ? Measure(value: celsius * 9 / 5 + 32, unit: "°F") : Measure(value: celsius, unit: "°C") }
     func mass(_ kg: Double) -> Measure { self == .imperial ? Measure(value: kg / 0.45359237, unit: "lb") : Measure(value: kg, unit: "kg") }
     func distance(_ m: Double) -> Measure { self == .imperial ? Measure(value: m / 1609.344, unit: "mi") : Measure(value: m / 1000, unit: "km") }
+    /// A temperature difference (deviation from baseline): °F scales by 9/5 with no +32 offset. Show it with `signed`.
+    func tempDelta(_ celsius: Double) -> Measure { self == .imperial ? Measure(value: celsius * 9 / 5, unit: "°F") : Measure(value: celsius, unit: "°C") }
 }
 
 extension Array where Element == Point {
@@ -103,6 +128,38 @@ extension Array where Element == Point {
             if let i = buckets.firstIndex(where: { $0.0 == monday }) { buckets[i].1.append(p.value) } else { buckets.append((monday, [p.value])) }
         }
         return buckets.map { Point(date: $0.0, value: $0.1.reduce(0, +) / Double($0.1.count)) }
+    }
+
+    /// Trailing mean over calendar days: each point becomes the average of the readings in the `days` days ending on
+    /// its date (gaps don't stretch the window). One output point per input point, oldest first.
+    func rolling(days: Int) -> [Point] {
+        let days = Swift.max(1, days)
+        let sorted = self.sorted { $0.date < $1.date }
+        var out: [Point] = []
+        var start = 0
+        var sum = 0.0
+        for (i, p) in sorted.enumerated() {
+            sum += p.value
+            while Fmt.daysBetween(sorted[start].date, p.date) >= days {
+                sum -= sorted[start].value
+                start += 1
+            }
+            out.append(Point(date: p.date, value: sum / Double(i - start + 1)))
+        }
+        return out
+    }
+
+    /// Sums by Monday-start week for the `weeks` weeks up to and including the week of `ending`, oldest first. Every
+    /// week is there, so the axis stays steady; a week with no readings sums to 0. Each point is dated by its Monday.
+    func weeklySums(weeks: Int, ending: String) -> [Point] {
+        let last = Point.weekStart(ending)
+        let mondays = (0..<Swift.max(0, weeks)).reversed().map { Day.add(last, -7 * $0) }
+        var sums = Dictionary(uniqueKeysWithValues: mondays.map { ($0, 0.0) })
+        for p in self {
+            let monday = Point.weekStart(p.date)
+            if sums[monday] != nil { sums[monday]! += p.value }
+        }
+        return mondays.map { Point(date: $0, value: sums[$0] ?? 0) }
     }
 }
 

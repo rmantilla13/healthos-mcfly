@@ -87,6 +87,7 @@ final class Health: @unchecked Sendable {
         }
         agg.add(sleep: try await samples(.categorySample(type: HealthTypes.sleep, predicate: window)))
         agg.add(mindful: try await samples(.categorySample(type: HealthTypes.mindful, predicate: window)))
+        agg.add(standHours: try await samples(.categorySample(type: HealthTypes.standHour, predicate: window)))
         agg.add(workouts: try await samples(.workout(window)))
         if agg.sawWhoopSteps { Config.sawWhoopSteps = true }
         var payload = agg.finish()
@@ -127,13 +128,17 @@ final class Health: @unchecked Sendable {
         }
     }
 
-    /// Heart rate arrives every few minutes from a Watch: hourly wakes are plenty and save battery. Steps, energy and
-    /// distance are hourly at most anyway. Everything else (sleep, workouts, mindful, body) is rare, so immediate.
+    /// Heart rate arrives every few minutes from a Watch: hourly wakes are plenty and save battery. Steps, energy,
+    /// distance, flights, daylight, stand hours and walking metrics are hourly at most anyway. Everything else (sleep,
+    /// workouts, mindful, body) is rare, so immediate.
     static func deliveryFrequency(_ type: HKSampleType) -> HKUpdateFrequency {
         let hourly: Set<String> = [
             HKQuantityTypeIdentifier.heartRate.rawValue, HKQuantityTypeIdentifier.stepCount.rawValue,
             HKQuantityTypeIdentifier.activeEnergyBurned.rawValue, HKQuantityTypeIdentifier.distanceWalkingRunning.rawValue,
             HKQuantityTypeIdentifier.appleExerciseTime.rawValue, HKQuantityTypeIdentifier.respiratoryRate.rawValue,
+            HKQuantityTypeIdentifier.flightsClimbed.rawValue, HKQuantityTypeIdentifier.timeInDaylight.rawValue,
+            HKQuantityTypeIdentifier.walkingSpeed.rawValue, HKQuantityTypeIdentifier.appleWalkingSteadiness.rawValue,
+            HKQuantityTypeIdentifier.walkingAsymmetryPercentage.rawValue, HKCategoryTypeIdentifier.appleStandHour.rawValue,
         ]
         return hourly.contains(type.identifier) ? .hourly : .immediate
     }

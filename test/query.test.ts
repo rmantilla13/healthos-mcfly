@@ -1,7 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Workout } from '../shared/types.ts';
-import { latest, mergeWorkouts, series, valueOn } from '../server/query.ts';
+import { addDays, todayLocal } from '../server/dates.ts';
+import { type DailyRow, upsertDaily } from '../server/db.ts';
+import { latest, mergeWorkouts, series, summary, valueOn } from '../server/query.ts';
+import { openStore } from '../server/store.ts';
 
 function ctx(rows: [metric: string, source: string, date: string, value: number][]) {
   const daily = new Map<string, Map<string, Map<string, number>>>();
@@ -96,4 +99,91 @@ test('readings outside the lookback or after the as-of date are ignored', () => 
     ['spo2', 'apple', '2026-10-20', 97],
   ]);
   assert.equal(latest(c, 'spo2', '2026-10-16', 14), null);
+});
+
+// ---------- flags on the summary ----------
+
+const flagDb = await openStore();
+const today = todayLocal();
+const ago = (n: number) => addDays(today, -n);
+
+/**
+ * A month and more of resting heart rate around 55 (54/56), then the most recent `up` readings at 63, 62, 61…,
+ * and wrist temperature around 36.5 with today's reading normal or high. Returns the summary's flags.
+ */
+async function flagsFor(userId: string, opts: { up: number; temp: 'normal' | 'high'; skip?: number; history?: number }) {
+  const skip = opts.skip ?? 0;
+  const rows: DailyRow[] = [];
+  for (let i = skip; i < skip + opts.up + (opts.history ?? 40); i++) {
+    rows.push({ date: ago(i), metric: 'resting_hr', source: 'apple', value: i - skip < opts.up ? 63 - (i - skip) : 55 + (i % 2 ? 1 : -1) });
+  }
+  for (let i = 1; i < 36; i++) rows.push({ date: ago(i), metric: 'wrist_temp', source: 'apple', value: 36.5 + (i % 2 ? 0.05 : -0.05) });
+  rows.push({ date: today, metric: 'wrist_temp', source: 'apple', value: opts.temp === 'high' ? 37.3 : 36.52 });
+  await upsertDaily(flagDb, userId, rows);
+  return summary({ db: flagDb, userId }, false);
+}
+
+test('a resting heart rate up two days with a raised temperature is a caution', async () => {
+  const s = await flagsFor('flag-temp', { up: 2, temp: 'high' });
+  assert.deepEqual(s.flags?.map((f) => [f.id, f.tone, f.page, f.title]), [['rhr_temp', 'caution', 'vitals', 'Your body may be under strain']]);
+  assert.match(s.flags![0].text, /^Resting heart rate has been about 8 bpm above your usual for 2 days and your temperature is up\./);
+  // Three days up with the temperature raised is still the one caution, not two flags.
+  assert.deepEqual((await flagsFor('flag-temp-3', { up: 3, temp: 'high' })).flags?.map((f) => f.id), ['rhr_temp']);
+});
+
+test('with a normal temperature, resting heart rate needs three days up for a gentle note', async () => {
+  const two = await flagsFor('flag-two', { up: 2, temp: 'normal' });
+  assert.equal('flags' in two, false, 'no flags key when there are none');
+  const three = await flagsFor('flag-three', { up: 3, temp: 'normal' });
+  assert.deepEqual(three.flags?.map((f) => [f.id, f.tone, f.title]), [['rhr_up', 'info', 'Resting heart rate is up']]);
+  assert.match(three.flags![0].text, /about 7 bpm above your usual for 3 days/);
+});
+
+test('no flag from stale readings or without two weeks of baseline, and flags never mention cycles', async () => {
+  // The two high readings are 3 and 4 days old.
+  assert.equal((await flagsFor('flag-stale', { up: 2, temp: 'high', skip: 3 })).flags, undefined);
+  assert.equal((await flagsFor('flag-new', { up: 3, temp: 'high', history: 10 })).flags, undefined);
+  for (const id of ['flag-temp', 'flag-three']) {
+    const s = await summary({ db: flagDb, userId: id }, false);
+    for (const f of s.flags ?? []) assert.doesNotMatch(`${f.title} ${f.text}`, /cycle|period|menstru|ovulat|luteal/i);
+  }
+});
+
+/**
+ * WHOOP's sleeping resting heart rate around 52 and the Watch's daytime one around 59, on the same days for 40
+ * days, except the most recent `appleOnly` days, when the strap stayed off. WHOOP's most recent `whoopUp`
+ * readings rise to 60, 59, 58… With `temp: 'high'`, today's wrist temperature reads well above its usual.
+ */
+async function mixedFlags(userId: string, opts: { appleOnly?: number; whoopUp?: number; temp?: 'normal' | 'high' }) {
+  const rows: DailyRow[] = [];
+  const wobble = (i: number) => (i % 2 ? 0.5 : -0.5);
+  for (let i = 0; i < 40; i++) {
+    rows.push({ date: ago(i), metric: 'resting_hr', source: 'apple', value: 59 + wobble(i) });
+    if (i >= (opts.appleOnly ?? 0)) rows.push({ date: ago(i), metric: 'resting_hr', source: 'whoop', value: i < (opts.whoopUp ?? 0) ? 60 - i : 52 + wobble(i) });
+  }
+  if (opts.temp) {
+    for (let i = 1; i < 36; i++) rows.push({ date: ago(i), metric: 'wrist_temp', source: 'apple', value: 36.5 + (i % 2 ? 0.05 : -0.05) });
+    rows.push({ date: today, metric: 'wrist_temp', source: 'apple', value: opts.temp === 'high' ? 37.3 : 36.52 });
+  }
+  await upsertDaily(flagDb, userId, rows);
+  return summary({ db: flagDb, userId }, false);
+}
+
+test('days without the WHOOP strap are not read as a resting heart rate that went up', async () => {
+  // The daily value falls back to the Watch's usual ~59 against WHOOP's usual ~52: the device changed, the body didn't.
+  const three = await mixedFlags('flag-mixed-3', { appleOnly: 3, temp: 'normal' });
+  assert.equal(three.flags, undefined);
+  assert.deepEqual([three.vitals.heart.latest?.source, three.vitals.heart.status], ['apple', 'normal']);
+  // Two days off the strap with a raised temperature isn't the caution either.
+  const two = await mixedFlags('flag-mixed-2', { appleOnly: 2, temp: 'high' });
+  assert.equal(two.flags, undefined);
+  assert.equal(two.vitals.temp.status, 'high');
+});
+
+test("with both devices worn, a rise on WHOOP still shows, measured against WHOOP's own usual", async () => {
+  // WHOOP 60, 59, 58 over its usual 52 while the Watch stays at its usual 59.
+  const s = await mixedFlags('flag-mixed-up', { whoopUp: 3 });
+  assert.deepEqual(s.flags?.map((f) => f.id), ['rhr_up']);
+  assert.match(s.flags![0].text, /about 7 bpm above your usual for 3 days/);
+  assert.deepEqual([s.vitals.heart.latest?.source, s.vitals.heart.status], ['whoop', 'high']);
 });

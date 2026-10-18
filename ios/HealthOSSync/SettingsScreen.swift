@@ -14,8 +14,11 @@ struct SettingsScreen: View {
             Form {
                 ServerSection()
                 if dashboard.phase == .ready { PhotoSection() }
+                // Servers with the Family board name the setting; it needs sign-in, so each person has their own account.
+                if dashboard.phase == .ready, dashboard.status?.settings?.familySharing != nil, dashboard.authMode != "open" { FamilySection() }
                 SyncSection()
                 HealthSection()
+                if dashboard.phase == .ready || DigestNotifications.enabled { DigestSection() }
                 #if targetEnvironment(simulator)
                 Section {
                     Button("Add sample Health data") { confirmSample = true }
@@ -196,6 +199,151 @@ private struct HealthSection: View {
     }
 }
 
+/// The Family board: sharing is mutual, and a cycle phase can go on your tile while tracking and sharing are on.
+/// The switches move at once and go back if the server says no.
+private struct FamilySection: View {
+    @Environment(Dashboard.self) private var dashboard
+    /// What a switch shows while its change is on the way; nil shows the server's setting.
+    @State private var pendingSharing: Bool?
+    @State private var pendingPhase: Bool?
+    @State private var error: String?
+
+    var body: some View {
+        let settings = dashboard.status?.settings
+        let sharing = pendingSharing ?? settings?.familySharing ?? false
+        Section {
+            Toggle(isOn: Binding(get: { sharing }, set: { setSharing($0) })) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Share with family")
+                    Text(sharingNote(on: sharing)).font(.footnote).foregroundStyle(.secondary)
+                }
+            }
+            .disabled(pendingSharing != nil)
+            .accessibilityIdentifier("familySharing")
+            if settings?.cycleTracking == true, sharing {
+                Toggle(isOn: Binding(get: { pendingPhase ?? settings?.shareCyclePhase ?? false }, set: { setPhase($0) })) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Show my cycle phase to family")
+                        Text("One word on your Family board tile (period, follicular or luteal), never dates or logs. Hidden as your next period approaches. Members will know you track your cycle, and looking day after day shows roughly when your period starts.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
+                .disabled(pendingPhase != nil || pendingSharing != nil)
+                .accessibilityIdentifier("shareCyclePhase")
+            }
+            if let error { Text(error).font(.footnote).foregroundStyle(.red) }
+        } header: {
+            Text("Family")
+        } footer: {
+            Text("Your Family board tile: last night's sleep, recovery or HRV, today's steps, and how they compare with your own usual.")
+        }
+        // For "Sharing with: …"; the board keeps itself fresh while the Family tab is open.
+        .task(id: settings?.familySharing == true) {
+            if settings?.familySharing == true { await dashboard.loadFamily() }
+        }
+    }
+
+    private func sharingNote(on: Bool) -> String {
+        var note = "Members who share see your daily tile. Turn it off and you see no one, and no one sees you."
+        if on, let board = dashboard.familyBoard, board.sharing {
+            let others = board.members.filter { !$0.isYou }.map(FamilyText.name)
+            if !others.isEmpty { note += " Sharing with: \(others.joined(separator: ", "))." }
+        }
+        return note
+    }
+
+    private func setSharing(_ on: Bool) {
+        pendingSharing = on
+        error = nil
+        Task {
+            do {
+                try await dashboard.setFamilySharing(on)
+            } catch {
+                self.error = "Couldn't change sharing. \(error.localizedDescription)"
+            }
+            pendingSharing = nil
+        }
+    }
+
+    private func setPhase(_ on: Bool) {
+        pendingPhase = on
+        error = nil
+        Task {
+            do {
+                try await dashboard.setShareCyclePhase(on)
+            } catch {
+                self.error = "Couldn't change your cycle phase sharing. \(error.localizedDescription)"
+            }
+            pendingPhase = nil
+        }
+    }
+}
+
+/// The Monday reminder for McFly's weekly digest on the Insights tab.
+private struct DigestSection: View {
+    @Environment(Dashboard.self) private var dashboard
+    @Environment(\.openURL) private var openURL
+    @State private var on = DigestNotifications.enabled
+    /// Notifications are off for the app in iOS Settings.
+    @State private var denied = false
+    /// McFly is set up on the server (nil: not known yet).
+    @State private var mcfly: Bool?
+
+    var body: some View {
+        Section {
+            Toggle("Weekly digest", isOn: toggle)
+                .disabled(mcfly == false && !on)
+                .accessibilityIdentifier("weeklyDigest")
+                .task(id: dashboard.phase == .ready) { await check() }
+            if denied {
+                Button("Open notification settings") {
+                    if let url = URL(string: UIApplication.openNotificationSettingsURLString) { openURL(url) }
+                }
+            }
+        } header: {
+            Text("Notifications")
+        } footer: {
+            Text(footer)
+        }
+    }
+
+    private var toggle: Binding<Bool> {
+        Binding(get: { on }, set: { wanted in
+            on = wanted
+            denied = false
+            Task {
+                if wanted {
+                    // The permission prompt shows the first time; a no turns the toggle back off.
+                    let scheduled = await DigestNotifications.enable()
+                    on = scheduled
+                    denied = !scheduled
+                } else {
+                    DigestNotifications.disable()
+                }
+            }
+        })
+    }
+
+    private var footer: String {
+        if denied { return "Notifications are off for healthOS. Allow them in the Settings app, then turn this on again." }
+        if mcfly == false, !on { return "The weekly digest needs McFly set up on your healthOS server." }
+        return "A reminder every Monday at 9:00 to read McFly's short recap of last week on the Insights tab."
+    }
+
+    private func check() async {
+        // Turned off in iOS Settings since: show it off, with the way back.
+        if on, await DigestNotifications.denied() {
+            DigestNotifications.disable()
+            on = false
+            denied = true
+        }
+        // Only while signed in: a 401 here would drop the session.
+        if dashboard.phase == .ready, let client = APIClient.current(), let status = try? await client.mcflyStatus() {
+            mcfly = status.available
+        }
+    }
+}
+
 /// Change the profile photo from the phone: pick one, process it here with Vision, preview, then upload.
 private struct PhotoSection: View {
     @Environment(Dashboard.self) private var dashboard
@@ -205,11 +353,12 @@ private struct PhotoSection: View {
     @State private var error: String?
 
     var body: some View {
+        let label = dashboard.status?.photo == nil ? "Add photo" : "Change photo"
         Section {
             HStack(spacing: 14) {
                 Avatar(photo: dashboard.status?.photo, name: dashboard.summary?.name, size: 48)
                 PhotosPicker(selection: $item, matching: .images, photoLibrary: .shared()) {
-                    Text(dashboard.status?.photo == nil ? "Add photo" : "Change photo")
+                    Text(label)
                 }
                 .disabled(processing)
                 Spacer()

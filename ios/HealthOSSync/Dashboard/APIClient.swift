@@ -54,6 +54,7 @@ struct APIClient {
         do {
             (data, response) = try await Self.session.data(for: req)
         } catch {
+            if Self.isCancellation(error) { throw CancellationError() }
             throw APIError.network("Can't reach \(base.host ?? base.absoluteString). \(error.localizedDescription)")
         }
         guard let http = response as? HTTPURLResponse else { throw APIError.network("No response from the server.") }
@@ -78,6 +79,12 @@ struct APIClient {
 
     func getJSON<T: Decodable>(_ path: String) async throws -> T { try await get(path) }
 
+    /// A request dropped because its task ended (pull to refresh let go, a sheet covered the screen): nothing went
+    /// wrong, so callers stay quiet instead of saying the server can't be reached.
+    static func isCancellation(_ error: Error) -> Bool {
+        error is CancellationError || (error as? URLError)?.code == .cancelled
+    }
+
     /// A POST whose response is read as it arrives (server-sent events). Status handling is left to the caller.
     func stream(_ path: String, body: Data) async throws -> (URLSession.AsyncBytes, HTTPURLResponse) {
         var req = URLRequest(url: base.appendingPathComponent("api" + path))
@@ -96,6 +103,7 @@ struct APIClient {
         } catch let e as APIError {
             throw e
         } catch {
+            if Self.isCancellation(error) { throw CancellationError() }
             throw APIError.network("Can't reach \(base.host ?? base.absoluteString). \(error.localizedDescription)")
         }
     }
@@ -150,6 +158,57 @@ struct APIClient {
     }
 
     func status() async throws -> ServerStatus { try await get("/status") }
+
+    /// A GET for an endpoint newer servers have: nil when the server answers 404 (it predates it), so the feature hides.
+    private func optional<T: Decodable>(_ path: String, query: [URLQueryItem] = []) async throws -> T? {
+        do {
+            return try await get(path, query: query) as T
+        } catch APIError.server(404, _) {
+            return nil
+        }
+    }
+
+    /// One day by hour (GET /day); nil date means today. Without metrics the server sends all it has.
+    func day(date: String?, metrics: [String]? = nil) async throws -> DayData? {
+        var query: [URLQueryItem] = []
+        if let date { query.append(URLQueryItem(name: "date", value: date)) }
+        if let metrics { query.append(URLQueryItem(name: "metrics", value: metrics.joined(separator: ","))) }
+        return try await optional("/day", query: query)
+    }
+
+    func cycle(days: Int) async throws -> CycleData? {
+        try await optional("/cycle", query: [URLQueryItem(name: "days", value: String(days))])
+    }
+
+    /// Bed and wake times (GET /sleep); the server clamps days to 7–365.
+    func sleepTiming(days: Int) async throws -> SleepTiming? {
+        try await optional("/sleep", query: [URLQueryItem(name: "days", value: String(days))])
+    }
+
+    func patterns() async throws -> Patterns? { try await optional("/patterns") }
+
+    func digest() async throws -> DigestReply? { try await optional("/mcfly/digest") }
+
+    /// The Family board (GET /family); nil when the server predates it (404).
+    func family() async throws -> FamilyBoard? { try await optional("/family") }
+
+    /// A family member's small avatar for this photo version; nil when there's none, or either person stopped sharing.
+    func familyAvatar(id: String, version: String) async throws -> Data? {
+        do {
+            return try await request("/family/\(id)/avatar.png", query: [URLQueryItem(name: "v", value: version)])
+        } catch APIError.server(404, _) {
+            return nil
+        }
+    }
+
+    /// Changes settings (PUT /settings), e.g. ["familySharing": false]; the server answers with the new status.
+    func updateSettings(_ fields: [String: Any]) async throws -> ServerStatus {
+        let body = try JSONSerialization.data(withJSONObject: fields)
+        let data = try await request("/settings", method: "PUT", body: body)
+        // Every server so far answers with the status; read it again if this one didn't.
+        if let status = try? JSONDecoder().decode(ServerStatus.self, from: data), status.settings != nil { return status }
+        return try await self.status()
+    }
 
     /// An opaque version of the signed-in person's data; it changes whenever any of their data changes.
     /// nil when unknown: the server has no /version yet (404) or answered null. Either way, refetch.
