@@ -2554,9 +2554,13 @@ a.family-tile:hover {
   font-size: 13px;
   color: var(--ink-2);
 }
+.family-tile {
+  container-type: inline-size;
+}
+/* Four in a row when the tile has room, else two by two: never three and one. */
 .family-slots {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px 12px;
   padding-top: 12px;
   border-top: 1px solid var(--border);
@@ -2582,8 +2586,14 @@ a.family-tile:hover {
 .family-slot .small {
   overflow-wrap: anywhere;
 }
-.family-slot .mini {
+@container (min-width: 560px) {
+  .family-slots {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+.family-spark {
   margin-top: 6px;
+  pointer-events: none;
 }
 .family-back {
   display: inline-flex;

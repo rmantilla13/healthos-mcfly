@@ -2,7 +2,7 @@
 
 A personal health dashboard for **Apple Health** and **WHOOP** data. It runs in two places:
 
-- **Hosted** at https://health.mcfly.bot: the `healthos` project on Vercel, with a Neon Postgres database. Accounts are invite-only, and each person gets their own dashboard; members who share see each other's daily tile on the Family board. This is where you look at it.
+- **Hosted** at https://health.mcfly.bot: the `healthos` project on Vercel, with a Neon Postgres database. Accounts are invite-only, and each person gets their own dashboard; members who share see each other's daily tile and last 30 days on the Family board. This is where you look at it.
 - **Locally** on your Mac. The two jobs that need the Mac happen here: importing an Apple Health export, and processing your photo with Apple Vision. Point the local copy at the hosted database and those land on health.mcfly.bot too.
 
 With no `DATABASE_URL`, the local copy uses its own Postgres (PGlite, under `data/pglite`). It shows clearly labeled demo data until you connect a source.

@@ -13,12 +13,16 @@ const REFRESH_MS = 5 * 60_000;
 export function Family({ isAdmin, refreshStatus, params }: { isAdmin: boolean; refreshStatus: () => void; params: URLSearchParams }) {
   const { data, error, reload } = useApi<FamilyBoard>('/family');
   useFamilyRefresh(reload);
+  const person = params.get('member');
+  // A person's page (or the board again) starts at its top, not where the last one was scrolled to.
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [person]);
 
   if (error && !data) return <div className="page-message">Couldn't load the family board: {error.message}</div>;
   if (!data) return <div className="page-message">Loading…</div>;
   if (!data.sharing) return <SharingOff onOn={() => (reload(), refreshStatus())} />;
   // One person, bigger: #/family?member=<id>. Someone who stopped sharing is simply not found.
-  const person = params.get('member');
   const open = person ? data.members.find((m) => m.id === person) : undefined;
   if (person) return open ? <MemberPage m={open} boardToday={data.today} /> : <NotSharing />;
 
@@ -123,7 +127,7 @@ function Tile({ m, boardToday }: { m: FamilyMember; boardToday: string }) {
   );
   // Every tile opens that person's page.
   return (
-    <a className={`card family-tile ${quiet ? 'is-quiet' : ''}`} href={memberHref(m.id)} aria-label={`${m.name}: open their last 30 days`}>
+    <a className={`card family-tile ${quiet ? 'is-quiet' : ''}`} href={memberHref(m.id)} title={`${m.name}: the last 30 days`}>
       {body}
     </a>
   );
@@ -149,10 +153,17 @@ function restingNote(m: FamilyMember) {
   return `bpm · ${r.status === 'normal' ? 'about usual' : `${r.status === 'high' ? 'above' : 'below'} usual ${r.usual}`}`;
 }
 
-/** A small 7-day chart under a tile's number; nothing when there are fewer than two days. */
+/**
+ * A small 7-day chart under a tile's number; nothing when there are fewer than two days. Just a picture: the
+ * tile is one link to the person's page, where the full charts have values on hover and a table.
+ */
 function Spark({ kind, points, format, label }: { kind: 'bars' | 'line'; points: Point[]; format: (v: number) => string; label: string }) {
   if (points.length < 2) return null;
-  return kind === 'bars' ? <MiniBars points={points} format={format} height={34} label={label} /> : <MiniLine points={points} format={format} height={34} label={label} />;
+  return (
+    <div className="family-spark" inert aria-hidden="true">
+      {kind === 'bars' ? <MiniBars points={points} format={format} height={34} label={label} /> : <MiniLine points={points} format={format} height={34} label={label} />}
+    </div>
+  );
 }
 
 /** Their photo, or their initial when there's none (or it can't be loaded any more). */
@@ -228,7 +239,15 @@ function MemberPage({ m, boardToday }: { m: FamilyMember; boardToday: string }) 
         <ChartCard
           title={h.sleep.inBed ? 'Time in bed' : 'Sleep'}
           value={m.sleep ? hoursMinutes(m.sleep.hours) : '—'}
-          note={m.sleep?.usual != null && !m.sleep.inBed ? `usual ${hoursMinutes(m.sleep.usual)}` : h.sleep.inBed ? 'from the iPhone' : undefined}
+          note={
+            m.sleep?.inBed && !h.sleep.inBed
+              ? 'last night in bed (phone), not in the chart'
+              : m.sleep?.usual != null && !m.sleep.inBed
+                ? `usual ${hoursMinutes(m.sleep.usual)}`
+                : h.sleep.inBed
+                  ? 'from the iPhone'
+                  : undefined
+          }
           table={{ columns: ['Night', 'Hours'], rows: rows(h.sleep.points, hoursMinutes) }}
         >
           <BarChart points={h.sleep.points} format={hoursMinutes} tickFormat={(v) => `${fmt(v)}h`} label={`${m.name}'s sleep per night`} />
@@ -242,6 +261,7 @@ function MemberPage({ m, boardToday }: { m: FamilyMember; boardToday: string }) 
           <TrendChart
             points={h.readiness?.points ?? []}
             format={(v) => readinessFormat(m, v)}
+            tickFormat={(v) => fmt(v, Number.isInteger(v) ? 0 : 1)}
             color="var(--series-3)"
             refLines={m.readiness?.usual != null ? [{ value: m.readiness.usual, label: 'usual' }] : []}
             median={false}
@@ -265,6 +285,7 @@ function MemberPage({ m, boardToday }: { m: FamilyMember; boardToday: string }) 
           <TrendChart
             points={h.restingHr}
             format={(v) => `${fmt(v)} bpm`}
+            tickFormat={(v) => fmt(v, Number.isInteger(v) ? 0 : 1)}
             color="var(--series-2)"
             refLines={m.restingHr?.usual != null ? [{ value: m.restingHr.usual, label: 'usual' }] : []}
             median={false}
@@ -283,7 +304,8 @@ function MemberPage({ m, boardToday }: { m: FamilyMember; boardToday: string }) 
         )}
       </div>
       <p className="muted small family-foot">
-        Dashed lines are {m.isYou ? 'your' : 'their'} usual over these 30 days. {m.isYou ? <a href={href('home')}>Open your full dashboard</a> : 'Only what they share is here.'}
+        Dashed lines are the median of these 30 days; "usual" lines are {m.isYou ? 'your' : 'their'} average of the 30 days before the latest reading.{' '}
+        {m.isYou ? <a href={href('home')}>Open your full dashboard</a> : 'Only what they share is here.'}
       </p>
     </div>
   );
@@ -400,7 +422,7 @@ export function FamilySettings({ status, refresh }: { status: Status; refresh: (
         <div>
           <span>Share with family</span>
           <p className="muted small">
-            Members who share see your daily tile. Turn it off and you see no one, and no one sees you.
+            Members who share see your tile and its last 30 days. Turn it off and you see no one, and no one sees you.
             {on && others.length > 0 && ` Sharing with: ${others.join(', ')}.`}
           </p>
         </div>

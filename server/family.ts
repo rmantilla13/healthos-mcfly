@@ -1,7 +1,8 @@
-// The Family board (GET /api/family): a small daily tile for everyone who shares, seen by everyone who shares.
-// Sharing is on unless a person turns it off in Settings, and it's mutual: turned off, they neither see anyone
-// nor are seen. This is the only place one person's health data is read for another, and a tile carries only
-// what FamilyMember lists: no values over time, no email, nothing about anyone who doesn't share.
+// The Family board (GET /api/family): a tile for everyone who shares, seen by everyone who shares, with the last
+// 30 days of the same few metrics. Sharing is on unless a person turns it off in Settings, and it's mutual: turned
+// off, they neither see anyone nor are seen. This is the only place one person's health data is read for another,
+// and a tile carries only what FamilyMember lists: nothing older than 30 days, no email, nothing about anyone who
+// doesn't share.
 import express from 'express';
 import type { CycleDay, FamilyBoard, FamilyCyclePhase, FamilyDevice, FamilyHistory, FamilyMember, FamilyReason, FamilyStatus, Latest, Point, RangeStatus } from '../shared/types.ts';
 import { authMode, currentUser } from './auth.ts';
@@ -166,21 +167,36 @@ async function memberTile(db: Db, hosted: boolean, userId: string, o: TileOpts):
   // The last 30 days of each, for the charts.
   const historyFrom = addDays(today, -(HISTORY_DAYS - 1));
   const span = (metric: string) => series(ctx, metric, historyFrom, today).map((p) => ({ date: p.date, value: round(p.value, 2) }));
-  const nights = span('sleep_hours');
+  const nights = series(ctx, 'sleep_hours', historyFrom, today);
   const measured = nights.filter((p) => !inBedOnly(p.date, p.value));
-  const readinessMetric =
-    readiness?.kind === 'recovery' ? 'recovery' : readiness?.kind === 'hrv' ? readiness.metric : (['recovery', 'hrv_rmssd', 'hrv_sdnn'] as const).find((m) => span(m).length > 0);
-  // Resting heart rate from one device, the one the latest reading came from (else the one with most days).
-  const rhrSources = [...(daily.get('resting_hr') ?? new Map<string, Map<string, number>>())].sort((a, b) => b[1].size - a[1].size);
-  const rhrSeries = (rhrFrom ? daily.get('resting_hr')?.get(rhrFrom) : undefined) ?? rhrSources[0]?.[1];
+  const newestOf = (points: Point[]) => points.at(-1)?.date ?? '';
+  // Of several metrics, the one with the newest reading in the window (a device used now, not one put away).
+  const freshest = <M extends string>(metrics: readonly M[]) =>
+    metrics.map((m) => ({ m, points: span(m) })).filter((x) => x.points.length).sort((a, b) => newestOf(b.points).localeCompare(newestOf(a.points)))[0];
+  const readinessPick =
+    readiness?.kind === 'recovery'
+      ? { m: 'recovery' as const, points: span('recovery') }
+      : readiness?.kind === 'hrv'
+        ? { m: readiness.metric, points: span(readiness.metric) }
+        : freshest(['recovery', 'hrv_rmssd', 'hrv_sdnn'] as const);
+  // Resting heart rate from one device: the one the latest reading came from, else the one read most recently.
+  const rhrBySource = [...(daily.get('resting_hr') ?? new Map<string, Map<string, number>>())].map(([source, byDate]) => ({
+    source,
+    points: [...byDate].filter(([d]) => d >= historyFrom && d <= today).sort(([a], [b]) => a.localeCompare(b)).map(([date, value]) => ({ date, value: Math.round(value) })),
+  }));
+  const rhrPick = rhrBySource.find((x) => x.source === rhrFrom) ?? rhrBySource.filter((x) => x.points.length).sort((a, b) => newestOf(b.points).localeCompare(newestOf(a.points)))[0];
+  // Training load as Home picks it: WHOOP strain if it's current, else active energy, else whichever is newer.
+  const strain = span('strain');
+  const energy = span('active_energy').map((p) => ({ ...p, value: Math.round(p.value) }));
+  const loadKind = latest(ctx, 'strain', today, 3) ? 'strain' : latest(ctx, 'active_energy', today, 3) ? 'energy' : newestOf(strain) >= newestOf(energy) ? 'strain' : 'energy';
+  const loadPoints = loadKind === 'strain' ? strain : energy;
   const history: FamilyHistory = {
-    sleep: measured.length ? { inBed: false, points: measured } : { inBed: true, points: nights },
-    readiness: readinessMetric ? { kind: readinessMetric, points: span(readinessMetric) } : null,
+    // Phone-only people get their time in bed, marked; with no nights at all there's nothing to mark.
+    sleep: measured.length || !nights.length ? { inBed: false, points: measured.map((p) => ({ date: p.date, value: round(p.value, 2) })) } : { inBed: true, points: nights.map((p) => ({ date: p.date, value: round(p.value, 2) })) },
+    readiness: readinessPick ? { kind: readinessPick.m, points: readinessPick.points } : null,
     steps: span('steps').map((p) => ({ ...p, value: Math.round(p.value) })),
-    restingHr: rhrSeries
-      ? [...rhrSeries].filter(([d]) => d >= historyFrom && d <= today).sort(([a], [b]) => a.localeCompare(b)).map(([date, value]) => ({ date, value: Math.round(value) }))
-      : [],
-    load: span('strain').length ? { kind: 'strain', points: span('strain') } : span('active_energy').length ? { kind: 'energy', points: span('active_energy').map((p) => ({ ...p, value: Math.round(p.value) })) } : null,
+    restingHr: rhrPick?.points ?? [],
+    load: loadPoints.length ? { kind: loadKind, points: loadPoints } : null,
   };
 
   const devices: FamilyDevice[] = [];
