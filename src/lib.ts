@@ -9,15 +9,22 @@ async function parse<T>(res: Response): Promise<T> {
   if (res.status === 401) window.dispatchEvent(new Event('healthos:signin'));
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(body?.error ?? res.statusText);
+    // A reply without our { error } (a proxy or platform error page) gets plain words, not "Bad Gateway".
+    throw new Error(body?.error ?? 'Something went wrong. Try again in a moment.');
   }
   return (await res.json()) as T;
 }
 
-export const getJson = <T,>(path: string) => fetch(`/api${path}`).then((r) => parse<T>(r));
+/** fetch, with a network failure ("Failed to fetch", "Load failed") put in plain words. */
+const request = (path: string, init?: RequestInit) =>
+  fetch(`/api${path}`, init).catch(() => {
+    throw new Error("Couldn't reach healthOS. Check your connection and try again.");
+  });
+
+export const getJson = <T,>(path: string) => request(path).then((r) => parse<T>(r));
 
 export const sendJson = <T,>(method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, body?: unknown) =>
-  fetch(`/api${path}`, { method, headers: WRITE_HEADERS, body: body === undefined ? undefined : JSON.stringify(body) }).then((r) => parse<T>(r));
+  request(path, { method, headers: WRITE_HEADERS, body: body === undefined ? undefined : JSON.stringify(body) }).then((r) => parse<T>(r));
 
 export function uploadFile(file: File, onProgress: (sent: number, total: number) => void): Promise<void> {
   return new Promise((resolve, reject) => {

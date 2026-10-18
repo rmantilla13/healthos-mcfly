@@ -401,7 +401,9 @@ export function requireSession(db: Db) {
         return next();
       }
       if (mode === 'misconfigured') {
-        return void res.status(503).json({ error: 'Sign-in is not configured. Run scripts/setup-vercel.sh to set the secrets.' });
+        // Anyone can hit this, so the reply stays plain; the fix is for whoever runs the server.
+        console.error('[auth] Sign-in is not configured. Run scripts/setup-vercel.sh to set the secrets, then redeploy.');
+        return void res.status(503).json({ error: "healthOS isn't available right now. Try again later." });
       }
       const user = await sessionUser(db, req);
       if (!user) return void res.status(401).json({ error: 'Sign in required', signIn: true });

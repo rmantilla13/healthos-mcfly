@@ -31,6 +31,25 @@ export function whoopConfig() {
 
 export const isConfigured = () => Boolean(whoopConfig().clientId && whoopConfig().clientSecret);
 
+/**
+ * A WHOOP failure in words for the person whose data it is: it's shown on Integrations and in the iPhone app.
+ * `detail` keeps the technical cause (status codes, WHOOP's reply) for the server logs and the admin screen.
+ */
+export class WhoopError extends Error {
+  readonly detail: string;
+  constructor(message: string, detail: string = message) {
+    super(message);
+    this.detail = detail;
+  }
+}
+
+export const errorDetail = (err: unknown) => (err instanceof WhoopError ? err.detail : err instanceof Error ? err.message : String(err));
+
+const RETRY_LATER = "WHOOP isn't responding right now. healthOS will try again within the hour.";
+const SYNC_FAILED = "The WHOOP sync didn't finish. healthOS will try again within the hour.";
+// Also shown in the iPhone app, which has no Disconnect button: point to the website.
+const RECONNECT = 'Your WHOOP connection has expired. On the healthOS website, disconnect WHOOP and connect it again.';
+
 export async function isConnected(scope: Scope) {
   const [row] = await scope.db.query<{ any: boolean }>("SELECT EXISTS (SELECT 1 FROM tokens WHERE user_id = $1 AND provider = 'whoop') AS any", [scope.userId]);
   return Boolean(row?.any);
@@ -62,12 +81,21 @@ type TokenRow = { access_token: string; refresh_token: string | null; expires_at
 
 async function tokenRequest(body: Record<string, string>): Promise<TokenResponse> {
   const { clientId, clientSecret } = whoopConfig();
+  const connecting = body.grant_type === 'authorization_code';
+  const unavailable = connecting ? "WHOOP isn't responding right now. Try connecting again in a little while." : RETRY_LATER;
   const res = await fetch(TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ ...body, client_id: clientId, client_secret: clientSecret }),
+  }).catch((err: Error) => {
+    throw new WhoopError(unavailable, `WHOOP token request failed: ${err.message}`);
   });
-  if (!res.ok) throw new Error(`WHOOP token request failed (${res.status}): ${await res.text()}`);
+  if (!res.ok) {
+    const detail = `WHOOP token request failed (${res.status}): ${await res.text()}`;
+    // 400/401: WHOOP turned the code or refresh token down (revoked, expired or already used).
+    if (res.status !== 400 && res.status !== 401) throw new WhoopError(unavailable, detail);
+    throw new WhoopError(connecting ? "WHOOP didn't accept the sign-in. Try connecting again." : RECONNECT, detail);
+  }
   return (await res.json()) as TokenResponse;
 }
 
@@ -81,14 +109,20 @@ async function saveTokens(q: Scope['db'] | { query: Scope['db']['query'] }, user
 }
 
 export async function exchangeCode(scope: Scope, code: string) {
-  const t = await tokenRequest({ grant_type: 'authorization_code', code, redirect_uri: whoopConfig().redirectUri });
-  await saveTokens(scope.db, scope.userId, t);
+  try {
+    const t = await tokenRequest({ grant_type: 'authorization_code', code, redirect_uri: whoopConfig().redirectUri });
+    await saveTokens(scope.db, scope.userId, t);
+  } catch (err) {
+    // The person sees the plain message on Integrations; the cause goes to the logs.
+    console.error(`[whoop] connect failed for ${scope.userId}:`, errorDetail(err));
+    throw err instanceof WhoopError ? err : new WhoopError("Couldn't finish connecting WHOOP. Try connecting again.", errorDetail(err));
+  }
 }
 
 async function accessToken(scope: Scope, force = false): Promise<string> {
   const { db, userId } = scope;
   const [row] = await db.query<TokenRow>("SELECT access_token, refresh_token, expires_at FROM tokens WHERE user_id = $1 AND provider = 'whoop'", [userId]);
-  if (!row) throw new Error('WHOOP is not connected');
+  if (!row) throw new WhoopError('WHOOP is not connected.');
   if (!force && Number(row.expires_at) - 120_000 > Date.now()) return row.access_token;
   // WHOOP rotates refresh tokens and rejects concurrent refreshes, and the cron and a manual sync can run
   // on different instances at once. Lock the token row, then re-read it: if someone else refreshed while
@@ -98,9 +132,9 @@ async function accessToken(scope: Scope, force = false): Promise<string> {
       "SELECT access_token, refresh_token, expires_at FROM tokens WHERE user_id = $1 AND provider = 'whoop' FOR UPDATE",
       [userId],
     );
-    if (!locked) throw new Error('WHOOP is not connected');
+    if (!locked) throw new WhoopError('WHOOP is not connected.');
     if (locked.access_token !== row.access_token && Number(locked.expires_at) - 120_000 > Date.now()) return locked.access_token;
-    if (!locked.refresh_token) throw new Error('WHOOP session expired. Reconnect WHOOP.');
+    if (!locked.refresh_token) throw new WhoopError(RECONNECT, 'No refresh token stored');
     const t = await tokenRequest({ grant_type: 'refresh_token', refresh_token: locked.refresh_token, scope: 'offline' });
     await saveTokens(q, userId, t, locked.refresh_token);
     return t.access_token;
@@ -134,9 +168,13 @@ async function api<T>(scope: Scope, path: string, params: Record<string, string>
       await new Promise((r) => setTimeout(r, wait));
       continue;
     }
-    throw new Error(`WHOOP ${path} failed (${res.status}): ${await res.text()}`);
+    const detail = `WHOOP ${path} failed (${res.status}): ${await res.text()}`;
+    // 401 here means it was refused even with a fresh token.
+    if (res.status === 401) throw new WhoopError(RECONNECT, detail);
+    if (res.status === 403) throw new WhoopError("WHOOP didn't allow access to your data. On the healthOS website, disconnect WHOOP and connect it again, allowing every permission.", detail);
+    throw new WhoopError(SYNC_FAILED, detail);
   }
-  throw new Error(`WHOOP ${path} kept failing; try again later.`);
+  throw new WhoopError(RETRY_LATER, `WHOOP ${path} kept failing (rate limited or server errors)`);
 }
 
 async function collect<T>(scope: Scope, path: string, start: string, end?: string): Promise<T[]> {
@@ -338,7 +376,15 @@ function titleCase(s: string) {
 // ---------- Sync ----------
 // Sync status is kept in the database so every instance (and the dashboard) sees the same thing.
 
-export type SyncState = { running: boolean; startedAt?: string; lastSync?: string; lastError?: string; lastCounts?: Record<string, number> };
+/** `lastError` is in plain words for the person; `lastErrorDetail` is the technical cause, for the admin screen. */
+export type SyncState = {
+  running: boolean;
+  startedAt?: string;
+  lastSync?: string;
+  lastError?: string;
+  lastErrorDetail?: string;
+  lastCounts?: Record<string, number>;
+};
 const STALE_RUN_MS = 10 * 60_000;
 
 export async function syncState(scope: Scope): Promise<SyncState> {
@@ -430,7 +476,7 @@ export async function syncWhoop(scope: Scope, opts: { full?: boolean; deadline?:
   const prev = await syncState(scope);
   if (prev.running) return;
   const deadline = opts.deadline ?? Date.now() + SYNC_BUDGET_MS;
-  await saveSyncState(scope, { ...prev, running: true, startedAt: new Date().toISOString(), lastError: undefined });
+  await saveSyncState(scope, { ...prev, running: true, startedAt: new Date().toISOString(), lastError: undefined, lastErrorDetail: undefined });
   try {
     const last = await getUserSetting(scope.db, scope.userId, 'whoop_last_sync');
     const since = !last || opts.full ? Date.now() - BACKFILL_DAYS * DAY_MS : Date.parse(last) - 4 * DAY_MS;
@@ -471,7 +517,11 @@ export async function syncWhoop(scope: Scope, opts: { full?: boolean; deadline?:
     if (before < (Number.isFinite(saved) && saved > 0 ? saved : Infinity)) await bumpDataVersion(scope.db, scope.userId);
     await saveSyncState(scope, { running: false, lastSync, lastCounts: { ...counts, historyComplete: before <= HISTORY_START ? 1 : 0 } });
   } catch (err) {
-    await saveSyncState(scope, { ...prev, running: false, lastError: err instanceof Error ? err.message : String(err) });
+    const detail = errorDetail(err);
+    console.error(`[whoop] sync failed for ${scope.userId}:`, detail);
+    // Anything that isn't a WhoopError (a database error, a network failure) is described the same way.
+    const lastError = err instanceof WhoopError ? err.message : SYNC_FAILED;
+    await saveSyncState(scope, { ...prev, running: false, lastError, lastErrorDetail: detail.slice(0, 500) });
     throw err;
   }
 }
@@ -488,24 +538,40 @@ export function whoopSyncTargets(db: Db) {
   );
 }
 
+/** Whether the backfill has reached HISTORY_START, so there's no older history left to fetch. */
+async function historyComplete(scope: Scope) {
+  const before = Number(await getUserSetting(scope.db, scope.userId, 'whoop_backfill_before'));
+  return before > 0 && before <= HISTORY_START;
+}
+
 /**
  * The cron: everyone with WHOOP connected. Recent data for all of them first, then history backfill with
  * whatever time is left. One person's failure (an expired connection) doesn't stop the others.
+ *
+ * The history pass re-reads recent days as well, so it only runs for people with history still to fetch:
+ * once that's done, each hourly run makes one sync per person rather than two. Someone whose recent sync
+ * just failed waits for the next run instead of failing again (and the failure stays on show).
  */
 export async function syncAllWhoop(db: Db) {
   const deadline = Date.now() + SYNC_BUDGET_MS;
   const users = await whoopSyncTargets(db);
   const results: Record<string, string> = {};
-  for (const pass of ['recent', 'history'] as const) {
-    for (const { user_id } of users) {
-      if (Date.now() > deadline) break;
-      try {
-        await syncWhoop({ db, userId: user_id }, { deadline, backfill: pass === 'history' });
-        results[user_id] = 'ok';
-      } catch (err) {
-        results[user_id] = err instanceof Error ? err.message.slice(0, 120) : 'failed';
-      }
+  const sync = async (userId: string, backfill: boolean) => {
+    try {
+      await syncWhoop({ db, userId }, { deadline, backfill });
+      results[userId] = 'ok';
+    } catch (err) {
+      results[userId] = errorDetail(err).slice(0, 120);
     }
+  };
+  for (const { user_id } of users) {
+    if (Date.now() > deadline) break;
+    await sync(user_id, false);
+  }
+  for (const { user_id } of users) {
+    if (Date.now() > deadline) break;
+    if (results[user_id] !== 'ok' || (await historyComplete({ db, userId: user_id }))) continue;
+    await sync(user_id, true);
   }
   return { users: users.length, results };
 }

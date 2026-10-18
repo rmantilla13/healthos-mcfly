@@ -82,13 +82,19 @@ export function Integrations({ status, params, refresh, signedIn }: { status: St
       )}
       {whoopParam === 'error' && (
         <div className="banner banner-bad">
-          <Icon name="alert" size={16} /> WHOOP connection failed: {params.get('message')}
+          <Icon name="alert" size={16} />{' '}
+          {/* The reason can be WHOOP's own technical wording, so only admins see it. */}
+          {isAdmin || !status.hosted ? `WHOOP connection failed: ${params.get('message')}` : "WHOOP didn't connect. Try connecting again."}
         </div>
       )}
       {whoopParam === 'not-configured' && (
         <div className="banner banner-bad">
           <Icon name="alert" size={16} />{' '}
-          {status.hosted ? "WHOOP isn't set up on this server yet." : 'Add your WHOOP client ID and secret to .env first (steps below).'}
+          {!status.hosted
+            ? 'Add your WHOOP client ID and secret to .env first (steps below).'
+            : isAdmin
+              ? "WHOOP isn't set up yet. Add WHOOP_CLIENT_ID and WHOOP_CLIENT_SECRET to the Vercel project, then redeploy."
+              : "WHOOP isn't available here yet."}
         </div>
       )}
 
@@ -211,13 +217,17 @@ export function Integrations({ status, params, refresh, signedIn }: { status: St
                       : 'Connected'
                   : status.whoop.configured
                     ? 'Ready to connect'
-                    : 'Needs a developer app'}
+                    : status.hosted && !isAdmin
+                      ? 'Not available yet'
+                      : 'Needs a developer app'}
               </p>
             </div>
           </div>
 
           {!status.whoop.configured && status.hosted && (
-            <p className="muted">{isAdmin ? 'Add WHOOP_CLIENT_ID and WHOOP_CLIENT_SECRET to the Vercel project, then redeploy.' : "The admin hasn't set up WHOOP on this server yet."}</p>
+            <p className="muted">
+              {isAdmin ? 'Add WHOOP_CLIENT_ID and WHOOP_CLIENT_SECRET to the Vercel project, then redeploy.' : "WHOOP isn't turned on here yet. Ask the admin if you'd like to use it."}
+            </p>
           )}
           {!status.whoop.configured && !status.hosted && (
             <ol className="steps">
@@ -251,7 +261,7 @@ export function Integrations({ status, params, refresh, signedIn }: { status: St
           {status.whoop.connected && (
             <>
               <p className="muted">
-                Syncs every 6 hours{status.hosted ? '' : ' while the app is running'}. Each sync rechecks the last few days, since WHOOP rescores recent nights.
+                Syncs every hour{status.hosted ? '' : ' while the app is running'}. Each sync rechecks the last few days, since WHOOP rescores recent nights.
               </p>
               <div className="btn-row">
                 <button className="btn" disabled={status.whoop.syncing} onClick={() => whoopAction('/whoop/sync', { full: true })}>
@@ -279,7 +289,7 @@ export function Integrations({ status, params, refresh, signedIn }: { status: St
 }
 
 /**
- * The one sync control: WHOOP syncs on the server (also every 6 hours, and when the dashboard opens with
+ * The one sync control: WHOOP syncs on the server (also every hour, and when the dashboard opens with
  * stale data); Apple Health comes from the iPhone app on its own, so here it's a status line.
  */
 function SyncNow({ status, refresh }: { status: Status; refresh: () => void }) {

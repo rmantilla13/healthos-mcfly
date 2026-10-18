@@ -1,5 +1,6 @@
-// WHOOP steps end to end: the real sync against a stubbed WHOOP API, run like the 6-hourly cron over several
-// days, so the sliding sync window and the one-time re-read are exercised as in production.
+// WHOOP steps end to end: the real sync against a stubbed WHOOP API, run every 6 hours over several days, so the
+// sliding sync window and the one-time re-read are exercised as in production. (The cron itself runs hourly;
+// test/whoop-cron.test.ts covers which syncs one run makes.)
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { setUserSetting, upsertDaily, upsertHourly } from '../server/db.ts';
@@ -112,7 +113,8 @@ test('WHOOP steps stay on the right days through the sliding sync window, merged
   for (const d of ['17', '18', '19', '20', '21', '22', '23']) {
     for (const h of ['00', '06', '12', '18']) {
       fakeNow = at(`2026-10-${d}T${h}:15:30Z`);
-      // The cron runs a recent pass and a history pass for each person.
+      // A recent sync, then one with history backfill: what the cron runs for someone still loading history,
+      // and what a manual sync right after the cron looks like.
       await syncWhoop(scope, { backfill: false });
       await syncWhoop(scope, { backfill: true });
       const expected = Object.fromEntries(truth.filter(([, begun]) => at(begun) <= fakeNow).map(([date, , n]) => [date, n]));

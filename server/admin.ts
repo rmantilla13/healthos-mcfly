@@ -93,7 +93,8 @@ export function adminRouter(db: Db) {
             whoop: {
               connected: connected.has(u.id),
               lastSync: setting(u.id, 'whoop_last_sync') ?? null,
-              lastError: (sync?.lastError as string) ?? null,
+              // The technical cause when there is one; the person themselves sees it in plain words.
+              lastError: ((sync?.lastErrorDetail ?? sync?.lastError) as string) ?? null,
               historyComplete: Boolean((sync?.lastCounts as Record<string, number> | undefined)?.historyComplete),
             },
             photo: Boolean(setting(u.id, 'photo_meta')),
