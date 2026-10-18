@@ -50,6 +50,8 @@ struct IngestPayload: Codable {
     var hourly: [HourlyRow]?
     /// Days with cycle records, each that day's complete set.
     var cycle: [CycleDay]?
+    /// Days of food totals by app, each that day's complete set; only while Nutrition is on (Nutrition.swift).
+    var nutrition: [NutritionDay]?
     var workouts: [WorkoutRow] = []
     var events: [EventRow] = []
     var deleted: Deleted?

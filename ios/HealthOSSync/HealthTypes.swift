@@ -70,9 +70,19 @@ enum HealthTypes {
     /// The Watch's hourly "stood / didn't" record; a day's stand hours are the hours stood.
     static let standHour = HKCategoryType(.appleStandHour)
 
-    /// Cycle types join only once cycle tracking is on (and the server stores cycle days).
-    static var sampleTypes: [HKSampleType] { quantities.map(\.type) + [sleep, mindful, workout, standHour] + (CycleTypes.active ? CycleTypes.all : []) }
+    /// Cycle types join only once cycle tracking is on (and the server stores cycle days), food types only while
+    /// Nutrition is on (and the server takes food).
+    static var sampleTypes: [HKSampleType] { sampleTypes(food: NutritionTypes.current) }
+    static func sampleTypes(food: [Nutrient]) -> [HKSampleType] {
+        quantities.map(\.type) + [sleep, mindful, workout, standHour] + (CycleTypes.active ? CycleTypes.all : []) + food.map(\.type)
+    }
     static var readTypes: Set<HKObjectType> { Set(sampleTypes) }
+
+    /// The types that wake the app: all read types but food other than energy (one meal writes them together).
+    static var observedTypes: [HKSampleType] { observedTypes(food: NutritionTypes.current) }
+    static func observedTypes(food: [Nutrient]) -> [HKSampleType] {
+        sampleTypes(food: food).filter { NutritionTypes.nutrient(of: $0) == nil || $0 == NutritionTypes.energy }
+    }
 
     /// The type a daily metric is read from (nil for one this build doesn't read on this iOS version).
     static func type(producing metric: String) -> HKSampleType? {
@@ -97,6 +107,7 @@ enum HealthTypes {
         if type == standHour { return "stand hours" }
         if type == workout { return "workouts" }
         if CycleTypes.all.contains(type) { return "cycle" }
+        if let n = NutritionTypes.nutrient(of: type) { return n.label }
         return "health data"
     }
 }

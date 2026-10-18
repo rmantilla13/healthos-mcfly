@@ -21,6 +21,12 @@ struct IngestClient {
         let cycle: Int?
         /// Every daily metric the server takes. Older servers don't list them (SyncState.legacyMetrics).
         let metrics: [String]?
+        /// The nutrients the server takes in `nutrition`. Servers without Nutrition don't list them, and get no food.
+        var nutrients: [String]? = nil
+        /// Whether this person has Nutrition on. Off (or missing), the app neither reads food nor asks Health about it.
+        var nutritionOn: Bool? = nil
+        /// Days of food stored (0 while Nutrition is off: the server drops them).
+        var nutrition: Int? = nil
     }
 
     /// A reply other than 2xx, with the server's own message.
@@ -31,6 +37,9 @@ struct IngestClient {
         /// The server refused a daily metric by name (`daily[i].metric: unknown metric "x"`), e.g. after it went back to
         /// a version that takes fewer. Hourly rows fail with "unknown hourly metric", which no filter here can fix.
         var unknownMetric: Bool { status == 400 && detail.contains("unknown metric \"") }
+        /// The server refused a nutrient name (`nutrition[i].apps[j].values: unknown nutrient; …`). Its message never
+        /// names the nutrient, so the app asks again which ones it takes.
+        var unknownNutrient: Bool { status == 400 && detail.contains("unknown nutrient") }
     }
 
     private struct ErrorBody: Decodable { let error: String }
