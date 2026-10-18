@@ -76,6 +76,13 @@
   --tone-yellow-ink: #8a6400;
   --tone-pink-bg: #fde2e8;
   --tone-pink-ink: #a33a57;
+
+  /* cycle: a one-hue blue ramp for fertility, peach after ovulation */
+  --fertile-medium: #dbe3fb;
+  --fertile-high: #a9baf3;
+  --fertile-peak: #4a60c8;
+  --fertile-peak-ink: #ffffff;
+  --cycle-luteal: #fbe0cf;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -139,6 +146,11 @@
     --tone-yellow-ink: #f0c95a;
     --tone-pink-bg: #3f1d28;
     --tone-pink-ink: #f19ab2;
+    --fertile-medium: #2f3b72;
+    --fertile-high: #4a5ec4;
+    --fertile-peak: #a6b3f7;
+    --fertile-peak-ink: #0d0d0d;
+    --cycle-luteal: #6a4230;
   }
 }
 
@@ -2199,33 +2211,93 @@ td {
 }
 
 /* ---------- Cycle ---------- */
-/* Period days use the gauge's pink; the fertile window and ovulation use the blue tone. */
+/* Period days use the gauge's pink; fertility is a one-hue blue ramp, darker for a higher chance; after
+   ovulation is a soft peach. Nothing is ever coloured as "safe". */
 
-.cycle-main {
+.cycle-hero {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
   gap: 16px;
-  align-items: start;
 }
-.cycle-main > :only-child {
-  grid-column: 1 / -1;
-}
-.cycle-day {
+.cycle-today {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin-bottom: 16px;
+  align-items: center;
+  gap: 24px;
+  background: var(--grad-pink);
 }
-.cycle-day-n {
-  font-size: 34px;
+.cycle-today-text {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+.cycle-today-text h2 {
+  font-size: 22px;
+  letter-spacing: -0.02em;
+}
+.phase-ring {
+  flex: none;
+}
+.phase-ring path {
+  fill: none;
+  stroke-width: 14;
+  stroke-linecap: round;
+}
+.ring-track {
+  fill: none;
+  stroke: var(--chip);
+  stroke-width: 14;
+}
+.ring-period {
+  stroke: var(--gauge-fill);
+}
+.ring-fertile-medium {
+  stroke: var(--fertile-medium);
+}
+.ring-fertile-high {
+  stroke: var(--fertile-high);
+}
+.ring-fertile-peak {
+  stroke: var(--fertile-peak);
+}
+.ring-luteal {
+  stroke: var(--cycle-luteal);
+}
+.ring-today {
+  fill: var(--surface);
+  stroke: var(--ink);
+  stroke-width: 2.5;
+}
+.ring-day {
+  font-size: 24px;
   font-weight: 600;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.02em;
+  fill: var(--ink);
+}
+.ring-of {
+  font-size: 12px;
+  fill: var(--ink-3);
+}
+.pill.confidence-high {
+  color: var(--tone-green-ink);
+  background: var(--tone-green-bg);
+  border-color: transparent;
+}
+.pill.confidence-medium {
+  color: var(--tone-blue-ink);
+  background: var(--tone-blue-bg);
+  border-color: transparent;
+}
+.pill.confidence-low {
+  color: var(--ink-2);
+  background: var(--chip);
 }
 .cycle-facts {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
-  margin: 0 0 12px;
+  margin: 6px 0 4px;
 }
 .cycle-facts dt {
   font-size: 13px;
@@ -2243,45 +2315,172 @@ td {
   font-weight: 400;
   color: var(--ink-3);
 }
-.cycle-stats {
-  display: flex;
-  gap: 32px;
-  margin-bottom: 16px;
+.cycle-caveat {
+  margin-top: 4px;
 }
-.cycle-stats > div {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.cycle-stats strong {
-  font-size: 22px;
-  font-weight: 600;
-}
-.cycle-bars {
+
+/* fertile window */
+.cycle-fertility {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 12px;
+}
+.fertile-bars {
+  display: grid;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  gap: 4px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
-.cycle-bars li {
-  display: grid;
-  grid-template-columns: 56px minmax(0, 1fr) 40px;
+.fertile-bars li {
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
 }
-.cycle-bar {
-  height: 8px;
-  border-radius: 4px;
+.fertile-bar {
+  display: flex;
+  align-items: flex-end;
+  width: 100%;
+  max-width: 26px;
+  height: 92px;
+  border-radius: 7px;
   background: var(--surface-2);
   overflow: hidden;
 }
-.cycle-bar span {
+.fertile-bar > span {
   display: block;
-  height: 100%;
-  border-radius: 4px;
+  width: 100%;
+  border-radius: 7px;
+}
+.fertile-bars li.is-past .fertile-bar {
+  opacity: 0.55;
+}
+.fertile-bars li.is-today .fertile-day {
+  font-weight: 700;
+  color: var(--ink);
+}
+.fertile-day {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.fertile-mark {
+  height: 12px;
+  font-size: 10px;
+  line-height: 12px;
+  color: var(--fertile-peak);
+}
+.lvl-low {
+  background: var(--axis);
+}
+.lvl-medium {
+  background: var(--fertile-medium);
+}
+.lvl-high {
+  background: var(--fertile-high);
+}
+.lvl-peak {
+  background: var(--fertile-peak);
+}
+
+/* temperature */
+.cycle-temp .card-title-row {
+  align-items: flex-start;
+  gap: 12px;
+}
+.cycle-temp .card-title-row p {
+  margin-top: 2px;
+}
+.cycle-nav {
+  flex: none;
+  align-items: center;
+  gap: 8px;
+}
+.cycle-nav .small {
+  min-width: 110px;
+  text-align: center;
+  color: var(--ink-2);
+}
+.cycle-temp .chart {
+  position: relative;
+  margin-top: 8px;
+}
+.cycle-temp-empty {
+  padding: 24px 0;
+}
+.temp-line {
+  fill: none;
+  stroke: var(--tone-pink-ink);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.temp-dot {
+  fill: var(--tone-pink-ink);
+  stroke: var(--surface);
+  stroke-width: 1.5;
+}
+.temp-dot.is-excluded {
+  fill: var(--surface);
+  stroke: var(--ink-3);
+  stroke-width: 1.5;
+}
+.coverline {
+  stroke: var(--ink-3);
+  stroke-width: 1.25;
+  stroke-dasharray: 5 4;
+}
+.coverline-key {
+  color: var(--ink-3);
+}
+.ovulation-line {
+  stroke: var(--fertile-peak);
+  stroke-width: 1.5;
+}
+.temp-luteal,
+.temp-luteal-key {
+  fill: var(--cycle-luteal);
+  background: var(--cycle-luteal);
+  opacity: 0.55;
+}
+.temp-fertile {
+  opacity: 0.45;
+}
+.temp-fertile.lvl-medium {
+  fill: var(--fertile-medium);
+}
+.temp-fertile.lvl-high {
+  fill: var(--fertile-high);
+}
+.temp-fertile.lvl-peak {
+  fill: var(--fertile-peak);
+}
+.temp-period {
+  fill: var(--gauge-fill);
   background: var(--gauge-fill);
+}
+.lh-mark {
+  fill: var(--fertile-peak);
+}
+.axis-label.is-today {
+  font-weight: 700;
+  fill: var(--ink);
+}
+.temp-legend {
+  margin-top: 6px;
+}
+
+/* calendar and log */
+.cycle-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.cycle-main > :only-child {
+  grid-column: 1 / -1;
 }
 .cal-grid {
   display: grid;
@@ -2315,25 +2514,34 @@ td {
   color: var(--ink-3);
   cursor: default;
 }
-.cal-day.is-fertile {
-  background: var(--tone-blue-bg);
-  color: var(--tone-blue-ink);
+.cal-day.is-fertile-medium {
+  background: var(--fertile-medium);
+}
+.cal-day.is-fertile-high {
+  background: var(--fertile-high);
+}
+.cal-day.is-fertile-peak {
+  background: var(--fertile-peak);
+  color: var(--fertile-peak-ink);
 }
 .cal-day.is-period {
   background: var(--gauge-fill);
-  color: var(--surface);
-  font-weight: 600;
+  color: #fff;
 }
 .cal-day.is-predicted {
   border: 1.5px dashed var(--gauge-fill);
   color: var(--gauge-fill);
 }
-.cal-day.is-ovulation::after {
+.cal-day.is-ovulation::after,
+.cal-day.is-ovulation-est::after {
   content: '';
   position: absolute;
-  inset: 2px;
-  border: 1.5px solid var(--tone-blue-ink);
+  inset: -4px;
+  border: 1.5px solid var(--fertile-peak);
   border-radius: 50%;
+}
+.cal-day.is-ovulation-est::after {
+  border-style: dashed;
 }
 .cal-day.is-today {
   font-weight: 700;
@@ -2341,25 +2549,23 @@ td {
   text-underline-offset: 3px;
 }
 .cal-day.is-selected {
-  outline: 2px solid var(--ink);
-  outline-offset: 1px;
+  border-color: var(--ink);
 }
 .cal-dot {
   position: absolute;
-  bottom: 4px;
-  left: calc(50% - 2px);
+  bottom: 5px;
   width: 4px;
   height: 4px;
   border-radius: 50%;
-  background: currentColor;
-  opacity: 0.6;
+  background: var(--ink-2);
 }
 .cal-dot.is-spot {
   background: var(--gauge-fill);
-  opacity: 1;
+}
+.cal-dot.is-symptom {
+  background: var(--tone-peach-ink);
 }
 .cycle-legend {
-  flex-wrap: wrap;
   margin-top: 12px;
 }
 .cal-key {
@@ -2374,11 +2580,11 @@ td {
 .cal-key.is-predicted {
   border: 1.5px dashed var(--gauge-fill);
 }
-.cal-key.is-fertile {
-  background: var(--tone-blue-bg);
+.cal-key.is-fertile-high {
+  background: var(--fertile-high);
 }
 .cal-key.is-ovulation {
-  border: 1.5px solid var(--tone-blue-ink);
+  border: 1.5px solid var(--fertile-peak);
 }
 .legend .cal-dot {
   position: static;
@@ -2405,6 +2611,124 @@ td {
   justify-content: space-between;
   gap: 16px;
 }
+
+/* history and patterns */
+.cycle-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 32px;
+  margin-bottom: 16px;
+}
+.cycle-stats > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.cycle-stats strong {
+  font-size: 22px;
+  font-weight: 600;
+}
+.cycle-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+}
+.cycle-bars li {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: 8px;
+}
+.cycle-bar {
+  display: flex;
+  gap: 2px;
+  height: 10px;
+}
+.cycle-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 5px;
+}
+.cycle-bar.is-current > span:last-child {
+  opacity: 0.55;
+}
+.seg-period {
+  background: var(--gauge-fill);
+}
+.seg-follicular {
+  background: var(--fertile-medium);
+}
+.seg-luteal {
+  background: var(--cycle-luteal);
+}
+.seg-unknown {
+  background: var(--surface-2);
+}
+.cycle-patterns {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.pattern-body {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+.pattern-body > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.pattern-body dt {
+  color: var(--ink-2);
+}
+.pattern-body dd {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  margin: 0;
+}
+.pattern-body small {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.pattern-symptoms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pattern-symptoms li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--tone-peach-bg);
+}
+.pattern-symptoms strong {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--tone-peach-ink);
+}
+.pattern-notes {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--tone-yellow-bg);
+}
+.pattern-notes p {
+  margin: 0 0 4px;
+}
+
 .switch {
   position: relative;
   flex: none;
@@ -2444,8 +2768,25 @@ td {
   }
 }
 @media (max-width: 1080px) {
+  .cycle-hero,
   .cycle-main {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 640px) {
+  .cycle-today {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .phase-ring {
+    align-self: center;
+  }
+  .cycle-temp .card-title-row {
+    flex-direction: column;
+  }
+  .cycle-nav {
+    align-self: stretch;
+    justify-content: space-between;
   }
 }
 @media (max-width: 560px) {
@@ -2454,6 +2795,9 @@ td {
   }
   .cal-grid {
     gap: 2px;
+  }
+  .fertile-bar {
+    height: 72px;
   }
 }
 

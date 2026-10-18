@@ -346,6 +346,22 @@ export type Flow = 'none' | 'unspecified' | 'light' | 'medium' | 'heavy';
 export type OvulationTest = 'negative' | 'lh_surge' | 'estrogen_surge' | 'indeterminate';
 export type CervicalMucus = 'dry' | 'sticky' | 'creamy' | 'watery' | 'egg_white';
 export type SexualActivity = 'protected' | 'unprotected' | 'unspecified';
+/** Apple Health's cycle symptoms, so the iPhone app can sync the same set. */
+export type Symptom =
+  | 'cramps'
+  | 'bloating'
+  | 'breast_tenderness'
+  | 'headache'
+  | 'acne'
+  | 'fatigue'
+  | 'mood_changes'
+  | 'back_pain'
+  | 'nausea'
+  | 'appetite_changes'
+  | 'sleep_changes'
+  | 'hot_flashes';
+/** Why a day's temperature may be off. That morning's readings, from every device, are left out of the analysis. */
+export type TempDisturbance = 'sick' | 'alcohol' | 'sleep' | 'travel' | 'other';
 
 /** What was logged on one day. A field that's absent wasn't logged. */
 export type CycleFields = {
@@ -359,6 +375,9 @@ export type CycleFields = {
   /** Basal body temperature in °C. */
   bbt?: number;
   sexualActivity?: SexualActivity;
+  /** Sorted, no repeats. */
+  symptoms?: Symptom[];
+  tempDisturbed?: TempDisturbance;
 };
 
 export type CycleDay = CycleFields & { date: string };
@@ -366,16 +385,84 @@ export type CycleDay = CycleFields & { date: string };
 /** A day as shown: entries made by hand override Apple Health's, field by field. */
 export type CycleLogDay = CycleDay & { apple?: CycleFields; manual?: CycleFields };
 
+/** Where a temperature came from: a thermometer (logged or Apple Health), Apple Watch's sleeping wrist temperature, WHOOP's skin temperature. */
+export type TempSource = 'bbt' | 'wrist' | 'skin';
+
 export type CycleEstimate = {
-  /** The most likely first day of the next period, and the range it usually falls in. */
+  /** The most likely first day of the next period, and the range it falls in about four times in five. */
   nextPeriod: { date: string; earliest: string; latest: string };
+  /** The most likely ovulation day. */
   ovulation: string;
-  /** The five days before ovulation, ovulation day, and the day after. */
+  /** The days with a real chance of conception (see `fertility`), first to last. */
   fertile: { start: string; end: string };
-  /** calendar: from past cycle lengths; lh_test or bbt: from this cycle's ovulation test or temperature rise. */
+  /** calendar: from past cycle lengths; lh_test or bbt: from this cycle's ovulation test or temperature rise (bbt covers wearables too). */
   basis: 'calendar' | 'lh_test' | 'bbt';
-  /** How many recent cycles it rests on. */
+  /** How many of this person's own cycles it rests on. Below 2, typical cycles fill in. */
   cycles: number;
+  /** How settled it is: low on typical cycles or very variable ones, high once a temperature rise confirms ovulation. */
+  confidence?: 'low' | 'medium' | 'high';
+  /** With basis bbt: the device whose temperature rise it follows. */
+  tempSource?: TempSource;
+};
+
+/** One day's chance of conception, as an estimate: relative to the most fertile day (1). Only days that matter are listed. */
+export type FertilityDay = { date: string; chance: number; level: 'medium' | 'high' | 'peak'; basis: 'estimate' | 'logged' };
+
+/** One night's or morning's temperature as the analysis sees it. */
+export type CycleTemperature = {
+  date: string;
+  source: TempSource;
+  /** °C as measured. */
+  value: number;
+  /** °C above or below this person's own level on that device (a rolling median), so devices can share a chart. */
+  deviation: number;
+  /** Left out: the day was marked as disturbed, or the reading stands far apart from its neighbours. */
+  excluded?: 'disturbed' | 'outlier';
+};
+
+/** One cycle, from the first day of a period to the day before the next. */
+export type CycleHistory = {
+  start: string;
+  /** null for the current cycle. */
+  end: string | null;
+  /** Length in days; for the current cycle, days so far. */
+  days: number;
+  periodDays: number | null;
+  ovulation: { date: string; basis: 'bbt' | 'lh_test'; tempSource?: TempSource } | null;
+  /**
+   * confirmed: a sustained temperature rise; lh_test: a positive test, no rise to confirm it; waiting: the current
+   * cycle, nothing yet; not_found: temperatures covered the cycle and showed no rise; no_data: too few to tell.
+   */
+  status: 'confirmed' | 'lh_test' | 'waiting' | 'not_found' | 'no_data';
+  /** Period start to ovulation, and ovulation to the next period: only once ovulation was found. */
+  follicularDays: number | null;
+  lutealDays: number | null;
+  /** The device the cycle's temperature analysis used, with what it found. */
+  temperature: {
+    source: TempSource;
+    readings: number;
+    /** °C deviation: the level the rise had to clear, and how far the readings after it sat above the ones before. */
+    coverline: number | null;
+    rise: number | null;
+  } | null;
+  symptoms: number;
+};
+
+/** Patterns from this person's own cycles. Cycle-derived, so only ever inside /api/cycle. */
+export type CycleInsights = {
+  /** Resting heart rate, HRV and temperature after ovulation against before it, over cycles where ovulation was found. */
+  body: { metric: 'resting_hr' | 'hrv' | 'temperature'; follicular: number; luteal: number; unit: 'bpm' | 'ms' | '°C'; cycles: number }[];
+  /** Symptoms logged in two or more cycles, with the phase they mostly fall in (null when they're spread out). */
+  symptoms: { symptom: Symptom; days: number; cycles: number; phase: CyclePhase['name'] | null }[];
+  /** Recent cycles outside the usual ranges (FIGO 2018), to mention to a clinician if they continue. */
+  deviations: {
+    kind: 'frequent' | 'infrequent' | 'irregular' | 'prolonged' | 'spotting';
+    /** Cycles (or periods) it applies to, of how many recent ones. */
+    count: number;
+    of: number;
+    /** irregular only: longest less shortest, in days. */
+    spread?: number;
+  }[];
 };
 
 export type CycleData = {
@@ -387,17 +474,39 @@ export type CycleData = {
   periods: { start: string; end: string; days: number }[];
   /** Lengths between consecutive period starts, oldest first. */
   cycles: { start: string; days: number }[];
-  /** Medians over recent cycles. */
-  stats: { cycleDays: number | null; periodDays: number | null; shortest: number | null; longest: number | null };
+  /** Typical values over recent cycles. */
+  stats: {
+    cycleDays: number | null;
+    periodDays: number | null;
+    shortest: number | null;
+    longest: number | null;
+    /** Longest less shortest over recent cycles; regular when it's 9 days or less. */
+    variation?: number | null;
+    regular?: boolean | null;
+    follicularDays?: number | null;
+    lutealDays?: number | null;
+  };
   current: { start: string; day: number } | null;
   /** Estimates from the person's own history. null until two complete cycles are logged, or when the latest period is long past. */
   estimate: CycleEstimate | null;
   /** Why there's no estimate. */
   noEstimate: 'cycles' | 'stale' | null;
-  /** Ovulation inferred after the fact, per cycle: a basal temperature rise, or the day after an LH surge. */
+  /**
+   * With fewer than two complete cycles: the same estimate, leaning on typical cycles. Kept apart from `estimate`
+   * so clients that predate it keep showing "not yet" rather than an estimate from "0 cycles".
+   */
+  earlyEstimate?: CycleEstimate | null;
+  /** Ovulation inferred after the fact, per cycle: a temperature rise (any device), or the day after an LH surge. */
   ovulations: { date: string; basis: 'bbt' | 'lh_test' }[];
   /** Where today falls in the current cycle. null with no current cycle; missing from older servers. */
   phase?: CyclePhase | null;
+  /** Every cycle, oldest first. */
+  history?: CycleHistory[];
+  /** Temperatures in the window asked for, oldest first. */
+  temperatures?: CycleTemperature[];
+  /** The current cycle's fertile days, estimated, oldest first. */
+  fertility?: FertilityDay[];
+  insights?: CycleInsights;
 };
 
 export type CyclePhase = {

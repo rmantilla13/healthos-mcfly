@@ -11,7 +11,8 @@ import type { CycleDay } from '../shared/types.ts';
 import { importAppleHealth, parseStream } from '../server/apple/import.ts';
 import { createApp } from '../server/app.ts';
 import { hashPassword } from '../server/auth.ts';
-import { analyzeCycle, cyclePhase, temperatureShift, upsertCycle } from '../server/cycle.ts';
+import { type TempReading, analyzeCycle, cyclePhase, detectShift, logDays, parseCycleDay, toRows, upsertCycle } from '../server/cycle/index.ts';
+import { type VitalRow, cycleInsights } from '../server/cycle/insights.ts';
 import { addDays, todayLocal } from '../server/dates.ts';
 import { OWNER_ID, deleteSource } from '../server/db.ts';
 import type { McflyClient } from '../server/mcfly.ts';
@@ -22,9 +23,11 @@ import { openStore } from '../server/store.ts';
 /** Five days of flow from each start. */
 const periodsFrom = (...starts: string[]): CycleDay[] =>
   starts.flatMap((s) => (['medium', 'heavy', 'medium', 'light', 'light'] as const).map((flow, i) => ({ date: addDays(s, i), flow })));
+const history = periodsFrom('2026-07-01', '2026-07-29', '2026-08-26');
+const phaseOn = (days: CycleDay[], today: string) => cyclePhase(analyzeCycle(days, today), days, today);
 
-test('28-day cycles give a next period, ovulation and fertile window', () => {
-  const a = analyzeCycle(periodsFrom('2026-07-01', '2026-07-29', '2026-08-26'), '2026-09-10');
+test('28-day cycles give a next period with a range, ovulation and graded fertile days', () => {
+  const a = analyzeCycle(history, '2026-09-10');
   assert.deepEqual(
     a.periods.map((p) => [p.start, p.end, p.days]),
     [
@@ -37,25 +40,59 @@ test('28-day cycles give a next period, ovulation and fertile window', () => {
     { start: '2026-07-01', days: 28 },
     { start: '2026-07-29', days: 28 },
   ]);
-  assert.deepEqual(a.stats, { cycleDays: 28, periodDays: 5, shortest: 28, longest: 28 });
+  assert.deepEqual(a.stats, { cycleDays: 28, periodDays: 5, shortest: 28, longest: 28, variation: null, regular: null, follicularDays: null, lutealDays: null });
   assert.deepEqual(a.current, { start: '2026-08-26', day: 16 });
+  // Typical luteal phase (12.4 days) until this person's own shows: ovulation on day 16, the next period after 28.
   assert.deepEqual(a.estimate, {
-    nextPeriod: { date: '2026-09-23', earliest: '2026-09-21', latest: '2026-09-25' },
-    ovulation: '2026-09-09',
-    fertile: { start: '2026-09-04', end: '2026-09-10' },
+    nextPeriod: { date: '2026-09-23', earliest: '2026-09-20', latest: '2026-09-27' },
+    ovulation: '2026-09-10',
+    fertile: { start: '2026-09-04', end: '2026-09-12' },
     basis: 'calendar',
     cycles: 2,
+    confidence: 'low',
   });
   assert.equal(a.noEstimate, null);
+  // The days before ovulation carry the most; no day is ever left as "safe", just unlisted.
+  const levels = Object.fromEntries(a.fertility.map((f) => [f.date, f.level]));
+  assert.equal(levels['2026-09-08'], 'high');
+  assert.equal(levels['2026-09-04'], 'medium');
+  assert.ok(a.fertility.every((f) => f.basis === 'estimate' && f.chance > 0 && f.chance <= 1));
+  assert.deepEqual(
+    a.history.map((h) => h.status),
+    ['no_data', 'no_data', 'waiting'],
+  );
 });
 
-test('no estimate before two complete cycles, or once the latest period is long past', () => {
-  const one = analyzeCycle(periodsFrom('2026-07-29', '2026-08-26'), '2026-09-10');
+test('the range narrows as regular cycles come in, and stays wide for variable ones', () => {
+  const starts = (lengths: number[]) => lengths.reduce<string[]>((out, n) => [...out, addDays(out.at(-1)!, n)], ['2026-01-05']);
+  const spread = (a: ReturnType<typeof analyzeCycle>) => (a.estimate ? Date.parse(a.estimate.nextPeriod.latest) - Date.parse(a.estimate.nextPeriod.earliest) : NaN) / 86_400_000;
+  const regular = starts([27, 27, 27, 27, 27, 27, 27]);
+  const r = analyzeCycle(periodsFrom(...regular), addDays(regular.at(-1)!, 3));
+  assert.equal(r.estimate?.nextPeriod.date, addDays(regular.at(-1)!, 27), 'their own length, not the typical 29');
+  assert.equal(r.estimate?.confidence, 'high');
+  assert.equal(r.stats.regular, true);
+  const variable = starts([24, 35, 26, 38, 25, 33, 29]);
+  const v = analyzeCycle(periodsFrom(...variable), addDays(variable.at(-1)!, 3));
+  assert.ok(spread(v) > spread(r) + 4, `${spread(v)} vs ${spread(r)}`);
+  assert.equal(v.stats.regular, false);
+  assert.equal(v.stats.variation, 13, 'the last six: 25 to 38');
+});
+
+test('before two complete cycles, the estimate leans on typical cycles and stays out of `estimate`', () => {
+  const one = analyzeCycle(periodsFrom('2026-08-26'), '2026-09-10');
+  // Older iPhone builds read `estimate` and would say "from your last 0 cycles": it stays null, as it always was.
   assert.equal(one.estimate, null);
   assert.equal(one.noEstimate, 'cycles');
+  assert.equal(one.earlyEstimate?.cycles, 0);
+  assert.equal(one.earlyEstimate?.confidence, 'low');
+  assert.equal(one.earlyEstimate?.nextPeriod.date, '2026-09-24', '29.3 days on');
   assert.deepEqual(one.current, { start: '2026-08-26', day: 16 });
-  const stale = analyzeCycle(periodsFrom('2026-07-01', '2026-07-29', '2026-08-26'), '2026-12-01');
+  // The phase can lean on it, but days to the next period only come from a full estimate.
+  assert.deepEqual(phaseOn(periodsFrom('2026-08-26'), '2026-09-20'), { name: 'luteal', day: 26, nextPeriodIn: null, basis: 'estimate' });
+  assert.equal(analyzeCycle(periodsFrom('2026-07-29', '2026-08-26'), '2026-09-10').estimate, null, 'one complete cycle');
+  const stale = analyzeCycle(history, '2026-12-01');
   assert.equal(stale.estimate, null);
+  assert.equal(stale.earlyEstimate, null);
   assert.equal(stale.noEstimate, 'stale');
   assert.equal(analyzeCycle([], '2026-09-10').noEstimate, 'cycles');
 });
@@ -80,64 +117,223 @@ test('a marked first day wins over flow logged the day before; spotting and a sk
 });
 
 test("an LH surge this cycle moves ovulation and the next period; past cycles' luteal phase is used", () => {
-  const history = periodsFrom('2026-07-01', '2026-07-29', '2026-08-26');
-  // Last cycle: surge on 08-12, so ovulation 08-13 and 13 days to the 08-26 period.
+  // Last cycle: surge on 08-12, so ovulation 08-13 and a 12-day luteal phase before the 08-26 period.
   const past: CycleDay = { date: '2026-08-12', ovulationTest: 'lh_surge' };
   const calendar = analyzeCycle([...history, past], '2026-09-05');
   assert.deepEqual(calendar.ovulations, [{ date: '2026-08-13', basis: 'lh_test' }]);
-  assert.equal(calendar.estimate?.ovulation, '2026-09-10'); // 09-23 less 13, not 14
+  assert.deepEqual(
+    calendar.history.map((h) => [h.status, h.follicularDays, h.lutealDays]),
+    [
+      ['no_data', null, null],
+      ['lh_test', 16, 12],
+      ['waiting', null, null],
+    ],
+  );
   assert.equal(calendar.estimate?.basis, 'calendar');
 
   const surged = analyzeCycle([...history, past, { date: '2026-09-07', ovulationTest: 'negative' }, { date: '2026-09-11', ovulationTest: 'lh_surge' }], '2026-09-14');
   assert.equal(surged.estimate?.basis, 'lh_test');
+  assert.equal(surged.estimate?.confidence, 'medium');
   assert.equal(surged.estimate?.ovulation, '2026-09-12');
   assert.deepEqual(surged.estimate?.nextPeriod, { date: '2026-09-25', earliest: '2026-09-23', latest: '2026-09-27' });
   assert.deepEqual(surged.estimate?.fertile, { start: '2026-09-07', end: '2026-09-13' });
+  // The day before ovulation is the most fertile, and the window closes the day after it.
+  const top = surged.fertility.reduce((a, b) => (b.chance > a.chance ? b : a));
+  assert.deepEqual([top.date, top.level], ['2026-09-11', 'peak']);
+  assert.ok(surged.fertility.every((f) => f.basis === 'logged'));
 });
 
-test('a basal temperature rise (three over six) marks ovulation the day before it', () => {
-  const temps = (from: string, values: number[]): CycleDay[] => values.map((bbt, i) => ({ date: addDays(from, i), bbt }));
-  assert.equal(temperatureShift(temps('2026-08-31', [36.3, 36.35, 36.3, 36.25, 36.3, 36.3, 36.3, 36.4, 36.45, 36.6])), '2026-09-06');
-  // Higher, but the third reading isn't 0.2 °C above the six before: not a shift.
-  assert.equal(temperatureShift(temps('2026-08-31', [36.3, 36.35, 36.3, 36.25, 36.3, 36.3, 36.4, 36.4, 36.45])), null);
-  const a = analyzeCycle(
-    [...periodsFrom('2026-07-01', '2026-07-29', '2026-08-26'), ...temps('2026-08-31', [36.3, 36.35, 36.3, 36.25, 36.3, 36.3, 36.3, 36.4, 36.45, 36.6])],
-    '2026-09-10',
-  );
+// ---------- temperature ----------
+
+const temps = (from: string, values: number[]): CycleDay[] => values.map((bbt, i) => ({ date: addDays(from, i), bbt }));
+const RISING = [36.3, 36.35, 36.3, 36.25, 36.3, 36.3, 36.3, 36.4, 36.45, 36.6];
+
+test('a sustained thermometer rise confirms ovulation on the last low day, and the estimate follows it', () => {
+  const a = analyzeCycle([...history, ...temps('2026-08-31', RISING)], '2026-09-10');
   assert.equal(a.estimate?.basis, 'bbt');
+  assert.equal(a.estimate?.tempSource, 'bbt');
+  assert.equal(a.estimate?.confidence, 'high');
   assert.equal(a.estimate?.ovulation, '2026-09-06');
+  assert.equal(a.estimate?.nextPeriod.date, '2026-09-19', 'ovulation plus the typical luteal phase');
+  assert.equal(a.estimate?.fertile.end, '2026-09-07', 'the window closes once the rise confirms ovulation');
+  assert.deepEqual(a.history.at(-1)?.temperature, { source: 'bbt', readings: 10, coverline: 0.05, rise: 0.18 });
+  assert.equal(a.history.at(-1)?.status, 'confirmed');
+  assert.equal(a.history.at(-1)?.follicularDays, 12);
+});
+
+test('the rise rules: the third reading must clear the cover line, one more confirms, and a spike is not a rise', () => {
+  const at = (values: number[]) => values.map((deviation, i) => ({ date: addDays('2026-09-01', i), deviation }));
+  const opts = { start: '2026-08-26', earliest: 6, rise: 0.2 };
+  assert.equal(detectShift(at([0, 0.05, 0, -0.05, 0, 0, 0, 0.1, 0.15, 0.3]), opts)?.ovulation, '2026-09-07');
+  // Higher, but the third isn't 0.2 °C above the cover line and nothing follows: not yet.
+  assert.equal(detectShift(at([0, 0.05, 0, -0.05, 0, 0, 0.1, 0.1, 0.15]), opts), null);
+  // ...a fourth reading above it confirms.
+  assert.equal(detectShift(at([0, 0.05, 0, -0.05, 0, 0, 0.1, 0.1, 0.15, 0.12]), opts)?.ovulation, '2026-09-06');
+  // Three high readings, then back down for the rest: a spike.
+  assert.equal(detectShift(at([0, 0.05, 0, -0.05, 0, 0, 0.3, 0.3, 0.3, 0, 0, -0.05, 0, 0]), opts), null);
+  // A positive LH test just before lets two readings confirm it.
+  assert.equal(detectShift(at([0, 0.05, 0, -0.05, 0, 0, 0.15, 0.3]), { ...opts, lhSurge: '2026-09-06' })?.ovulation, '2026-09-06');
+  assert.equal(detectShift(at([0, 0.05, 0, -0.05, 0, 0, 0.15, 0.3]), opts), null);
+});
+
+test("wearables' nightly temperatures find ovulation on their own, against the person's level on that device", () => {
+  // Apple Watch reads about two degrees below the mouth, with more night-to-night noise; the rise is smaller.
+  const wobble = [0.04, -0.03, 0.02, -0.05, 0.03, 0, -0.02, 0.05, -0.04, 0.01, 0.02, -0.03];
+  const wrist: TempReading[] = [];
+  for (let i = 0; i < 60; i++) {
+    const date = addDays('2026-07-29', i);
+    const cd = i < 28 ? i + 1 : i - 27; // cycle 07-29 (28 days), then 08-26
+    const luteal = i < 28 ? cd > 15 : cd > 13;
+    wrist.push({ date, source: 'wrist', value: 34.6 + (luteal ? 0.32 : 0) + wobble[i % wobble.length] });
+  }
+  const a = analyzeCycle(history, '2026-09-23', wrist);
+  assert.deepEqual(
+    a.history.map((h) => [h.status, h.ovulation?.date, h.temperature?.source]),
+    [
+      ['no_data', undefined, undefined],
+      ['confirmed', '2026-08-12', 'wrist'],
+      ['confirmed', '2026-09-07', 'wrist'],
+    ],
+  );
+  assert.equal(a.history[1].lutealDays, 13);
+  assert.equal(a.estimate?.tempSource, 'wrist');
+  assert.ok(a.temperatures.every((t) => Math.abs(t.deviation) < 0.5), 'deviations from their own level, not °C');
+});
+
+test('readings marked as disturbed, and outliers, are left out', () => {
+  const days: CycleDay[] = [...history, ...temps('2026-08-31', [36.3, 36.35, 36.3, 36.25, 36.3, 36.3, 36.3, 36.75, 36.8, 36.8])];
+  // Three days of fever, with nothing after them yet, read as a rise...
+  assert.equal(analyzeCycle(days, '2026-09-09').estimate?.basis, 'bbt');
+  // ...until the days are marked as sick.
+  const sick = days.map((d) => (d.date >= '2026-09-07' && d.date <= '2026-09-09' ? { ...d, tempDisturbed: 'sick' as const } : d));
+  const a = analyzeCycle(sick, '2026-09-09');
+  assert.equal(a.estimate?.basis, 'calendar');
+  assert.deepEqual(
+    a.temperatures.filter((t) => t.excluded).map((t) => [t.date, t.excluded]),
+    [
+      ['2026-09-07', 'disturbed'],
+      ['2026-09-08', 'disturbed'],
+      ['2026-09-09', 'disturbed'],
+    ],
+  );
+  // One reading far from its neighbours on either side is an outlier.
+  const odd = analyzeCycle([...history, ...temps('2026-08-31', [36.3, 36.35, 36.3, 37.2, 36.3, 36.3, 36.3])], '2026-09-06');
+  assert.deepEqual(
+    odd.temperatures.filter((t) => t.excluded).map((t) => [t.date, t.excluded]),
+    [['2026-09-03', 'outlier']],
+  );
+  // Implausible thermometer readings aren't used at all.
+  assert.equal(analyzeCycle([...history, { date: '2026-09-01', bbt: 39.5 }], '2026-09-06').temperatures.length, 0);
+});
+
+test('temperatures that keep coming with no rise push ovulation, and the next period, later', () => {
+  const flat = Array.from({ length: 19 }, (_, i) => 36.3 + (i % 3 === 0 ? 0.05 : 0));
+  const tracked = analyzeCycle([...history, ...temps('2026-08-27', flat)], '2026-09-14');
+  const calendar = analyzeCycle(history, '2026-09-14');
+  assert.ok(tracked.estimate!.ovulation > calendar.estimate!.ovulation, `${tracked.estimate!.ovulation} vs ${calendar.estimate!.ovulation}`);
+  assert.ok(tracked.estimate!.nextPeriod.date > calendar.estimate!.nextPeriod.date);
+  assert.ok(tracked.fertility.some((f) => f.date >= '2026-09-14'), 'still fertile days ahead while no rise has shown');
 });
 
 // ---------- where today falls ----------
 
-const phaseOn = (days: CycleDay[], today: string) => cyclePhase(analyzeCycle(days, today), days, today);
-
 test('the phase follows the cycle: menstrual, follicular, ovulatory, luteal', () => {
-  const days = periodsFrom('2026-07-01', '2026-07-29', '2026-08-26');
-  // Next period estimated 09-23, ovulation 09-09, fertile 09-04 to 09-10.
-  assert.deepEqual(phaseOn(days, '2026-08-27'), { name: 'menstrual', day: 2, nextPeriodIn: 27, basis: 'logged' });
-  assert.deepEqual(phaseOn(days, '2026-09-01'), { name: 'follicular', day: 7, nextPeriodIn: 22, basis: 'estimate' });
-  assert.deepEqual(phaseOn(days, '2026-09-06'), { name: 'ovulatory', day: 12, nextPeriodIn: 17, basis: 'estimate' });
-  assert.deepEqual(phaseOn(days, '2026-09-15'), { name: 'luteal', day: 21, nextPeriodIn: 8, basis: 'estimate' });
+  // Next period estimated 09-23, ovulation 09-10, high fertility 09-06 to 09-10.
+  assert.deepEqual(phaseOn(history, '2026-08-27'), { name: 'menstrual', day: 2, nextPeriodIn: 27, basis: 'logged' });
+  assert.deepEqual(phaseOn(history, '2026-09-01'), { name: 'follicular', day: 7, nextPeriodIn: 22, basis: 'estimate' });
+  assert.deepEqual(phaseOn(history, '2026-09-06'), { name: 'ovulatory', day: 12, nextPeriodIn: 17, basis: 'estimate' });
+  assert.deepEqual(phaseOn(history, '2026-09-15'), { name: 'luteal', day: 21, nextPeriodIn: 8, basis: 'estimate' });
   // A late period reads as due, not a negative count.
-  assert.equal(phaseOn(days, '2026-09-27')?.nextPeriodIn, 0);
+  assert.equal(phaseOn(history, '2026-09-27')?.nextPeriodIn, 0);
 });
 
 test('menstrual needs bleeding logged this period; an LH surge makes the luteal phase logged; no cycle, no phase', () => {
-  const history = periodsFrom('2026-07-01', '2026-07-29');
+  const two = periodsFrom('2026-07-01', '2026-07-29');
   // Only the first day logged so far: still menstrual within the usual 5 days, not after.
-  const firstDay: CycleDay[] = [...history, { date: '2026-08-26', flow: 'medium' }];
+  const firstDay: CycleDay[] = [...two, { date: '2026-08-26', flow: 'medium' }];
   assert.equal(phaseOn(firstDay, '2026-08-29')?.name, 'menstrual');
   assert.equal(phaseOn(firstDay, '2026-09-01')?.name, 'follicular');
   // A start marked with no bleeding logged isn't a period day.
-  assert.equal(phaseOn([...history, { date: '2026-08-26', periodStart: true }], '2026-08-27')?.name, 'follicular');
+  assert.equal(phaseOn([...two, { date: '2026-08-26', periodStart: true }], '2026-08-27')?.name, 'follicular');
 
-  const surged = [...periodsFrom('2026-07-01', '2026-07-29', '2026-08-26'), { date: '2026-09-11', ovulationTest: 'lh_surge' as const }];
-  assert.deepEqual(phaseOn(surged, '2026-09-12'), { name: 'ovulatory', day: 18, nextPeriodIn: 14, basis: 'logged' });
-  assert.deepEqual(phaseOn(surged, '2026-09-14'), { name: 'luteal', day: 20, nextPeriodIn: 12, basis: 'logged' });
+  const surged = [...history, { date: '2026-09-11', ovulationTest: 'lh_surge' as const }];
+  assert.deepEqual(phaseOn(surged, '2026-09-12'), { name: 'ovulatory', day: 18, nextPeriodIn: 13, basis: 'logged' });
+  assert.deepEqual(phaseOn(surged, '2026-09-14'), { name: 'luteal', day: 20, nextPeriodIn: 11, basis: 'logged' });
 
   assert.equal(phaseOn([], '2026-09-10'), null);
-  assert.equal(phaseOn(periodsFrom('2026-07-01', '2026-07-29', '2026-08-26'), '2026-12-01'), null, 'long past');
+  assert.equal(phaseOn(history, '2026-12-01'), null, 'long past');
+});
+
+// ---------- patterns ----------
+
+test('insights: the body after ovulation, when symptoms come, and cycles outside the usual ranges', () => {
+  const starts = ['2026-03-02', '2026-03-30', '2026-04-27', '2026-05-25', '2026-06-22'];
+  const days: CycleDay[] = [...periodsFrom(...starts)];
+  const wrist: TempReading[] = [];
+  const vitals: VitalRow[] = [];
+  for (let i = 0; i < 4 * 28; i++) {
+    const date = addDays(starts[0], i);
+    const luteal = (i % 28) + 1 > 15;
+    wrist.push({ date, source: 'wrist', value: 34.6 + (luteal ? 0.3 : 0) + (i % 3) * 0.02 });
+    vitals.push({ date, metric: 'resting_hr', source: 'whoop', value: 55 + (luteal ? 3 : 0) });
+    vitals.push({ date, metric: 'resting_hr', source: 'apple', value: 62 }); // fewer days: not used
+    vitals.push({ date, metric: 'hrv_rmssd', source: 'whoop', value: 60 - (luteal ? 6 : 0) });
+  }
+  vitals.splice(vitals.findIndex((v) => v.source === 'apple'), 1);
+  for (const s of starts.slice(0, 4)) {
+    days.push({ date: addDays(s, 0), symptoms: ['cramps'] }, { date: addDays(s, 1), symptoms: ['cramps', 'fatigue'] });
+    days.push({ date: addDays(s, 24), symptoms: ['breast_tenderness', 'bloating'] }, { date: addDays(s, 25), symptoms: ['breast_tenderness'] });
+  }
+  const today = '2026-06-25';
+  const a = analyzeCycle(days, today, wrist);
+  const ins = cycleInsights(a, days, vitals, today);
+  assert.deepEqual(
+    ins.body.slice(0, 2).map((b) => [b.metric, b.follicular, b.luteal, b.unit, b.cycles]),
+    [
+      ['resting_hr', 55, 58, 'bpm', 4], // WHOOP's, the device with the most days
+      ['hrv', 60, 54, 'ms', 4],
+    ],
+  );
+  const t = ins.body[2];
+  assert.equal(t.metric, 'temperature');
+  assert.ok(t.follicular < 0 && t.luteal > 0 && Math.abs(t.luteal - t.follicular - 0.3) < 0.03, JSON.stringify(t));
+  assert.deepEqual(
+    ins.symptoms.map((s) => [s.symptom, s.days, s.cycles, s.phase]),
+    [
+      ['breast_tenderness', 8, 4, 'luteal'],
+      ['cramps', 8, 4, 'menstrual'],
+      ['bloating', 4, 4, 'luteal'],
+      ['fatigue', 4, 4, 'menstrual'],
+    ],
+  );
+  assert.deepEqual(ins.deviations, []);
+
+  // Long cycles and long periods are noted; regular ones aren't.
+  const long = ['2026-01-01', '2026-02-15', '2026-04-01', '2026-05-16'];
+  const longDays = [...periodsFrom(...long), ...long.flatMap((s) => [5, 6, 7, 8, 9].map((n) => ({ date: addDays(s, n), flow: 'light' as const })))];
+  const d = cycleInsights(analyzeCycle(longDays, '2026-05-20'), longDays, [], '2026-05-20').deviations;
+  assert.deepEqual(d, [
+    { kind: 'infrequent', count: 3, of: 3 },
+    { kind: 'prolonged', count: 3, of: 3 },
+  ]);
+});
+
+test('symptoms and a disturbed temperature round-trip through rows, and validate', () => {
+  const day: CycleDay = { date: '2026-09-01', symptoms: ['headache', 'cramps'], tempDisturbed: 'alcohol', bbt: 36.4 };
+  const rows = toRows(day, 'manual');
+  assert.deepEqual(
+    rows.map((r) => `${r.kind}=${r.value}`),
+    ['bbt=36.4', 'temp_disturbed=alcohol', 'symptom:headache=1', 'symptom:cramps=1'],
+  );
+  assert.deepEqual(logDays(rows), [
+    { date: '2026-09-01', bbt: 36.4, tempDisturbed: 'alcohol', symptoms: ['cramps', 'headache'], manual: { bbt: 36.4, tempDisturbed: 'alcohol', symptoms: ['cramps', 'headache'] } },
+  ]);
+  const fail = (p: string, m: string): never => {
+    throw new Error(`${p}: ${m}`);
+  };
+  assert.deepEqual(parseCycleDay({ date: '2026-09-01', symptoms: ['cramps', 'cramps'] }, 'b', fail), { date: '2026-09-01', symptoms: ['cramps'] });
+  assert.throws(() => parseCycleDay({ date: '2026-09-01', symptoms: ['secret-symptom'] }, 'b', fail), (e: Error) => !e.message.includes('secret-symptom'));
+  assert.throws(() => parseCycleDay({ date: '2026-09-01', tempDisturbed: 'hangover' }, 'b', fail), /tempDisturbed: expected one of/);
 });
 
 // ---------- Apple Health export ----------
@@ -397,6 +593,26 @@ test("nobody else sees a person's cycle data: not another member, not the admin 
   const summary = (await owner.get('/api/summary')).text;
   for (const word of ['heavy', 'lh_surge', 'protected', 'mucus', 'spotting']) assert.ok(!summary.includes(word), word);
   assert.equal((await bob.get('/api/admin/overview')).status, 403);
+});
+
+test("the view reads the Watch's nightly temperatures and logged symptoms, for that person only", async () => {
+  // Apple Watch wrist temperature arrives with the iPhone's daily metrics, never as a cycle record.
+  const nights = Array.from({ length: 12 }, (_, i) => ({ date: ago(14 - i), metric: 'wrist_temp', value: 34.6 + (i % 3) * 0.03 }));
+  assert.equal((await ingest({ daily: nights })).status, 200);
+  assert.equal((await owner.post('/api/cycle/day', { date: ago(3), symptoms: ['cramps', 'headache'], tempDisturbed: 'alcohol' })).status, 200);
+  const view = (await owner.get('/api/cycle')).json;
+  const wrist = view.temperatures.filter((t: { source: string }) => t.source === 'wrist');
+  assert.equal(wrist.length, 12);
+  assert.equal(wrist.find((t: { date: string }) => t.date === ago(3)).excluded, 'disturbed');
+  assert.deepEqual(view.days.find((d: CycleDay) => d.date === ago(3)).symptoms, ['cramps', 'headache']);
+  assert.equal(view.history.at(-2).temperature.source, 'wrist', 'the nights fall in the cycle before this one');
+  assert.ok(view.insights && Array.isArray(view.insights.body));
+  // Bob tracks his cycle too, and sees none of it.
+  const bobs = (await bob.get('/api/cycle')).json;
+  assert.deepEqual(bobs.temperatures, []);
+  // The summary still carries nothing from the cycle log.
+  const summary = (await owner.get('/api/summary')).text;
+  for (const word of ['cramps', 'headache', 'alcohol', 'fertil', 'ovulation']) assert.ok(!summary.includes(word), word);
 });
 
 test('Ask McFly gets the cycle tool only while tracking is on, and it reads only the asker', async () => {

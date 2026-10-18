@@ -6,7 +6,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { type DailyRow, type Db, type EventRow, HOURLY_FOLD, type HourlyRow, OWNER_ID, type Scope, type WorkoutRow, setUserSetting, upsertDaily, upsertEvents, upsertHourly, upsertWorkouts, bumpDataVersion } from '../db.ts';
 import type { CycleDay } from '../../shared/types.ts';
-import { parseCycleDay, replaceCycleDays } from '../cycle.ts';
+import { parseCycleDay, replaceCycleDays } from '../cycle/index.ts';
 import { SOURCE } from './import.ts';
 
 /** Daily metrics the importer produces (server/apple/import.ts). Anything else is a client bug. */
@@ -72,7 +72,7 @@ export type IngestPayload = {
   /** Ids of workouts and mindful sessions the app sent earlier that were since deleted in Health. */
   deleted: { workouts: string[]; events: string[] };
   /**
-   * Cycle tracking records by day (server/cycle.ts). Each day sent is that day's complete set from Health and
+   * Cycle tracking records by day (server/cycle/records.ts). Each day sent is that day's complete set from Health and
    * replaces it; a day with only its date clears it. Stored whether or not the person has tracking on.
    */
   cycle: CycleDay[];

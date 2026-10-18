@@ -6,7 +6,7 @@ import type { AddressInfo } from 'node:net';
 import type { FamilyMember } from '../shared/types.ts';
 import { createApp } from '../server/app.ts';
 import { hashPassword } from '../server/auth.ts';
-import { analyzeCycle, toRows, upsertCycle } from '../server/cycle.ts';
+import { analyzeCycle, toRows, upsertCycle } from '../server/cycle/index.ts';
 import { addDays, todayLocal } from '../server/dates.ts';
 import { OWNER_ID, setUserSetting, upsertDaily, upsertHourly } from '../server/db.ts';
 import { familyPhase, familyStatus, stepsPace } from '../server/family.ts';

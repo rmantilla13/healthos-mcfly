@@ -6,7 +6,7 @@ import yauzl from 'yauzl';
 import { type DailyRow, type EventRow, type HourlyRow, type Scope, type WorkoutRow, deleteSource, getUserSetting, setUserSetting, upsertDaily, upsertEvents, upsertHourly, upsertWorkouts, bumpDataVersion } from '../db.ts';
 import { DAY_ROLLOVER_MS, localDate, localHour, parseAppleDate, toLocalIso, type Stamp, zoneOffsets } from '../dates.ts';
 import type { CervicalMucus, Flow, OvulationTest } from '../../shared/types.ts';
-import { type CycleKind, type CycleRow, upsertCycle } from '../cycle.ts';
+import { type CycleKind, type CycleRow, upsertCycle } from '../cycle/index.ts';
 
 export const SOURCE = 'apple';
 

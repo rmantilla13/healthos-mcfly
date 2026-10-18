@@ -170,6 +170,19 @@ Photos can only be added or replaced from the local copy, since Vision runs on m
 
 WHOOP reports HRV as RMSSD and Apple Watch reports SDNN. The two aren't comparable, so the dashboard labels whichever one it's showing.
 
+## Cycle tracking
+
+Cycle tracking (`#/cycle`, `GET /api/cycle`) is off until a person turns on **Track my cycle** in Settings. It reads periods, ovulation tests, mucus, thermometer readings and symptoms from Apple Health and what's logged on the Cycle page, together with the nightly temperature Apple Watch (`wrist_temp`) and WHOOP (`skin_temp`) already record. The engine lives in `server/cycle/`:
+
+- `records.ts`: storage in the `cycle` table, one row per date, kind and source (symptoms take one row each), and input validation.
+- `temperature.ts`: each device's readings against the person's own level on that device (a rolling median), with outliers and mornings marked as disturbed left out. Devices are never mixed: each cycle uses the one that covered it best. A rise counts when three readings clear the cover line (the highest of the six low readings before), the third by 0.2 °C on a thermometer or 0.15 °C on a wearable, and the readings after stay high. A positive LH test lets two readings confirm it. Ovulation is the last low day.
+- `engine.ts`: periods, each cycle's ovulation and phase lengths, and the current cycle's forecast. Cycle and luteal lengths start from typical values and shift to the person's own, recent cycles counting most. Ovulation is a distribution that this cycle's LH tests, mucus and temperatures reshape. Each day's chance of conception follows from it. The next period's date and range are that distribution's median and 10th to 90th percentiles.
+- `insights.ts`: resting heart rate, HRV and temperature before and after ovulation, when symptoms tend to come, and recent cycles outside the FIGO 2018 ranges.
+
+The temperature method follows what Natural Cycles has published about its own, which is closed source: Bull et al. 2019 ([npj Digital Medicine 2:83](https://www.nature.com/articles/s41746-019-0152-7)) and Berglund Scherwitzl et al. 2016. The typical values come from Bull et al.: cycles of 29.3 days and luteal phases of 12.4. Fertile-day weights follow Wilcox et al. 1995. Nothing marks a day as safe, and none of it is fit to use as contraception.
+
+Until two of the person's own cycles are complete, the estimate is in `earlyEstimate` and `estimate` stays `null`, so iPhone builds that predate it keep saying "not yet". The Family board's phase word only uses `estimate`.
+
 ## Scripts
 
 | Command | What it does |

@@ -6,7 +6,7 @@ import express, { type Request, type Response } from 'express';
 import type { Digest, DigestReply, Units } from '../shared/types.ts';
 import { platformSettings } from './admin.ts';
 import { currentUser } from './auth.ts';
-import { cycleView } from './cycle.ts';
+import { cycleView } from './cycle/index.ts';
 import { addDays } from './dates.ts';
 import { type Db, type Scope, getUserSetting, setUserSetting } from './db.ts';
 import { patterns } from './insights.ts';
@@ -353,7 +353,7 @@ const TOOLS: Tool[] = [
     name: 'get_cycle',
     when: (ctx) => ctx.cycle,
     description:
-      "This person's menstrual cycle tracking: periods detected from what they logged, cycle lengths, the current cycle day, ovulation inferred after the fact (basal temperature rise or LH test), estimates of the next period, ovulation and fertile window, and the entries logged day by day (flow, period start, spotting, ovulation tests, cervical mucus, basal body temperature, sexual activity). Periods, cycles and estimates always use all history; days limits only the entries.",
+      "This person's menstrual cycle tracking: periods detected from what they logged; each cycle with its length, period length, ovulation (from a sustained temperature rise on their thermometer, Apple Watch or WHOOP, or the day after a positive LH test) and follicular and luteal phase lengths; the current cycle day and phase; estimates of the next period (with a range), ovulation and each fertile day's relative chance; patterns from past cycles (resting heart rate, HRV and temperature after ovulation against before it, when symptoms tend to come, cycles outside the usual ranges); and the entries logged day by day (flow, period start, spotting, ovulation tests, cervical mucus, basal body temperature, symptoms, disturbed temperatures, sexual activity). Periods, cycles, estimates and patterns always use all history; days limits only the entries.",
     input_schema: {
       type: 'object',
       properties: {
@@ -368,14 +368,17 @@ const TOOLS: Tool[] = [
       const v = await cycleView(ctx.scope, ctx.hosted, { days: asDays(input.days, 730, 90), end: asDate(input.end_date, ctx, 'end_date') });
       return {
         today: v.today,
-        note: "Next period, ovulation and fertile window are calendar estimates from this person's own logged cycles: not a diagnosis, and not reliable as contraception.",
+        note: "Next period, ovulation and fertile days are estimates from this person's own cycles (typical cycles fill in while they have fewer than two) and this cycle's temperatures and tests: not a diagnosis, and not reliable as contraception. No day is ever safe. Temperatures are deviations from the person's own level on each device, in °C. Patterns are associations, not causes.",
         currentCycle: v.current,
+        phase: v.phase,
         stats: v.stats,
-        estimate: v.estimate,
-        noEstimate: v.noEstimate === 'cycles' ? 'Fewer than two complete cycles logged.' : v.noEstimate === 'stale' ? 'The latest logged period is long past.' : null,
+        estimate: v.estimate ?? v.earlyEstimate ?? null,
+        estimateRestsOnTypicalCycles: !v.estimate && Boolean(v.earlyEstimate),
+        noEstimate: v.noEstimate === 'stale' ? 'The latest logged period is long past.' : !v.estimate && !v.earlyEstimate ? 'No period logged yet.' : null,
+        fertileDays: v.fertility,
         periods: v.periods.slice(-12),
-        cycles: v.cycles.slice(-12),
-        ovulations: v.ovulations.slice(-12),
+        cycles: (v.history ?? []).slice(-12),
+        patterns: v.insights,
         entries: v.days.map(({ apple: _a, manual: _m, bbt, ...d }) => ({ ...d, ...(bbt !== undefined && { basalTemp: inUnits('temp', bbt, '°C', ctx.units) }) })),
       };
     },
@@ -416,7 +419,7 @@ How to answer
 ${DATA_NOTES}${
     cycle
       ? `
-- They track their menstrual cycle, and get_cycle reads it. Its next period, ovulation and fertile window are estimates from their own past cycles: call them estimates, and never present them as contraception or a diagnosis.`
+- They track their menstrual cycle, and get_cycle reads it. Its next period, ovulation and fertile days are estimates from their own cycles and temperatures: call them estimates, never call any day safe, and never present them as contraception or a diagnosis.`
       : ''
   }
 

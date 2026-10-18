@@ -6,7 +6,7 @@
 import express from 'express';
 import type { CycleDay, FamilyBoard, FamilyCyclePhase, FamilyDevice, FamilyHistory, FamilyMember, FamilyReason, FamilyStatus, Latest, Point, RangeStatus } from '../shared/types.ts';
 import { authMode, currentUser } from './auth.ts';
-import { type CycleRow, analyzeCycle, logDays } from './cycle.ts';
+import { analyzeCycle, analyzeInputs, loadCycleInputs } from './cycle/index.ts';
 import { addDays } from './dates.ts';
 import { type Db, getUserSetting } from './db.ts';
 import { typicalRunning } from './day.ts';
@@ -272,24 +272,26 @@ export function stepsPace(rows: { date: string; hour: number; value: number }[],
   return { asOfHour, usualByNow: typical === null || typical === undefined ? null : Math.round(typical) };
 }
 
+/** The same analysis as the person's own Cycle page, so the word never disagrees with it. */
 async function cyclePhaseOf(db: Db, userId: string, today: string): Promise<FamilyCyclePhase | null> {
-  const rows = await db.query<CycleRow>("SELECT date, kind, source, value FROM cycle WHERE user_id = $1 AND source IN ('apple', 'manual') ORDER BY date", [userId]);
-  const days = logDays(rows);
-  return familyPhase(analyzeCycle(days, today), days, today);
+  const inputs = await loadCycleInputs(db, userId);
+  return familyPhase(analyzeInputs(inputs, today), inputs.days, today);
 }
 
 /**
  * One word for a shared phase. A period needs only logged bleeding (today or yesterday, early in the cycle);
- * the rest needs an estimate, and nothing shows from the earliest the next period could come, so the word
- * can't hint that it's late. Never "ovulation" or "fertile".
+ * the rest needs an estimate that rests on two or more of the person's own cycles (not typical ones), and nothing
+ * shows from the earliest the next period could come, so the word can't hint that it's late. Never "ovulation"
+ * or "fertile".
  */
 export function familyPhase(a: ReturnType<typeof analyzeCycle>, days: CycleDay[], today: string): FamilyCyclePhase | null {
   if (!a.current) return null;
   const yesterday = addDays(today, -1);
   const bleeding = days.some((d) => (d.date === today || d.date === yesterday) && d.flow !== undefined && d.flow !== 'none');
   if (bleeding && a.current.day <= (a.stats.periodDays ?? 5) + 2) return 'period';
-  if (!a.estimate || today >= a.estimate.nextPeriod.earliest) return null;
-  return today <= a.estimate.ovulation ? 'follicular' : 'luteal';
+  if (!a.estimate || a.estimate.cycles < 2 || today >= a.estimate.nextPeriod.earliest) return null;
+  const found = a.history.at(-1)?.ovulation?.date;
+  return today <= (found ?? a.estimate.ovulation) ? 'follicular' : 'luteal';
 }
 
 export function familyRouter(db: Db, hosted: boolean) {

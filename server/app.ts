@@ -13,7 +13,7 @@ import { DAY_METRICS, dayView } from './day.ts';
 import { importAppleHealth } from './apple/import.ts';
 import { ingestRouter } from './apple/ingest.ts';
 import { authRoutes, cronAuthorized, currentUser, publicUser, requireSession, sha256 } from './auth.ts';
-import { cycleRouter } from './cycle.ts';
+import { cycleRouter } from './cycle/index.ts';
 import { familyRouter } from './family.ts';
 import { DATA_DIR, type Db, type Scope, bumpDataVersion, deleteSource, getUserSetting, setUserSetting } from './db.ts';
 import { patterns, sleepTiming } from './insights.ts';
