@@ -209,10 +209,11 @@ export async function ingestApple(scope: Scope, p: IngestPayload): Promise<Inges
     }
     await upsertDaily(q, userId, p.daily);
     // Sleeping wrist temperature counts toward the morning a night ends; older builds dated it by the evening it began.
-    // A day the phone sends without one has none, so a row left there by the old dating goes.
-    const sentDays = [...new Set(p.daily.map((d) => d.date))];
+    // A day the phone sends without one has none, so a row left there by the old dating goes. Only when the push
+    // carries wrist readings at all: a phone that can't read them (access never granted) sees none anywhere, and
+    // mustn't clear what an export import stored.
     const withWrist = new Set(p.daily.filter((d) => d.metric === 'wrist_temp').map((d) => d.date));
-    const noWrist = sentDays.filter((d) => !withWrist.has(d));
+    const noWrist = withWrist.size ? [...new Set(p.daily.map((d) => d.date))].filter((d) => !withWrist.has(d)) : [];
     if (noWrist.length) await q.query("DELETE FROM daily WHERE user_id = $1 AND source = $2 AND metric = 'wrist_temp' AND date = ANY($3)", [userId, SOURCE, noWrist]);
     // Each (date, metric) is the phone's complete set of hours for that day: clear it, then write, so an
     // hour that no longer has data (a deleted sample) doesn't linger.

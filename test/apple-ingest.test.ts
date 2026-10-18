@@ -136,6 +136,10 @@ test("a day the phone sends without a wrist temperature loses one the old evenin
       rows.map((r) => `${r.date} ${r.metric} ${r.source}`),
       ['2026-10-11 wrist_temp apple', '2026-10-12 skin_temp whoop', '2026-10-13 wrist_temp apple'],
     );
+
+    // A phone that can't read wrist temperature at all sends none anywhere: it clears nothing an export import stored.
+    await post(url, { daily: [{ date: '2026-10-11', metric: 'steps', value: 3000 }] });
+    assert.equal((await db.query("SELECT 1 FROM daily WHERE metric = 'wrist_temp' AND date = '2026-10-11'")).length, 1);
   });
 });
 
