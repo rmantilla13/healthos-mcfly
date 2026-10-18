@@ -37,6 +37,12 @@ enum Palette {
     static let goalTrack = dynamic(0xD8F0D0, 0x1F3A1C)
     static let gaugeTrack = dynamic(0xF3C3CF, 0x5A2A38)
     static let gaugeFill = dynamic(0xD9537A, 0xE8668C)
+
+    /// Cycle: a one-hue blue ramp for the chance of conception (darker is higher), peach after ovulation.
+    static let fertileMedium = dynamic(0xDBE3FB, 0x2F3B72)
+    static let fertileHigh = dynamic(0xA9BAF3, 0x4A5EC4)
+    static let fertilePeak = dynamic(0x4A60C8, 0xA6B3F7)
+    static let cycleLuteal = dynamic(0xFBE0CF, 0x6A4230)
     static let chip = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 1, alpha: 0.08) : UIColor(white: 1, alpha: 0.7) })
 
     static func dynamic(_ light: UInt32, _ dark: UInt32) -> Color {

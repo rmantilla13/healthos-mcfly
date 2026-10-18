@@ -11,6 +11,7 @@
 		0AB6C70226753CBD962957B0 /* SampleData.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7E250115D08EBBAA0A6C1BF /* SampleData.swift */; };
 		0BDF60A216902A26A4A8FE46 /* DayAggregatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF3AD1F8E32A8E71A82AA62D /* DayAggregatorTests.swift */; };
 		0FB626BE268BECC37DF88D1F /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B00CB598628622D59B7DB55 /* Theme.swift */; };
+		1E1FC25B8B9BD709409AC048 /* cycle-v2.json in Resources */ = {isa = PBXBuildFile; fileRef = 3ABEA99C24FB4C804B7345E1 /* cycle-v2.json */; };
 		1FE160BA9FC27A74FCD49671 /* TodayCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = 752C5BFB142DF8D297485058 /* TodayCards.swift */; };
 		23767F738B3924A8F673265C /* SignInView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD53F734E61FD82B3D256C06 /* SignInView.swift */; };
 		283EC6884105A448351592AD /* SyncEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53251687CBD17661351787AD /* SyncEngine.swift */; };
@@ -82,6 +83,7 @@
 		2E9453311E01C59473240C7B /* TrendsExtras.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrendsExtras.swift; sourceTree = "<group>"; };
 		306699B89C78B5A10F03E0A2 /* LiveHeartRateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveHeartRateView.swift; sourceTree = "<group>"; };
 		3775E6E7872E65E05A16415F /* IngestClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IngestClient.swift; sourceTree = "<group>"; };
+		3ABEA99C24FB4C804B7345E1 /* cycle-v2.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "cycle-v2.json"; sourceTree = "<group>"; };
 		3B5343DD7A76AF3586052896 /* summary.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = summary.json; sourceTree = "<group>"; };
 		402B43C3EE24937825D62979 /* Keyboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Keyboard.swift; sourceTree = "<group>"; };
 		41E8DC4A31DF21C96757841B /* trends-vitals.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "trends-vitals.json"; sourceTree = "<group>"; };
@@ -167,6 +169,7 @@
 		79BD7CA7671A5F04D1C985A9 /* Fixtures */ = {
 			isa = PBXGroup;
 			children = (
+				3ABEA99C24FB4C804B7345E1 /* cycle-v2.json */,
 				A376DF27CC036EEF54ED4978 /* cycle.json */,
 				77F80A1210D0C76AF0017C5F /* day.json */,
 				FE9ED67C191FB0AA5D98EBEC /* digest.json */,
@@ -329,6 +332,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1E1FC25B8B9BD709409AC048 /* cycle-v2.json in Resources */,
 				98AFDD35BF2A25BA1955B8E8 /* cycle.json in Resources */,
 				75EB4235ADBC9A1D6692527B /* day.json in Resources */,
 				E09D830321CC4664C62EB0CE /* digest.json in Resources */,

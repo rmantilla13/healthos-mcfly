@@ -13,7 +13,8 @@ export const SOURCE = 'apple';
 // sum keeps the best single source per day (iPhone and Watch count the same walk); sumAll adds every source,
 // for things logged by hand in different apps (a coffee in one, water in another).
 type Agg = 'sum' | 'sumAll' | 'avg' | 'last';
-type Quantity = { metric: string; agg: Agg; convert?: (value: number, unit: string) => number };
+/** byWakeDay: a nightly reading that counts toward the morning the night ends, like sleep (and WHOOP's skin temperature). */
+type Quantity = { metric: string; agg: Agg; convert?: (value: number, unit: string) => number; byWakeDay?: boolean };
 
 const toKcal = (v: number, unit: string) => (unit === 'kJ' ? v / 4.184 : v);
 const toPercent = (v: number) => (v <= 1.5 ? v * 100 : v);
@@ -40,7 +41,7 @@ const QUANTITIES: Record<string, Quantity> = {
   HKQuantityTypeIdentifierHeartRateVariabilityRMSSD: { metric: 'hrv_rmssd_watch', agg: 'avg' },
   HKQuantityTypeIdentifierOxygenSaturation: { metric: 'spo2', agg: 'avg', convert: toPercent },
   HKQuantityTypeIdentifierRespiratoryRate: { metric: 'resp_rate', agg: 'avg' },
-  HKQuantityTypeIdentifierAppleSleepingWristTemperature: { metric: 'wrist_temp', agg: 'avg', convert: toCelsius },
+  HKQuantityTypeIdentifierAppleSleepingWristTemperature: { metric: 'wrist_temp', agg: 'avg', convert: toCelsius, byWakeDay: true },
   HKQuantityTypeIdentifierBodyTemperature: { metric: 'body_temp', agg: 'avg', convert: toCelsius },
   HKQuantityTypeIdentifierBodyMass: { metric: 'weight', agg: 'last', convert: toKg },
   HKQuantityTypeIdentifierBodyFatPercentage: { metric: 'body_fat', agg: 'last', convert: toPercent },
@@ -345,7 +346,7 @@ export class AppleAggregator {
     if (!Number.isFinite(raw)) return;
     const value = q.convert ? q.convert(raw, a.unit ?? '') : raw;
     const start = parseAppleDate(a.startDate);
-    const date = localDate(start);
+    const date = q.byWakeDay && a.endDate ? localDate(parseAppleDate(a.endDate), DAY_ROLLOVER_MS) : localDate(start);
     const source = a.sourceName ?? 'unknown';
 
     if (HOURLY_SUMS.has(q.metric) || q.metric === 'hr_avg') {

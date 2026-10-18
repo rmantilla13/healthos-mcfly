@@ -51,6 +51,18 @@ test('assigns a night that crosses midnight to the wake day and picks one source
   assert.deepEqual(sleep, [{ start: '2026-10-13T23:00:00-07:00', end: '2026-10-14T06:45:00-07:00' }]);
 });
 
+test("the Watch's sleeping wrist temperature counts toward the morning the night ends", async () => {
+  const night = (start: string, end: string) =>
+    `<Record type="HKQuantityTypeIdentifierAppleSleepingWristTemperature" sourceName="Watch" unit="degC" startDate="${start} -0500" endDate="${end} -0500" value="34.8"/>`;
+  const xml = `<?xml version="1.0"?><HealthData>${night('2026-10-12 23:30:00', '2026-10-13 06:30:00')}${night('2026-10-14 00:40:00', '2026-10-14 07:10:00')}</HealthData>`;
+  const rows = (await parseStream(Readable.from([Buffer.from(xml)]))).finish().daily.filter((r) => r.metric === 'wrist_temp');
+  // Asleep before midnight or after it, each night belongs to the day it ends, like sleep and WHOOP's skin temperature.
+  assert.deepEqual(
+    rows.map((r) => r.date),
+    ['2026-10-13', '2026-10-14'],
+  );
+});
+
 test('reads workouts in both the old and new export formats', async () => {
   const db = await openStore();
   await importAppleHealth({ db, userId: OWNER_ID }, FIXTURE);

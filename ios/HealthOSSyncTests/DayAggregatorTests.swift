@@ -207,6 +207,31 @@ final class DayAggregatorTests: XCTestCase {
         ])
     }
 
+    func testHealthSymptomsJoinTheDayOnceEach() {
+        let t0 = at("15 07:00").date, t1 = at("15 22:00").date
+        let days = CycleFolder.fold([
+            CycleRecord(date: "2026-10-15", at: t0, kind: .symptom("headache")),
+            CycleRecord(date: "2026-10-15", at: t0, kind: .symptom("cramps")),
+            CycleRecord(date: "2026-10-15", at: t1, kind: .symptom("cramps")),
+            CycleRecord(date: "2026-10-15", at: t1, kind: .flow("medium", periodStart: false)),
+        ], dates: ["2026-10-15"])
+        XCTAssertEqual(days, [CycleDay(date: "2026-10-15", flow: "medium", symptoms: ["cramps", "headache"])])
+
+        // Health's own records: severity "not present" (1) is a logged absence, not a symptom.
+        let pacific: [String: Any] = [HKMetadataKeyTimeZone: "America/Los_Angeles"]
+        let sample = { (type: HKCategoryType, value: Int) in HKCategorySample(type: type, value: value, start: self.at("15 08:00").date, end: self.at("15 08:00").date, metadata: pacific) }
+        let records = CycleFolder.records(category: [
+            sample(HKCategoryType(.abdominalCramps), HKCategoryValueSeverity.moderate.rawValue),
+            sample(HKCategoryType(.headache), HKCategoryValueSeverity.notPresent.rawValue),
+            sample(HKCategoryType(.moodChanges), HKCategoryValuePresence.present.rawValue),
+            sample(HKCategoryType(.appetiteChanges), HKCategoryValueAppetiteChanges.noChange.rawValue),
+        ])
+        let folded = CycleFolder.fold(records, dates: ["2026-10-15"])
+        XCTAssertEqual(folded.first?.symptoms, ["cramps", "mood_changes"])
+        XCTAssertEqual(CycleTypes.symptoms.count, 12)
+        XCTAssertTrue(CycleTypes.all.contains(HKCategoryType(.hotFlashes)))
+    }
+
     func testWhoopIsRecognizedByNameOrBundle() {
         // Same rule as fromDirectSource in server/apple/import.ts (/^whoop\b/i on the name), plus the bundle ID.
         XCTAssertTrue(SampleSource(name: "WHOOP", bundleIdentifier: "").isReadDirectly)
@@ -419,6 +444,25 @@ final class DayAggregatorTests: XCTestCase {
         // Change detection marks the hour's start day dirty, not a rolled-over wake day like sleep.
         let late = HKCategorySample(type: HealthTypes.standHour, value: 0, start: at("15 23:30").date, end: at("16 00:00").date, metadata: pacific)
         XCTAssertEqual(Health.day(of: late), "2026-10-15")
+    }
+
+    func testSleepingWristTemperatureCountsTowardTheWakeDay() {
+        // Mirrors test/apple-import.test.ts: asleep before midnight or after it, the night belongs to the day it ends.
+        let wrist = HealthTypes.quantities.first { $0.metric == "wrist_temp" }!
+        XCTAssertTrue(wrist.byWakeDay)
+        let watch = SampleSource(name: "Sam's Apple Watch", bundleIdentifier: "com.apple.health.81A5D1E0")
+        let agg = DayAggregator(dates: ["2026-10-14", "2026-10-15", "2026-10-16"])
+        agg.add(points: [
+            QuantityPoint(start: at("14 23:30"), value: 34.6, source: watch, end: at("15 06:30")),
+            QuantityPoint(start: at("16 00:40"), value: 34.9, source: watch, end: at("16 07:10")),
+        ], as: wrist)
+        XCTAssertEqual(agg.finish().daily.filter { $0.metric == "wrist_temp" }.map(\.date).sorted(), ["2026-10-15", "2026-10-16"])
+
+        // A new night marks its wake day and the evening it began, where older builds dated it.
+        let pacific: [String: Any] = [HKMetadataKeyTimeZone: "America/Los_Angeles"]
+        let night = HKQuantitySample(type: HealthTypes.wristTemp, quantity: HKQuantity(unit: .degreeCelsius(), doubleValue: 34.6), start: at("14 23:30").date, end: at("15 06:30").date, metadata: pacific)
+        XCTAssertEqual(Health.day(of: night), "2026-10-15")
+        XCTAssertEqual(Health.days(of: night), ["2026-10-14", "2026-10-15"])
     }
 
     func testWhoopsCopiesOfTheNewTypesAreSkipped() {

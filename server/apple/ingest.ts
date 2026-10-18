@@ -208,6 +208,12 @@ export async function ingestApple(scope: Scope, p: IngestPayload): Promise<Inges
       deleted += (await q.query('DELETE FROM events WHERE user_id = $1 AND source = $2 AND id = $3 RETURNING 1', [userId, SOURCE, id])).length;
     }
     await upsertDaily(q, userId, p.daily);
+    // Sleeping wrist temperature counts toward the morning a night ends; older builds dated it by the evening it began.
+    // A day the phone sends without one has none, so a row left there by the old dating goes.
+    const sentDays = [...new Set(p.daily.map((d) => d.date))];
+    const withWrist = new Set(p.daily.filter((d) => d.metric === 'wrist_temp').map((d) => d.date));
+    const noWrist = sentDays.filter((d) => !withWrist.has(d));
+    if (noWrist.length) await q.query("DELETE FROM daily WHERE user_id = $1 AND source = $2 AND metric = 'wrist_temp' AND date = ANY($3)", [userId, SOURCE, noWrist]);
     // Each (date, metric) is the phone's complete set of hours for that day: clear it, then write, so an
     // hour that no longer has data (a deleted sample) doesn't linger.
     const days = [...new Set(p.hourly.map((h) => `${h.date}|${h.metric}`))].map((k) => k.split('|'));

@@ -270,12 +270,17 @@ struct CycleData: Codable {
         let days: Int
     }
 
-    /// Medians over recent cycles, in days.
+    /// Typical values over recent cycles, in days. The last four are missing from servers before the rebuilt engine.
     struct Stats: Codable {
         let cycleDays: Int?
         let periodDays: Int?
         let shortest: Int?
         let longest: Int?
+        /// Longest less shortest; regular when it's 9 days or less (FIGO 2018).
+        let variation: Int?
+        let regular: Bool?
+        let follicularDays: Int?
+        let lutealDays: Int?
     }
 
     struct Current: Codable {
@@ -301,10 +306,104 @@ struct CycleData: Codable {
         let ovulation: String
         /// The five days before ovulation, ovulation day, and the day after.
         let fertile: Fertile
-        /// "calendar" | "lh_test" | "bbt"
+        /// "calendar" | "lh_test" | "bbt" (a temperature rise from any device)
         let basis: String?
-        /// How many recent cycles it rests on.
+        /// How many of the person's own cycles it rests on. Below 2, typical cycles fill in (only in `earlyEstimate`).
         let cycles: Int?
+        /// "low" | "medium" | "high"
+        let confidence: String?
+        /// With basis "bbt": "bbt" (thermometer) | "wrist" (Apple Watch) | "skin" (WHOOP).
+        let tempSource: String?
+    }
+
+    /// One cycle, from a period's first day to the day before the next.
+    struct History: Codable, Identifiable {
+        struct Ovulation: Codable {
+            let date: String
+            /// "bbt" | "lh_test"
+            let basis: String
+            let tempSource: String?
+        }
+
+        struct Temperature: Codable {
+            /// "bbt" | "wrist" | "skin"
+            let source: String
+            let readings: Int
+            /// °C deviations: the level the rise had to clear, and how far the readings after it sat above those before.
+            let coverline: Double?
+            let rise: Double?
+        }
+
+        let start: String
+        /// nil for the current cycle.
+        let end: String?
+        /// Length; for the current cycle, days so far.
+        let days: Int
+        let periodDays: Int?
+        @Lossy var ovulation: Ovulation?
+        /// "confirmed" | "lh_test" | "waiting" | "not_found" | "no_data"
+        let status: String?
+        let follicularDays: Int?
+        let lutealDays: Int?
+        @Lossy var temperature: Temperature?
+
+        var id: String { start }
+    }
+
+    /// One night's or morning's temperature, against the person's own level on that device.
+    struct Temperature: Codable {
+        let date: String
+        let source: String
+        /// °C as measured.
+        let value: Double
+        /// °C above or below the person's usual level on that device.
+        let deviation: Double
+        /// "disturbed" | "outlier" when left out of the analysis.
+        let excluded: String?
+    }
+
+    /// One day's estimated chance of conception, relative to the most fertile day (1). Only days that matter are listed.
+    struct Fertility: Codable {
+        let date: String
+        let chance: Double
+        /// "medium" | "high" | "peak"
+        let level: String
+        /// "estimate" | "logged"
+        let basis: String?
+    }
+
+    /// Patterns from the person's own cycles.
+    struct Insights: Codable {
+        struct Body: Codable {
+            /// "resting_hr" | "hrv" | "temperature"
+            let metric: String
+            let follicular: Double
+            let luteal: Double
+            /// "bpm" | "ms" | "°C"
+            let unit: String
+            let cycles: Int
+        }
+
+        struct SymptomPattern: Codable {
+            let symptom: String
+            let days: Int
+            let cycles: Int
+            /// The phase most of them fall in, nil when they're spread out.
+            let phase: String?
+        }
+
+        struct Deviation: Codable {
+            /// "frequent" | "infrequent" | "irregular" | "prolonged" | "spotting"
+            let kind: String
+            let count: Int
+            let of: Int
+            /// irregular only: longest less shortest, in days.
+            let spread: Int?
+        }
+
+        @LossyArray var body: [Body]
+        @LossyArray var symptoms: [SymptomPattern]
+        @LossyArray var deviations: [Deviation]
     }
 
     let enabled: Bool
@@ -321,6 +420,18 @@ struct CycleData: Codable {
     let noEstimate: String?
     /// Missing from servers older than the phase.
     @Lossy var phase: CyclePhase?
+    /// With fewer than two complete cycles: the estimate, leaning on typical cycles. Missing from older servers.
+    @Lossy var earlyEstimate: Estimate?
+    /// Every cycle, oldest first; empty from older servers.
+    @LossyArray var history: [History]
+    /// Temperatures in the window asked for, oldest first.
+    @LossyArray var temperatures: [Temperature]
+    /// The current cycle's estimated fertile days, oldest first.
+    @LossyArray var fertility: [Fertility]
+    @Lossy var insights: Insights?
+
+    /// The estimate to show: the full one, else the early one.
+    var shownEstimate: Estimate? { estimate ?? earlyEstimate }
 }
 
 /// Where today sits in the cycle (CycleData.phase).

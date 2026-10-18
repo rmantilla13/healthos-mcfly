@@ -12,6 +12,10 @@ struct CycleDay: Codable, Equatable {
     var mucus: String?
     var bbt: Double?
     var sexualActivity: String?
+    /// Sorted, from the server's Symptom list.
+    var symptoms: [String]?
+    /// A morning marked as having an unreliable temperature (logged on the web; Health has no such record).
+    var tempDisturbed: String?
 }
 
 enum CycleTypes {
@@ -22,7 +26,26 @@ enum CycleTypes {
     static let sexual = HKCategoryType(.sexualActivity)
     static let bbt = HKQuantityType(.basalBodyTemperature)
 
-    static var all: [HKSampleType] { [flow, spotting, ovulation, mucus, sexual, bbt] }
+    /// Health's cycle symptoms, by the name the server uses (Symptom in shared/types.ts).
+    static let symptoms: [(type: HKCategoryType, name: String)] = [
+        (HKCategoryType(.abdominalCramps), "cramps"),
+        (HKCategoryType(.bloating), "bloating"),
+        (HKCategoryType(.breastPain), "breast_tenderness"),
+        (HKCategoryType(.headache), "headache"),
+        (HKCategoryType(.acne), "acne"),
+        (HKCategoryType(.fatigue), "fatigue"),
+        (HKCategoryType(.moodChanges), "mood_changes"),
+        (HKCategoryType(.lowerBackPain), "back_pain"),
+        (HKCategoryType(.nausea), "nausea"),
+        (HKCategoryType(.appetiteChanges), "appetite_changes"),
+        (HKCategoryType(.sleepChanges), "sleep_changes"),
+        (HKCategoryType(.hotFlashes), "hot_flashes"),
+    ]
+
+    /// The category types read for a day's cycle record.
+    static var categories: [HKCategoryType] { [flow, spotting, ovulation, mucus, sexual] + symptoms.map(\.type) }
+
+    static var all: [HKSampleType] { categories + [bbt] }
 
     /// Read only once the person turned cycle tracking on, and the server stores cycle days.
     static var active: Bool { Config.cycleTracking && Config.serverStoresCycle }
@@ -30,14 +53,14 @@ enum CycleTypes {
 
 /// A cycle record as the folding sees it (free of HealthKit so tests can build them).
 struct CycleRecord {
-    enum Kind { case flow(String, periodStart: Bool), spotting, ovulation(String), mucus(String), bbt(Double), sexual(String) }
+    enum Kind { case flow(String, periodStart: Bool), spotting, ovulation(String), mucus(String), bbt(Double), sexual(String), symptom(String) }
     let date: String
     let at: Date
     let kind: Kind
 }
 
 /// Folds a day's records the way the server's importer does: heaviest flow, most positive ovulation test,
-/// most fertile mucus, least protected sexual activity, the day's first basal temperature.
+/// most fertile mucus, least protected sexual activity, the day's first basal temperature, every symptom once.
 enum CycleFolder {
     static let flowOrder = ["none", "unspecified", "light", "medium", "heavy"]
     static let ovulationOrder = ["negative", "indeterminate", "estrogen_surge", "lh_surge"]
@@ -63,6 +86,7 @@ enum CycleFolder {
             case .ovulation(let v): d.ovulationTest = higher(d.ovulationTest, v, in: ovulationOrder)
             case .mucus(let v): d.mucus = higher(d.mucus, v, in: mucusOrder)
             case .sexual(let v): d.sexualActivity = higher(d.sexualActivity, v, in: sexualOrder)
+            case .symptom(let v): d.symptoms = Array(Set(d.symptoms ?? []).union([v])).sorted()
             case .bbt(let c):
                 guard (34...40).contains(c) else { break }
                 if bbtAt[r.date].map({ r.at < $0 }) ?? true {
@@ -92,7 +116,10 @@ enum CycleFolder {
             case CycleTypes.sexual:
                 let used = s.metadata?[HKMetadataKeySexualActivityProtectionUsed] as? Bool
                 kind = .sexual(used == true ? "protected" : used == false ? "unprotected" : "unspecified")
-            default: kind = nil
+            default:
+                // Every symptom type uses 1 for "not present" (severity, presence, or appetite's "no change").
+                let name = CycleTypes.symptoms.first { $0.type == s.categoryType }?.name
+                kind = name.flatMap { s.value == 1 ? nil : .symptom($0) }
             }
             return kind.map { CycleRecord(date: date, at: s.startDate, kind: $0) }
         }

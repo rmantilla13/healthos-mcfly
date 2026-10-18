@@ -11,6 +11,8 @@ struct QuantityMetric {
     let aggregation: Aggregation
     let unit: HKUnit
     var scale: Double = 1
+    /// A nightly reading that counts toward the morning the night ends, like sleep (and WHOOP's skin temperature).
+    var byWakeDay = false
 
     var type: HKQuantityType { HKQuantityType(identifier) }
 }
@@ -42,7 +44,7 @@ enum HealthTypes {
         .init(identifier: .heartRateVariabilitySDNN, metric: "hrv_sdnn", aggregation: .avg, unit: .secondUnit(with: .milli)),
         .init(identifier: .oxygenSaturation, metric: "spo2", aggregation: .avg, unit: .percent(), scale: 100),
         .init(identifier: .respiratoryRate, metric: "resp_rate", aggregation: .avg, unit: bpm),
-        .init(identifier: .appleSleepingWristTemperature, metric: "wrist_temp", aggregation: .avg, unit: .degreeCelsius()),
+        .init(identifier: .appleSleepingWristTemperature, metric: "wrist_temp", aggregation: .avg, unit: .degreeCelsius(), byWakeDay: true),
         .init(identifier: .bodyTemperature, metric: "body_temp", aggregation: .avg, unit: .degreeCelsius()),
         .init(identifier: .bodyMass, metric: "weight", aggregation: .last, unit: .gramUnit(with: .kilo)),
         .init(identifier: .bodyFatPercentage, metric: "body_fat", aggregation: .last, unit: .percent(), scale: 100),
@@ -62,6 +64,7 @@ enum HealthTypes {
     ]
 
     static let sleep = HKCategoryType(.sleepAnalysis)
+    static let wristTemp = HKQuantityType(.appleSleepingWristTemperature)
     static let mindful = HKCategoryType(.mindfulSession)
     static let workout = HKWorkoutType.workoutType()
     /// The Watch's hourly "stood / didn't" record; a day's stand hours are the hours stood.

@@ -27,6 +27,9 @@ struct SyncState: Codable {
     var cycleMapBuilt = false
     /// The recent month was re-sent once after WHOOP's steps started counting, to correct existing step rows.
     var whoopStepsResent = false
+    /// Sleeping wrist temperature was read again once after it moved to the wake day, so every day it moved from or to
+    /// went up again (older days through the backfill).
+    var wristTempRedated = false
     var last: SyncReport?
     /// The one-time re-read of history that gives already-synced days their hours, once the server stores them.
     var hourlyBackfillStarted = false
@@ -54,6 +57,7 @@ struct SyncState: Codable {
         cycleClear = try c.decodeIfPresent([String].self, forKey: .cycleClear) ?? []
         cycleMapBuilt = try c.decodeIfPresent(Bool.self, forKey: .cycleMapBuilt) ?? false
         whoopStepsResent = try c.decodeIfPresent(Bool.self, forKey: .whoopStepsResent) ?? false
+        wristTempRedated = try c.decodeIfPresent(Bool.self, forKey: .wristTempRedated) ?? false
         last = try c.decodeIfPresent(SyncReport.self, forKey: .last)
         hourlyBackfillStarted = try c.decodeIfPresent(Bool.self, forKey: .hourlyBackfillStarted) ?? false
         hourlyBackfillDone = try c.decodeIfPresent(Bool.self, forKey: .hourlyBackfillDone) ?? false
@@ -290,6 +294,13 @@ actor SyncEngine {
             if CycleTypes.active, !state.cycleMapBuilt {
                 for type in CycleTypes.all { state.anchors[type.identifier] = nil }
                 state.cycleMapBuilt = true
+            }
+
+            // Once: read sleeping wrist temperature again now that it counts toward the wake day. Each night marks both
+            // its old and its new day, and the server drops a wrist reading from a day sent without one.
+            if !state.wristTempRedated {
+                state.anchors[HealthTypes.wristTemp.identifier] = nil
+                state.wristTempRedated = true
             }
 
             // 1. Which days changed since the last sync.

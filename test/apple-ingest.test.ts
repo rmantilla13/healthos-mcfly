@@ -116,6 +116,29 @@ test('ingest upserts rows as source apple and replaces a day on re-send', async 
   });
 });
 
+test("a day the phone sends without a wrist temperature loses one the old evening dating left there", async () => {
+  const db = await openStore();
+  await upsertDaily(db, OWNER_ID, [
+    { date: '2026-10-12', metric: 'wrist_temp', source: 'apple', value: 34.7 }, // the night of the 12th to the 13th, dated the old way
+    { date: '2026-10-11', metric: 'wrist_temp', source: 'apple', value: 34.6 }, // a day not sent: left alone
+    { date: '2026-10-12', metric: 'skin_temp', source: 'whoop', value: 33.9 },
+  ]);
+  await serve(appFor(db, TOKEN), async (url) => {
+    const res = await post(url, {
+      daily: [
+        { date: '2026-10-12', metric: 'steps', value: 4000 },
+        { date: '2026-10-13', metric: 'wrist_temp', value: 34.7 },
+      ],
+    });
+    assert.equal(res.status, 200);
+    const rows = await db.query<{ date: string; metric: string; source: string }>("SELECT date, metric, source FROM daily WHERE metric IN ('wrist_temp', 'skin_temp') ORDER BY date, metric");
+    assert.deepEqual(
+      rows.map((r) => `${r.date} ${r.metric} ${r.source}`),
+      ['2026-10-11 wrist_temp apple', '2026-10-12 skin_temp whoop', '2026-10-13 wrist_temp apple'],
+    );
+  });
+});
+
 test('a workout or mindful session from the app replaces the same one from an export import', async () => {
   const db = await openStore();
   // export.zip writes every date with the offset in effect at export time, so a January run reads -05:00.

@@ -40,7 +40,7 @@ final class Health: @unchecked Sendable {
             guard let page = try await Self.unlessUndetermined({ try await query.result(for: store) }) else { return Changes(anchor: anchor) }
             // WHOOP's copies never change a day's result (the aggregation skips them), so they don't make it dirty.
             let metric = type == HKQuantityType(.stepCount) ? "steps" : ""
-            for sample in page.addedSamples where sample.writtenBy.counts(metric) { out.dates.insert(Self.day(of: sample)) }
+            for sample in page.addedSamples where sample.writtenBy.counts(metric) { out.dates.formUnion(Self.days(of: sample)) }
             out.samples += page.addedSamples.count
             if !page.deletedObjects.isEmpty { out.sawDeletions = true }
             if type == HealthTypes.workout || type == HealthTypes.mindful {
@@ -55,9 +55,16 @@ final class Health: @unchecked Sendable {
         }
     }
 
-    /// The day a sample counts toward: sleep by when you woke up, everything else by start time.
+    /// The day a sample counts toward: sleep and the Watch's sleeping wrist temperature by when you woke up, everything
+    /// else by start time.
     static func day(of sample: HKSample) -> String {
-        sample.sampleType == HealthTypes.sleep ? sample.endStamp.localDate(shift: Day.rollover) : sample.startStamp.localDate()
+        sample.sampleType == HealthTypes.sleep || sample.sampleType == HealthTypes.wristTemp ? sample.endStamp.localDate(shift: Day.rollover) : sample.startStamp.localDate()
+    }
+
+    /// The days a new sample makes dirty. Wrist temperature also names the evening the night began, where older builds
+    /// dated it: sending that day again clears the row they left there.
+    static func days(of sample: HKSample) -> Set<String> {
+        sample.sampleType == HealthTypes.wristTemp ? [day(of: sample), sample.startStamp.localDate()] : [day(of: sample)]
     }
 
     func samples<S: HKSample>(_ predicate: HKSamplePredicate<S>) async throws -> [S] {
@@ -93,7 +100,7 @@ final class Health: @unchecked Sendable {
         var payload = agg.finish()
         if CycleTypes.active {
             var records: [CycleRecord] = []
-            for type in [CycleTypes.flow, CycleTypes.spotting, CycleTypes.ovulation, CycleTypes.mucus, CycleTypes.sexual] {
+            for type in CycleTypes.categories {
                 records += CycleFolder.records(category: try await samples(.categorySample(type: type, predicate: window)))
             }
             records += CycleFolder.records(bbt: try await samples(.quantitySample(type: CycleTypes.bbt, predicate: window)))

@@ -1,0 +1,773 @@
+{
+  "enabled": true,
+  "today": "2026-10-17",
+  "days": [
+    {
+      "date": "2026-09-03",
+      "symptoms": [
+        "bloating",
+        "breast_tenderness"
+      ],
+      "manual": {
+        "symptoms": [
+          "bloating",
+          "breast_tenderness"
+        ]
+      }
+    },
+    {
+      "date": "2026-09-04",
+      "symptoms": [
+        "breast_tenderness",
+        "mood_changes"
+      ],
+      "manual": {
+        "symptoms": [
+          "breast_tenderness",
+          "mood_changes"
+        ]
+      }
+    },
+    {
+      "date": "2026-09-07",
+      "flow": "medium",
+      "periodStart": true,
+      "symptoms": [
+        "cramps",
+        "fatigue"
+      ],
+      "apple": {
+        "flow": "medium",
+        "periodStart": true
+      },
+      "manual": {
+        "symptoms": [
+          "cramps",
+          "fatigue"
+        ]
+      }
+    },
+    {
+      "date": "2026-09-08",
+      "flow": "heavy",
+      "symptoms": [
+        "cramps"
+      ],
+      "apple": {
+        "flow": "heavy"
+      },
+      "manual": {
+        "symptoms": [
+          "cramps"
+        ]
+      }
+    },
+    {
+      "date": "2026-09-09",
+      "flow": "heavy",
+      "apple": {
+        "flow": "heavy"
+      }
+    },
+    {
+      "date": "2026-09-10",
+      "flow": "medium",
+      "apple": {
+        "flow": "medium"
+      }
+    },
+    {
+      "date": "2026-09-11",
+      "flow": "light",
+      "apple": {
+        "flow": "light"
+      }
+    },
+    {
+      "date": "2026-09-15",
+      "tempDisturbed": "alcohol",
+      "manual": {
+        "tempDisturbed": "alcohol"
+      }
+    },
+    {
+      "date": "2026-09-20",
+      "ovulationTest": "lh_surge",
+      "apple": {
+        "ovulationTest": "lh_surge"
+      }
+    },
+    {
+      "date": "2026-10-01",
+      "symptoms": [
+        "bloating",
+        "breast_tenderness"
+      ],
+      "manual": {
+        "symptoms": [
+          "bloating",
+          "breast_tenderness"
+        ]
+      }
+    },
+    {
+      "date": "2026-10-02",
+      "symptoms": [
+        "breast_tenderness",
+        "mood_changes"
+      ],
+      "manual": {
+        "symptoms": [
+          "breast_tenderness",
+          "mood_changes"
+        ]
+      }
+    },
+    {
+      "date": "2026-10-05",
+      "flow": "heavy",
+      "periodStart": true,
+      "symptoms": [
+        "cramps",
+        "fatigue"
+      ],
+      "apple": {
+        "flow": "medium",
+        "periodStart": true
+      },
+      "manual": {
+        "flow": "heavy",
+        "symptoms": [
+          "cramps",
+          "fatigue"
+        ]
+      }
+    },
+    {
+      "date": "2026-10-06",
+      "flow": "heavy",
+      "symptoms": [
+        "cramps"
+      ],
+      "apple": {
+        "flow": "heavy"
+      },
+      "manual": {
+        "symptoms": [
+          "cramps"
+        ]
+      }
+    },
+    {
+      "date": "2026-10-07",
+      "flow": "heavy",
+      "apple": {
+        "flow": "heavy"
+      }
+    },
+    {
+      "date": "2026-10-08",
+      "flow": "medium",
+      "apple": {
+        "flow": "medium"
+      }
+    },
+    {
+      "date": "2026-10-09",
+      "flow": "light",
+      "apple": {
+        "flow": "light"
+      }
+    },
+    {
+      "date": "2026-10-14",
+      "mucus": "creamy",
+      "ovulationTest": "negative",
+      "apple": {
+        "mucus": "creamy",
+        "ovulationTest": "negative"
+      }
+    },
+    {
+      "date": "2026-10-16",
+      "mucus": "egg_white",
+      "apple": {
+        "mucus": "egg_white"
+      }
+    },
+    {
+      "date": "2026-10-17",
+      "symptoms": [
+        "headache"
+      ],
+      "tempDisturbed": "sick",
+      "manual": {
+        "symptoms": [
+          "headache"
+        ],
+        "tempDisturbed": "sick"
+      }
+    }
+  ],
+  "periods": [
+    {
+      "start": "2026-06-13",
+      "end": "2026-06-17",
+      "days": 5
+    },
+    {
+      "start": "2026-07-12",
+      "end": "2026-07-16",
+      "days": 5
+    },
+    {
+      "start": "2026-08-08",
+      "end": "2026-08-12",
+      "days": 5
+    },
+    {
+      "start": "2026-09-07",
+      "end": "2026-09-11",
+      "days": 5
+    },
+    {
+      "start": "2026-10-05",
+      "end": "2026-10-09",
+      "days": 5
+    }
+  ],
+  "cycles": [
+    {
+      "start": "2026-06-13",
+      "days": 29
+    },
+    {
+      "start": "2026-07-12",
+      "days": 27
+    },
+    {
+      "start": "2026-08-08",
+      "days": 30
+    },
+    {
+      "start": "2026-09-07",
+      "days": 28
+    }
+  ],
+  "stats": {
+    "cycleDays": 29,
+    "periodDays": 5,
+    "shortest": 27,
+    "longest": 30,
+    "variation": 3,
+    "regular": true,
+    "follicularDays": 16,
+    "lutealDays": 13
+  },
+  "current": {
+    "start": "2026-10-05",
+    "day": 13
+  },
+  "estimate": {
+    "nextPeriod": {
+      "date": "2026-11-02",
+      "earliest": "2026-10-31",
+      "latest": "2026-11-05"
+    },
+    "ovulation": "2026-10-20",
+    "fertile": {
+      "start": "2026-10-14",
+      "end": "2026-10-21"
+    },
+    "basis": "calendar",
+    "cycles": 4,
+    "confidence": "medium"
+  },
+  "noEstimate": null,
+  "earlyEstimate": null,
+  "ovulations": [
+    {
+      "date": "2026-06-28",
+      "basis": "bbt"
+    },
+    {
+      "date": "2026-07-25",
+      "basis": "bbt"
+    },
+    {
+      "date": "2026-08-24",
+      "basis": "bbt"
+    },
+    {
+      "date": "2026-09-21",
+      "basis": "bbt"
+    }
+  ],
+  "history": [
+    {
+      "start": "2026-06-13",
+      "end": "2026-07-11",
+      "days": 29,
+      "periodDays": 5,
+      "ovulation": {
+        "date": "2026-06-28",
+        "basis": "bbt",
+        "tempSource": "wrist"
+      },
+      "status": "confirmed",
+      "follicularDays": 16,
+      "lutealDays": 13,
+      "temperature": {
+        "source": "wrist",
+        "readings": 27,
+        "coverline": 0.04,
+        "rise": 0.28
+      },
+      "symptoms": 4
+    },
+    {
+      "start": "2026-07-12",
+      "end": "2026-08-07",
+      "days": 27,
+      "periodDays": 5,
+      "ovulation": {
+        "date": "2026-07-25",
+        "basis": "bbt",
+        "tempSource": "wrist"
+      },
+      "status": "confirmed",
+      "follicularDays": 14,
+      "lutealDays": 13,
+      "temperature": {
+        "source": "wrist",
+        "readings": 26,
+        "coverline": -0.01,
+        "rise": 0.32
+      },
+      "symptoms": 4
+    },
+    {
+      "start": "2026-08-08",
+      "end": "2026-09-06",
+      "days": 30,
+      "periodDays": 5,
+      "ovulation": {
+        "date": "2026-08-24",
+        "basis": "bbt",
+        "tempSource": "wrist"
+      },
+      "status": "confirmed",
+      "follicularDays": 17,
+      "lutealDays": 13,
+      "temperature": {
+        "source": "wrist",
+        "readings": 28,
+        "coverline": -0.03,
+        "rise": 0.35
+      },
+      "symptoms": 4
+    },
+    {
+      "start": "2026-09-07",
+      "end": "2026-10-04",
+      "days": 28,
+      "periodDays": 5,
+      "ovulation": {
+        "date": "2026-09-21",
+        "basis": "bbt",
+        "tempSource": "wrist"
+      },
+      "status": "confirmed",
+      "follicularDays": 15,
+      "lutealDays": 13,
+      "temperature": {
+        "source": "wrist",
+        "readings": 23,
+        "coverline": -0.04,
+        "rise": 0.34
+      },
+      "symptoms": 4
+    },
+    {
+      "start": "2026-10-05",
+      "end": null,
+      "days": 13,
+      "periodDays": 5,
+      "ovulation": null,
+      "status": "waiting",
+      "follicularDays": null,
+      "lutealDays": null,
+      "temperature": {
+        "source": "wrist",
+        "readings": 12,
+        "coverline": null,
+        "rise": null
+      },
+      "symptoms": 3
+    }
+  ],
+  "temperatures": [
+    {
+      "date": "2026-09-03",
+      "source": "wrist",
+      "value": 35.07,
+      "deviation": 0.32
+    },
+    {
+      "date": "2026-09-04",
+      "source": "wrist",
+      "value": 34.96,
+      "deviation": 0.21
+    },
+    {
+      "date": "2026-09-05",
+      "source": "wrist",
+      "value": 35.08,
+      "deviation": 0.33
+    },
+    {
+      "date": "2026-09-06",
+      "source": "wrist",
+      "value": 35.07,
+      "deviation": 0.3
+    },
+    {
+      "date": "2026-09-07",
+      "source": "wrist",
+      "value": 34.75,
+      "deviation": -0.02
+    },
+    {
+      "date": "2026-09-08",
+      "source": "wrist",
+      "value": 34.69,
+      "deviation": -0.08
+    },
+    {
+      "date": "2026-09-09",
+      "source": "wrist",
+      "value": 34.77,
+      "deviation": 0.01
+    },
+    {
+      "date": "2026-09-12",
+      "source": "wrist",
+      "value": 34.7,
+      "deviation": -0.06
+    },
+    {
+      "date": "2026-09-13",
+      "source": "wrist",
+      "value": 34.75,
+      "deviation": -0.01
+    },
+    {
+      "date": "2026-09-14",
+      "source": "wrist",
+      "value": 34.7,
+      "deviation": -0.06
+    },
+    {
+      "date": "2026-09-15",
+      "source": "wrist",
+      "value": 34.7,
+      "deviation": -0.06,
+      "excluded": "disturbed"
+    },
+    {
+      "date": "2026-09-17",
+      "source": "wrist",
+      "value": 34.72,
+      "deviation": -0.04
+    },
+    {
+      "date": "2026-09-18",
+      "source": "wrist",
+      "value": 34.7,
+      "deviation": -0.06
+    },
+    {
+      "date": "2026-09-19",
+      "source": "wrist",
+      "value": 34.66,
+      "deviation": -0.1
+    },
+    {
+      "date": "2026-09-20",
+      "source": "wrist",
+      "value": 34.69,
+      "deviation": -0.08
+    },
+    {
+      "date": "2026-09-21",
+      "source": "wrist",
+      "value": 34.7,
+      "deviation": -0.07
+    },
+    {
+      "date": "2026-09-22",
+      "source": "wrist",
+      "value": 35.09,
+      "deviation": 0.23
+    },
+    {
+      "date": "2026-09-23",
+      "source": "wrist",
+      "value": 35.05,
+      "deviation": 0.28
+    },
+    {
+      "date": "2026-09-24",
+      "source": "wrist",
+      "value": 35.03,
+      "deviation": 0.27
+    },
+    {
+      "date": "2026-09-26",
+      "source": "wrist",
+      "value": 35.02,
+      "deviation": 0.26
+    },
+    {
+      "date": "2026-09-27",
+      "source": "wrist",
+      "value": 35.02,
+      "deviation": 0.26
+    },
+    {
+      "date": "2026-09-28",
+      "source": "wrist",
+      "value": 35.05,
+      "deviation": 0.29
+    },
+    {
+      "date": "2026-09-29",
+      "source": "wrist",
+      "value": 34.99,
+      "deviation": 0.24
+    },
+    {
+      "date": "2026-09-30",
+      "source": "wrist",
+      "value": 35.05,
+      "deviation": 0.3
+    },
+    {
+      "date": "2026-10-01",
+      "source": "wrist",
+      "value": 35.04,
+      "deviation": 0.29
+    },
+    {
+      "date": "2026-10-02",
+      "source": "wrist",
+      "value": 35.01,
+      "deviation": 0.26
+    },
+    {
+      "date": "2026-10-03",
+      "source": "wrist",
+      "value": 35.01,
+      "deviation": 0.26
+    },
+    {
+      "date": "2026-10-04",
+      "source": "wrist",
+      "value": 35.05,
+      "deviation": 0.3
+    },
+    {
+      "date": "2026-10-05",
+      "source": "wrist",
+      "value": 34.68,
+      "deviation": -0.07
+    },
+    {
+      "date": "2026-10-06",
+      "source": "wrist",
+      "value": 34.76,
+      "deviation": 0.02
+    },
+    {
+      "date": "2026-10-07",
+      "source": "wrist",
+      "value": 34.76,
+      "deviation": 0.01
+    },
+    {
+      "date": "2026-10-08",
+      "source": "wrist",
+      "value": 34.69,
+      "deviation": -0.05
+    },
+    {
+      "date": "2026-10-09",
+      "source": "wrist",
+      "value": 34.72,
+      "deviation": -0.02
+    },
+    {
+      "date": "2026-10-10",
+      "source": "wrist",
+      "value": 34.69,
+      "deviation": -0.05
+    },
+    {
+      "date": "2026-10-11",
+      "source": "wrist",
+      "value": 34.75,
+      "deviation": 0
+    },
+    {
+      "date": "2026-10-12",
+      "source": "wrist",
+      "value": 34.7,
+      "deviation": -0.04
+    },
+    {
+      "date": "2026-10-13",
+      "source": "wrist",
+      "value": 34.72,
+      "deviation": -0.03
+    },
+    {
+      "date": "2026-10-14",
+      "source": "wrist",
+      "value": 34.72,
+      "deviation": -0.03
+    },
+    {
+      "date": "2026-10-15",
+      "source": "wrist",
+      "value": 34.73,
+      "deviation": -0.02
+    },
+    {
+      "date": "2026-10-16",
+      "source": "wrist",
+      "value": 34.72,
+      "deviation": -0.03
+    },
+    {
+      "date": "2026-10-17",
+      "source": "wrist",
+      "value": 34.74,
+      "deviation": -0.02,
+      "excluded": "disturbed"
+    }
+  ],
+  "fertility": [
+    {
+      "date": "2026-10-14",
+      "chance": 0.22,
+      "level": "medium",
+      "basis": "logged"
+    },
+    {
+      "date": "2026-10-15",
+      "chance": 0.37,
+      "level": "medium",
+      "basis": "logged"
+    },
+    {
+      "date": "2026-10-16",
+      "chance": 0.52,
+      "level": "high",
+      "basis": "logged"
+    },
+    {
+      "date": "2026-10-17",
+      "chance": 0.63,
+      "level": "high",
+      "basis": "logged"
+    },
+    {
+      "date": "2026-10-18",
+      "chance": 0.67,
+      "level": "high",
+      "basis": "logged"
+    },
+    {
+      "date": "2026-10-19",
+      "chance": 0.63,
+      "level": "high",
+      "basis": "logged"
+    },
+    {
+      "date": "2026-10-20",
+      "chance": 0.47,
+      "level": "high",
+      "basis": "logged"
+    },
+    {
+      "date": "2026-10-21",
+      "chance": 0.26,
+      "level": "medium",
+      "basis": "logged"
+    }
+  ],
+  "phase": {
+    "name": "ovulatory",
+    "day": 13,
+    "nextPeriodIn": 16,
+    "basis": "estimate"
+  },
+  "insights": {
+    "body": [
+      {
+        "metric": "resting_hr",
+        "follicular": 58.1,
+        "luteal": 60.6,
+        "unit": "bpm",
+        "cycles": 4
+      },
+      {
+        "metric": "hrv",
+        "follicular": 48,
+        "luteal": 42,
+        "unit": "ms",
+        "cycles": 4
+      },
+      {
+        "metric": "temperature",
+        "follicular": -0.05,
+        "luteal": 0.27,
+        "unit": "°C",
+        "cycles": 4
+      }
+    ],
+    "symptoms": [
+      {
+        "symptom": "cramps",
+        "days": 10,
+        "cycles": 5,
+        "phase": "menstrual"
+      },
+      {
+        "symptom": "breast_tenderness",
+        "days": 8,
+        "cycles": 4,
+        "phase": "luteal"
+      },
+      {
+        "symptom": "fatigue",
+        "days": 5,
+        "cycles": 5,
+        "phase": "menstrual"
+      },
+      {
+        "symptom": "bloating",
+        "days": 4,
+        "cycles": 4,
+        "phase": "luteal"
+      },
+      {
+        "symptom": "mood_changes",
+        "days": 4,
+        "cycles": 4,
+        "phase": "luteal"
+      }
+    ],
+    "deviations": []
+  }
+}

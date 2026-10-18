@@ -68,6 +68,8 @@ struct QuantityPoint {
     let start: Stamp
     let value: Double
     let source: SampleSource
+    /// When the sample ended: a `byWakeDay` metric counts toward this morning.
+    var end: Stamp? = nil
 }
 
 struct SleepSegment {
@@ -138,7 +140,7 @@ final class DayAggregator {
     }
 
     func add(_ samples: [HKQuantitySample], as q: QuantityMetric) {
-        add(points: samples.map { QuantityPoint(start: $0.startStamp, value: $0.quantity.doubleValue(for: q.unit) * q.scale, source: $0.writtenBy) }, as: q)
+        add(points: samples.map { QuantityPoint(start: $0.startStamp, value: $0.quantity.doubleValue(for: q.unit) * q.scale, source: $0.writtenBy, end: $0.endStamp) }, as: q)
     }
 
     /// The aggregation itself, kept free of HealthKit so tests can set the source.
@@ -147,7 +149,7 @@ final class DayAggregator {
             if p.source.isReadDirectly { sawWhoopSteps = true }
             let value = p.value
             guard value.isFinite else { continue }
-            let date = p.start.localDate()
+            let date = q.byWakeDay ? (p.end ?? p.start).localDate(shift: Day.rollover) : p.start.localDate()
             guard dates.contains(date) else { continue }
             let hour = p.start.localHour
             let key = "\(date)|\(q.metric)"

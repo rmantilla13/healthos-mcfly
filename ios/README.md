@@ -14,6 +14,7 @@ The app reads the same API as the website (`/api/summary`, `/api/trends`, `/api/
   - Arrows step through past days. Pull down to refresh, which also pushes any new Health data.
   - **Ask McFly:** a pill above the tab bar opens a chat with the dashboard's assistant (`/api/mcfly`, streamed from `/api/mcfly/chat`). The conversation stays in memory only. It shows how many questions are left today, and the pill is hidden when the server has McFly off.
 - **Trends:** Vitals, Sleep (stacked stages), Activity (steps against goal, plus workouts) and Body, over 30 days, 90 days or a year. Drag across a chart to read a single day.
+- **Cycle** (only while cycle tracking is on): this cycle's phase ring and estimates, each fertile day's estimated chance, the temperature curve for any cycle (cover line, ovulation, the rise after it), a five-week calendar, past cycles split before and after ovulation, and patterns from your own cycles. Estimates never mark a day as safe.
 - **Settings:**
   - server address and sign-in status;
   - the profile photo: **Change photo** picks one from Photos and cuts it out on the phone with Apple Vision, using the same steps as the Mac tool `server/photo/cutout.swift`. After a Save/Cancel preview it uploads to `POST /api/profile/photo/upload`;
@@ -40,7 +41,8 @@ Cards hide or switch to fit your sources, as on the web: no WHOOP means VO₂ ma
 - **Uploads** a week of days per request to `POST /api/apple/ingest` with the bearer token, newest week first. A day whose upload fails stays queued for the next sync.
   - Every sync sends today, plus any changed day in the last 30.
   - Older days (the first upload, or the one-time hourly backfill) wait in a saved queue. They go up newest first, four weeks per pass, only while the app is open and not in Low Power Mode. Settings shows how many are left.
-- **Cycle tracking:** menstrual flow, spotting, ovulation tests, cervical mucus, sexual activity and basal body temperature. The app reads these only after you turn cycle tracking on in healthOS settings and the server answers that it stores cycle days. Each day sent replaces that day on the server.
+- **Cycle tracking:** menstrual flow, spotting, ovulation tests, cervical mucus, sexual activity, basal body temperature and Health's cycle symptoms (cramps, bloating, headache and the rest; one logged as "not present" is left out). The app reads these only after you turn cycle tracking on in healthOS settings and the server answers that it stores cycle days. Each day sent replaces that day on the server.
+- **Sleeping wrist temperature** counts toward the morning the night ends, like sleep, so it lines up with WHOOP's skin temperature for the cycle engine. Builds before this dated it by the evening the night began: the first sync after updating reads its history again once and re-sends every day it moved from or to, and the server drops a wrist reading from any day sent without one.
 - **Syncs in the background:**
   - **HealthKit wakes:** an `HKObserverQuery` per type plus `enableBackgroundDelivery`. Wakes are hourly for heart rate, steps, energy, distance, exercise and breathing, and immediate for everything else.
   - **Backstop:** a `BGAppRefreshTask` (`health.mcfly.sync.refresh`).
