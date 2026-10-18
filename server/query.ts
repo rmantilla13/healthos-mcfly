@@ -39,7 +39,8 @@ export function settingsFrom(mine: Map<string, string>, platform: Map<string, st
     cycleTracking: mine.get('cycle_tracking') === 'on',
     familySharing: mine.get('family_sharing') !== 'off',
     shareCyclePhase: mine.get('family_cycle_phase') === 'on',
-    familyNoticeSeen: mine.get('family_notice_seen') === 'on',
+    // Version 2: the board now also shows the last 30 days, so everyone hears about it again.
+    familyNoticeSeen: mine.get('family_notice_seen') === '2',
   };
 }
 

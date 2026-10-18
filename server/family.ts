@@ -1,9 +1,10 @@
-// The Family board (GET /api/family): a small daily tile for everyone who shares, seen by everyone who shares.
-// Sharing is on unless a person turns it off in Settings, and it's mutual: turned off, they neither see anyone
-// nor are seen. This is the only place one person's health data is read for another, and a tile carries only
-// what FamilyMember lists: no values over time, no email, nothing about anyone who doesn't share.
+// The Family board (GET /api/family): a tile for everyone who shares, seen by everyone who shares, with the last
+// 30 days of the same few metrics. Sharing is on unless a person turns it off in Settings, and it's mutual: turned
+// off, they neither see anyone nor are seen. This is the only place one person's health data is read for another,
+// and a tile carries only what FamilyMember lists: nothing older than 30 days, no email, nothing about anyone who
+// doesn't share.
 import express from 'express';
-import type { CycleDay, FamilyBoard, FamilyCyclePhase, FamilyDevice, FamilyMember, FamilyReason, FamilyStatus, Latest, Point, RangeStatus } from '../shared/types.ts';
+import type { CycleDay, FamilyBoard, FamilyCyclePhase, FamilyDevice, FamilyHistory, FamilyMember, FamilyReason, FamilyStatus, Latest, Point, RangeStatus } from '../shared/types.ts';
 import { authMode, currentUser } from './auth.ts';
 import { type CycleRow, analyzeCycle, logDays } from './cycle.ts';
 import { addDays } from './dates.ts';
@@ -49,7 +50,9 @@ export async function familyBoard(db: Db, hosted: boolean, viewerId: string): Pr
 }
 
 const WINDOW_DAYS = 45;
-const METRICS = ['steps', 'sleep_hours', 'sleep_in_bed', 'recovery', 'hrv_rmssd', 'hrv_sdnn', 'resting_hr'];
+const METRICS = ['steps', 'sleep_hours', 'sleep_in_bed', 'recovery', 'hrv_rmssd', 'hrv_sdnn', 'resting_hr', 'strain', 'active_energy'];
+/** How far back the board's charts reach. */
+export const HISTORY_DAYS = 30;
 /** Stricter than Home's ranges: the board flags only clear departures from someone's usual. */
 const BAND = 1.5;
 const MIN_HISTORY = 7;
@@ -133,7 +136,7 @@ async function memberTile(db: Db, hosted: boolean, userId: string, o: TileOpts):
   const own = rhrFrom ? daily.get('resting_hr')?.get(rhrFrom) : undefined;
   const rhrHistory = rhr && own ? [...own].filter(([d]) => d >= addDays(rhr.date, -30) && d < rhr.date).map(([date, value]) => ({ date, value })) : [];
   const rhrStatus = rhr ? against(rhrHistory, rhr.value, 2) : null;
-  const restingHr = rhr && rhrStatus ? { status: rhrStatus, date: rhr.date } : null;
+  const restingHr = rhr && rhrStatus ? { status: rhrStatus, date: rhr.date, value: Math.round(rhr.value), usual: nullableRound(usualOf(rhrHistory), 0) } : null;
 
   // Today's steps by the same rule as everywhere else; how far along the day is only from the phone's hours.
   const counted = valueOn(ctx, 'steps', today);
@@ -161,6 +164,45 @@ async function memberTile(db: Db, hosted: boolean, userId: string, o: TileOpts):
     signals,
   });
 
+  // The last 30 days of each, for the charts.
+  const historyFrom = addDays(today, -(HISTORY_DAYS - 1));
+  const span = (metric: string) => series(ctx, metric, historyFrom, today).map((p) => ({ date: p.date, value: round(p.value, 2) }));
+  const nights = series(ctx, 'sleep_hours', historyFrom, today);
+  const measured = nights.filter((p) => !inBedOnly(p.date, p.value));
+  const newestOf = (points: Point[]) => points.at(-1)?.date ?? '';
+  const useMeasured = measured.length > 0 && newestOf(measured) >= addDays(newestOf(nights), -3);
+  // Of several metrics, the one with the newest reading in the window (a device used now, not one put away).
+  const freshest = <M extends string>(metrics: readonly M[]) =>
+    metrics.map((m) => ({ m, points: span(m) })).filter((x) => x.points.length).sort((a, b) => newestOf(b.points).localeCompare(newestOf(a.points)))[0];
+  const readinessPick =
+    readiness?.kind === 'recovery'
+      ? { m: 'recovery' as const, points: span('recovery') }
+      : readiness?.kind === 'hrv'
+        ? { m: readiness.metric, points: span(readiness.metric) }
+        : freshest(['recovery', 'hrv_rmssd', 'hrv_sdnn'] as const);
+  // Resting heart rate from one device: the one the latest reading came from, else the one read most recently.
+  const rhrBySource = [...(daily.get('resting_hr') ?? new Map<string, Map<string, number>>())].map(([source, byDate]) => ({
+    source,
+    points: [...byDate].filter(([d]) => d >= historyFrom && d <= today).sort(([a], [b]) => a.localeCompare(b)).map(([date, value]) => ({ date, value: Math.round(value) })),
+  }));
+  const rhrPick = rhrBySource.find((x) => x.source === rhrFrom) ?? rhrBySource.filter((x) => x.points.length).sort((a, b) => newestOf(b.points).localeCompare(newestOf(a.points)))[0];
+  // Training load as Home picks it: WHOOP strain if it's current, else active energy, else whichever is newer.
+  const strain = span('strain');
+  const energy = span('active_energy').map((p) => ({ ...p, value: Math.round(p.value) }));
+  const loadKind = latest(ctx, 'strain', today, 3) ? 'strain' : latest(ctx, 'active_energy', today, 3) ? 'energy' : newestOf(strain) >= newestOf(energy) ? 'strain' : 'energy';
+  const loadPoints = loadKind === 'strain' ? strain : energy;
+  const history: FamilyHistory = {
+    // Nights a watch or WHOOP measured, while they're current; once only the phone logs nights (or only ever
+    // did), its time in bed, marked as such. No nights at all: nothing to mark.
+    sleep: useMeasured || !nights.length
+      ? { inBed: false, points: measured.map((p) => ({ date: p.date, value: round(p.value, 2) })) }
+      : { inBed: true, points: nights.filter((p) => inBedOnly(p.date, p.value)).map((p) => ({ date: p.date, value: round(p.value, 2) })) },
+    readiness: readinessPick ? { kind: readinessPick.m, points: readinessPick.points } : null,
+    steps: span('steps').map((p) => ({ ...p, value: Math.round(p.value) })),
+    restingHr: rhrPick?.points ?? [],
+    load: loadPoints.length ? { kind: loadKind, points: loadPoints } : null,
+  };
+
   const devices: FamilyDevice[] = [];
   if (o.whoop) devices.push('whoop');
   const apple = (metric: string) => (daily.get(metric)?.get('apple')?.size ?? 0) > 0;
@@ -185,6 +227,7 @@ async function memberTile(db: Db, hosted: boolean, userId: string, o: TileOpts):
     restingHr,
     steps,
     ...(phase ? { cyclePhase: phase } : {}),
+    history,
   };
 }
 

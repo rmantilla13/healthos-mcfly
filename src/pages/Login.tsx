@@ -206,7 +206,7 @@ export function AccountLinkPage({ kind, token, onDone }: { kind: 'invite' | 'res
         <h2 className="login-title">{kind === 'invite' ? 'Create your account' : 'Choose a new password'}</h2>
         <p className="muted small">
           {kind === 'invite'
-            ? `Invite code ${token.length === 8 ? `${token.slice(0, 4)}-${token.slice(4)}` : 'accepted'}. Your full dashboard is private to you. Members who share, the admin included, see a small daily tile on the Family board; you can turn that off in Settings.`
+            ? `Invite code ${token.length === 8 ? `${token.slice(0, 4)}-${token.slice(4)}` : 'accepted'}. Your full dashboard is private to you. Members who share, the admin included, see your daily tile and your last 30 days of sleep, recovery or HRV, steps, resting heart rate and training load on the Family board; you can turn that off in Settings.`
             : 'Setting a new password signs you out everywhere else.'}
         </p>
       </div>

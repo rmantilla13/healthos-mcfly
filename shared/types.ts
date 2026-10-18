@@ -441,11 +441,24 @@ export type FamilyMember = {
     | { kind: 'recovery'; value: number; date: string; usual: number | null }
     | { kind: 'hrv'; metric: 'hrv_rmssd' | 'hrv_sdnn'; value: number; date: string; usual: number | null }
     | null;
-  /** Against their usual; the value itself isn't shared. */
-  restingHr: { status: RangeStatus; date: string } | null;
+  /** Against their usual (from the same device); present once there's a week of history to compare with. */
+  restingHr: { status: RangeStatus; date: string; value: number; usual: number | null } | null;
   /** Today's steps. asOfHour and usualByNow only when the phone or Watch counted them hour by hour. */
   steps: { value: number; source: 'apple' | 'whoop'; asOfHour: number | null; usualByNow: number | null } | null;
   cyclePhase?: FamilyCyclePhase;
+  /** The last 30 days, oldest first, for the board's small charts and the person's page. */
+  history: FamilyHistory;
+};
+
+/** Each metric as the person's own dashboard shows it. Nights the phone logged as time in bed are left out when
+ * a watch or WHOOP measured the others (phone-only people get their time in bed, marked as such). */
+export type FamilyHistory = {
+  sleep: { inBed: boolean; points: Point[] };
+  readiness: { kind: 'recovery' | 'hrv_rmssd' | 'hrv_sdnn'; points: Point[] } | null;
+  steps: Point[];
+  restingHr: Point[];
+  /** WHOOP's day strain (0–21), else Apple's active energy in kcal. */
+  load: { kind: 'strain' | 'energy'; points: Point[] } | null;
 };
 
 export type FamilyBoard = { sharing: false } | { sharing: true; today: string; members: FamilyMember[] };

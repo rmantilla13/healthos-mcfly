@@ -82,6 +82,11 @@ test('setup: an admin, a WHOOP wearer and an Apple Watch wearer, each with 30 da
     { date: today, metric: 'sleep_in_bed', source: 'whoop', value: 6.2 },
     { date: today, metric: 'steps', source: 'whoop', value: 9000 },
     { date: today, metric: 'weight', source: 'apple', value: 61.5 },
+    // Never on the board: temperature (it follows the cycle), SpO2, breathing.
+    { date: today, metric: 'skin_temp', source: 'whoop', value: 33.417 },
+    { date: back(1), metric: 'wrist_temp', source: 'apple', value: 35.913 },
+    { date: today, metric: 'spo2', source: 'whoop', value: 96.271 },
+    { date: today, metric: 'resp_rate', source: 'whoop', value: 15.383 },
   ]);
   await db.query("INSERT INTO tokens (user_id, provider, access_token, refresh_token, expires_at, scope) VALUES ($1, 'whoop', 'a', 'r', $2, '')", [ids.ana, 9e15]);
   await db.query("INSERT INTO profile_assets (user_id, name, mime, data, updated_at) VALUES ($1, 'avatar.png', 'image/png', $2, 1234), ($1, 'cutout.png', 'image/png', $2, 1234)", [
@@ -134,7 +139,7 @@ test("a tile: each person against their own usual, with only what's listed", asy
   assert.equal(a.status, 'check');
   assert.deepEqual(a.reasons, ['recovery', 'resting_hr'], 'the first two of three');
   assert.deepEqual(a.readiness, { kind: 'recovery', value: 30, date: today, usual: 65 });
-  assert.deepEqual(a.restingHr, { status: 'high', date: today });
+  assert.deepEqual(a.restingHr, { status: 'high', date: today, value: 62, usual: 53 });
   assert.deepEqual(a.sleep, { hours: 5.6, date: today, usual: 7.5, inBed: false });
   assert.deepEqual(a.steps, { value: 9000, source: 'whoop', asOfHour: null, usualByNow: null });
   assert.deepEqual(a.devices, ['whoop']);
@@ -152,7 +157,7 @@ test("a tile: each person against their own usual, with only what's listed", asy
   assert.deepEqual([o.status, o.quietSince, o.sleep, o.steps], ['quiet', null, null, null]);
 
   // Nothing beyond the listed fields: no email, no weight, no history.
-  const allowed = ['id', 'name', 'isYou', 'demo', 'today', 'avatar', 'devices', 'latestDataDate', 'quietSince', 'status', 'reasons', 'sleep', 'readiness', 'restingHr', 'steps', 'cyclePhase'];
+  const allowed = ['id', 'name', 'isYou', 'demo', 'today', 'avatar', 'devices', 'latestDataDate', 'quietSince', 'status', 'reasons', 'sleep', 'readiness', 'restingHr', 'steps', 'cyclePhase', 'history'];
   for (const m of b.members) for (const k of Object.keys(m)) assert.ok(allowed.includes(k), `unexpected field ${k}`);
   const text = JSON.stringify(b);
   assert.ok(!text.includes('@example.com') && !text.includes('61.5'), 'no email or weight');
@@ -246,6 +251,10 @@ test('each reading is judged against its own kind: one device, nights a watch me
   assert.deepEqual([member(b, kai).restingHr?.status, member(b, kai).status], ['normal', 'good']);
   assert.deepEqual([member(b, noa).status, member(b, noa).quietSince], ['learning', null]);
   assert.deepEqual([member(b, ivy).sleep?.usual, member(b, ivy).status, member(b, ivy).reasons], [7, 'good', []]);
+  // Her chart keeps only the nights the watch measured.
+  assert.equal(member(b, ivy).history.sleep.inBed, false);
+  assert.ok(member(b, ivy).history.sleep.points.every((p) => p.value < 8), 'no 9-hour phone nights');
+  assert.equal(member(b, ivy).history.sleep.points.length, 16, '15 watch nights in the window, and last night');
   for (const id of [kai, noa, ivy]) assert.equal((await owner.call('DELETE', `/api/admin/users/${id}`)).status, 200);
 });
 
@@ -266,7 +275,78 @@ test('a stale tile carries no reasons, whatever its old readings said', async ()
   assert.equal((await owner.call('DELETE', `/api/admin/users/${sam}`)).status, 200);
 });
 
-test('the one-time notice is remembered', async () => {
+test("each tile carries 30 days of the metrics it shows, and nothing else", async () => {
+  const b = await board(owner);
+  const a = member(b, ids.ana);
+  assert.equal(a.history.sleep.points.length, 30, 'the last 30 nights, today included');
+  assert.equal(a.history.sleep.points.at(-1)?.date, today);
+  assert.equal(a.history.sleep.points[0].date, back(29));
+  assert.equal(a.history.sleep.inBed, false);
+  assert.deepEqual(a.history.readiness?.kind, 'recovery');
+  assert.equal(a.history.readiness?.points.at(-1)?.value, 30);
+  assert.deepEqual(a.history.steps, [{ date: today, value: 9000 }]);
+  assert.equal(a.history.restingHr.length, 30);
+  assert.equal(a.history.load, null, 'no strain or active energy recorded');
+  const l = member(b, ids.leo);
+  assert.equal(l.history.readiness?.kind, 'hrv_sdnn');
+  assert.equal(l.history.steps.length, 30);
+  for (const m of b.members as FamilyMember[]) assert.deepEqual(Object.keys(m.history).sort(), ['load', 'readiness', 'restingHr', 'sleep', 'steps']);
+  // Recorded for Ana, and on no tile or history: weight, temperature, SpO2, breathing.
+  const text = JSON.stringify(b);
+  for (const v of ['61.5', '33.417', '35.913', '96.271', '15.383', '33.42', '96.27']) assert.ok(!text.includes(v), `${v} leaked`);
+});
+
+test('history picks: the device used now, phone nights marked, nothing older than 30 days', async () => {
+  const people: Record<string, string> = {};
+  for (const n of ['mia', 'bo', 'pat', 'kim']) {
+    people[n] = await join(new Client(), `${n}@example.com`, n);
+    await setUserSetting(db, people[n], 'timezone', 'UTC');
+  }
+  const days = (n: number, from = 0) => Array.from({ length: n }, (_, i) => back(i + from));
+  // Mia put her WHOOP away four weeks ago and wears an Apple Watch now.
+  await upsertDaily(db, people.mia, [
+    ...days(4, 26).map((date) => ({ date, metric: 'strain', source: 'whoop', value: 14.2 })),
+    ...days(4, 26).map((date) => ({ date, metric: 'hrv_rmssd', source: 'whoop', value: 80 })),
+    ...days(30).map((date) => ({ date, metric: 'active_energy', source: 'apple', value: 420.4 })),
+    ...days(25, 4).map((date) => ({ date, metric: 'hrv_sdnn', source: 'apple', value: 40 })),
+    ...days(25, 10).map((date) => ({ date, metric: 'resting_hr', source: 'whoop', value: 50 })),
+    ...days(5, 4).map((date) => ({ date, metric: 'resting_hr', source: 'apple', value: 63 })),
+  ]);
+  // Bo has worn WHOOP for 40 days: the charts start 29 days back.
+  await upsertDaily(db, people.bo, days(40).map((date, i) => ({ date, metric: 'strain', source: 'whoop', value: 10 + (i % 3) })));
+  // Pat has only an iPhone: time in bed every night.
+  await upsertDaily(db, people.pat, days(30).flatMap((date) => [{ date, metric: 'sleep_hours', source: 'apple', value: 8 }, { date, metric: 'sleep_in_bed', source: 'apple', value: 8 }]));
+  // Pat's partner slept with a Watch until three weeks ago; since then only the phone logs nights.
+  people.zoe = await join(new Client(), 'zoe@example.com', 'zoe');
+  await setUserSetting(db, people.zoe, 'timezone', 'UTC');
+  await upsertDaily(db, people.zoe, [
+    ...days(9, 21).flatMap((date) => [{ date, metric: 'sleep_hours', source: 'apple', value: 7 }, { date, metric: 'sleep_in_bed', source: 'apple', value: 7.6 }]),
+    ...days(21).flatMap((date) => [{ date, metric: 'sleep_hours', source: 'apple', value: 8.5 }, { date, metric: 'sleep_in_bed', source: 'apple', value: 8.5 }]),
+  ]);
+  // Kim has a Watch but no sleep at all.
+  await upsertDaily(db, people.kim, days(10).map((date) => ({ date, metric: 'resting_hr', source: 'apple', value: 58 })));
+
+  const b = await board(owner);
+  const mia = member(b, people.mia).history;
+  assert.equal(mia.load?.kind, 'energy', 'strain from four weeks ago does not hide the Watch');
+  assert.equal(mia.load?.points.length, 30);
+  assert.equal(mia.readiness?.kind, 'hrv_sdnn', 'the HRV measured most recently');
+  assert.deepEqual(new Set(mia.restingHr.map((p) => p.value)), new Set([63]), 'one device: the one read most recently');
+  const bo = member(b, people.bo).history;
+  assert.equal(bo.load?.points.length, 30);
+  assert.equal(bo.load?.points[0].date, back(29));
+  assert.deepEqual(member(b, people.pat).history.sleep.inBed, true);
+  assert.equal(member(b, people.pat).history.sleep.points.length, 30);
+  assert.deepEqual(member(b, people.kim).history.sleep, { inBed: false, points: [] }, 'no nights is not time in bed');
+  const zoe = member(b, people.zoe).history.sleep;
+  assert.equal(zoe.inBed, true, 'old watch nights give way to the recent phone nights');
+  assert.equal(zoe.points.length, 21);
+  assert.equal(zoe.points.at(-1)?.date, today);
+  for (const id of Object.values(people)) assert.equal((await owner.call('DELETE', `/api/admin/users/${id}`)).status, 200);
+});
+
+test('the one-time notice is remembered, and shown again for the bigger board', async () => {
+  await setUserSetting(db, ids.ana, 'family_notice_seen', 'on'); // dismissed before the board showed 30 days
   assert.equal((await ana.get('/api/status')).json.settings.familyNoticeSeen, false);
   assert.equal((await ana.call('PUT', '/api/settings', { familyNoticeSeen: true })).json.settings.familyNoticeSeen, true);
 });

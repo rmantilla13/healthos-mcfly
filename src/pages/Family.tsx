@@ -1,5 +1,7 @@
 import { type ReactNode, useEffect, useState } from 'react';
-import type { FamilyBoard, FamilyCyclePhase, FamilyMember, FamilyReason, FamilyStatus, Status } from '../../shared/types.ts';
+import type { FamilyBoard, FamilyCyclePhase, FamilyMember, FamilyReason, FamilyStatus, Point, Status } from '../../shared/types.ts';
+import { BarChart, ChartCard, TrendChart } from '../charts/Charts.tsx';
+import { MiniBars, MiniLine } from '../charts/Mini.tsx';
 import { hourLabel } from '../charts/day.ts';
 import { Icon, type IconName } from '../components/Icon.tsx';
 import { compact, daysBetween, fmt, fmtDate, hoursMinutes, href, notifyDataChanged, sendJson, useApi } from '../lib.ts';
@@ -8,13 +10,21 @@ import { compact, daysBetween, fmt, fmtDate, hoursMinutes, href, notifyDataChang
 const REFRESH_MS = 5 * 60_000;
 
 /** Everyone who shares, at a glance: each against their own usual, never against each other. */
-export function Family({ isAdmin, refreshStatus }: { isAdmin: boolean; refreshStatus: () => void }) {
+export function Family({ isAdmin, refreshStatus, params }: { isAdmin: boolean; refreshStatus: () => void; params: URLSearchParams }) {
   const { data, error, reload } = useApi<FamilyBoard>('/family');
   useFamilyRefresh(reload);
+  const person = params.get('member');
+  // A person's page (or the board again) starts at its top, not where the last one was scrolled to.
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [person]);
 
   if (error && !data) return <div className="page-message">Couldn't load the family board: {error.message}</div>;
   if (!data) return <div className="page-message">Loading…</div>;
   if (!data.sharing) return <SharingOff onOn={() => (reload(), refreshStatus())} />;
+  // One person, bigger: #/family?member=<id>. Someone who stopped sharing is simply not found.
+  const open = person ? data.members.find((m) => m.id === person) : undefined;
+  if (person) return open ? <MemberPage m={open} boardToday={data.today} /> : <NotSharing />;
 
   const others = data.members.filter((m) => !m.isYou);
   return (
@@ -100,19 +110,59 @@ function Tile({ m, boardToday }: { m: FamilyMember; boardToday: string }) {
       </div>
       {m.reasons.length > 0 && <p className="family-reasons">{m.reasons.map((r) => REASON[r]).join(' · ')}</p>}
       <div className="family-slots">
-        <Slot icon="sleep" label="Sleep" value={m.sleep ? hoursMinutes(m.sleep.hours) : null} note={sleepNote(m)} />
-        <Slot icon="heart" label={m.readiness ? (m.readiness.kind === 'hrv' ? 'HRV' : 'Recovery') : m.devices.includes('whoop') ? 'Recovery' : 'HRV'} value={readinessValue(m)} note={readinessNote(m)} />
-        <Slot icon="steps" label="Steps" value={m.steps ? fmt(m.steps.value) : null} note={stepsNote(m)} />
+        <Slot icon="sleep" label="Sleep" value={m.sleep ? hoursMinutes(m.sleep.hours) : null} note={sleepNote(m)}>
+          <Spark kind="bars" points={week(m.history.sleep.points, m.today)} format={hoursMinutes} label={`${m.name}'s sleep, last 7 nights`} />
+        </Slot>
+        <Slot icon="heart" label={readinessLabel(m)} value={readinessValue(m)} note={readinessNote(m)}>
+          <Spark kind="line" points={week(m.history.readiness?.points ?? [], m.today)} format={(v) => readinessFormat(m, v)} label={`${m.name}'s ${readinessLabel(m)}, last 7 days`} />
+        </Slot>
+        <Slot icon="steps" label="Steps" value={m.steps ? fmt(m.steps.value) : null} note={stepsNote(m)}>
+          <Spark kind="bars" points={week(m.history.steps, m.today)} format={(v) => fmt(v)} label={`${m.name}'s steps, last 7 days`} />
+        </Slot>
+        <Slot icon="vitals" label="Resting HR" value={m.restingHr ? `${m.restingHr.value}` : lastValue(m.history.restingHr)} note={restingNote(m)}>
+          <Spark kind="line" points={week(m.history.restingHr, m.today)} format={(v) => `${fmt(v)} bpm`} label={`${m.name}'s resting heart rate, last 7 days`} />
+        </Slot>
       </div>
     </>
   );
-  // Your own tile opens your dashboard.
-  return m.isYou ? (
-    <a className={`card family-tile ${quiet ? 'is-quiet' : ''}`} href={href('home')}>
+  // Every tile opens that person's page.
+  return (
+    <a className={`card family-tile ${quiet ? 'is-quiet' : ''}`} href={memberHref(m.id)} title={`${m.name}: the last 30 days`}>
       {body}
     </a>
-  ) : (
-    <section className={`card family-tile ${quiet ? 'is-quiet' : ''}`}>{body}</section>
+  );
+}
+
+const memberHref = (id: string) => `${href('family')}?member=${encodeURIComponent(id)}`;
+/** The last 7 days of a 30-day history. */
+const week = (points: Point[], today: string) => points.filter((p) => daysBetween(p.date, today) < 7);
+const lastValue = (points: Point[]) => (points.length ? `${fmt(points.at(-1)!.value)}` : null);
+const readinessLabel = (m: FamilyMember) =>
+  m.readiness ? (m.readiness.kind === 'hrv' ? 'HRV' : 'Recovery') : m.history.readiness ? (m.history.readiness.kind === 'recovery' ? 'Recovery' : 'HRV') : m.devices.includes('whoop') ? 'Recovery' : 'HRV';
+const readinessFormat = (m: FamilyMember, v: number) => (readinessLabel(m) === 'Recovery' ? `${fmt(v)}%` : `${fmt(v)} ms`);
+
+function restingNote(m: FamilyMember) {
+  const r = m.restingHr;
+  if (!r) {
+    // A reading without a verdict: either too new to have a usual, or not recent (then say when it was).
+    const last = m.history.restingHr.at(-1);
+    if (!last) return 'None lately';
+    return daysBetween(last.date, m.today) <= 2 ? 'bpm · no usual yet' : `bpm · ${since(last.date, m.today)}`;
+  }
+  if (r.usual === null) return 'bpm';
+  return `bpm · ${r.status === 'normal' ? 'about usual' : `${r.status === 'high' ? 'above' : 'below'} usual ${r.usual}`}`;
+}
+
+/**
+ * A small 7-day chart under a tile's number; nothing when there are fewer than two days. Just a picture: the
+ * tile is one link to the person's page, where the full charts have values on hover and a table.
+ */
+function Spark({ kind, points, format, label }: { kind: 'bars' | 'line'; points: Point[]; format: (v: number) => string; label: string }) {
+  if (points.length < 2) return null;
+  return (
+    <div className="family-spark" inert aria-hidden="true">
+      {kind === 'bars' ? <MiniBars points={points} format={format} height={34} label={label} /> : <MiniLine points={points} format={format} height={34} label={label} />}
+    </div>
   );
 }
 
@@ -143,7 +193,7 @@ function StatusPill({ m }: { m: FamilyMember }) {
   );
 }
 
-function Slot({ icon, label, value, note }: { icon: IconName; label: string; value: string | null; note: ReactNode }) {
+function Slot({ icon, label, value, note, children }: { icon: IconName; label: string; value: string | null; note: ReactNode; children?: ReactNode }) {
   return (
     <div className="family-slot">
       <span className="family-slot-label">
@@ -151,6 +201,125 @@ function Slot({ icon, label, value, note }: { icon: IconName; label: string; val
       </span>
       <b>{value ?? '—'}</b>
       <span className="muted small">{note}</span>
+      {children}
+    </div>
+  );
+}
+
+// ---------- one person, bigger ----------
+
+/** A person's last 30 days: each chart against their own usual (the dashed median line). */
+function MemberPage({ m, boardToday }: { m: FamilyMember; boardToday: string }) {
+  const h = m.history;
+  const rows = (points: Point[], format: (v: number) => string) => points.map((p) => [fmtDate(p.date, { weekday: 'short', month: 'short', day: 'numeric' }), format(p.value)]);
+  const readiness = readinessLabel(m);
+  return (
+    <div className="page family family-person">
+      <a className="family-back" href={href('family')}>
+        <Icon name="chevron-left" size={16} /> Family
+      </a>
+      <header className="card family-person-head">
+        <Avatar m={m} />
+        <div className="family-who">
+          <div className="family-name">
+            <h1>{m.isYou ? `${m.name} (you)` : m.name}</h1>
+            {m.cyclePhase && <span className="chip tone-pink">{PHASE[m.cyclePhase]}</span>}
+            {m.demo && <span className="pill pill-demo">Demo data</span>}
+          </div>
+          <p className="muted small">
+            {[m.devices.map((d) => DEVICE[d]).join(' + '), m.today !== boardToday ? `their ${fmtDate(m.today, { weekday: 'short' })}` : '', 'last 30 days']
+              .filter(Boolean)
+              .join(' · ')}
+          </p>
+          {m.reasons.length > 0 && <p className="family-reasons">{m.reasons.map((r) => REASON[r]).join(' · ')}</p>}
+        </div>
+        <StatusPill m={m} />
+      </header>
+      <div className="grid-2">
+        <ChartCard
+          title={h.sleep.inBed ? 'Time in bed' : 'Sleep'}
+          value={m.sleep ? hoursMinutes(m.sleep.hours) : '—'}
+          note={
+            m.sleep?.inBed && !h.sleep.inBed
+              ? `${m.sleep.date === m.today ? 'last night' : 'the night before'} in bed (phone), not in the chart`
+              : m.sleep?.usual != null && !m.sleep.inBed
+                ? `usual ${hoursMinutes(m.sleep.usual)}`
+                : h.sleep.inBed
+                  ? 'from the iPhone'
+                  : undefined
+          }
+          table={{ columns: ['Night', 'Hours'], rows: rows(h.sleep.points, hoursMinutes) }}
+        >
+          <BarChart points={h.sleep.points} format={hoursMinutes} tickFormat={(v) => `${fmt(v)}h`} label={`${m.name}'s sleep per night`} />
+        </ChartCard>
+        <ChartCard
+          title={readiness === 'Recovery' ? 'WHOOP recovery' : 'Heart rate variability'}
+          value={readinessValue(m) ?? '—'}
+          note={m.readiness?.usual != null ? `usual ${readinessFormat(m, m.readiness.usual)}` : undefined}
+          table={{ columns: ['Day', readiness], rows: rows(h.readiness?.points ?? [], (v) => readinessFormat(m, v)) }}
+        >
+          <TrendChart
+            points={h.readiness?.points ?? []}
+            format={(v) => readinessFormat(m, v)}
+            tickFormat={(v) => fmt(v, Number.isInteger(v) ? 0 : 1)}
+            color="var(--series-3)"
+            refLines={m.readiness?.usual != null ? [{ value: m.readiness.usual, label: 'usual' }] : []}
+            median={false}
+            label={`${m.name}'s ${readiness} per day`}
+          />
+        </ChartCard>
+        <ChartCard
+          title="Steps"
+          value={m.steps ? fmt(m.steps.value) : '—'}
+          note={m.steps ? 'today so far' : undefined}
+          table={{ columns: ['Day', 'Steps'], rows: rows(h.steps, (v) => fmt(v)) }}
+        >
+          <BarChart points={h.steps} format={(v) => `${fmt(v)} steps`} tickFormat={compact} label={`${m.name}'s steps per day`} />
+        </ChartCard>
+        <ChartCard
+          title="Resting heart rate"
+          value={m.restingHr ? `${m.restingHr.value} bpm` : lastValue(h.restingHr) ? `${lastValue(h.restingHr)} bpm` : '—'}
+          note={m.restingHr?.usual != null ? `usual ${m.restingHr.usual} bpm` : undefined}
+          table={{ columns: ['Day', 'bpm'], rows: rows(h.restingHr, (v) => fmt(v)) }}
+        >
+          <TrendChart
+            points={h.restingHr}
+            format={(v) => `${fmt(v)} bpm`}
+            tickFormat={(v) => fmt(v, Number.isInteger(v) ? 0 : 1)}
+            color="var(--series-2)"
+            refLines={m.restingHr?.usual != null ? [{ value: m.restingHr.usual, label: 'usual' }] : []}
+            median={false}
+            label={`${m.name}'s resting heart rate per day`}
+          />
+        </ChartCard>
+        {h.load && (
+          <ChartCard
+            title={h.load.kind === 'strain' ? 'Day strain' : 'Active energy'}
+            value={h.load.points.length ? (h.load.kind === 'strain' ? fmt(h.load.points.at(-1)!.value, 1) : `${fmt(h.load.points.at(-1)!.value)} kcal`) : '—'}
+            note={h.load.kind === 'strain' ? 'WHOOP, 0–21' : 'Apple Watch or iPhone'}
+            table={{ columns: ['Day', h.load.kind === 'strain' ? 'Strain' : 'kcal'], rows: rows(h.load.points, (v) => (h.load!.kind === 'strain' ? fmt(v, 1) : fmt(v))) }}
+          >
+            <BarChart points={h.load.points} format={(v) => (h.load!.kind === 'strain' ? fmt(v, 1) : `${fmt(v)} kcal`)} tickFormat={compact} label={`${m.name}'s training load per day`} />
+          </ChartCard>
+        )}
+      </div>
+      <p className="muted small family-foot">
+        Dashed lines are the median of these 30 days; "usual" lines are {m.isYou ? 'your' : 'their'} average of the 30 days before the latest reading.{' '}
+        {m.isYou ? <a href={href('home')}>Open your full dashboard</a> : 'Only what they share is here.'}
+      </p>
+    </div>
+  );
+}
+
+function NotSharing() {
+  return (
+    <div className="page family">
+      <a className="family-back" href={href('family')}>
+        <Icon name="chevron-left" size={16} /> Family
+      </a>
+      <section className="card family-empty">
+        <p>This person isn't on the Family board right now.</p>
+      </section>
     </div>
   );
 }
@@ -247,13 +416,13 @@ export function FamilySettings({ status, refresh }: { status: Status; refresh: (
     <section className="card settings">
       <div>
         <h2>Family</h2>
-        <p className="muted small">Your Family board tile: last night's sleep, recovery or HRV, today's steps, and how they compare with your own usual.</p>
+        <p className="muted small">Your Family board tile: last night's sleep, recovery or HRV, today's steps, resting heart rate and training load, the last 30 days of each, and how they compare with your own usual.</p>
       </div>
       <div className="settings-row cycle-switch-row">
         <div>
           <span>Share with family</span>
           <p className="muted small">
-            Members who share see your daily tile. Turn it off and you see no one, and no one sees you.
+            Members who share see your tile and its last 30 days. Turn it off and you see no one, and no one sees you.
             {on && others.length > 0 && ` Sharing with: ${others.join(', ')}.`}
           </p>
         </div>

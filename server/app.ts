@@ -210,7 +210,7 @@ export function createApp({ db, hosted, ingestToken, mcflyClient }: AppOptions) 
     // The Family board: sharing is on unless turned off. A shared cycle phase needs both tracking and sharing,
     // and turning either off withdraws it, so turning them back on doesn't share it again by surprise.
     if (typeof body.familySharing === 'boolean') await setUserSetting(db, userId, 'family_sharing', body.familySharing ? null : 'off');
-    if (body.familyNoticeSeen === true) await setUserSetting(db, userId, 'family_notice_seen', 'on');
+    if (body.familyNoticeSeen === true) await setUserSetting(db, userId, 'family_notice_seen', '2');
     if (body.cycleTracking === false || body.familySharing === false) await setUserSetting(db, userId, 'family_cycle_phase', null);
     else if (typeof body.shareCyclePhase === 'boolean') {
       const now = await readSettings({ db, userId }, hosted);
