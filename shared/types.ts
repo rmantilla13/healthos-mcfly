@@ -115,6 +115,8 @@ export type Settings = {
   nutritionNumbers: NutritionNumbers | null;
   /** The app whose totals to use on a day two apps logged food. Null: whichever logged the most that day. */
   nutritionApp: string | null;
+  /** Targets the person set for themselves, if any. healthOS never suggests one. */
+  nutritionTargets: NutritionTargets;
 };
 
 export type PhotoMeta = {
@@ -586,6 +588,9 @@ export type Nutrient = 'energy_kcal' | 'protein_g' | 'carbs_g' | 'fat_g' | 'fibe
 /** What a person chose to see: everything, everything but calories, or no amounts at all. */
 export type NutritionNumbers = 'all' | 'no_energy' | 'none';
 
+/** Personal daily targets, each set (or not) by the person: shown as a plain line, never scored. */
+export type NutritionTargets = { energy_kcal: number | null; protein_g: number | null; water_ml: number | null };
+
 /** One day's totals by app, as the iPhone app sends them. A day with no apps clears that day. */
 export type NutritionDayIn = { date: string; apps: { app: string; values: Partial<Record<Nutrient, number>> }[] };
 
@@ -611,4 +616,10 @@ export type NutritionData = {
   app: string | null;
   /** Days with something logged, oldest first. */
   days: NutritionDay[];
+  /** The person's own targets, as far as their setting shows them (no energy target in 'no_energy', none in 'none'). */
+  targets: Partial<Record<'energy_kcal' | 'protein_g' | 'water_ml', number>>;
+  /** Water (mL) and caffeine (mg) by day over the window, from any app, as the daily metrics already hold them. Empty in 'none'. */
+  hydration: { water: Point[]; caffeine: Point[] };
+  /** Food patterns over the last 180 days (caffeine and sleep, drinks and next-morning HRV), only when asked for. Empty in 'none'. */
+  insights: Pattern[];
 };

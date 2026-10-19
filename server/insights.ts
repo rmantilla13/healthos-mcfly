@@ -164,7 +164,7 @@ function judge(rule: Rule): (Pattern & { strength: number }) | null {
  * Every pattern that holds over `start`..`end`, strongest first and not yet capped. Day d's condition is
  * compared with an outcome on d (sleep and resting heart rate the same morning) or d+1 (the night or morning after).
  */
-export function findPatterns(ctx: Ctx, mindful: Set<string>, start: string, end: string): Pattern[] {
+export function findPatterns(ctx: Ctx, mindful: Set<string>, start: string, end: string, food?: { drinks: Map<string, number> }): Pattern[] {
   // Resting heart rate comes from one device: WHOOP's sleeping measure runs ~7 bpm under the Watch's daytime
   // one, so mixing them would read a change of device as a change of heart rate. The device with the most
   // readings in the window is used.
@@ -282,6 +282,26 @@ export function findPatterns(ctx: Ctx, mindful: Set<string>, start: string, end:
       detail: (y, n) => `Based on ${y} days with 30+ minutes of daylight and ${n} under 15`,
     },
     {
+      // Only when the Nutrition page asks (foodPatterns): drinks come from food logs, which nothing else may read.
+      // A day with food logged and no drinks counts as none; a day with nothing logged sits out.
+      id: 'alcohol_hrv',
+      split: split(
+        (d) => {
+          const x = food?.drinks.get(d);
+          return x === undefined ? null : x >= 2 ? true : x === 0 ? false : null;
+        },
+        hrv,
+        1,
+      ),
+      min: 4,
+      effect: percent,
+      unit: '%',
+      page: 'vitals',
+      icon: trend,
+      text: (n, up) => `After days with 2 or more drinks, your next-morning HRV tends to be ${n}% ${above(up)} what it is after days with none.`,
+      detail: (y, n) => `Based on ${y} days with 2+ drinks and ${n} days of food logged with none`,
+    },
+    {
       id: 'mindful_hrv',
       split: split((d) => mindful.has(d), hrv, 1),
       min: 4,
@@ -299,6 +319,22 @@ export function findPatterns(ctx: Ctx, mindful: Set<string>, start: string, end:
     .filter((p) => p !== null)
     .sort((a, b) => b.strength - a.strength)
     .map(({ strength: _s, ...p }) => p);
+}
+
+/** The patterns the Nutrition page shows: caffeine and sleep, and, from the food log, drinks and next-morning HRV. */
+const FOOD_PATTERNS = new Set(['caffeine_sleep', 'alcohol_hrv']);
+
+/**
+ * Patterns for the Nutrition page only, over the same 180 days as the rest. `drinks` gives each day with food
+ * logged its drinks (0 when none were logged); nothing here reaches GET /api/patterns, Home or the digest.
+ */
+export async function foodPatterns(scope: Scope, hosted: boolean, drinks: (start: string, end: string) => Promise<Map<string, number>>): Promise<Pattern[]> {
+  const { settings, demo, today } = await requestContext(scope, hosted);
+  const end = (await latestDataDate(scope, demo, today)) ?? today;
+  const start = addDays(end, -(WINDOW - 1));
+  const [daily, food] = await Promise.all([loadDaily(scope, demo, start, end, PATTERN_METRICS), drinks(start, end)]);
+  const ctx: Ctx = { settings, demo, today, daily, workouts: [], sleepStarts: [] };
+  return findPatterns(ctx, new Set(), start, end, { drinks: food }).filter((p) => FOOD_PATTERNS.has(p.id));
 }
 
 /** What tends to go together over the 180 days to the latest data date: at most six, strongest first. */

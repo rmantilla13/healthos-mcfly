@@ -284,6 +284,52 @@ test('the chosen app wins on days two apps logged', async () => {
   await owner.put('/api/settings', { nutritionApp: null });
 });
 
+test("personal targets are the person's own, blank by default, and shown only as far as their setting allows", async () => {
+  const settings = async () => (await owner.get('/api/status')).json.settings;
+  assert.deepEqual((await settings()).nutritionTargets, { energy_kcal: null, protein_g: null, water_ml: null });
+  assert.deepEqual((await owner.get('/api/nutrition')).json.targets, {}, 'none unless set');
+  await owner.put('/api/settings', { nutritionTargets: { energy_kcal: 2200, protein_g: 120, water_ml: 2000 } });
+  // One left out stays, null clears one, and a value out of range is ignored.
+  await owner.put('/api/settings', { nutritionTargets: { protein_g: 5000, water_ml: null } });
+  assert.deepEqual((await settings()).nutritionTargets, { energy_kcal: 2200, protein_g: 120, water_ml: null });
+  await owner.put('/api/settings', { nutritionTargets: { water_ml: 2000 } });
+  assert.deepEqual((await owner.get('/api/nutrition')).json.targets, { energy_kcal: 2200, protein_g: 120, water_ml: 2000 });
+  await owner.put('/api/settings', { nutritionNumbers: 'no_energy' });
+  assert.deepEqual((await owner.get('/api/nutrition')).json.targets, { protein_g: 120, water_ml: 2000 });
+  await owner.put('/api/settings', { nutritionNumbers: 'none' });
+  assert.deepEqual((await owner.get('/api/nutrition')).json.targets, {});
+  await owner.put('/api/settings', { nutritionNumbers: 'all' });
+});
+
+test('water and caffeine come from the daily metrics as before, and "no amounts" hides them too', async () => {
+  await ingest({ daily: [{ date: today, metric: 'water_ml', value: 1750 }, { date: today, metric: 'caffeine_mg', value: 180 }] });
+  const view: NutritionData = (await owner.get('/api/nutrition?days=7')).json;
+  assert.deepEqual(view.hydration.water.at(-1), { date: today, value: 1750 });
+  assert.deepEqual(view.hydration.caffeine.at(-1), { date: today, value: 180 });
+  await owner.put('/api/settings', { nutritionNumbers: 'none' });
+  const none: NutritionData = (await owner.get('/api/nutrition?days=7&insights=1')).json;
+  assert.deepEqual([none.hydration, none.insights], [{ water: [], caffeine: [] }, []]);
+  assert.ok(!JSON.stringify(none).includes('1750'));
+  await owner.put('/api/settings', { nutritionNumbers: 'all' });
+});
+
+test('drinks and next-morning HRV is a food insight on the Nutrition page, and nowhere else', async () => {
+  // Five weeks before the test week: food logged every day, 3 drinks every other day, and a lower HRV the next morning.
+  const days = Array.from({ length: 38 }, (_, i) => ago(44 - i));
+  await ingest({
+    nutrition: days.map((date, i) => ({ date, apps: [{ app: 'MyFitnessPal', values: { energy_kcal: 2000, ...(i % 2 ? {} : { alcohol_drinks: 3 }) } }] })),
+    daily: days.map((date, i) => ({ date: addDays(date, 1), metric: 'hrv_sdnn', value: (i % 2 ? 55 : 40) + (i % 5) })),
+  });
+  const view: NutritionData = (await owner.get('/api/nutrition?days=14&insights=1')).json;
+  const drinks = view.insights.find((p) => p.id === 'alcohol_hrv');
+  assert.ok(drinks, 'found');
+  assert.match(drinks.text, /^After days with 2 or more drinks, your next-morning HRV tends to be \d+% below what it is after days with none\.$/);
+  assert.ok(view.insights.every((p) => p.id === 'caffeine_sleep' || p.id === 'alcohol_hrv'));
+  assert.deepEqual((await owner.get('/api/nutrition?days=14')).json.insights, [], 'only when asked for');
+  const general = (await owner.get('/api/patterns')).text;
+  for (const word of ['alcohol', 'drinks']) assert.ok(!general.includes(word), word);
+});
+
 test('"no calories" and "no amounts" hold everywhere the data goes', async () => {
   await owner.put('/api/settings', { nutritionNumbers: 'no_energy' });
   let text = (await owner.get('/api/nutrition')).text;

@@ -1,5 +1,5 @@
 import os from 'node:os';
-import type { Flag, Insight, Latest, Point, RangeStatus, Settings, Summary, TimelineEvent, Trends, Vital, WeekSummary, Workout } from '../shared/types.ts';
+import type { Flag, Insight, Latest, NutritionTargets, Point, RangeStatus, Settings, Summary, TimelineEvent, Trends, Vital, WeekSummary, Workout } from '../shared/types.ts';
 import { OWNER_ID, type Scope, getSettings, getUserSettings } from './db.ts';
 import { addDays, todayLocal } from './dates.ts';
 
@@ -44,7 +44,25 @@ export function settingsFrom(mine: Map<string, string>, platform: Map<string, st
     nutrition: mine.get('nutrition') === 'on',
     nutritionNumbers: NUMBERS.find((x) => x === mine.get('nutrition_numbers')) ?? null,
     nutritionApp: mine.get('nutrition_app') ?? null,
+    nutritionTargets: nutritionTargets(mine.get('nutrition_targets')),
   };
+}
+
+/** Each target's allowed range; anything else, or nothing, is no target. */
+export const TARGET_RANGE: Record<keyof NutritionTargets, [number, number]> = { energy_kcal: [500, 10_000], protein_g: [10, 500], water_ml: [250, 8_000] };
+
+export function nutritionTargets(raw: string | undefined): NutritionTargets {
+  let saved: Record<string, unknown> = {};
+  try {
+    saved = raw ? JSON.parse(raw) : {};
+  } catch {
+    // An unreadable value is no targets.
+  }
+  const one = (k: keyof NutritionTargets) => {
+    const v = saved[k];
+    return typeof v === 'number' && v >= TARGET_RANGE[k][0] && v <= TARGET_RANGE[k][1] ? v : null;
+  };
+  return { energy_kcal: one('energy_kcal'), protein_g: one('protein_g'), water_ml: one('water_ml') };
 }
 
 export const NUMBERS = ['all', 'no_energy', 'none'] as const;

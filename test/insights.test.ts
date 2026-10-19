@@ -168,7 +168,7 @@ test('a debt counts only nights in the last seven days, not the last seven night
 
 const START = '2026-01-01';
 const END = addDays(START, 179);
-const SETTINGS: Settings = { name: '', stepGoal: 10_000, units: 'metric', demo: 'off', timeZone: null, sex: null, cycleTracking: false, familySharing: true, shareCyclePhase: false, familyNoticeSeen: true, nutrition: false, nutritionNumbers: null, nutritionApp: null };
+const SETTINGS: Settings = { name: '', stepGoal: 10_000, units: 'metric', demo: 'off', timeZone: null, sex: null, cycleTracking: false, familySharing: true, shareCyclePhase: false, familyNoticeSeen: true, nutrition: false, nutritionNumbers: null, nutritionApp: null, nutritionTargets: { energy_kcal: null, protein_g: null, water_ml: null } };
 
 type Row = [metric: string, date: string, value: number, source?: string];
 function ctxOf(rows: Row[], workouts: Workout[] = []): Ctx {

@@ -7,7 +7,7 @@ import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { waitUntil } from '@vercel/functions';
 import express, { type NextFunction, type Request, type Response } from 'express';
-import type { ImportJob, Settings, Status } from '../shared/types.ts';
+import type { ImportJob, NutritionTargets, Settings, Status } from '../shared/types.ts';
 import { adminRouter } from './admin.ts';
 import { DAY_METRICS, dayView } from './day.ts';
 import { importAppleHealth } from './apple/import.ts';
@@ -20,7 +20,7 @@ import { DATA_DIR, type Db, type Scope, bumpDataVersion, deleteSource, getUserSe
 import { patterns, sleepTiming } from './insights.ts';
 import { type McflyClient, mcflyRouter } from './mcfly.ts';
 import { PHOTO_ASSETS, parsePhotoUpload, photoAsset, photoMeta, processPhoto, removePhoto, storePhotoAssets } from './photo.ts';
-import { NUMBERS, readSettings, requestContext, summary, trends, workouts } from './query.ts';
+import { NUMBERS, TARGET_RANGE, readSettings, requestContext, summary, trends, workouts } from './query.ts';
 import * as whoop from './whoop.ts';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -230,6 +230,17 @@ export function createApp({ db, hosted, ingestToken, mcflyClient }: AppOptions) 
       await setUserSetting(db, userId, 'nutrition_app', body.nutritionApp?.trim() || null);
     }
     if (typeof body.nutrition === 'boolean') await setUserSetting(db, userId, 'nutrition', body.nutrition ? 'on' : null);
+    // Personal targets: each one the person's own, any left out stays as it was, and null clears it.
+    if (body.nutritionTargets && typeof body.nutritionTargets === 'object') {
+      const targets = { ...(await readSettings({ db, userId }, hosted)).nutritionTargets };
+      for (const key of Object.keys(TARGET_RANGE) as (keyof NutritionTargets)[]) {
+        const v = (body.nutritionTargets as Record<string, unknown>)[key];
+        if (v === null) targets[key] = null;
+        else if (typeof v === 'number' && v >= TARGET_RANGE[key][0] && v <= TARGET_RANGE[key][1]) targets[key] = Math.round(v);
+      }
+      const set = Object.values(targets).some((v) => v !== null);
+      await setUserSetting(db, userId, 'nutrition_targets', set ? JSON.stringify(targets) : null);
+    }
     // Units, names and time zone change what every view shows, on every device.
     await bumpDataVersion(db, userId);
     res.json(await status(res));

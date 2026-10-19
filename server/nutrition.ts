@@ -12,7 +12,8 @@ import type { Nutrient, NutritionData, NutritionDay, NutritionDayIn, NutritionNu
 import { currentUser } from './auth.ts';
 import { addDays } from './dates.ts';
 import { type Db, type Queryable, type Scope, bumpDataVersion } from './db.ts';
-import { requestContext } from './query.ts';
+import { foodPatterns } from './insights.ts';
+import { requestContext, trends } from './query.ts';
 import { insertMany } from './store.ts';
 
 /** In the order they're shown. Daily totals: energy in kcal, masses in g except sodium (mg), alcohol in drinks. */
@@ -139,29 +140,62 @@ export function pickDays(rows: Pick<NutritionRow, 'date' | 'nutrient' | 'app' | 
     });
 }
 
-const empty = (today: string): NutritionData => ({ enabled: false, numbers: null, today, start: today, end: today, apps: [], app: null, days: [] });
+const empty = (today: string): NutritionData => ({
+  enabled: false,
+  numbers: null,
+  today,
+  start: today,
+  end: today,
+  apps: [],
+  app: null,
+  days: [],
+  targets: {},
+  hydration: { water: [], caffeine: [] },
+  insights: [],
+});
 
-/**
- * One person's nutrition over the last `days` days to `end` (default today), one app per day, filtered by their
- * number setting. Empty unless they have nutrition on and have chosen what to see.
- */
-export async function nutritionView(scope: Scope, hosted: boolean, opts: { days?: number; end?: string } = {}): Promise<NutritionData> {
-  const { today, settings } = await requestContext(scope, hosted);
-  const numbers = settings.nutritionNumbers;
-  if (!settings.nutrition || !numbers) return empty(today);
-  const end = opts.end && opts.end < today ? opts.end : today;
-  const start = addDays(end, -((opts.days ?? 30) - 1));
+async function pickedBetween(scope: Scope, preferred: string | null, start: string, end: string) {
   const rows = await scope.db.query<NutritionRow>(
     'SELECT date, nutrient, source, app, value FROM nutrition_daily WHERE user_id = $1 AND date BETWEEN $2 AND $3 ORDER BY date',
     [scope.userId, start, end],
   );
-  const picked = pickDays(
+  return pickDays(
     rows.filter((r) => isNutrient(r.nutrient)),
-    settings.nutritionApp,
+    preferred,
   );
+}
+
+/**
+ * One person's nutrition over the last `days` days to `end` (default today), one app per day, filtered by their
+ * number setting, with their own targets, water and caffeine, and (when asked) food patterns. Empty unless they
+ * have nutrition on and have chosen what to see.
+ */
+export async function nutritionView(scope: Scope, hosted: boolean, opts: { days?: number; end?: string; insights?: boolean } = {}): Promise<NutritionData> {
+  const { today, settings } = await requestContext(scope, hosted);
+  const numbers = settings.nutritionNumbers;
+  if (!settings.nutrition || !numbers) return empty(today);
+  const end = opts.end && opts.end < today ? opts.end : today;
+  const days = opts.days ?? 30;
+  const start = addDays(end, -(days - 1));
+  const amounts = numbers !== 'none';
+  const [picked, hydration, insights] = await Promise.all([
+    pickedBetween(scope, settings.nutritionApp, start, end),
+    amounts ? trends(scope, hosted, ['water_ml', 'caffeine_mg'], days, end) : null,
+    // The texts quote amounts ("200+ mg", "2 or more drinks"), so not in 'none'.
+    amounts && opts.insights
+      ? foodPatterns(scope, hosted, async (from, to) => new Map((await pickedBetween(scope, settings.nutritionApp, from, to)).map((d) => [d.date, d.values.alcohol_drinks ?? 0])))
+      : [],
+  ]);
+  const t = settings.nutritionTargets;
+  const targets: NutritionData['targets'] = {};
+  if (amounts) {
+    if (numbers === 'all' && t.energy_kcal !== null) targets.energy_kcal = t.energy_kcal;
+    if (t.protein_g !== null) targets.protein_g = t.protein_g;
+    if (t.water_ml !== null) targets.water_ml = t.water_ml;
+  }
   const daysByApp = new Map<string, number>();
   for (const d of picked) for (const a of [d.app, ...d.otherApps]) daysByApp.set(a, (daysByApp.get(a) ?? 0) + 1);
-  const days: NutritionDay[] = picked.map((d) => ({ ...d, values: shown(d.values, numbers) }));
+  const shownDays: NutritionDay[] = picked.map((d) => ({ ...d, values: shown(d.values, numbers) }));
   return {
     enabled: true,
     numbers,
@@ -170,7 +204,10 @@ export async function nutritionView(scope: Scope, hosted: boolean, opts: { days?
     end,
     apps: [...daysByApp].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([app]) => app),
     app: settings.nutritionApp,
-    days,
+    days: shownDays,
+    targets,
+    hydration: { water: hydration?.water_ml ?? [], caffeine: hydration?.caffeine_mg ?? [] },
+    insights,
   };
 }
 
@@ -182,7 +219,7 @@ export function nutritionRouter(db: Db, hosted: boolean) {
 
   router.get('/', async (req, res) => {
     const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 366);
-    res.json(await nutritionView(scopeOf(res), hosted, { days }));
+    res.json(await nutritionView(scopeOf(res), hosted, { days, insights: req.query.insights === '1' }));
   });
 
   /** Everything nutrition-related this person stored, from every source. Works whether nutrition is on or off. */
