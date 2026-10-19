@@ -3586,6 +3586,12 @@ nav.tabs {
     display: none;
   }
 }
+.settings-cards {
+  max-width: 560px;
+}
+.settings-cards .card-title-row {
+  margin-bottom: 4px;
+}
 .card-choices {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

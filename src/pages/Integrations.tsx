@@ -716,7 +716,7 @@ function CardSettings({ status, refresh }: { status: Status; refresh: () => void
     }
   }
   return (
-    <section className="card">
+    <section className="card settings-cards">
       <div className="card-title-row">
         <h2>Cards</h2>
         {hidden.length > 0 && (
