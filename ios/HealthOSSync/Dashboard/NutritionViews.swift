@@ -119,7 +119,7 @@ enum FoodMath {
 
 // MARK: - The section
 
-/// Nutrition in Trends: tabs, then the tab's cards. Overview reads the last 14 days; Macros and Hydration a range.
+/// The Nutrition tab while it's on: tabs, then the tab's cards. Overview reads the last 14 days; Macros and Hydration a range.
 struct NutritionTrends: View {
     @Environment(Dashboard.self) private var dashboard
     @AppStorage("nutritionTab") private var tab = NutritionTab.overview.rawValue

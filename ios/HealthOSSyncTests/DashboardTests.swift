@@ -1146,7 +1146,7 @@ final class CardHidingTests: XCTestCase {
         XCTAssertEqual(Cards.ids(in: .today), ["home.readiness", "home.spo2", "home.hrv", "home.sleep", "home.load", "home.activity", "home.timeline", "home.insights"])
         XCTAssertEqual(Cards.todayGrid.filter { Cards.card($0)?.place == .today }, Cards.todayGrid, "every grid card is a Today card")
         XCTAssertEqual(Cards.ids(in: .trends(.sleep)), ["sleep.score", "sleep.total", "sleep.stages"])
-        XCTAssertEqual(Cards.ids(in: .trends(.nutrition)),
+        XCTAssertEqual(Cards.ids(in: .nutrition),
                        ["nutrition.energy", "nutrition.protein", "nutrition.water", "nutrition.logged", "nutrition.macros", "nutrition.insights"])
         // No food card on Today, and nothing of the Body overview in the app.
         XCTAssertNil(Cards.card("home.food")?.place)

@@ -58,31 +58,53 @@ final class NutritionScreenTests: XCTestCase {
         try JSONDecoder().decode(ServerStatus.self, from: Data(#"{"hosted":false,"settings":\#(settings)}"#.utf8))
     }
 
-    func testTheSectionShowsOnlyWhileNutritionIsOnWithAChoice() throws {
+    func testTheScreenShowsOnlyWhileNutritionIsOnWithAChoice() throws {
         let d = Dashboard()
         d.apply(status: try status(#"{"units":"metric","nutrition":true,"nutritionNumbers":"no_energy","nutritionTargets":{"energy_kcal":null,"protein_g":120,"water_ml":null}}"#))
         XCTAssertEqual(d.nutritionMode, .noEnergy)
+        XCTAssertTrue(d.nutritionAvailable)
         XCTAssertEqual(d.status?.settings?.nutritionTargets, NutritionTargets(energy_kcal: nil, protein_g: 120, water_ml: nil))
-        XCTAssertEqual(TrendsSection.visible(cycleTracking: false, nutrition: d.nutritionOn), [.vitals, .sleep, .activity, .body, .nutrition])
+        // Its own tab now: Trends has no Nutrition section, and a "nutrition" page isn't one of Trends'.
+        XCTAssertEqual(TrendsSection.visible(cycleTracking: true), [.vitals, .sleep, .activity, .body, .cycle])
+        XCTAssertNil(TrendsSection(page: "nutrition"))
 
-        d.open(.nutrition)
-        XCTAssertEqual(d.trendsSection, .nutrition)
-        // Turned off on the web: the section goes, and so does the screen showing it.
+        // Turned off on the web: the tab offers to turn it on again.
         d.apply(status: try status(#"{"units":"metric","nutrition":false,"nutritionNumbers":"all"}"#))
         XCTAssertNil(d.nutritionMode)
-        XCTAssertEqual(d.trendsSection, .vitals)
-        XCTAssertEqual(TrendsSection.visible(cycleTracking: true, nutrition: d.nutritionOn), [.vitals, .sleep, .activity, .body, .cycle])
-        d.open(.nutrition)
-        XCTAssertEqual(d.trendsSection, .vitals)
+        XCTAssertTrue(d.nutritionAvailable)
 
-        // On without a choice yet, a mode this build doesn't know, and an older server: hidden.
+        // On without a choice yet, or a mode this build doesn't know: the screen stays off. An older server without
+        // Nutrition can't turn it on at all.
         d.apply(status: try status(#"{"nutrition":true,"nutritionNumbers":null}"#))
         XCTAssertNil(d.nutritionMode)
         d.apply(status: try status(#"{"nutrition":true,"nutritionNumbers":"grams_only"}"#))
         XCTAssertNil(d.nutritionMode)
         d.apply(status: try status(#"{"units":"metric"}"#))
         XCTAssertNil(d.nutritionMode)
-        XCTAssertEqual(TrendsSection(page: "nutrition"), .nutrition)
+        XCTAssertFalse(d.nutritionAvailable)
+    }
+
+    func testSettingsOpensOverTheTabThatAskedForIt() {
+        let d = Dashboard()
+        d.tab = .nutrition
+        d.tab = .settings
+        XCTAssertEqual(d.tab, .nutrition, "the tab underneath stays")
+        XCTAssertTrue(d.showingSettings)
+        d.showingSettings = false
+        d.tab = .trends
+        XCTAssertFalse(d.showingSettings)
+        XCTAssertEqual(d.tab, .trends)
+    }
+
+    func testTheChoicesAreTheWebsInItsOrder() {
+        // CHOICES in src/pages/Nutrition.tsx: none is chosen in advance, and the server refuses "on" without one.
+        XCTAssertEqual(NutritionChoice.all.map(\.mode), [.all, .noEnergy, .none])
+        XCTAssertEqual(NutritionChoice.all.map(\.title), ["Everything", "Everything except calories", "No amounts"])
+        XCTAssertEqual(NutritionChoice.all.map(\.text), [
+            "Calories, protein, carbs, fat, fiber, sugar, sodium and drinks.",
+            "The same, with no calories anywhere, Ask McFly included.",
+            "Only which days you logged. No numbers at all.",
+        ])
     }
 
     func testAnOddTargetsObjectDoesNotBlankTheSettings() throws {

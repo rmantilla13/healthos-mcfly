@@ -12,6 +12,7 @@
 		0AB6C70226753CBD962957B0 /* SampleData.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7E250115D08EBBAA0A6C1BF /* SampleData.swift */; };
 		0BDF60A216902A26A4A8FE46 /* DayAggregatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF3AD1F8E32A8E71A82AA62D /* DayAggregatorTests.swift */; };
 		0FB626BE268BECC37DF88D1F /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B00CB598628622D59B7DB55 /* Theme.swift */; };
+		112B304995D1A35E0A97578A /* SettingsButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5F7DD13686D856FCA46009C /* SettingsButton.swift */; };
 		1927B716006AE1725C3FE33A /* nutrition-no-energy.json in Resources */ = {isa = PBXBuildFile; fileRef = 05350E818E3C1D083459C737 /* nutrition-no-energy.json */; };
 		1E1FC25B8B9BD709409AC048 /* cycle-v2.json in Resources */ = {isa = PBXBuildFile; fileRef = 3ABEA99C24FB4C804B7345E1 /* cycle-v2.json */; };
 		1FE160BA9FC27A74FCD49671 /* TodayCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = 752C5BFB142DF8D297485058 /* TodayCards.swift */; };
@@ -62,6 +63,7 @@
 		D578AC38FFF23101381DF82B /* trends-sleep.json in Resources */ = {isa = PBXBuildFile; fileRef = BCA618E51A2853EE3FA69588 /* trends-sleep.json */; };
 		D953BFF05171E26EC18E0D48 /* JoinView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93EC5BC849913F0A274C023E /* JoinView.swift */; };
 		E09D830321CC4664C62EB0CE /* digest.json in Resources */ = {isa = PBXBuildFile; fileRef = FE9ED67C191FB0AA5D98EBEC /* digest.json */; };
+		E2A6CFE97D35EA965DFF9FA0 /* NutritionScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6B59C95F0280EE6C16251E7 /* NutritionScreen.swift */; };
 		E67138F70386B271D1386659 /* InsightsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD3BB6FDFBCD0DED917865FB /* InsightsScreen.swift */; };
 		E72C88A19985CC510375EDA8 /* OrganicHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 607D1113C58E632F9CB90E87 /* OrganicHome.swift */; };
 		F2CF3049F540CE571BFB4FEB /* IngestClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3775E6E7872E65E05A16415F /* IngestClient.swift */; };
@@ -125,6 +127,7 @@
 		9B00CB598628622D59B7DB55 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		A2F31692BC3B154539132A48 /* DashboardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardTests.swift; sourceTree = "<group>"; };
 		A376DF27CC036EEF54ED4978 /* cycle.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = cycle.json; sourceTree = "<group>"; };
+		A6B59C95F0280EE6C16251E7 /* NutritionScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NutritionScreen.swift; sourceTree = "<group>"; };
 		A7E250115D08EBBAA0A6C1BF /* SampleData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleData.swift; sourceTree = "<group>"; };
 		B479E2FF3ECF8F9266A6F82C /* Config.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Config.swift; sourceTree = "<group>"; };
 		BCA618E51A2853EE3FA69588 /* trends-sleep.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "trends-sleep.json"; sourceTree = "<group>"; };
@@ -138,6 +141,7 @@
 		DAD6B6048EA69AB432AA9720 /* Cycle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cycle.swift; sourceTree = "<group>"; };
 		DCB8EE7A62B1F4AB7B71786B /* HeartRateMeasurementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeartRateMeasurementTests.swift; sourceTree = "<group>"; };
 		E1080B46A2122D62513147F8 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		E5F7DD13686D856FCA46009C /* SettingsButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsButton.swift; sourceTree = "<group>"; };
 		EBD579D9FB433BBE4FFDD20C /* DayAggregator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayAggregator.swift; sourceTree = "<group>"; };
 		EDFE71549B0A68674DB9E571 /* TrendsScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrendsScreen.swift; sourceTree = "<group>"; };
 		EFF903C401BAB3E580094868 /* HealthTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthTypes.swift; sourceTree = "<group>"; };
@@ -245,10 +249,12 @@
 				8831BE21705EE5AA0AF1C213 /* McFly.swift */,
 				063C1B199818D14F356BB2E9 /* McFlyCharts.swift */,
 				FC1AF0514C3E330ABEA1FF41 /* Models.swift */,
+				A6B59C95F0280EE6C16251E7 /* NutritionScreen.swift */,
 				FB45FFDD1FA53CE0B2371012 /* NutritionViews.swift */,
 				607D1113C58E632F9CB90E87 /* OrganicHome.swift */,
 				C24970C7FB0FE6CB2CDC010A /* PhotoCutout.swift */,
 				052005D09276C20A065FB40A /* ProfilePhoto.swift */,
+				E5F7DD13686D856FCA46009C /* SettingsButton.swift */,
 				BD53F734E61FD82B3D256C06 /* SignInView.swift */,
 				9B00CB598628622D59B7DB55 /* Theme.swift */,
 				377F8CF3716B6E99B12E2655 /* TimelineScrub.swift */,
@@ -426,11 +432,13 @@
 				A39F2327BD8A0AAACA2ED78A /* McFlyCharts.swift in Sources */,
 				AD8BC8E5F3940A7E1B24AEB9 /* Models.swift in Sources */,
 				09D20253534D0F793C6BF016 /* Nutrition.swift in Sources */,
+				E2A6CFE97D35EA965DFF9FA0 /* NutritionScreen.swift in Sources */,
 				227321122C18691CE1D3BC33 /* NutritionViews.swift in Sources */,
 				E72C88A19985CC510375EDA8 /* OrganicHome.swift in Sources */,
 				9A87E75AA642B59ED0F0F7F4 /* PhotoCutout.swift in Sources */,
 				45AE7C4484A901ADCFE8B2C7 /* ProfilePhoto.swift in Sources */,
 				0AB6C70226753CBD962957B0 /* SampleData.swift in Sources */,
+				112B304995D1A35E0A97578A /* SettingsButton.swift in Sources */,
 				BAB31D138E3C5A38C2A39FAA /* SettingsScreen.swift in Sources */,
 				23767F738B3924A8F673265C /* SignInView.swift in Sources */,
 				283EC6884105A448351592AD /* SyncEngine.swift in Sources */,

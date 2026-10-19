@@ -33,12 +33,19 @@ struct RootView: View {
             TrendsScreen()
                 .tabItem { Label("Trends", systemImage: "chart.xyaxis.line") }
                 .tag(AppTab.trends)
+            // For everyone: while Nutrition is off, it explains it and turns it on.
+            NutritionScreen()
+                .tabItem { Label("Nutrition", systemImage: "fork.knife") }
+                .tag(AppTab.nutrition)
             InsightsScreen()
                 .tabItem { Label("Insights", systemImage: "lightbulb") }
                 .tag(AppTab.insights)
+        }
+        // Settings opens over any tab: from each tab's gear, Today's avatar, and every "Open Settings".
+        .sheet(isPresented: $dashboard.showingSettings) {
             SettingsScreen()
-                .tabItem { Label("Settings", systemImage: "gearshape") }
-                .tag(AppTab.settings)
+                .environment(dashboard)
+                .environment(sync)
         }
         .environment(dashboard)
         .environment(sync)

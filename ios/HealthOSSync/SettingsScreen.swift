@@ -41,6 +41,12 @@ struct SettingsScreen: View {
                 }
             }
             .navigationTitle("Settings")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dashboard.showingSettings = false }
+                        .accessibilityIdentifier("settingsDone")
+                }
+            }
             .keyboardDismissal()
             .alert(model.notice ?? "", isPresented: noticeShown) {
                 Button("OK", role: .cancel) {}
@@ -88,7 +94,10 @@ private struct ServerSection: View {
                 .accessibilityIdentifier("serverURL")
             LabeledContent("Dashboard", value: accountText)
             if dashboard.phase == .signIn {
-                Button("Sign in") { dashboard.tab = .today }
+                Button("Sign in") {
+                    dashboard.showingSettings = false
+                    dashboard.tab = .today
+                }
             } else if dashboard.authMode == "required", dashboard.phase == .ready {
                 Button("Sign out", role: .destructive) { Task { await dashboard.signOut() } }
             }

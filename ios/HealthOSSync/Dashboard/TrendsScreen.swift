@@ -17,12 +17,12 @@ struct TrendsScreen: View {
                 } else {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 14) {
-                            TrendsSectionChips(selection: $dashboard.trendsSection, sections: TrendsSection.visible(cycleTracking: dashboard.cycleTrackingOn, nutrition: dashboard.nutritionOn))
+                            TrendsSectionChips(selection: $dashboard.trendsSection, sections: TrendsSection.visible(cycleTracking: dashboard.cycleTrackingOn))
                             HStack {
                                 Text(subtitle).font(.footnote).foregroundStyle(Palette.ink3)
                                 Spacer()
-                                // The cycle view has its own span; Nutrition picks one inside its tabs.
-                                if dashboard.trendsSection != .cycle && dashboard.trendsSection != .nutrition {
+                                // The cycle view has its own span.
+                                if dashboard.trendsSection != .cycle {
                                     Picker("Range", selection: $days) {
                                         Text("7 days").tag(7)
                                         Text("30 days").tag(30)
@@ -38,7 +38,6 @@ struct TrendsScreen: View {
                             case .activity: ActivityTrends(days: days)
                             case .body: BodyTrends(days: days)
                             case .cycle: CycleTrends()
-                            case .nutrition: NutritionTrends()
                             }
                         }
                         .padding(16)
@@ -49,6 +48,7 @@ struct TrendsScreen: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Palette.page)
             .navigationTitle("Trends")
+            .settingsButton()
         }
     }
 
@@ -59,12 +59,11 @@ struct TrendsScreen: View {
         case .activity: "Movement from iPhone and Apple Watch, strain from WHOOP."
         case .body: "Weight and composition from Apple Health."
         case .cycle: "Cycle days and estimates from what you log."
-        case .nutrition: "From the food app you log in, through Apple Health. Only you can see it."
         }
     }
 }
 
-/// The sections as a row of chips that scrolls sideways, so Cycle and Nutrition still fit at phone width.
+/// The sections as a row of chips that scrolls sideways, so a fifth (Cycle) still fits at phone width.
 private struct TrendsSectionChips: View {
     @Binding var selection: TrendsSection
     let sections: [TrendsSection]

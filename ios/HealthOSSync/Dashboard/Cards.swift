@@ -23,11 +23,13 @@ enum CardPage: String, CaseIterable, Identifiable {
 enum CardPlace: Equatable {
     case today
     case trends(TrendsSection)
+    case nutrition
 
     var label: String {
         switch self {
         case .today: "Today"
         case .trends(let section): "Trends · \(section.rawValue)"
+        case .nutrition: "Nutrition · Overview"
         }
     }
 }
@@ -78,12 +80,12 @@ enum Cards {
         DashboardCard(id: "body.metrics", page: .body, label: "Body metrics"),
         DashboardCard(id: "body.energy", page: .body, label: "Energy burned"),
         DashboardCard(id: "body.steps", page: .body, label: "Activity level"),
-        DashboardCard(id: "nutrition.energy", page: .nutrition, label: "Energy", nutrition: true, place: .trends(.nutrition)),
-        DashboardCard(id: "nutrition.protein", page: .nutrition, label: "Protein", nutrition: true, place: .trends(.nutrition)),
-        DashboardCard(id: "nutrition.water", page: .nutrition, label: "Water", nutrition: true, place: .trends(.nutrition)),
-        DashboardCard(id: "nutrition.logged", page: .nutrition, label: "Days logged", nutrition: true, place: .trends(.nutrition)),
-        DashboardCard(id: "nutrition.macros", page: .nutrition, label: "Macro balance", nutrition: true, place: .trends(.nutrition)),
-        DashboardCard(id: "nutrition.insights", page: .nutrition, label: "Food insights", nutrition: true, place: .trends(.nutrition)),
+        DashboardCard(id: "nutrition.energy", page: .nutrition, label: "Energy", nutrition: true, place: .nutrition),
+        DashboardCard(id: "nutrition.protein", page: .nutrition, label: "Protein", nutrition: true, place: .nutrition),
+        DashboardCard(id: "nutrition.water", page: .nutrition, label: "Water", nutrition: true, place: .nutrition),
+        DashboardCard(id: "nutrition.logged", page: .nutrition, label: "Days logged", nutrition: true, place: .nutrition),
+        DashboardCard(id: "nutrition.macros", page: .nutrition, label: "Macro balance", nutrition: true, place: .nutrition),
+        DashboardCard(id: "nutrition.insights", page: .nutrition, label: "Food insights", nutrition: true, place: .nutrition),
     ]
 
     static func card(_ id: String) -> DashboardCard? { all.first { $0.id == id } }

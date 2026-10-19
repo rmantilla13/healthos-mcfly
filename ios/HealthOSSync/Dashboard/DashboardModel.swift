@@ -2,10 +2,12 @@ import Foundation
 import Observation
 import UIKit
 
-enum AppTab: Hashable { case today, family, trends, insights, settings }
+/// The tab bar's tabs. `settings` isn't one: asking for it opens Settings as a sheet over the tab showing (the gear on
+/// each tab, Today's avatar, every "Open Settings").
+enum AppTab: Hashable { case today, family, trends, nutrition, insights, settings }
 
 enum TrendsSection: String, CaseIterable, Identifiable {
-    case vitals = "Vitals", sleep = "Sleep", activity = "Activity", body = "Body", cycle = "Cycle", nutrition = "Nutrition"
+    case vitals = "Vitals", sleep = "Sleep", activity = "Activity", body = "Body", cycle = "Cycle"
     var id: String { rawValue }
 
     /// Web pages an insight can link to.
@@ -16,14 +18,13 @@ enum TrendsSection: String, CaseIterable, Identifiable {
         case "activity": self = .activity
         case "body": self = .body
         case "cycle": self = .cycle
-        case "nutrition": self = .nutrition
         default: return nil
         }
     }
 
-    /// The sections to offer: Cycle only while cycle tracking is on, Nutrition only while it's on.
-    static func visible(cycleTracking: Bool, nutrition: Bool = false) -> [TrendsSection] {
-        allCases.filter { ($0 != .cycle || cycleTracking) && ($0 != .nutrition || nutrition) }
+    /// The sections to offer: Cycle only while cycle tracking is on.
+    static func visible(cycleTracking: Bool) -> [TrendsSection] {
+        cycleTracking ? allCases : allCases.filter { $0 != .cycle }
     }
 }
 
@@ -54,7 +55,17 @@ final class Dashboard {
     var loading = false
     /// Shown above the content, e.g. while offline with a cached summary on screen.
     var error: String?
-    var tab: AppTab = .today
+    var tab: AppTab = .today {
+        didSet {
+            // Settings opens over the tab that asked for it, which stays selected underneath.
+            if tab == .settings {
+                tab = oldValue == .settings ? .today : oldValue
+                showingSettings = true
+            }
+        }
+    }
+    /// The Settings sheet is up.
+    var showingSettings = false
     var trendsSection: TrendsSection = .vitals
     /// "open" (no sign-in, e.g. a local server) or "required" (the hosted dashboard).
     var authMode: String?
@@ -109,7 +120,7 @@ final class Dashboard {
         guard status?.settings?.nutrition == true, let numbers = status?.settings?.nutritionNumbers else { return nil }
         return NutritionMode(rawValue: numbers)
     }
-    /// Nutrition is on, with a choice of what to see: the Nutrition section of Trends and GET /api/nutrition.
+    /// Nutrition is on, with a choice of what to see: the Nutrition tab's screen and GET /api/nutrition.
     var nutritionOn: Bool { nutritionMode != nil }
     var signInRequired: Bool { phase == .signIn }
     /// The server has the Family board: its status names the setting, or the board itself was read.
@@ -275,7 +286,7 @@ final class Dashboard {
     }
 
     func open(_ section: TrendsSection) {
-        trendsSection = (section == .cycle && !cycleTrackingOn) || (section == .nutrition && !nutritionOn) ? .vitals : section
+        trendsSection = section == .cycle && !cycleTrackingOn ? .vitals : section
         tab = .trends
     }
 
@@ -332,6 +343,15 @@ final class Dashboard {
         let shown = n?.enabled == true ? n : nil
         nutritionCache[key] = shown
         return shown
+    }
+
+    /// The server has Nutrition (its status names the setting), so the Nutrition tab can offer to turn it on.
+    var nutritionAvailable: Bool { status?.settings?.nutrition != nil }
+
+    /// Turns Nutrition on with what the person chose to see (the web's opt-in): the server refuses it without a choice.
+    /// The phone starts reading food once a sync hears it's on.
+    func turnOnNutrition(_ mode: NutritionMode) async throws {
+        try await updateSettings(["nutrition": true, "nutritionNumbers": mode.rawValue])
     }
 
     /// Sets or clears (nil) one of the person's own targets: "energy_kcal", "protein_g" or "water_ml".
@@ -524,7 +544,6 @@ final class Dashboard {
         if before?.nutrition != after?.nutrition || before?.nutritionNumbers != after?.nutritionNumbers || before?.nutritionTargets != after?.nutritionTargets {
             nutritionCache = [:]
         }
-        if !nutritionOn, trendsSection == .nutrition { trendsSection = .vitals }
         // Cycle tracking turned on (on the web): the next Sync asks Health for those types, then sends their history.
         if let on = status.settings?.cycleTracking { Config.cycleTracking = on }
         if !cycleTrackingOn, trendsSection == .cycle { trendsSection = .vitals }

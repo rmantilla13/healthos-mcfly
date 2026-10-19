@@ -23,6 +23,7 @@ struct InsightsScreen: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Palette.page)
             .navigationTitle("Insights")
+            .settingsButton()
         }
     }
 }

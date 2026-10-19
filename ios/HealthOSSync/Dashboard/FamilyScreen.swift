@@ -26,6 +26,7 @@ struct FamilyScreen: View {
             .background(Palette.page)
             .navigationTitle("Family")
             .navigationBarTitleDisplayMode(.inline)
+            .settingsButton()
             .navigationDestination(for: FamilyPersonRoute.self) { FamilyPersonScreen(id: $0.id) }
         }
         .onChange(of: dashboard.phase) { _, phase in
