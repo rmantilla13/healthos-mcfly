@@ -167,6 +167,10 @@ export async function seedDemo(db: Db, userId = OWNER_ID) {
     const row = todayRow(metric);
     if (row) row.value *= share;
   }
+  // Exercise so far is at least the workouts already over.
+  const exercise = todayRow('exercise_min');
+  const done = workouts.filter((w) => w.date === today && Date.parse(w.end) <= Date.now()).reduce((a, w) => a + w.duration_min, 0);
+  if (exercise) exercise.value = Math.max(exercise.value, done);
 
   await db.tx(async (q) => {
     await deleteSource(q, userId, SOURCE);

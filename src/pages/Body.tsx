@@ -6,7 +6,7 @@ import { cumulative, drawThrough, extent } from '../charts/day.ts';
 import { Gauge, MiniBars, MiniDots, MiniLine } from '../charts/Mini.tsx';
 import { AreaCurve, Change, HourBars } from '../charts/Neka.tsx';
 import { Icon, type IconName } from '../components/Icon.tsx';
-import { compact, fmt, fmtDate, temp, useApi, useUnits } from '../lib.ts';
+import { compact, fmt, fmtDate, shiftDate, temp, useApi, useUnits } from '../lib.ts';
 import { Activity, DAY, DayNav, Metabolism, PageHead, Tabs, Trend, useRange } from './Detail.tsx';
 import { CardHead, Stale, signed } from './Home.tsx';
 
@@ -41,7 +41,8 @@ const TEMP_METRIC: Record<string, string> = { 'Body temp': 'body_temp', 'Wrist t
 function Overview({ tabs, date, setDate }: { tabs: ReactNode; date: string | null; setDate: (d: string | null) => void }) {
   const q = date ? `?date=${date}` : '';
   const { data: s, error, loading } = useApi<Summary>(`/summary${q}`);
-  const { data: t } = useApi<Trends>(`/trends?metrics=${OVERVIEW_TRENDS}&days=21${date ? `&date=${date}` : ''}`);
+  // 45 days: the temperature row compares with the 30 days before its latest reading, which can be two weeks old.
+  const { data: t } = useApi<Trends>(`/trends?metrics=${OVERVIEW_TRENDS}&days=45${date ? `&date=${date}` : ''}`);
   const { data: day } = useApi<DayData>(`/day?metrics=heart_rate,steps,active_energy${date ? `&date=${date}` : ''}`);
   if (error && !s) return <div className="page-message">Couldn't load your data: {error.message}</div>;
   if (!s) return <div className="page-message">Loading…</div>;
@@ -277,8 +278,8 @@ function BodyMetricsCard({ s, t }: { s: Summary; t: Trends }) {
   if (tv.latest) {
     const pts = t[tm] ?? [];
     // A watch or band reads the skin, so its number means little alone: show the difference from your usual.
-    const prior = pts.filter((p) => p.date < tv.latest!.date).map((p) => p.value);
-    // Seven earlier nights at least, as the status needs, before a difference means anything.
+    // The 30 days before the latest reading, with seven nights at least: the same window and minimum as its status.
+    const prior = pts.filter((p) => p.date < tv.latest!.date && p.date >= shiftDate(tv.latest!.date, -30)).map((p) => p.value);
     const base = tm === 'body_temp' || prior.length < 7 ? null : mean(prior);
     const f = (c: number) => temp(c, units);
     const delta = base !== null ? (tv.latest.value - base) * (units === 'imperial' ? 9 / 5 : 1) : null;

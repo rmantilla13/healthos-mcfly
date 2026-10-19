@@ -163,3 +163,50 @@ test('stretches come back in time order even when the clocks went back that nigh
   const n = await sleepNight(scope, false, today);
   assert.deepEqual(n.segments.map((g) => g.stage), ['light', 'deep', 'light']);
 });
+
+test("a WHOOP nap alone doesn't blank the Watch's night; an unstaged Watch night keeps WHOOP's stages", async (t) => {
+  const db = await openStore();
+  t.after(() => db.close());
+  const scope = { db, userId: OWNER_ID };
+  await setUserSetting(db, OWNER_ID, 'timezone', 'UTC');
+  await setUserSetting(db, OWNER_ID, 'demo', 'off');
+  // The strap was off overnight but worn for a nap: WHOOP's 0.5 h (a nap, not a sleep record) disagrees with the
+  // Watch's 7.2 h, so WHOOP's total is trusted. Its device has no night, though, so the night is the Watch's.
+  await upsertDaily(db, OWNER_ID, [
+    { date: today, metric: 'sleep_hours', source: 'apple', value: 7.2 },
+    { date: today, metric: 'sleep_in_bed', source: 'apple', value: 7.8 },
+    { date: today, metric: 'sleep_deep', source: 'apple', value: 1 },
+    { date: today, metric: 'sleep_rem', source: 'apple', value: 1.5 },
+    { date: today, metric: 'sleep_light', source: 'apple', value: 4.7 },
+    { date: today, metric: 'sleep_awake', source: 'apple', value: 0.6 },
+    { date: today, metric: 'sleep_hours', source: 'whoop', value: 0.5 },
+  ]);
+  await upsertEvents(db, OWNER_ID, [{ id: 'a', source: 'apple', kind: 'sleep', title: 'Sleep', start: at(back(1), '23:00'), end: at(today, '06:30'), date: today }]);
+  await insertMany(db, 'sleep_stages', ['user_id', 'date', 'source', 'start', 'end', 'stage'], [
+    [OWNER_ID, today, 'apple', at(back(1), '23:00'), at(today, '02:00'), 'light'],
+    [OWNER_ID, today, 'apple', at(today, '02:00'), at(today, '03:00'), 'deep'],
+    [OWNER_ID, today, 'apple', at(today, '03:00'), at(today, '06:30'), 'light'],
+  ]);
+  const nap = await sleepNight(scope, false, today);
+  assert.equal(nap.source, 'apple');
+  assert.equal(nap.fellAsleep, at(back(1), '23:00'));
+  assert.equal(nap.inBedHours, 7.8);
+  assert.equal(nap.stages?.deep, 1);
+  assert.equal(nap.segments.length, 3);
+
+  // An older Watch (or another app) wrote only "asleep" the next night, and WHOOP agrees on the total and has stages.
+  const d = back(1);
+  await upsertDaily(db, OWNER_ID, [
+    { date: d, metric: 'sleep_hours', source: 'apple', value: 7.2 },
+    { date: d, metric: 'sleep_hours', source: 'whoop', value: 7 },
+    { date: d, metric: 'sleep_deep', source: 'whoop', value: 1.5 },
+    { date: d, metric: 'sleep_rem', source: 'whoop', value: 1.6 },
+    { date: d, metric: 'sleep_light', source: 'whoop', value: 3.9 },
+    { date: d, metric: 'sleep_awake', source: 'whoop', value: 0.6 },
+  ]);
+  await insertMany(db, 'sleep_stages', ['user_id', 'date', 'source', 'start', 'end', 'stage'], [[OWNER_ID, d, 'apple', at(back(2), '23:00'), at(d, '06:12'), 'asleep']]);
+  const unstaged = await sleepNight(scope, false, d);
+  assert.equal(unstaged.source, 'whoop');
+  assert.equal(unstaged.stages?.deep, 1.5);
+  assert.deepEqual(unstaged.segments, []);
+});

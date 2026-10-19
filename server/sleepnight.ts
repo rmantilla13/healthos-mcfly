@@ -39,24 +39,36 @@ export async function sleepNight(scope: Scope, hosted: boolean, dateParam?: stri
       .filter((e) => e.date === d && (source === undefined || e.source === source) && Date.parse(e.end) > Date.parse(e.start))
       .sort((a, b) => Date.parse(b.end) - Date.parse(b.start) - (Date.parse(a.end) - Date.parse(a.start)));
 
+  /** The device has this night: its sleep record, stretches or stage totals. */
+  const recorded = (x: string, d: string) => hasSegments(x, d) || eventsOf(d, x).length > 0 || at('sleep_deep', x, d) !== undefined;
+  /** Its stretches show stages (not only "asleep" from an older Watch or another app). */
+  const staged = (x: string, d: string) => segmentRows.some((r) => r.date === d && r.source === x && (r.stage === 'deep' || r.stage === 'rem' || r.stage === 'light'));
+
   /**
    * The one device a night's stages, timeline, bed and wake times and source come from, so none of them is
-   * paired with another device's. It's the device the night's total came from; when the total is both devices'
-   * average, the one with the stages through the night (else the one with stage totals).
+   * paired with another device's. It's the device the night's total came from, when that device has the night
+   * at all (a WHOOP nap alone isn't one); when the total is both devices' average, the one with the stages
+   * through the night, else the one with stage totals.
    */
   const deviceOf = (d: string): string | undefined => {
     const src = valueOn(ctx, 'sleep_hours', d)?.source;
-    if (src && src !== 'apple+whoop') return src;
-    if (src === 'apple+whoop') return ['apple', 'whoop'].find((x) => hasSegments(x, d)) ?? ['apple', 'whoop'].find((x) => at('sleep_deep', x, d) !== undefined) ?? 'apple';
-    // No total that night: whichever device recorded something.
-    return [...sources].find((x) => hasSegments(x, d) || eventsOf(d, x).length > 0);
+    const both = ['apple', 'whoop'];
+    if (src === 'apple+whoop') {
+      return both.find((x) => staged(x, d)) ?? both.find((x) => at('sleep_deep', x, d) !== undefined) ?? both.find((x) => recorded(x, d)) ?? 'apple';
+    }
+    if (src && recorded(src, d)) return src;
+    // No total that night, or one from a device with nothing else for it: whichever device recorded the night.
+    return [...sources].find((x) => recorded(x, d)) ?? src;
   };
   const device = deviceOf(date);
   const night = device ? eventsOf(date, device)[0] : undefined;
-  const nightOf = (d: string) => {
-    const dev = deviceOf(d);
-    return dev ? eventsOf(d, dev)[0] : undefined;
-  };
+  // Bedtimes week against week from one device: WHOOP's record starts when you got into bed, Apple's at the first
+  // moment asleep, so mixing them would show a change in steadiness that's only the devices. The one with the
+  // most nights in both weeks.
+  const weekDays = (fromBack: number, toBack: number) => Array.from({ length: fromBack - toBack + 1 }, (_, i) => addDays(date, -(fromBack - i)));
+  const bedDevice = [...sources]
+    .map((x) => ({ x, n: Math.min(...[weekDays(6, 0), weekDays(13, 7)].map((ds) => ds.filter((d) => eventsOf(d, x).length > 0).length)) }))
+    .sort((a, b) => b.n - a.n)[0]?.x;
 
   const hours = valueOn(ctx, 'sleep_hours', date);
   const stages =
@@ -93,7 +105,7 @@ export async function sleepNight(scope: Scope, hosted: boolean, dateParam?: stri
     segments,
     latencyMin: latency(segments),
     deepPeak: deepPeak(segments),
-    insights: nightInsights({ date, ctx, segmentsOf: (d) => segmentsFrom(deviceOf(d), d), nights: nightOf }),
+    insights: nightInsights({ date, ctx, segmentsOf: (d) => segmentsFrom(deviceOf(d), d), nights: (d) => (bedDevice ? eventsOf(d, bedDevice)[0] : undefined) }),
   };
 }
 
