@@ -260,6 +260,97 @@ test("the owner's walking speed comes back in their units", async () => {
   assert.deepEqual([result.metrics[0].label, result.metrics[0].unit, result.metrics[0].mean], ['Walking speed', 'mph', 2.98]);
 });
 
+// ---------- charts in answers ----------
+
+test("McFly's charts carry the person's own numbers, read by the server, and McFly hears what was drawn", async () => {
+  requests.length = 0;
+  script = [
+    reply(
+      [
+        { type: 'text', text: 'Steady all week.' },
+        { type: 'tool_use', id: 'tv_1', name: 'show_visual', input: { kind: 'bars', metric: 'resting_hr', days: 7, end_date: day(16), title: 'Resting heart rate, this week' } },
+      ],
+      'tool_use',
+    ),
+    reply([{ type: 'text', text: '- Averaged **80 bpm**.' }], 'end_turn'),
+  ];
+  const ev = events((await bob.ask('Show my resting heart rate this week')).text);
+  assert.deepEqual(
+    ev.map((e) => e.event),
+    ['text', 'tool', 'visual', 'text', 'text', 'done'],
+  );
+  const visual = ev.find((e) => e.event === 'visual')!.data.visual;
+  assert.equal(visual.kind, 'bars');
+  assert.equal(visual.unit, 'bpm');
+  assert.equal(visual.points.length, 7);
+  assert.ok(visual.points.every((p: { value: number }) => p.value === 80), "Bob's own 80s, never the owner's 60s");
+  // McFly gets a summary of the chart, not the chart.
+  const toolResult = JSON.parse(requests[1].messages.at(-1).content[0].content);
+  assert.deepEqual([toolResult.shown, toolResult.mean, toolResult.daysWithData], ['bars', 80, 7]);
+  // The answer shape asks for a picture where it helps.
+  assert.match(requests[0].system, /show_visual/);
+  assert.ok(requests[0].tools.some((t: { name: string }) => t.name === 'show_visual'));
+});
+
+test('a comparison of two periods, and tiles, in the person\'s units', async () => {
+  requests.length = 0;
+  script = [
+    reply(
+      [
+        {
+          type: 'tool_use',
+          id: 'tv_2',
+          name: 'show_visual',
+          input: { kind: 'compare', metric: 'resting_hr', title: 'Resting heart rate', periods: [{ label: 'Last 3 days', days: 3, end_date: day(16) }, { label: 'The 3 before', days: 3, end_date: day(13) }] },
+        },
+        { type: 'tool_use', id: 'tv_3', name: 'show_visual', input: { kind: 'stats', metrics: ['resting_hr', 'wrist_temp'], stat: 'latest', end_date: day(16), title: 'Latest readings' } },
+      ],
+      'tool_use',
+    ),
+    reply([{ type: 'text', text: 'ok' }], 'end_turn'),
+  ];
+  const ev = events((await owner.ask('Compare my heart rate')).text);
+  const visuals = ev.filter((e) => e.event === 'visual').map((e) => e.data.visual);
+  assert.deepEqual(
+    visuals.map((v) => v.kind),
+    ['compare', 'stats'],
+    'in the order McFly asked',
+  );
+  assert.deepEqual(
+    visuals[0].periods.map((p: { mean: number; days: number }) => [p.mean, p.days]),
+    [
+      [60, 3],
+      [60, 3],
+    ],
+  );
+  // The owner switched to imperial earlier: wrist temperature in °F.
+  assert.deepEqual([visuals[1].items[1].unit, visuals[1].items[1].value, visuals[1].items[1].note], ['°F', 97.7, day(16)]);
+});
+
+test('nothing to draw is an error McFly reads, not an empty chart; at most three charts an answer', async () => {
+  requests.length = 0;
+  const draw = (id: string) => ({ type: 'tool_use' as const, id, name: 'show_visual', input: { kind: 'trend', metric: 'resting_hr', days: 7, end_date: day(16), title: 'RHR' } });
+  script = [
+    reply(
+      [
+        { type: 'tool_use', id: 'tv_4', name: 'show_visual', input: { kind: 'trend', metric: 'glucose', days: 7, end_date: day(16), title: 'Glucose' } },
+        draw('tv_5'),
+        draw('tv_6'),
+        draw('tv_7'),
+        draw('tv_8'),
+      ],
+      'tool_use',
+    ),
+    reply([{ type: 'text', text: 'ok' }], 'end_turn'),
+  ];
+  const ev = events((await bob.ask('Draw everything')).text);
+  assert.equal(ev.filter((e) => e.event === 'visual').length, 3);
+  const results = requests[1].messages.at(-1).content;
+  assert.equal(results[0].is_error, true);
+  assert.match(results[0].content, /nothing to draw/);
+  assert.equal(results.filter((r: { is_error?: boolean }) => r.is_error).length, 2, 'the glucose one, and the fourth chart');
+});
+
 // ---------- the weekly digest ----------
 
 test('the digest covers the last completed Monday to Sunday', () => {

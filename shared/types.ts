@@ -226,6 +226,18 @@ export type AdminOverview = {
 export type McflyStatus = { configured: boolean; limit: number; usedToday: number };
 export type McflyTurn = { role: 'user' | 'assistant'; content: string };
 
+/**
+ * A picture in one of McFly's answers. McFly only chooses what to show; the server reads the numbers from the
+ * person's own data, in their units, so a chart can't carry a made-up value. Dates are YYYY-MM-DD (a week's
+ * Monday, a month's 1st).
+ */
+export type McflyVisual =
+  | { kind: 'trend' | 'bars'; title: string; unit: string; resolution: 'day' | 'week' | 'month'; points: Point[]; mean: number | null; goal?: number }
+  | { kind: 'compare'; title: string; unit: string; periods: { label: string; from: string; to: string; mean: number | null; days: number }[] }
+  | { kind: 'stats'; title: string; items: { label: string; value: number | null; unit: string; note: string }[] }
+  | { kind: 'stages'; title: string; rows: { date: string; values: Record<string, number> }[] }
+  | { kind: 'sports'; title: string; items: { sport: string; count: number; minutes: number }[] };
+
 /** McFly's recap of the last completed Monday–Sunday. Never draws on cycle data. */
 export type Digest = {
   weekStart: string;

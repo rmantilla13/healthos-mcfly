@@ -3555,3 +3555,119 @@ nav.tabs {
     display: none;
   }
 }
+
+/* ---------- McFly's charts (src/components/McflyVisual.tsx) ----------
+   A chart or a few tiles inside an answer: the dashboard's own cards, a little tighter. */
+.mcfly-visual {
+  padding: 14px 14px 12px;
+  border-radius: 16px;
+  box-shadow: none;
+  background: var(--surface);
+}
+.mcfly-visual.chart-card {
+  gap: 10px;
+}
+.mcfly-visual .chart-card-value {
+  font-size: 22px;
+}
+.mcfly-visual-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.mcfly-visual-head h3 {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+.mcfly-compare ul,
+.mcfly-sports ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.mcfly-compare li,
+.mcfly-sports li {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.9fr) minmax(0, 2fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+.mcfly-compare-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.mcfly-compare-label small {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--ink-3);
+}
+.mcfly-compare-track {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.mcfly-compare-track span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--bar);
+}
+.mcfly-compare-track span.is-first,
+.mcfly-sports .mcfly-compare-track span {
+  background: var(--bar-accent);
+}
+.mcfly-compare li b,
+.mcfly-sports li b {
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  min-width: 64px;
+}
+.mcfly-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+}
+.mcfly-stats > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+.mcfly-stats span {
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.mcfly-stats b {
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+.mcfly-stats small {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+@media (max-width: 560px) {
+  .mcfly-compare li,
+  .mcfly-sports li {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .mcfly-compare-track {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
