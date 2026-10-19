@@ -1,0 +1,317 @@
+{
+ "enabled": true,
+ "numbers": "no_energy",
+ "today": "2026-10-19",
+ "start": "2026-10-06",
+ "end": "2026-10-19",
+ "apps": [
+  "MyFitnessPal",
+  "Lose It!"
+ ],
+ "app": null,
+ "days": [
+  {
+   "date": "2026-10-06",
+   "app": "MyFitnessPal",
+   "values": {
+    "protein_g": 138,
+    "carbs_g": 193,
+    "fat_g": 76,
+    "fiber_g": 29,
+    "sugar_g": 68,
+    "sat_fat_g": 18,
+    "sodium_mg": 1811,
+    "alcohol_drinks": 2
+   },
+   "otherApps": []
+  },
+  {
+   "date": "2026-10-07",
+   "app": "MyFitnessPal",
+   "values": {
+    "protein_g": 138,
+    "carbs_g": 191,
+    "fat_g": 83,
+    "fiber_g": 24,
+    "sugar_g": 53,
+    "sat_fat_g": 20,
+    "sodium_mg": 2542
+   },
+   "otherApps": []
+  },
+  {
+   "date": "2026-10-08",
+   "app": "MyFitnessPal",
+   "values": {
+    "protein_g": 111,
+    "carbs_g": 247,
+    "fat_g": 76,
+    "fiber_g": 34,
+    "sugar_g": 65,
+    "sat_fat_g": 29,
+    "sodium_mg": 2154
+   },
+   "otherApps": []
+  },
+  {
+   "date": "2026-10-09",
+   "app": "MyFitnessPal",
+   "values": {
+    "protein_g": 127,
+    "carbs_g": 254,
+    "fat_g": 64,
+    "fiber_g": 19,
+    "sugar_g": 65,
+    "sat_fat_g": 30,
+    "sodium_mg": 2714
+   },
+   "otherApps": []
+  },
+  {
+   "date": "2026-10-11",
+   "app": "MyFitnessPal",
+   "values": {
+    "protein_g": 124,
+    "carbs_g": 185,
+    "fat_g": 59,
+    "fiber_g": 18,
+    "sugar_g": 37,
+    "sat_fat_g": 28,
+    "sodium_mg": 2584
+   },
+   "otherApps": [
+    "Lose It!"
+   ]
+  },
+  {
+   "date": "2026-10-12",
+   "app": "MyFitnessPal",
+   "values": {
+    "protein_g": 126,
+    "carbs_g": 216,
+    "fat_g": 73,
+    "fiber_g": 19,
+    "sugar_g": 31,
+    "sat_fat_g": 26,
+    "sodium_mg": 1754
+   },
+   "otherApps": []
+  },
+  {
+   "date": "2026-10-13",
+   "app": "MyFitnessPal",
+   "values": {
+    "protein_g": 136,
+    "carbs_g": 235,
+    "fat_g": 56,
+    "fiber_g": 33,
+    "sugar_g": 36,
+    "sat_fat_g": 20,
+    "sodium_mg": 2862,
+    "alcohol_drinks": 2
+   },
+   "otherApps": []
+  },
+  {
+   "date": "2026-10-14",
+   "app": "MyFitnessPal",
+   "values": {
+    "protein_g": 139,
+    "carbs_g": 213,
+    "fat_g": 90,
+    "fiber_g": 23,
+    "sugar_g": 42,
+    "sat_fat_g": 20,
+    "sodium_mg": 2543
+   },
+   "otherApps": []
+  },
+  {
+   "date": "2026-10-16",
+   "app": "MyFitnessPal",
+   "values": {
+    "protein_g": 102,
+    "carbs_g": 209,
+    "fat_g": 71,
+    "fiber_g": 25,
+    "sugar_g": 39,
+    "sat_fat_g": 21,
+    "sodium_mg": 2872
+   },
+   "otherApps": [
+    "Lose It!"
+   ]
+  },
+  {
+   "date": "2026-10-17",
+   "app": "MyFitnessPal",
+   "values": {
+    "protein_g": 107,
+    "carbs_g": 197,
+    "fat_g": 59,
+    "fiber_g": 18,
+    "sugar_g": 52,
+    "sat_fat_g": 19,
+    "sodium_mg": 1844,
+    "alcohol_drinks": 2
+   },
+   "otherApps": []
+  },
+  {
+   "date": "2026-10-18",
+   "app": "MyFitnessPal",
+   "values": {
+    "protein_g": 116,
+    "carbs_g": 208,
+    "fat_g": 84,
+    "fiber_g": 24,
+    "sugar_g": 66,
+    "sat_fat_g": 23,
+    "sodium_mg": 2109
+   },
+   "otherApps": []
+  },
+  {
+   "date": "2026-10-19",
+   "app": "MyFitnessPal",
+   "values": {
+    "protein_g": 125,
+    "carbs_g": 210,
+    "fat_g": 90,
+    "fiber_g": 32,
+    "sugar_g": 39,
+    "sat_fat_g": 17,
+    "sodium_mg": 2476
+   },
+   "otherApps": [
+    "Lose It!"
+   ]
+  }
+ ],
+ "targets": {
+  "protein_g": 120,
+  "water_ml": 2000
+ },
+ "hydration": {
+  "water": [
+   {
+    "date": "2026-10-06",
+    "value": 1500
+   },
+   {
+    "date": "2026-10-07",
+    "value": 2500
+   },
+   {
+    "date": "2026-10-09",
+    "value": 1750
+   },
+   {
+    "date": "2026-10-10",
+    "value": 1250
+   },
+   {
+    "date": "2026-10-11",
+    "value": 2000
+   },
+   {
+    "date": "2026-10-12",
+    "value": 1750
+   },
+   {
+    "date": "2026-10-13",
+    "value": 1500
+   },
+   {
+    "date": "2026-10-15",
+    "value": 1750
+   },
+   {
+    "date": "2026-10-16",
+    "value": 2250
+   },
+   {
+    "date": "2026-10-17",
+    "value": 1250
+   },
+   {
+    "date": "2026-10-18",
+    "value": 2250
+   },
+   {
+    "date": "2026-10-19",
+    "value": 1750
+   }
+  ],
+  "caffeine": [
+   {
+    "date": "2026-10-06",
+    "value": 90
+   },
+   {
+    "date": "2026-10-07",
+    "value": 260
+   },
+   {
+    "date": "2026-10-08",
+    "value": 90
+   },
+   {
+    "date": "2026-10-09",
+    "value": 90
+   },
+   {
+    "date": "2026-10-10",
+    "value": 260
+   },
+   {
+    "date": "2026-10-11",
+    "value": 90
+   },
+   {
+    "date": "2026-10-12",
+    "value": 90
+   },
+   {
+    "date": "2026-10-13",
+    "value": 260
+   },
+   {
+    "date": "2026-10-14",
+    "value": 90
+   },
+   {
+    "date": "2026-10-15",
+    "value": 90
+   },
+   {
+    "date": "2026-10-16",
+    "value": 260
+   },
+   {
+    "date": "2026-10-17",
+    "value": 90
+   },
+   {
+    "date": "2026-10-18",
+    "value": 90
+   },
+   {
+    "date": "2026-10-19",
+    "value": 260
+   }
+  ]
+ },
+ "insights": [
+  {
+   "id": "caffeine_sleep",
+   "icon": "moon",
+   "text": "On days with 200+ mg of caffeine, you tend to sleep 53 min less that night than on days under 100 mg.",
+   "detail": "Based on 19 days with 200 mg or more and 40 under 100 mg, last 180 days.",
+   "n": 19,
+   "effect": -53,
+   "unit": "min",
+   "page": "sleep"
+  }
+ ]
+}

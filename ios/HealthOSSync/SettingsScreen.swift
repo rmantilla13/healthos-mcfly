@@ -16,6 +16,7 @@ struct SettingsScreen: View {
                 if dashboard.phase == .ready { PhotoSection() }
                 // Servers with the Family board name the setting; it needs sign-in, so each person has their own account.
                 if dashboard.phase == .ready, dashboard.status?.settings?.familySharing != nil, dashboard.authMode != "open" { FamilySection() }
+                if dashboard.phase == .ready, let mode = dashboard.nutritionMode, mode != .none { NutritionTargetsSection(mode: mode) }
                 SyncSection()
                 HealthSection()
                 if dashboard.phase == .ready || DigestNotifications.enabled { DigestSection() }
@@ -197,6 +198,86 @@ private struct HealthSection: View {
             Text("Background sync runs when Health gets new data, as often as iOS allows (hourly for steps). Health data can't be read while the phone is locked.")
         }
     }
+}
+
+/// The person's own nutrition targets, each optional and blank by default, only while Nutrition is on with amounts
+/// shown (calories only when those are shown too). A target is a plain line on the charts, never a score.
+private struct NutritionTargetsSection: View {
+    let mode: NutritionMode
+    @Environment(Dashboard.self) private var dashboard
+    /// What's being typed, by key; nil shows the server's value.
+    @State private var drafts: [String: String] = [:]
+    @State private var error: String?
+    @FocusState private var focus: String?
+
+    var body: some View {
+        Section {
+            ForEach(NutritionTargetField.all.filter { $0.key != "energy_kcal" || mode == .all }) { f in
+                LabeledContent(f.label) {
+                    HStack(spacing: 6) {
+                        TextField("None", text: Binding(get: { drafts[f.key] ?? current(f.key) }, set: { drafts[f.key] = $0.filter(\.isNumber) }))
+                            .keyboardType(.numberPad)
+                            .multilineTextAlignment(.trailing)
+                            .focused($focus, equals: f.key)
+                            .frame(maxWidth: 110)
+                            .accessibilityLabel("\(f.label) target in \(f.unit)")
+                            .accessibilityIdentifier("target-\(f.key)")
+                        Text(f.unit).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            if let error { Text(error).font(.footnote).foregroundStyle(.red) }
+        } header: {
+            Text("Nutrition targets")
+        } footer: {
+            Text("Optional. Leave blank for none. A target you set shows as a plain line on your Nutrition charts, nothing more.")
+        }
+        // Saved when the field is left (or the keyboard's Done), like the web's on blur.
+        .onChange(of: focus) { old, _ in
+            if let old { commit(old) }
+        }
+    }
+
+    private func current(_ key: String) -> String {
+        let t = dashboard.status?.settings?.nutritionTargets
+        let v = key == "energy_kcal" ? t?.energy_kcal : key == "protein_g" ? t?.protein_g : t?.water_ml
+        return v.map { String(Int($0.rounded())) } ?? ""
+    }
+
+    private func commit(_ key: String) {
+        guard let draft = drafts[key], let field = NutritionTargetField.all.first(where: { $0.key == key }) else { return }
+        guard draft != current(key) else { drafts[key] = nil; return }
+        let value = draft.isEmpty ? nil : Double(draft)
+        // The server leaves a value out of range as it was, which would look saved: say so here instead.
+        if let value, !field.range.contains(value) {
+            error = "\(field.label): between \(Fmt.number(field.range.lowerBound)) and \(Fmt.number(field.range.upperBound)) \(field.unit), or blank for none."
+            return
+        }
+        error = nil
+        Task {
+            do {
+                try await dashboard.setNutritionTarget(key, value)
+                drafts[key] = nil
+            } catch {
+                self.error = "Couldn't save: \(error.localizedDescription)"
+            }
+        }
+    }
+}
+
+/// The targets the server takes, with its ranges (TARGET_RANGE in server/query.ts).
+struct NutritionTargetField: Identifiable {
+    let key: String
+    let label: String
+    let unit: String
+    let range: ClosedRange<Double>
+    var id: String { key }
+
+    static let all = [
+        NutritionTargetField(key: "energy_kcal", label: "Calories", unit: "kcal", range: 500...10_000),
+        NutritionTargetField(key: "protein_g", label: "Protein", unit: "g", range: 10...500),
+        NutritionTargetField(key: "water_ml", label: "Water", unit: "mL", range: 250...8_000),
+    ]
 }
 
 /// The Family board: sharing is mutual, and a cycle phase can go on your tile while tracking and sharing are on.

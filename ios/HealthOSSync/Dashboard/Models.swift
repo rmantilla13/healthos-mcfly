@@ -713,6 +713,12 @@ struct ServerStatus: Codable {
         let shareCyclePhase: Bool?
         /// The one-time note that the Family board shows your daily status was dismissed.
         let familyNoticeSeen: Bool?
+        /// Nutrition is on (the Nutrition section, GET /api/nutrition). Off by default; only the person turns it on.
+        let nutrition: Bool?
+        /// How much of their nutrition they see: "all" | "no_energy" | "none". nil until chosen.
+        let nutritionNumbers: String?
+        /// Targets they set themselves, if any. Shown as a plain line, never scored. Older servers have none.
+        @Lossy var nutritionTargets: NutritionTargets?
     }
 
     struct Apple: Codable {
@@ -738,6 +744,63 @@ struct ServerStatus: Codable {
     @Lossy var settings: Settings?
     @Lossy var apple: Apple?
     @Lossy var whoop: Whoop?
+}
+
+/// Daily targets a person set for themselves (shared/types.ts NutritionTargets); nil means none. healthOS never suggests one.
+struct NutritionTargets: Codable, Equatable {
+    var energy_kcal: Double?
+    var protein_g: Double?
+    var water_ml: Double?
+}
+
+/// How much of their nutrition a person chose to see. The server removes everything else before it answers.
+enum NutritionMode: String {
+    case all
+    case noEnergy = "no_energy"
+    case none
+}
+
+/// GET /api/nutrition (server/nutrition.ts): what a person logs in a food app, read through Apple Health, one app a
+/// day, never summed. Empty unless Nutrition is on. Servers before the Neka layout send no targets, hydration or insights.
+struct NutritionData: Codable {
+    struct Hydration: Codable {
+        /// mL by day, from any app (the daily water_ml metric).
+        @LossyArray var water: [Point]
+        /// mg by day (caffeine_mg).
+        @LossyArray var caffeine: [Point]
+    }
+
+    let enabled: Bool
+    /// "all" | "no_energy" | "none"; nil while Nutrition is off.
+    let numbers: String?
+    let today: String
+    let start: String
+    let end: String
+    /// Apps with data in the window, most days first.
+    @LossyArray var apps: [String]
+    /// The app chosen for days two apps logged; nil is automatic.
+    let app: String?
+    /// Days with something logged, oldest first. A day missing here is a gap, never a zero.
+    @LossyArray var days: [FoodDay]
+    /// The person's own targets, as far as their setting shows them: energy_kcal, protein_g, water_ml.
+    @Lossy var targets: [String: Double]?
+    @Lossy var hydration: Hydration?
+    /// Food patterns (caffeine and sleep, drinks and HRV), only when asked for with insights=1.
+    @LossyArray var insights: [Pattern]
+
+    var mode: NutritionMode { NutritionMode(rawValue: numbers ?? "") ?? .none }
+    var water: [Point] { hydration?.water ?? [] }
+    var caffeine: [Point] { hydration?.caffeine ?? [] }
+}
+
+/// One logged day: the app used that day and its totals, as the setting allows (no energy in "no_energy", empty in "none").
+struct FoodDay: Codable, Identifiable {
+    let date: String
+    let app: String
+    let values: [String: Double]
+    /// Other apps that logged food that day: shown, never added in, because apps copy each other's logs.
+    @LossyArray var otherApps: [String]
+    var id: String { date }
 }
 
 /// The profile photo's metadata (shared/types.ts PhotoMeta). The images come from /api/profile/*.png.
