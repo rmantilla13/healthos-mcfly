@@ -5,7 +5,7 @@ import UIKit
 enum AppTab: Hashable { case today, family, trends, insights, settings }
 
 enum TrendsSection: String, CaseIterable, Identifiable {
-    case vitals = "Vitals", sleep = "Sleep", activity = "Activity", body = "Body", cycle = "Cycle"
+    case vitals = "Vitals", sleep = "Sleep", activity = "Activity", body = "Body", cycle = "Cycle", nutrition = "Nutrition"
     var id: String { rawValue }
 
     /// Web pages an insight can link to.
@@ -16,13 +16,14 @@ enum TrendsSection: String, CaseIterable, Identifiable {
         case "activity": self = .activity
         case "body": self = .body
         case "cycle": self = .cycle
+        case "nutrition": self = .nutrition
         default: return nil
         }
     }
 
-    /// The sections to offer: Cycle only while cycle tracking is on.
-    static func visible(cycleTracking: Bool) -> [TrendsSection] {
-        cycleTracking ? allCases : allCases.filter { $0 != .cycle }
+    /// The sections to offer: Cycle only while cycle tracking is on, Nutrition only while it's on.
+    static func visible(cycleTracking: Bool, nutrition: Bool = false) -> [TrendsSection] {
+        allCases.filter { ($0 != .cycle || cycleTracking) && ($0 != .nutrition || nutrition) }
     }
 }
 
@@ -74,6 +75,8 @@ final class Dashboard {
     // Newer endpoints. A cached nil means the server doesn't have it (404), so it isn't asked again until the next load.
     private var dayCache: [String: DayData?] = [:]
     private var cycleCache: [Int: CycleData?] = [:]
+    /// By days, insights and what the person sees, so a reply read in one mode never shows in another. Memory only.
+    private var nutritionCache: [String: NutritionData?] = [:]
     private var sleepCache: [Int: SleepTiming?] = [:]
     private var patternsCache: Patterns?? = .none
     private var digestCache: DigestReply?? = .none
@@ -101,6 +104,13 @@ final class Dashboard {
     var stepGoal: Double { summary?.stepGoal ?? status?.settings?.stepGoal ?? 10_000 }
     /// Cycle tracking is on (set on the web or in Settings): the Cycle card, the Cycle trends section and GET /api/cycle.
     var cycleTrackingOn: Bool { status?.settings?.cycleTracking == true }
+    /// What the person chose to see of their nutrition, or nil while Nutrition is off (or the server has none).
+    var nutritionMode: NutritionMode? {
+        guard status?.settings?.nutrition == true, let numbers = status?.settings?.nutritionNumbers else { return nil }
+        return NutritionMode(rawValue: numbers)
+    }
+    /// Nutrition is on, with a choice of what to see: the Nutrition section of Trends and GET /api/nutrition.
+    var nutritionOn: Bool { nutritionMode != nil }
     var signInRequired: Bool { phase == .signIn }
     /// The server has the Family board: its status names the setting, or the board itself was read.
     var familyAvailable: Bool { status?.settings?.familySharing != nil || familyBoard != nil }
@@ -265,7 +275,7 @@ final class Dashboard {
     }
 
     func open(_ section: TrendsSection) {
-        trendsSection = section == .cycle && !cycleTrackingOn ? .vitals : section
+        trendsSection = (section == .cycle && !cycleTrackingOn) || (section == .nutrition && !nutritionOn) ? .vitals : section
         tab = .trends
     }
 
@@ -311,6 +321,22 @@ final class Dashboard {
         let shown = c?.enabled == true ? c : nil
         cycleCache[days] = shown
         return shown
+    }
+
+    /// Food totals over the last `days` days; nil without asking while Nutrition is off, and nil from a server without it.
+    func nutrition(days: Int, insights: Bool = false) async throws -> NutritionData? {
+        guard let mode = nutritionMode else { return nil }
+        let key = "\(days)|\(insights)|\(mode.rawValue)"
+        if let hit = nutritionCache[key] { return hit }
+        let n = try await fetch { try await $0.nutrition(days: days, insights: insights) }
+        let shown = n?.enabled == true ? n : nil
+        nutritionCache[key] = shown
+        return shown
+    }
+
+    /// Sets or clears (nil) one of the person's own targets: "energy_kcal", "protein_g" or "water_ml".
+    func setNutritionTarget(_ key: String, _ value: Double?) async throws {
+        try await updateSettings(["nutritionTargets": [key: value.map { $0 as Any } ?? NSNull()]])
     }
 
     func sleepTiming(days: Int) async throws -> SleepTiming? {
@@ -442,7 +468,14 @@ final class Dashboard {
 
     /// Shows a status from the server: settings, the photo, and whether you share with family.
     func apply(status: ServerStatus) {
+        let before = self.status?.settings
         self.status = status
+        // What the person sees, or their targets, changed: no reply read before may show again.
+        let after = status.settings
+        if before?.nutrition != after?.nutrition || before?.nutritionNumbers != after?.nutritionNumbers || before?.nutritionTargets != after?.nutritionTargets {
+            nutritionCache = [:]
+        }
+        if !nutritionOn, trendsSection == .nutrition { trendsSection = .vitals }
         // Cycle tracking turned on (on the web): the next Sync asks Health for those types, then sends their history.
         if let on = status.settings?.cycleTracking { Config.cycleTracking = on }
         if !cycleTrackingOn, trendsSection == .cycle { trendsSection = .vitals }
@@ -466,6 +499,7 @@ final class Dashboard {
         workoutCache = [:]
         dayCache = [:]
         cycleCache = [:]
+        nutritionCache = [:]
         sleepCache = [:]
         patternsCache = .none
         digestCache = .none

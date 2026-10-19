@@ -36,6 +36,12 @@ struct SyncState: Codable {
     var hourlyBackfillDone = false
     /// The daily metrics the server listed in its last reply; nil for an older server that doesn't list them.
     var acceptedMetrics: [String]?
+    /// The nutrients the server listed in its last reply; nil for a server without Nutrition, which gets no food.
+    var acceptedNutrients: [String]?
+    /// The server's last word on whether this person has Nutrition on. Off, no food type is read or asked about.
+    var nutritionOn = false
+    /// Days where a food sample was deleted, still to send (as `apps: []` if nothing is left there).
+    var nutritionClear: [String] = []
     /// The recent month went up again once the server stored sleep stages, so those nights have their timelines.
     var sleepStagesResent = false
 
@@ -64,6 +70,9 @@ struct SyncState: Codable {
         hourlyBackfillStarted = try c.decodeIfPresent(Bool.self, forKey: .hourlyBackfillStarted) ?? false
         hourlyBackfillDone = try c.decodeIfPresent(Bool.self, forKey: .hourlyBackfillDone) ?? false
         acceptedMetrics = try c.decodeIfPresent([String].self, forKey: .acceptedMetrics)
+        acceptedNutrients = try c.decodeIfPresent([String].self, forKey: .acceptedNutrients)
+        nutritionOn = try c.decodeIfPresent(Bool.self, forKey: .nutritionOn) ?? false
+        nutritionClear = try c.decodeIfPresent([String].self, forKey: .nutritionClear) ?? []
         sleepStagesResent = try c.decodeIfPresent(Bool.self, forKey: .sleepStagesResent) ?? false
     }
 
@@ -77,12 +86,40 @@ struct SyncState: Codable {
     /// The daily metrics this server takes: what its last reply listed, else the legacy set.
     var accepted: Set<String> { acceptedMetrics.map(Set.init) ?? Self.legacyMetrics }
 
-    /// One unknown metric fails a whole ingest, so rows this server wouldn't take are left out.
+    /// One unknown metric or nutrient fails a whole ingest, so rows this server wouldn't take are left out. Food goes
+    /// only to a server that lists nutrients, and only while the person has Nutrition on.
     func filtered(_ payload: IngestPayload) -> IngestPayload {
         let accepted = accepted
         var p = payload
         p.daily.removeAll { !accepted.contains($0.metric) }
+        let food = Set(foodNutrients.map(\.name))
+        p.nutrition = food.isEmpty ? nil : p.nutrition.map { NutritionFolder.keep($0, nutrients: food) }
+        if p.nutrition?.isEmpty == true { p.nutrition = nil }
         return p
+    }
+
+    /// The food types read now: none while Nutrition is off or this server doesn't take food.
+    var foodNutrients: [Nutrient] { NutritionTypes.reading(accepted: acceptedNutrients, on: nutritionOn) }
+
+    /// Learns from a reply whether to read food, and which nutrients. Anchors are kept only for food types being read:
+    /// one that starts being read (Nutrition turned on, or a nutrient the server takes now) reads its whole history, and
+    /// turning Nutrition off forgets where reading stopped, so turning it on again sends the history again.
+    /// Returns whether the food types read changed.
+    @discardableResult
+    mutating func noteNutrition(_ nutrients: [String]?, on: Bool?) -> Bool {
+        let before = foodNutrients.map(\.name)
+        acceptedNutrients = nutrients
+        nutritionOn = on ?? false
+        let reading = Set(foodNutrients.map(\.name))
+        for n in NutritionTypes.all where !reading.contains(n.name) { anchors[n.identifier.rawValue] = nil }
+        if reading.isEmpty { nutritionClear = [] }
+        return before != foodNutrients.map(\.name)
+    }
+
+    /// What a reply says this server takes: daily metrics, and whether and which food.
+    mutating func learn(_ reply: IngestClient.Response) {
+        noteAccepted(reply.metrics)
+        noteNutrition(reply.nutrients, on: reply.nutritionOn)
     }
 
     /// Learns from a reply which metrics the server takes. One it takes for the first time had its days read (and its
@@ -106,16 +143,16 @@ struct SyncState: Codable {
         let reply: IngestClient.Response
         do {
             reply = try await send(sent)
-        } catch let error as IngestClient.Rejected where error.unknownMetric {
+        } catch let error as IngestClient.Rejected where error.unknownMetric || error.unknownNutrient {
             let probe = try await send(IngestPayload())
-            noteAccepted(probe.metrics)
+            learn(probe)
             let fewer = filtered(payload)
             // Nothing more to leave out: the same rows would be refused again.
-            guard fewer.daily.map(\.metric) != sent.daily.map(\.metric) else { throw error }
+            guard fewer.daily.map(\.metric) != sent.daily.map(\.metric) || fewer.nutrition != sent.nutrition else { throw error }
             sent = fewer
             reply = try await send(sent)
         }
-        noteAccepted(reply.metrics)
+        learn(reply)
         return (reply, sent.rowCount)
     }
 
@@ -270,6 +307,8 @@ actor SyncEngine {
 
     private func runOnce() async -> SyncReport {
         var state = SyncState.load()
+        let foodBefore = state.foodNutrients.map(\.name)
+        defer { if state.foodNutrients.map(\.name) != foodBefore { Task { await Background.reobserve() } } }
         do {
             guard Health.shared.isAvailable else { throw SyncError("Health data isn't available on this device.") }
             guard let base = Config.serverURL() else { throw SyncError("Enter the healthOS server URL.") }
@@ -284,9 +323,10 @@ actor SyncEngine {
             let client = IngestClient(base: base, token: token)
             // Ask (with an empty push, which writes nothing) whether this server stores hours yet, and which daily
             // metrics it takes, before reading changes: a metric it takes for the first time clears its types' anchors.
+            // While Nutrition is on, ask every time, so food isn't read once more after it was turned off.
             var storedHours = false
             var storesStages = false
-            if !state.hourlyBackfillDone || !Config.serverStoresCycle || state.acceptedMetrics == nil || !state.sleepStagesResent {
+            if !state.hourlyBackfillDone || !Config.serverStoresCycle || state.acceptedMetrics == nil || state.nutritionOn || !state.sleepStagesResent {
                 let probe = try await push(IngestPayload(), via: client, state: &state).reply
                 storedHours = probe.hourly != nil
                 state.startHourlyBackfill(serverStoresHours: storedHours)
@@ -312,7 +352,8 @@ actor SyncEngine {
             var dirty = Set<String>()
             var anchors = state.anchors
             var deletedWorkouts = state.deletedWorkouts, deletedEvents = state.deletedEvents
-            let types = HealthTypes.sampleTypes
+            let food = state.foodNutrients
+            let types = HealthTypes.sampleTypes(food: food)
             for (i, type) in types.enumerated() {
                 await emit(.progress("Checking \(HealthTypes.label(type)) (\(i + 1)/\(types.count))"))
                 let anchor = state.anchors[type.identifier].flatMap {
@@ -322,6 +363,10 @@ actor SyncEngine {
                 dirty.formUnion(changes.dates)
                 if CycleTypes.all.contains(type) {
                     dirty.formUnion(state.noteCycle(added: changes.addedDays, deleted: changes.deletedUUIDs, today: Day.today()))
+                }
+                // A deleted food sample: its day goes up again, as `apps: []` if nothing is left (same month as below).
+                if NutritionTypes.nutrient(of: type) != nil, changes.sawDeletions, anchor != nil {
+                    state.nutritionClear = Set(state.nutritionClear).union((0...SyncState.recentDays).map { Day.add(Day.today(), -$0) }).sorted()
                 }
                 if type == HealthTypes.workout { deletedWorkouts += changes.deletedIDs }
                 if type == HealthTypes.mindful { deletedEvents += changes.deletedIDs }
@@ -351,6 +396,8 @@ actor SyncEngine {
             let changed = dirty.count
             // Today goes up on every sync, so the dashboard's today and its hours are never behind the phone.
             dirty.insert(today)
+            // Food apps often write a meal to Health hours or a day later, so the last three days are read again too.
+            if !food.isEmpty { dirty.formUnion((1...2).map { Day.add(today, -$0) }) }
             state.anchors = anchors
             state.pending = Set(state.pending).union(dirty).sorted()
             state.splitOld(today: today)
@@ -370,12 +417,13 @@ actor SyncEngine {
             var days = 0, rows = 0
             for (i, window) in windows.enumerated() {
                 await emit(.progress(windows.count == 1 && window.count == 1 ? "Uploading \(window[0])" : "Uploading \(window.first!) – \(window.last!) (\(i + 1)/\(windows.count))"))
-                let payload = try await Health.shared.payload(for: window, clearCycle: Set(state.cycleClear))
+                let payload = try await Health.shared.payload(for: window, clearCycle: Set(state.cycleClear), food: state.foodNutrients, clearFood: Set(state.nutritionClear))
                 let (reply, sentRows) = try await push(payload, via: client, state: &state)
                 storedHours = reply.hourly != nil
                 let sent = Set(window)
                 state.pending.removeAll { sent.contains($0) }
                 state.cycleClear.removeAll { sent.contains($0) }
+                state.nutritionClear.removeAll { sent.contains($0) }
                 try state.save()
                 days += window.count
                 rows += sentRows
@@ -399,15 +447,18 @@ actor SyncEngine {
     private func backfillPass() async -> Bool {
         var state = SyncState.load()
         guard !state.backfill.isEmpty, let base = Config.serverURL(), !Config.token.isEmpty, state.server == base.absoluteString else { return false }
+        let foodBefore = state.foodNutrients.map(\.name)
+        defer { if state.foodNutrients.map(\.name) != foodBefore { Task { await Background.reobserve() } } }
         let client = IngestClient(base: base, token: Config.token)
         do {
             for window in Self.windows(state.backfill).prefix(Self.backfillWindowsPerPass) {
                 await emit(.backfill(left: state.backfill.count, at: window.first!))
-                let payload = try await Health.shared.payload(for: window, clearCycle: Set(state.cycleClear))
+                let payload = try await Health.shared.payload(for: window, clearCycle: Set(state.cycleClear), food: state.foodNutrients, clearFood: Set(state.nutritionClear))
                 let reply = try await push(payload, via: client, state: &state).reply
                 let sent = Set(window)
                 state.backfill.removeAll { sent.contains($0) }
                 state.cycleClear.removeAll { sent.contains($0) }
+                state.nutritionClear.removeAll { sent.contains($0) }
                 state.finishHourlyBackfill(serverStoredHours: reply.hourly != nil)
                 try state.save()
             }

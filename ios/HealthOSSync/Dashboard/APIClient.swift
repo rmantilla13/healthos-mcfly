@@ -187,6 +187,13 @@ struct APIClient {
 
     func patterns() async throws -> Patterns? { try await optional("/patterns") }
 
+    /// Food totals by day (GET /nutrition); nil from a server without Nutrition. `insights` adds the food patterns.
+    func nutrition(days: Int, insights: Bool = false) async throws -> NutritionData? {
+        var query = [URLQueryItem(name: "days", value: String(days))]
+        if insights { query.append(URLQueryItem(name: "insights", value: "1")) }
+        return try await optional("/nutrition", query: query)
+    }
+
     func digest() async throws -> DigestReply? { try await optional("/mcfly/digest") }
 
     /// The Family board (GET /family); nil when the server predates it (404).

@@ -83,7 +83,8 @@ final class Health: @unchecked Sendable {
 
     /// Complete rows for `days` (sorted local dates), read from HealthKit in one padded window.
     /// `clearCycle`: days where a cycle sample was deleted; sent as `{date}` when nothing is left, so the server forgets them.
-    func payload(for days: [String], clearCycle: Set<String> = []) async throws -> IngestPayload {
+    /// `food`: the food types to read (none while Nutrition is off); `clearFood` works like `clearCycle`, as `apps: []`.
+    func payload(for days: [String], clearCycle: Set<String> = [], food: [Nutrient] = [], clearFood: Set<String> = []) async throws -> IngestPayload {
         // Pad by two days: a local day spans UTC offsets from -12h to +14h, and a night can start the evening before.
         let from = Day.midnightUTC(days.first!).addingTimeInterval(-2 * 86_400)
         let to = Day.midnightUTC(days.last!).addingTimeInterval(3 * 86_400)
@@ -108,6 +109,16 @@ final class Health: @unchecked Sendable {
             let days = CycleFolder.fold(records, dates: Set(days), clearing: clearCycle)
             payload.cycle = days.isEmpty ? nil : days
         }
+        if !food.isEmpty {
+            // Quantity samples only: a Food correlation's samples are these same samples, and reading both would count
+            // a meal twice.
+            var samples: [FoodSample] = []
+            for n in food {
+                samples += NutritionFolder.samples(try await self.samples(.quantitySample(type: n.type, predicate: window)), as: n)
+            }
+            let days = NutritionFolder.fold(samples, dates: Set(days), clearing: clearFood)
+            payload.nutrition = days.isEmpty ? nil : days
+        }
         return payload
     }
 
@@ -119,7 +130,7 @@ final class Health: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         guard observers.isEmpty else { return }
-        for type in HealthTypes.sampleTypes {
+        for type in HealthTypes.observedTypes {
             let query = HKObserverQuery(sampleType: type, predicate: nil) { _, completion, error in
                 if error != nil { return completion() }
                 Task {
@@ -156,5 +167,16 @@ final class Health: @unchecked Sendable {
         observers.forEach(store.stop)
         observers = []
         store.disableAllBackgroundDelivery { _, _ in }
+    }
+
+    /// Registers everything again, for when the food types read changed. Background delivery outlasts the app, so food
+    /// energy's goes with the rest before the current types come back.
+    func restartObserving(onChange: @escaping @Sendable () async -> Void) async {
+        lock.withLock {
+            observers.forEach(store.stop)
+            observers = []
+        }
+        try? await store.disableAllBackgroundDelivery()
+        startObserving(onChange: onChange)
     }
 }

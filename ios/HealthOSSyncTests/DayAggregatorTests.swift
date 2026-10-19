@@ -563,7 +563,7 @@ final class DayAggregatorTests: XCTestCase {
         XCTAssertEqual(HealthTypes.label(metric("caffeine_mg").type), "caffeine")
         XCTAssertEqual(HealthTypes.label(metric("walking_speed").type), "walking speed")
         XCTAssertEqual(HealthTypes.label(HealthTypes.workout), "workouts")
-        for type in HealthTypes.sampleTypes where type != HealthTypes.workout {
+        for type in HealthTypes.sampleTypes(food: NutritionTypes.all) where type != HealthTypes.workout {
             XCTAssertNotEqual(HealthTypes.label(type), "workouts", type.identifier)
         }
         let walking = ["daylight_min", "flights", "walking_speed", "walking_steadiness", "walking_asymmetry"]
@@ -667,7 +667,8 @@ final class DayAggregatorTests: XCTestCase {
         // This build learned the full list, then the server at the same URL went back to the build without it.
         var state = SyncState(server: "https://health.mcfly.bot")
         state.noteAccepted(serverMetrics)
-        for type in HealthTypes.sampleTypes { state.anchors[type.identifier] = Data([1]) }
+        // Without food types, whatever Nutrition setting this simulator's app last synced with.
+        for type in HealthTypes.sampleTypes(food: []) { state.anchors[type.identifier] = Data([1]) }
         let anchors = state.anchors
         let old = FakeServer(metrics: SyncState.legacyMetrics, lists: false)
 
@@ -771,7 +772,8 @@ final class DayAggregatorTests: XCTestCase {
     func testNewlyAcceptedMetricsClearTheirTypesAnchorsOnce() {
         // This build synced with an older server first: every type has an anchor, but the new metrics' rows were left out.
         var state = SyncState(server: "https://health.mcfly.bot")
-        for type in HealthTypes.sampleTypes { state.anchors[type.identifier] = Data([1]) }
+        // Without food types, whatever Nutrition setting this simulator's app last synced with.
+        for type in HealthTypes.sampleTypes(food: []) { state.anchors[type.identifier] = Data([1]) }
         let all = Set(state.anchors.keys)
 
         XCTAssertEqual(state.noteAccepted(nil), [], "an older server: nothing to resend")

@@ -120,8 +120,15 @@ final class AppModel {
         // Every time, not just the first: Health only asks about types not decided yet, such as ones a newer
         // version of the app reads (Apple Watch RMSSD), and returns at once otherwise.
         await requestHealthAccess()
+        let food = Set(NutritionTypes.current.map(\.name))
         syncing = true
         last = await SyncEngine.shared.sync()
+        // This sync heard that Nutrition is on (or the server takes more nutrients): ask Health about those types and
+        // read them now, rather than on the next sync.
+        if !Set(NutritionTypes.current.map(\.name)).isSubset(of: food) {
+            await requestHealthAccess()
+            last = await SyncEngine.shared.sync()
+        }
         syncing = false
         progress = ""
     }
@@ -250,6 +257,13 @@ enum Background {
         await SyncEngine.shared.sync()
         // Even when Health couldn't be read (a locked phone), so WHOOP still refreshes on the server.
         if !foreground { await ServerSync.shared.requestIfDue() }
+    }
+
+    /// The food types read changed (Nutrition turned on or off): background delivery is registered again, so food
+    /// energy wakes the app only while food is read.
+    static func reobserve() async {
+        guard Config.backgroundSync && Config.healthRequested else { return }
+        await Health.shared.restartObserving { await wake() }
     }
 
     /// History goes up only while the app is open and not in Low Power Mode.

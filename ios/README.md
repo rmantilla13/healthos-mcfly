@@ -14,6 +14,10 @@ The app reads the same API as the website (`/api/summary`, `/api/trends`, `/api/
   - Arrows step through past days. Pull down to refresh, which also pushes any new Health data.
   - **Ask McFly:** a pill above the tab bar opens a chat with the dashboard's assistant (`/api/mcfly`, streamed from `/api/mcfly/chat`). The conversation stays in memory only. It shows how many questions are left today, and the pill is hidden when the server has McFly off.
 - **Trends:** Vitals, Sleep (stacked stages), Activity (steps against goal, plus workouts) and Body, over 30 days, 90 days or a year. Drag across a chart to read a single day.
+- **Nutrition** (only while Nutrition is on): the web's Neka layout from `GET /api/nutrition`.
+  - **Overview:** Energy (only when calories are shown), Protein with a neutral week-on-week note, Water in glasses, Days logged, a macro balance donut with fiber, sugar, sodium and caffeine, and food insights worded as associations.
+  - **Macros and Hydration:** a bar per logged day over 7, 30 or 90 days. With "No amounts", only the Overview shows, and only which days were logged.
+  - **No judgement:** a day with nothing logged is a gap, never a zero. A target you set (Settings → Nutrition targets) is a plain dashed line. No score, no "remaining", no red or green.
 - **Cycle** (only while cycle tracking is on): this cycle's phase ring and estimates, each fertile day's estimated chance, the temperature curve for any cycle (cover line, ovulation, the rise after it), a five-week calendar, past cycles split before and after ovulation, and patterns from your own cycles. Estimates never mark a day as safe.
 - **Settings:**
   - server address and sign-in status;
@@ -43,6 +47,13 @@ Cards hide or switch to fit your sources, as on the web: no WHOOP means VO₂ ma
   - Every sync sends today, plus any changed day in the last 30.
   - Older days (the first upload, or the one-time hourly backfill) wait in a saved queue. They go up newest first, four weeks per pass, only while the app is open and not in Low Power Mode. Settings shows how many are left.
 - **Cycle tracking:** menstrual flow, spotting, ovulation tests, cervical mucus, sexual activity, basal body temperature and Health's cycle symptoms (cramps, bloating, headache and the rest; one logged as "not present" is left out). The app reads these only after you turn cycle tracking on in healthOS settings and the server answers that it stores cycle days. Each day sent replaces that day on the server.
+- **Nutrition** (food totals from the apps you log meals in): energy, protein, carbs, fat, fiber, sugar, saturated fat, sodium and alcoholic drinks.
+  - **Off by default.** The app reads, asks Health about and watches these types only while the server's ingest reply says you turned Nutrition on (`nutritionOn`) and lists the nutrients it takes (`nutrients`). Off, it reads none of them, and it never writes food.
+  - **Turning it on:** the sync that hears it asks Health about the food types and then reads their whole history. Turning it off forgets where reading stopped, so turning it on again sends the history again.
+  - **Per app, never summed:** each day goes up as each app's own totals, and the server shows one app a day, because apps copy each other's logs through Health. A meal saved as a Food correlation counts once. Each day sent replaces that day.
+  - **Deletions:** a food sample deleted in Health re-sends the last month, and a day left with no food goes up as `apps: []`, which clears it. An empty day is never sent otherwise: Health reads as empty when food access is off.
+  - **Late writes:** food apps often write late, so the last three days are read again on every sync. Food energy alone wakes the app in the background.
+  - **Values the server would refuse stay on the phone:** a total above its cap (a unit mix-up) is left out, so one bad log can't block a sync. Caffeine and water stay daily metrics, as before.
 - **Sleeping wrist temperature** counts toward the morning the night ends, like sleep, so it lines up with WHOOP's skin temperature for the cycle engine. Builds before this dated it by the evening the night began: the first sync after updating reads its history again once and re-sends every day it moved from or to, and the server drops a wrist reading from any day sent without one.
 - **Syncs in the background:**
   - **HealthKit wakes:** an `HKObserverQuery` per type plus `enableBackgroundDelivery`. Wakes are hourly for heart rate, steps, energy, distance, exercise and breathing, and immediate for everything else.
