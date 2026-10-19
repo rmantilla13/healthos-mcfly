@@ -3585,11 +3585,6 @@ nav.tabs {
   .has-hero .night-cards:has(> .rhr-card:only-child) {
     display: none;
   }
-  /* One card left beside it (or alone) spans the row rather than sitting at half width. */
-  .has-hero .night-cards > .card:only-child,
-  .has-hero .night-cards > .card:first-child:nth-last-child(2):has(+ .rhr-card) {
-    grid-column: 1 / -1;
-  }
 }
 .settings-cards {
   max-width: 560px;
@@ -3770,5 +3765,40 @@ nav.tabs {
   .mcfly-compare-track {
     grid-column: 1 / -1;
     grid-row: 2;
+  }
+}
+
+/* ---------- card rows that follow what's shown (CardRow `fill`) ----------
+   A row lays out from how many of its cards are left: CardRow sets --cols-wide / --cols-mid (/ --cols-hero) to
+   the fewest even rows (4 in a 3-up row are 2 × 2), and each card is that share of the width. Cards grow, so a
+   short last row stretches to fill it. One card is full width; a phone shows one per row. */
+.cards.fill-row {
+  display: flex;
+  flex-wrap: wrap;
+  --cols: var(--cols-wide, 3);
+}
+.cards.fill-row > * {
+  flex: 1 1 calc((100% - (var(--cols) - 1) * 14px) / var(--cols) - 0.5px);
+  min-width: 0;
+}
+@media (max-width: 1360px) {
+  .cards-4.fill-row {
+    --cols: var(--cols-mid, 2);
+  }
+}
+@media (max-width: 1080px) {
+  .cards.fill-row {
+    --cols: var(--cols-mid, 2);
+  }
+}
+@media (min-width: 1400px) {
+  /* Beside the figure, without the resting heart rate card it already shows. */
+  .has-hero .night-cards.fill-row {
+    --cols: var(--cols-hero, 2);
+  }
+}
+@media (max-width: 560px) {
+  .cards.fill-row {
+    --cols: 1;
   }
 }

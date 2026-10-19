@@ -60,6 +60,7 @@ export function Home({ date, onDate, photo }: { date: string | null; onDate: (d:
 
         <CardRow
           className="cards"
+          fill={{ wide: 3, mid: 2 }}
           cards={[
             ['home.readiness', <ReadinessCard s={s} />],
             ['home.spo2', <Spo2Card s={s} />],

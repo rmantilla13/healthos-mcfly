@@ -57,6 +57,7 @@ function Overview({ tabs, photo, date, setDate }: { tabs: ReactNode; photo: Phot
         <div className="night-main">
           <CardRow
             className="cards night-cards"
+            fill={{ wide: 3, mid: 2, hero: { without: 'sleep.rhr' } }}
             cards={[
               ['sleep.score', <ScoreCard night={night} />],
               ['sleep.total', <TotalSleepCard night={night} s={s} />],

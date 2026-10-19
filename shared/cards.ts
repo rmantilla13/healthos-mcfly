@@ -70,3 +70,12 @@ export function withCardShown(current: string[], change: unknown): string[] | nu
   if (typeof id !== 'string' || !KNOWN.has(id) || typeof shown !== 'boolean') return null;
   return cleanHiddenCards(shown ? current.filter((x) => x !== id) : [...current, id]);
 }
+
+/**
+ * How many columns `n` cards take in a row of at most `max`: as few rows as fit, and as even as they go, so 4 cards
+ * in a 3-up row are 2 × 2 rather than 3 + 1. A short last row stretches to fill (styles.css, .fill-row).
+ */
+export function fillColumns(n: number, max: number) {
+  if (n <= 1 || max <= 1) return 1;
+  return Math.ceil(n / Math.ceil(n / max));
+}

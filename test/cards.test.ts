@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { AddressInfo } from 'node:net';
-import { CARDS, cleanHiddenCards, readHiddenCards } from '../shared/cards.ts';
+import { CARDS, cleanHiddenCards, fillColumns, readHiddenCards } from '../shared/cards.ts';
 import { createApp } from '../server/app.ts';
 import { hashPassword } from '../server/auth.ts';
 import { getUserSetting } from '../server/db.ts';
@@ -20,6 +20,15 @@ test('a hidden-cards list is known card ids, once each, in the registry order', 
   assert.deepEqual(readHiddenCards('not json'), []);
   assert.deepEqual(readHiddenCards(undefined), []);
   assert.equal(new Set(CARDS.map((c) => c.id)).size, CARDS.length, 'ids are unique');
+});
+
+test('a row takes as few even rows as fit: what is left after hiding fills the space', () => {
+  // Home's row of up to 3: 6 → 3 + 3, 5 → 3 + 2 (the 2 stretch), 4 → 2 × 2, then 3, 2, 1 across.
+  assert.deepEqual([6, 5, 4, 3, 2, 1].map((n) => fillColumns(n, 3)), [3, 3, 2, 3, 2, 1]);
+  // Body's row of up to 4.
+  assert.deepEqual([4, 3, 2, 1].map((n) => fillColumns(n, 4)), [4, 3, 2, 1]);
+  // Two across on a medium screen: 5 → 2 + 2 + 1 (the 1 stretches).
+  assert.deepEqual([6, 5, 4, 3, 2, 1, 0].map((n) => fillColumns(n, 2)), [2, 2, 2, 2, 2, 1, 1]);
 });
 
 process.env.SESSION_SECRET = 'cards-test-secret-'.padEnd(64, 'x');
