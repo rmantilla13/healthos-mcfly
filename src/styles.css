@@ -4117,3 +4117,183 @@ nav.tabs {
     --cols: 1;
   }
 }
+
+/* ---------- timeline scrubbing (Home: TimelineCard; src/charts/scrub.ts) ----------
+   The marker (.tl-now) is a slider: press anywhere on the track and drag, tap a moment, or use the arrow keys.
+   The moment's readout sits above the track, where a finger on the track doesn't cover it. A drag springs back
+   to now on release; a tap or the keys hold the moment until "Now". */
+.tl-scrub {
+  padding-top: 30px;
+  cursor: pointer;
+  /* Sideways drags scrub; up and down still scroll the page (the browser cancels the press, which goes live). */
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.tl-scrub .tl-now {
+  top: 14px;
+  cursor: grab;
+  transition: left 0.25s ease;
+}
+.tl-scrub .tl-now span {
+  transition: transform 0.25s ease;
+}
+.tl-scrub.is-dragging,
+.tl-scrub.is-dragging .tl-now {
+  cursor: grabbing;
+}
+.tl-scrub.is-dragging .tl-now,
+.tl-scrub.is-dragging .tl-now span {
+  transition: none;
+}
+/* The focus ring goes round the pill, not the 1px line. */
+.tl-now:focus-visible {
+  outline: none;
+}
+.tl-now:focus-visible span {
+  outline: 2px solid var(--series-1);
+  outline-offset: 2px;
+}
+.tl-now.is-scrubbed span {
+  box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.25);
+}
+/* Where now is, while the marker is elsewhere. */
+.tl-now-ghost {
+  position: absolute;
+  top: 26px;
+  bottom: 18px;
+  border-left: 1px dashed var(--ink-3);
+  pointer-events: none;
+}
+.tl-live {
+  cursor: pointer;
+  color: var(--ink);
+}
+.tl-live:hover {
+  background: var(--surface-hover);
+}
+.tl-live:disabled {
+  visibility: hidden;
+}
+
+.tl-moment {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.tl-moment-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  min-width: 0;
+}
+.tl-moment-time {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.tl-moment-what {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 500;
+}
+.tl-moment-what > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.tl-moment-what i {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.tl-moment-what small {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+/* Side by side, with each tile's name, value and notes on shared rows (subgrid), so a name that wraps on a phone
+   ("Active energy") doesn't knock its value out of line. */
+.tl-stats {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-template-rows: repeat(4, auto);
+  gap: 1px 8px;
+}
+.tl-stat {
+  grid-row: span 4;
+  display: grid;
+  grid-template-rows: subgrid;
+  align-content: start;
+  min-width: 0;
+  padding: 10px 11px;
+  border-radius: 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+.tl-stat-name {
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.tl-stat-value {
+  margin: 2px 0 1px;
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+.tl-stat-value small {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-3);
+}
+.tl-stat-value.is-empty {
+  color: var(--ink-3);
+}
+.tl-nowrap {
+  white-space: nowrap;
+}
+.tl-stat-sub {
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+/* The events under the marker, in the list below. */
+.tl-list li {
+  border-radius: 8px;
+  transition: background 0.15s, box-shadow 0.15s;
+}
+.tl-list li.is-current {
+  background: var(--surface-hover);
+  box-shadow: 0 0 0 6px var(--surface-hover);
+}
+/* The figure's heart callout while the timeline is scrubbed: that hour's average, not the resting rate. */
+.callout.is-scrubbed .callout-status {
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+@media (max-width: 420px) {
+  .tl-stat {
+    padding: 9px 10px;
+  }
+  .tl-stat-value {
+    font-size: 17px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tl-scrub .tl-now,
+  .tl-scrub .tl-now span,
+  .tl-list li {
+    transition: none;
+  }
+}

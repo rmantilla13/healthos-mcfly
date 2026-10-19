@@ -1,8 +1,9 @@
-import type { ReactNode } from 'react';
-import type { Insight, PhotoMeta, Summary, TimelineEvent, WeekSummary } from '../../shared/types.ts';
+import { type KeyboardEvent, type PointerEvent, type ReactNode, useEffect, useRef, useState } from 'react';
+import type { DayData, Insight, PhotoMeta, Summary, TimelineEvent, WeekSummary } from '../../shared/types.ts';
 import { Gauge, MiniBars, MiniDots, MiniLine, RangeScale } from '../charts/Mini.tsx';
+import { clockOf, DAY_MINUTES, type HeartAt, hourClock, momentAt, scrubMax, stepMinute, type TotalAt } from '../charts/scrub.ts';
 import { AllHiddenNote, CardRow, useAllHidden } from '../components/CardRow.tsx';
-import { Figure } from '../components/Figure.tsx';
+import { Figure, type HeartScrub } from '../components/Figure.tsx';
 import { Icon, type IconName } from '../components/Icon.tsx';
 import { NutritionCard } from './Nutrition.tsx';
 import { clock, compact, duration, fmt, fmtDate, hoursMinutes, href, minutesOfDay, relativeDay, shiftDate, useApi } from '../lib.ts';
@@ -10,6 +11,8 @@ import { clock, compact, duration, fmt, fmtDate, hoursMinutes, href, minutesOfDa
 export function Home({ date, onDate, photo, nutrition = false }: { date: string | null; onDate: (d: string | null) => void; photo: PhotoMeta | null; nutrition?: boolean }) {
   const { data, error, loading } = useApi<Summary>(`/summary${date ? `?date=${date}` : ''}`);
   const allHidden = useAllHidden('home');
+  // While the timeline is scrubbed, the figure's heart beats at that hour's rate.
+  const [heartScrub, setHeartScrub] = useState<HeartScrub | null>(null);
   if (error && !data) return <div className="page-message">Couldn't load your data: {error.message}</div>;
   if (!data) return <div className="page-message">Loading…</div>;
   const s = data;
@@ -23,7 +26,7 @@ export function Home({ date, onDate, photo, nutrition = false }: { date: string 
           <h1>{s.name || 'there'}.</h1>
           <p className="greeting-sub">{isToday ? "Here's your health today." : `Here's your health on ${fmtDate(s.date, { weekday: 'long', month: 'long', day: 'numeric' })}.`}</p>
         </header>
-        <Figure vitals={s.vitals} asOf={s.date} photo={photo} />
+        <Figure vitals={s.vitals} asOf={s.date} photo={photo} heartScrub={s.timeline.date === s.date ? heartScrub : null} />
         <div className="figure-caption">
           {s.week ? (
             <WeekSummaryText week={s.week} stepGoal={s.stepGoal} />
@@ -78,7 +81,7 @@ export function Home({ date, onDate, photo, nutrition = false }: { date: string 
           className="lower"
           pair
           cards={[
-            ['home.timeline', <TimelineCard timeline={s.timeline} today={s.today} />],
+            ['home.timeline', <TimelineCard key={s.timeline.date} timeline={s.timeline} today={s.today} onHeart={setHeartScrub} />],
             ['home.insights', <InsightsCard insights={s.insights} today={s.today} />],
           ]}
         />
@@ -466,12 +469,68 @@ const KIND_COLOR: Record<TimelineEvent['kind'], string> = {
   mindful: 'var(--series-3)',
 };
 
-function TimelineCard({ timeline, today }: { timeline: Summary['timeline']; today: string }) {
+/** The Day view's metrics, in Body's order, so both pages share one download for today. */
+const DAY_METRICS = 'heart_rate,steps,active_energy';
+/** Keyboard steps along the timeline: the arrows move 15 minutes, Page Up and Page Down an hour. */
+const STEP = 15;
+const BIG_STEP = 60;
+/** Dragging lands on 5-minute marks. */
+const SNAP = 5;
+
+/** What the person was doing at the marker: asleep, napping, or the workout or session's own name. */
+const doing = (e: TimelineEvent) => (e.kind === 'sleep' ? 'Asleep' : e.kind === 'nap' ? 'Napping' : e.title);
+const hourRange = (h: number) => `${hourClock(h)}–${hourClock(h + 1)}`;
+
+/** The browser's minute of the day, kept current while `on`. */
+function useNowMinute(on: boolean) {
+  const read = () => {
+    const d = new Date();
+    return d.getHours() * 60 + d.getMinutes();
+  };
+  const [minute, setMinute] = useState(read);
+  useEffect(() => {
+    if (!on) return;
+    setMinute(read());
+    const t = setInterval(() => setMinute(read()), 30_000);
+    return () => clearInterval(t);
+  }, [on]);
+  return minute;
+}
+
+/**
+ * The day's events on a 24-hour track, with a marker to scrub through it: drag it (or tap, or use the arrow keys)
+ * and the card shows what was going on then, with that hour's heart rate and the steps and energy by then from
+ * the hourly readings (GET /api/day). A drag springs back to now on release; a tap or the keys hold the moment
+ * until "Now". Without hourly readings (WHOOP has none) it shows the events alone.
+ */
+function TimelineCard({ timeline, today, onHeart }: { timeline: Summary['timeline']; today: string; onHeart: (h: HeartScrub | null) => void }) {
   const isToday = timeline.date === today;
-  const now = new Date();
-  const nowMin = now.getHours() * 60 + now.getMinutes();
-  const nowIso = `${today}T${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-  const pos = (m: number) => `${(m / 1440) * 100}%`;
+  const nowMin = useNowMinute(isToday);
+  const nowIso = `${today}T${clockOf(nowMin)}`;
+  const { data } = useApi<DayData>(`/day?metrics=${DAY_METRICS}${isToday ? '' : `&date=${timeline.date}`}`);
+  const day = data?.date === timeline.date ? data : undefined;
+  const max = scrubMax(isToday, nowMin, day?.asOf ?? null);
+  /** The minute the marker was moved to; null is live: now on today, the end of a past day. */
+  const [scrub, setScrub] = useState<number | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const live = scrub === null;
+  const minute = live ? (isToday ? nowMin : DAY_MINUTES) : Math.min(scrub, max);
+  const moment = momentAt(day, timeline.events, timeline.date, minute, live);
+
+  const trackRef = useRef<HTMLDivElement>(null);
+  const handleRef = useRef<HTMLDivElement>(null);
+  const press = useRef<{ id: number; x: number; moved: boolean } | null>(null);
+
+  // The figure's heart follows the marker (that hour's average, or nothing) only while it's moved off live.
+  const h = live ? undefined : moment.heart;
+  const bpm = h?.kind === 'reading' ? h.avg : null;
+  const heartLabel = h ? figureStatus(h) : null;
+  useEffect(() => {
+    onHeart(heartLabel === null ? null : { bpm, label: heartLabel });
+  }, [bpm, heartLabel, onHeart]);
+  useEffect(() => () => onHeart(null), [onHeart]);
+
+  const pos = (m: number) => `${(m / DAY_MINUTES) * 100}%`;
   // An event that started the previous evening is drawn from midnight.
   const span = (e: TimelineEvent) => {
     const s = e.start.slice(0, 10) < timeline.date ? 0 : minutesOfDay(e.start);
@@ -486,13 +545,121 @@ function TimelineCard({ timeline, today }: { timeline: Summary['timeline']; toda
     return 'Upcoming';
   };
 
+  /** Moving to the end (now, or the end of the day) is going live. */
+  const toScrub = (m: number) => (m >= max ? null : Math.max(0, m));
+  const go = (m: number) => setScrub(toScrub(m));
+  // From the latest state, so held-down keys that repeat faster than renders still step one at a time.
+  const nudge = (step: number, dir: 1 | -1) => setScrub((cur) => toScrub(stepMinute(cur === null ? minute : Math.min(cur, max), step, dir, max)));
+  const minuteAt = (clientX: number) => {
+    const r = trackRef.current!.getBoundingClientRect();
+    return Math.min(max, Math.max(0, Math.round((((clientX - r.left) / r.width) * DAY_MINUTES) / SNAP) * SNAP));
+  };
+  const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    // Keeps the mouse from moving focus off the marker (and from selecting text while dragging).
+    e.preventDefault();
+    press.current = { id: e.pointerId, x: e.clientX, moved: false };
+    e.currentTarget.setPointerCapture(e.pointerId);
+    handleRef.current?.focus({ preventScroll: true });
+    setDragging(true);
+    go(minuteAt(e.clientX));
+  };
+  const onPointerMove = (e: PointerEvent<HTMLDivElement>) => {
+    const p = press.current;
+    if (!p || p.id !== e.pointerId) return;
+    if (Math.abs(e.clientX - p.x) > 4) p.moved = true;
+    if (p.moved) go(minuteAt(e.clientX));
+  };
+  // A drag springs back to live on release, as a stock chart does; a tap keeps the moment it picked. A touch that
+  // turns into a page scroll is cancelled, and goes back to live too.
+  const onPointerEnd = (e: PointerEvent<HTMLDivElement>, cancelled: boolean) => {
+    const p = press.current;
+    if (!p || p.id !== e.pointerId) return;
+    press.current = null;
+    setDragging(false);
+    if (cancelled || p.moved) setScrub(null);
+  };
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    const keys: Record<string, () => void> = {
+      ArrowLeft: () => nudge(STEP, -1),
+      ArrowDown: () => nudge(STEP, -1),
+      ArrowRight: () => nudge(STEP, 1),
+      ArrowUp: () => nudge(STEP, 1),
+      PageDown: () => nudge(BIG_STEP, -1),
+      PageUp: () => nudge(BIG_STEP, 1),
+      Home: () => go(0),
+      End: () => setScrub(null),
+      Escape: () => setScrub(null),
+    };
+    if (!keys[e.key] || (e.key === 'Escape' && live)) return;
+    e.preventDefault();
+    keys[e.key]();
+  };
+  const toLive = () => {
+    setScrub(null);
+    handleRef.current?.focus({ preventScroll: true });
+  };
+
+  const liveName = isToday ? 'Now' : 'End of day';
+  const what = moment.events.length ? moment.events.map(doing).join(' and ') : 'nothing logged';
+  const valueText = [
+    live ? (isToday ? `Now, ${clockOf(nowMin)}` : 'End of day') : clockOf(minute),
+    what,
+    moment.heart?.kind === 'reading' ? `heart ${fmt(moment.heart.avg)} bpm, average from ${hourClock(moment.heart.hour)} to ${hourClock(moment.heart.hour + 1)}` : null,
+  ]
+    .filter(Boolean)
+    .join('; ');
+
+  // A WHOOP day count (its API has no hours) is larger than the phone's hours add up to: say whose hours these are.
+  const st = day?.metrics.steps;
+  const hourSteps = st ? st.hours.reduce<number>((a, v) => a + (v ?? 0), 0) : 0;
+  const whoopSteps = st?.total?.source === 'whoop' && st.total.value > hourSteps ? st.total.value : null;
+
   return (
     <section className="card timeline">
       <div className="card-title-row">
         <h2>{isToday ? "Today's timeline" : `Timeline · ${fmtDate(timeline.date, { weekday: 'short', month: 'short', day: 'numeric' })}`}</h2>
+        <button type="button" className="pill tl-live" onClick={toLive} disabled={live}>
+          {liveName}
+        </button>
       </div>
-      <div className="tl-track-wrap">
-        <div className="tl-track">
+      <div className="tl-moment">
+        <div className="tl-moment-head">
+          <span className="tl-moment-time">{live ? liveName : clockOf(minute)}</span>
+          <span className="tl-moment-what">
+            {moment.events.length === 0 ? (
+              <span className="muted">Nothing logged</span>
+            ) : (
+              moment.events.map((e) => (
+                <span key={e.id}>
+                  <i style={{ background: KIND_COLOR[e.kind] }} />
+                  {doing(e)}
+                  <small>
+                    {clock(e.start)}–{clock(e.end)}
+                  </small>
+                </span>
+              ))
+            )}
+          </span>
+        </div>
+        {(moment.heart || moment.steps || moment.energy) && (
+          <div className="tl-stats">
+            {moment.heart && <HeartStat h={moment.heart} isToday={isToday} />}
+            {moment.steps && <TotalStat name="Steps" unit="" t={moment.steps} isToday={isToday} />}
+            {moment.energy && <TotalStat name="Active energy" unit="kcal" t={moment.energy} isToday={isToday} />}
+          </div>
+        )}
+        {whoopSteps !== null && moment.steps && <p className="card-note">Steps by the hour are from your iPhone or Apple Watch. WHOOP counted {fmt(whoopSteps)} for the day.</p>}
+      </div>
+      <div
+        className={`tl-track-wrap tl-scrub${dragging ? ' is-dragging' : ''}`}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={(e) => onPointerEnd(e, false)}
+        onPointerCancel={(e) => onPointerEnd(e, true)}
+        onLostPointerCapture={(e) => onPointerEnd(e, false)}
+      >
+        <div className="tl-track" ref={trackRef}>
           {timeline.events.map((e) => {
             const [a, b] = span(e);
             return (
@@ -505,11 +672,23 @@ function TimelineCard({ timeline, today }: { timeline: Summary['timeline']; toda
             );
           })}
         </div>
-        {isToday && (
-          <div className="tl-now" style={{ left: pos(nowMin) }}>
-            <span>{clock(nowIso + ':00')}</span>
-          </div>
-        )}
+        {isToday && !live && <div className="tl-now-ghost" style={{ left: pos(nowMin) }} aria-hidden="true" />}
+        <div
+          ref={handleRef}
+          className={`tl-now${live ? '' : ' is-scrubbed'}`}
+          style={{ left: pos(minute) }}
+          role="slider"
+          tabIndex={0}
+          aria-label={isToday ? "Time on today's timeline" : 'Time on the timeline'}
+          aria-valuemin={0}
+          aria-valuemax={max}
+          aria-valuenow={minute}
+          aria-valuetext={valueText}
+          onKeyDown={onKeyDown}
+        >
+          {/* The pill slides from left-aligned at 00:00 to right-aligned at 24:00, so it never leaves the card. */}
+          <span style={{ transform: `translateX(-${(minute / DAY_MINUTES) * 100}%)` }}>{clockOf(minute)}</span>
+        </div>
         <div className="tl-ticks">
           {[0, 6, 12, 18, 24].map((h) => (
             <span key={h} style={{ left: pos(h * 60) }}>
@@ -523,7 +702,7 @@ function TimelineCard({ timeline, today }: { timeline: Summary['timeline']; toda
         {timeline.events.slice(-4).map((e) => {
           const st = state(e);
           return (
-            <li key={e.id}>
+            <li key={e.id} className={moment.events.includes(e) ? 'is-current' : undefined}>
               <span className="tl-dot" style={{ background: KIND_COLOR[e.kind] }} />
               <div>
                 <div className="tl-title">{e.title}</div>
@@ -538,6 +717,83 @@ function TimelineCard({ timeline, today }: { timeline: Summary['timeline']; toda
         })}
       </ul>
     </section>
+  );
+}
+
+/**
+ * Which hour a heart figure is the average of, or why there's none. Today's last synced hour may still be
+ * filling up, so it's the average since the hour began.
+ */
+function heartStatus(h: HeartAt, isToday: boolean): ReactNode {
+  // The hour stays on one line: a narrow tile breaks before it, not after its dash.
+  const hour = <span className="tl-nowrap">{h.kind === 'reading' && h.partial ? hourClock(h.hour) : h.kind !== 'empty' ? hourRange(h.hour) : ''}</span>;
+  if (h.kind === 'reading') return h.partial ? <>avg since {hour}</> : <>avg {hour}</>;
+  if (h.kind === 'pending') return 'not synced yet';
+  if (h.kind === 'none') return <>none {hour}</>;
+  return isToday ? 'none yet today' : 'none that day';
+}
+
+/** The same for the figure's heart callout, short enough for its one status line. */
+function figureStatus(h: HeartAt) {
+  if (h.kind === 'reading') return h.partial ? `Avg since ${hourClock(h.hour)}` : `Avg ${hourRange(h.hour)}`;
+  return h.kind === 'pending' ? 'Not synced yet' : h.kind === 'none' ? 'No reading then' : 'No readings';
+}
+
+function HeartStat({ h, isToday }: { h: HeartAt; isToday: boolean }) {
+  return (
+    <div className="tl-stat">
+      <span className="tl-stat-name">Heart rate</span>
+      {h.kind === 'reading' ? (
+        <>
+          <span className="tl-stat-value">
+            {fmt(h.avg)}
+            <small> bpm</small>
+          </span>
+          <span className="tl-stat-sub">{heartStatus(h, isToday)}</span>
+          {h.min !== null && h.max !== null && (
+            <span className="tl-stat-sub">
+              range{' '}
+              <span className="tl-nowrap">
+                {fmt(h.min)}–{fmt(h.max)}
+              </span>
+            </span>
+          )}
+        </>
+      ) : (
+        <>
+          <span className="tl-stat-value is-empty">—</span>
+          <span className="tl-stat-sub">{heartStatus(h, isToday)}</span>
+        </>
+      )}
+    </div>
+  );
+}
+
+function TotalStat({ name, unit, t, isToday }: { name: string; unit: string; t: TotalAt; isToday: boolean }) {
+  if (t.kind === 'empty')
+    return (
+      <div className="tl-stat">
+        <span className="tl-stat-name">{name}</span>
+        <span className="tl-stat-value is-empty">—</span>
+        <span className="tl-stat-sub">{isToday ? 'none yet today' : 'none that day'}</span>
+      </div>
+    );
+  return (
+    <div className="tl-stat">
+      <span className="tl-stat-name">{name}</span>
+      <span className="tl-stat-value">
+        {fmt(t.value)}
+        {unit && <small> {unit}</small>}
+      </span>
+      {t.kind === 'so-far' ? (
+        <span className="tl-stat-sub">so far today</span>
+      ) : (
+        <>
+          <span className="tl-stat-sub">{t.at === 24 ? 'whole day' : `by ${hourClock(t.at)}`}</span>
+          {t.typical !== null && <span className="tl-stat-sub">typical {fmt(t.typical)}</span>}
+        </>
+      )}
+    </div>
   );
 }
 

@@ -64,6 +64,12 @@ function display(key: Callout['key'], v: Vital, units: ReturnType<typeof useUnit
   return { value: fmt(t.value, 1), unit: t.unit };
 }
 
+/**
+ * While Home's timeline is scrubbed, the heart callout shows that hour's average heart rate instead of the resting
+ * rate, with its hour as the status (bpm null: no reading in that hour). It has no level: that's for resting rates.
+ */
+export type HeartScrub = { bpm: number | null; label: string };
+
 function CalloutLabel({
   k,
   v,
@@ -71,6 +77,7 @@ function CalloutLabel({
   side,
   style,
   innerRef,
+  scrub,
 }: {
   k: Callout['key'];
   v: Vital;
@@ -78,8 +85,19 @@ function CalloutLabel({
   side: 'left' | 'right';
   style: CSSProperties;
   innerRef?: Ref<HTMLDivElement>;
+  scrub?: HeartScrub | null;
 }) {
   const units = useUnits();
+  if (k === 'heart' && scrub)
+    return (
+      <div className={`callout callout-${side} is-scrubbed`} style={style} ref={innerRef}>
+        <div className="callout-label">Heart</div>
+        <div className="callout-value">
+          {scrub.bpm === null ? '—' : fmt(scrub.bpm)} <span>bpm</span>
+        </div>
+        <div className="callout-status">{scrub.label}</div>
+      </div>
+    );
   const d = display(k, v, units);
   const stale = v.latest && v.latest.date !== asOf;
   const level = levelOf(v, asOf);
@@ -105,8 +123,8 @@ const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n
  * Heart beats once per 60/bpm s and breathing cycles once per 60/rpm s; the clamps only catch impossible data,
  * so a bad row can't freeze or strobe the dot. Every dot's colour, and temperature's glow, come from its level.
  */
-function liveVars(k: Key, v: Vital): CSSProperties | null {
-  const value = v.latest?.value;
+function liveVars(k: Key, v: Vital, scrub?: HeartScrub | null): CSSProperties | null {
+  const value = k === 'heart' && scrub ? scrub.bpm : v.latest?.value;
   if (value == null || !Number.isFinite(value)) return null;
   if (k === 'heart') return value > 0 ? ({ '--beat': `${(60 / clamp(value, 30, 220)).toFixed(3)}s` } as CSSProperties) : null;
   if (k === 'breathing') return value > 0 ? ({ '--breath': `${(60 / clamp(value, 4, 40)).toFixed(3)}s` } as CSSProperties) : null;
@@ -119,12 +137,13 @@ function liveVars(k: Key, v: Vital): CSSProperties | null {
  * in its level's colour. Each dot is green, amber or red by how far it is from the person's usual (levelOf).
  * Radii are in the parent SVG's units.
  */
-function CalloutMark({ k, v, asOf, cx, cy, halo, dot }: { k: Key; v: Vital; asOf: string; cx: number; cy: number; halo: number; dot: number }) {
+function CalloutMark({ k, v, asOf, cx, cy, halo, dot, scrub }: { k: Key; v: Vital; asOf: string; cx: number; cy: number; halo: number; dot: number; scrub?: HeartScrub | null }) {
   // Sanitised so the id is safe inside url(#…) whatever format React's ids take.
   const glowId = `temp-glow-${useId().replace(/[^\w-]/g, '')}`;
-  const vars = liveVars(k, v);
+  const scrubbed = k === 'heart' && !!scrub;
+  const vars = liveVars(k, v, scrub);
   return (
-    <g className={`callout-mark mark-${k}${vars ? ' is-live' : ''}`} style={vars ?? undefined} data-level={levelOf(v, asOf)}>
+    <g className={`callout-mark mark-${k}${vars ? ' is-live' : ''}`} style={vars ?? undefined} data-level={scrubbed ? 'none' : levelOf(v, asOf)}>
       {k === 'temp' && vars && (
         <>
           <radialGradient id={glowId}>
@@ -142,8 +161,8 @@ function CalloutMark({ k, v, asOf, cx, cy, halo, dot }: { k: Key; v: Vital; asOf
   );
 }
 
-export function Figure({ vitals, asOf, photo }: { vitals: Summary['vitals']; asOf: string; photo: PhotoMeta | null }) {
-  return photo ? <PhotoFigure vitals={vitals} asOf={asOf} photo={photo} /> : <Silhouette vitals={vitals} asOf={asOf} />;
+export function Figure({ vitals, asOf, photo, heartScrub }: { vitals: Summary['vitals']; asOf: string; photo: PhotoMeta | null; heartScrub?: HeartScrub | null }) {
+  return photo ? <PhotoFigure vitals={vitals} asOf={asOf} photo={photo} scrub={heartScrub} /> : <Silhouette vitals={vitals} asOf={asOf} scrub={heartScrub} />;
 }
 
 type Key = Callout['key'];
@@ -248,7 +267,7 @@ function placeLabels(
  * The user's own cut-out photo with the same fade. Callouts are pinned to points Vision found
  * (forehead or wrist, throat, chest); labels go in the page space beside the silhouette, measured from its outline.
  */
-function PhotoFigure({ vitals, asOf, photo }: { vitals: Summary['vitals']; asOf: string; photo: PhotoMeta }) {
+function PhotoFigure({ vitals, asOf, photo, scrub }: { vitals: Summary['vitals']; asOf: string; photo: PhotoMeta; scrub?: HeartScrub | null }) {
   const ratio = photo.height / photo.width;
   const [wrapRef, width] = useWidth<HTMLDivElement>();
   const height = width * ratio;
@@ -294,7 +313,7 @@ function PhotoFigure({ vitals, asOf, photo }: { vitals: Summary['vitals']; asOf:
           return (
             <g key={l.key}>
               <line x1={dx * 1000} y1={dy * 1000 * ratio} x2={ex * 1000} y2={ey * 1000 * ratio} className="callout-line" />
-              <CalloutMark k={l.key} v={vitals[l.key]} asOf={asOf} cx={dx * 1000} cy={dy * 1000 * ratio} halo={13 * px} dot={5 * px} />
+              <CalloutMark k={l.key} v={vitals[l.key]} asOf={asOf} cx={dx * 1000} cy={dy * 1000 * ratio} halo={13 * px} dot={5 * px} scrub={scrub} />
             </g>
           );
         })}
@@ -308,6 +327,7 @@ function PhotoFigure({ vitals, asOf, photo }: { vitals: Summary['vitals']; asOf:
             v={vitals[key]}
             asOf={asOf}
             side={side}
+            scrub={scrub}
             innerRef={(el) => {
               labelEls.current[key] = el;
             }}
@@ -350,7 +370,7 @@ function PhotoToneFilters() {
   );
 }
 
-function Silhouette({ vitals, asOf }: { vitals: Summary['vitals']; asOf: string }) {
+function Silhouette({ vitals, asOf, scrub }: { vitals: Summary['vitals']; asOf: string; scrub?: HeartScrub | null }) {
   const callouts = SILHOUETTE[atWrist(vitals.temp) ? 'wrist' : 'forehead'];
   return (
     <div className="figure" style={{ aspectRatio: `${VB.w} / ${VB.h}` }}>
@@ -397,7 +417,7 @@ function Silhouette({ vitals, asOf }: { vitals: Summary['vitals']; asOf: string 
         {callouts.map((c) => (
           <g key={c.key}>
             <line x1={c.dot[0]} y1={c.dot[1]} x2={c.anchor[0] + (c.side === 'left' ? 6 : -6)} y2={c.anchor[1] + 26} className="callout-line" />
-            <CalloutMark k={c.key} v={vitals[c.key]} asOf={asOf} cx={c.dot[0]} cy={c.dot[1]} halo={15} dot={5} />
+            <CalloutMark k={c.key} v={vitals[c.key]} asOf={asOf} cx={c.dot[0]} cy={c.dot[1]} halo={15} dot={5} scrub={scrub} />
           </g>
         ))}
       </svg>
@@ -408,6 +428,7 @@ function Silhouette({ vitals, asOf }: { vitals: Summary['vitals']; asOf: string 
           v={vitals[c.key]}
           asOf={asOf}
           side={c.side}
+          scrub={scrub}
           style={{
             top: `${pctY(c.anchor[1])}%`,
             ...(c.side === 'left' ? { right: `${100 - pctX(c.anchor[0])}%` } : { left: `${pctX(c.anchor[0])}%` }),

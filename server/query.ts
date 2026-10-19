@@ -563,13 +563,20 @@ function weekSummary(ctx: Ctx, asOf: string): WeekSummary {
 async function timeline(scope: Scope, demo: boolean, asOf: string): Promise<Summary['timeline']> {
   const sources = sourceList(demo);
   const { db, userId } = scope;
-  // Show the chosen day, or the most recent day that has anything on it.
-  const [row] = await db.query<{ d: string | null }>(
-    `SELECT MAX(date) AS d FROM (SELECT date FROM events WHERE user_id = $1 AND source = ANY($2) AND date <= $3
-     UNION ALL SELECT date FROM workouts WHERE user_id = $1 AND source = ANY($2) AND date <= $3) AS days`,
-    [userId, sources, asOf],
-  );
-  const day = row?.d ?? asOf;
+  // Show the chosen day, or the most recent day that has anything on it. Hourly readings count (the sources
+  // and metrics GET /api/day reads): Home scrubs through a day's hours even when nothing was logged on it.
+  const [[row], [hours]] = await Promise.all([
+    db.query<{ d: string | null }>(
+      `SELECT MAX(date) AS d FROM (SELECT date FROM events WHERE user_id = $1 AND source = ANY($2) AND date <= $3
+       UNION ALL SELECT date FROM workouts WHERE user_id = $1 AND source = ANY($2) AND date <= $3) AS days`,
+      [userId, sources, asOf],
+    ),
+    db.query<{ has: boolean }>(
+      'SELECT EXISTS (SELECT 1 FROM hourly WHERE user_id = $1 AND metric = ANY($2) AND date = $3 AND source = ANY($4)) AS has',
+      [userId, ['steps', 'active_energy', 'hr_avg'], asOf, demo ? [...sources, ...sourceList(false)] : sources],
+    ),
+  ]);
+  const day = hours?.has ? asOf : (row?.d ?? asOf);
 
   const [events, rawWorkouts] = await Promise.all([
     db.query<TimelineEvent>('SELECT id, kind, title, start, "end" FROM events WHERE user_id = $1 AND date = $2 AND source = ANY($3)', [userId, day, sources]),

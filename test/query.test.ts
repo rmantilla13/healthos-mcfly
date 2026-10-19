@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Workout } from '../shared/types.ts';
 import { addDays, todayLocal } from '../server/dates.ts';
-import { type DailyRow, upsertDaily } from '../server/db.ts';
+import { type DailyRow, upsertDaily, upsertEvents, upsertHourly } from '../server/db.ts';
 import { latest, mergeWorkouts, series, summary, valueOn } from '../server/query.ts';
 import { openStore } from '../server/store.ts';
 
@@ -186,4 +186,29 @@ test("with both devices worn, a rise on WHOOP still shows, measured against WHOO
   assert.deepEqual(s.flags?.map((f) => f.id), ['rhr_up']);
   assert.match(s.flags![0].text, /about 7 bpm above your usual for 3 days/);
   assert.deepEqual([s.vitals.heart.latest?.source, s.vitals.heart.status], ['whoop', 'high']);
+});
+
+// ---------- which day the timeline shows ----------
+
+test('the timeline falls back to the last day with events, unless the chosen day has hourly readings', async () => {
+  const sleep = (id: string, date: string) => ({ id, source: 'apple', kind: 'sleep' as const, title: 'Sleep', start: `${addDays(date, -1)}T23:00:00-05:00`, end: `${date}T06:30:00-05:00`, date });
+  // Nothing logged today: the card keeps showing yesterday's night, as before.
+  await upsertEvents(flagDb, 'tl-events-only', [sleep('tl-a', ago(1))]);
+  assert.equal((await summary({ db: flagDb, userId: 'tl-events-only' }, false)).timeline.date, ago(1));
+
+  // Today's hours from the iPhone app make today the day shown, with its (empty) list of events.
+  await upsertEvents(flagDb, 'tl-hours', [sleep('tl-b', ago(1))]);
+  await upsertHourly(flagDb, 'tl-hours', [{ date: today, hour: 0, metric: 'steps', source: 'apple', value: 40 }]);
+  const s = await summary({ db: flagDb, userId: 'tl-hours' }, false);
+  assert.deepEqual([s.timeline.date, s.timeline.events], [today, []]);
+  // A past day picked with the date arrows works the same way.
+  await upsertHourly(flagDb, 'tl-hours', [{ date: ago(3), hour: 9, metric: 'hr_avg', source: 'apple', value: 70 }]);
+  assert.equal((await summary({ db: flagDb, userId: 'tl-hours' }, false, ago(3))).timeline.date, ago(3));
+  // Only the metrics the Day view reads count, and only from this person's own sources.
+  await upsertEvents(flagDb, 'tl-other', [sleep('tl-c', ago(1))]);
+  await upsertHourly(flagDb, 'tl-other', [
+    { date: today, hour: 9, metric: 'hr_min', source: 'apple', value: 50 },
+    { date: today, hour: 9, metric: 'steps', source: 'demo', value: 300 },
+  ]);
+  assert.equal((await summary({ db: flagDb, userId: 'tl-other' }, false)).timeline.date, ago(1));
 });
