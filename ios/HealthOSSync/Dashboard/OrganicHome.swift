@@ -26,6 +26,12 @@ struct OrganicHeader: View {
                 }
                 .disabled(isToday)
                 .accessibilityLabel("Next day")
+                // Today hides its navigation bar, so Settings' gear sits here, top right like on the other tabs.
+                Button { dashboard.tab = .settings } label: {
+                    Image(systemName: "gearshape").frame(width: 44, height: 44)
+                }
+                .accessibilityLabel("Settings")
+                .accessibilityIdentifier("settingsGear")
             }
             .foregroundStyle(Palette.ink2)
             .buttonStyle(.plain)
