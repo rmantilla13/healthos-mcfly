@@ -4,11 +4,16 @@ export type Point = { date: string; value: number };
 export type Latest = { date: string; value: number; source: string };
 export type RangeStatus = 'low' | 'normal' | 'high';
 
+/** How far a reading is from the person's usual: within the band, beyond it, or beyond twice it. */
+export type VitalLevel = 'normal' | 'unusual' | 'off';
+
 export type Vital = {
   label: string;
   latest: Latest | null;
   /** Where the latest value sits against the previous 30 days. */
   status: RangeStatus | null;
+  /** How far from usual, on the same band as `status` ('normal' exactly when status is). Missing from older servers. */
+  level?: VitalLevel | null;
 };
 
 export type TimelineEvent = {
@@ -117,6 +122,8 @@ export type Settings = {
   nutritionApp: string | null;
   /** Targets the person set for themselves, if any. healthOS never suggests one. */
   nutritionTargets: NutritionTargets;
+  /** Cards this person doesn't want on Home, Sleep or Body (ids from shared/cards.ts). Layout only. */
+  hiddenCards: string[];
 };
 
 export type PhotoMeta = {
@@ -192,6 +199,8 @@ export type AdminUser = {
   photo: boolean;
   /** Ask McFly over the last 30 days: how many questions and tokens, never their content. */
   mcfly: { questions30d: number; tokens30d: number };
+  /** Cards hidden on their dashboard (layout only). */
+  hiddenCards: string[];
 };
 
 export type AdminInvite = {
@@ -228,6 +237,30 @@ export type AdminOverview = {
 
 export type McflyStatus = { configured: boolean; limit: number; usedToday: number };
 export type McflyTurn = { role: 'user' | 'assistant'; content: string };
+
+/**
+ * A picture in one of McFly's answers. McFly only chooses what to show; the server reads the numbers from the
+ * person's own data, in their units, so a chart can't carry a made-up value. Dates are YYYY-MM-DD (a week's
+ * Monday, a month's 1st).
+ */
+export type McflyVisual =
+  | {
+      kind: 'trend' | 'bars';
+      title: string;
+      unit: string;
+      resolution: 'day' | 'week' | 'month';
+      points: Point[];
+      /** The average of the daily values (weekly charts too), over `days` days. */
+      mean: number | null;
+      days?: number;
+      /** A daily total whose today isn't over: left out of the average. */
+      partialToday?: boolean;
+      goal?: number;
+    }
+  | { kind: 'compare'; title: string; unit: string; periods: { label: string; from: string; to: string; mean: number | null; days: number; partialToday?: boolean }[] }
+  | { kind: 'stats'; title: string; items: { label: string; value: number | null; unit: string; note: string; from?: string; to?: string }[] }
+  | { kind: 'stages'; title: string; rows: { date: string; values: Record<string, number> }[] }
+  | { kind: 'sports'; title: string; items: { sport: string; count: number; minutes: number }[] };
 
 /** McFly's recap of the last completed Monday–Sunday. Never draws on cycle data. */
 export type Digest = {

@@ -1,5 +1,6 @@
 import os from 'node:os';
 import type { Flag, Insight, Latest, NutritionTargets, Point, RangeStatus, Settings, Summary, TimelineEvent, Trends, Vital, WeekSummary, Workout } from '../shared/types.ts';
+import { readHiddenCards } from '../shared/cards.ts';
 import { OWNER_ID, type Scope, getSettings, getUserSettings } from './db.ts';
 import { addDays, todayLocal } from './dates.ts';
 
@@ -45,6 +46,7 @@ export function settingsFrom(mine: Map<string, string>, platform: Map<string, st
     nutritionNumbers: NUMBERS.find((x) => x === mine.get('nutrition_numbers')) ?? null,
     nutritionApp: mine.get('nutrition_app') ?? null,
     nutritionTargets: nutritionTargets(mine.get('nutrition_targets')),
+    hiddenCards: readHiddenCards(mine.get('hidden_cards')),
   };
 }
 
@@ -290,7 +292,10 @@ export async function trends(scope: Scope, hosted: boolean, metrics: string[], d
   const { demo, today } = await requestContext(scope, hosted);
   const asOf = asOfParam ?? today;
   const from = addDays(asOf, -(days - 1));
-  const daily = await loadDaily(scope, demo, from, asOf, metrics);
+  // A night's stages follow its sleep_hours decision (FOLLOWS), so that's read too even when not asked for:
+  // without it, deep sleep alone would come from one device where the dashboard averages the two.
+  const load = [...new Set([...metrics, ...metrics.flatMap((m) => (FOLLOWS[m] ? [FOLLOWS[m]] : []))])];
+  const daily = await loadDaily(scope, demo, from, asOf, load);
   return Object.fromEntries(metrics.map((m) => [m, series({ daily, demo }, m, from, asOf)]));
 }
 
@@ -310,17 +315,35 @@ export function sd(xs: number[]) {
   return Math.sqrt(xs.reduce((a, x) => a + (x - m) ** 2, 0) / (xs.length - 1));
 }
 
-/** Compare a value with the 30 days before it (from its own device, for OWN_BASELINE metrics). Needs a week of history to say anything. */
-export function rangeStatus(ctx: Ctx, metric: string, l: Latest | null, minSpread: number): RangeStatus | null {
-  if (!l) return null;
+/**
+ * The person's usual for a reading: the mean of the 30 days before it (from its own device, for OWN_BASELINE
+ * metrics) and the band around it, one standard deviation but at least `minSpread`. Needs a week of history.
+ */
+function usualBand(ctx: Ctx, metric: string, l: Latest, minSpread: number) {
   const own = OWN_BASELINE.has(metric) ? fromSource(ctx, metric, l.source) : ctx;
   const history = series(own, metric, addDays(l.date, -30), addDays(l.date, -1)).map((p) => p.value);
   const m = mean(history);
   if (m === null || history.length < 7) return null;
-  const band = Math.max(sd(history) ?? 0, minSpread);
-  if (l.value > m + band) return 'high';
-  if (l.value < m - band) return 'low';
+  return { mean: m, band: Math.max(sd(history) ?? 0, minSpread) };
+}
+
+/** Compare a value with the 30 days before it (from its own device, for OWN_BASELINE metrics). Needs a week of history to say anything. */
+export function rangeStatus(ctx: Ctx, metric: string, l: Latest | null, minSpread: number): RangeStatus | null {
+  const u = l && usualBand(ctx, metric, l, minSpread);
+  if (!l || !u) return null;
+  if (l.value > u.mean + u.band) return 'high';
+  if (l.value < u.mean - u.band) return 'low';
   return 'normal';
+}
+
+/** Status and level of a vital: normal inside the usual band (as the status), unusual beyond it, off beyond twice it. */
+export function vitalRange(ctx: Ctx, metric: string, l: Latest | null, minSpread: number): Pick<Vital, 'status' | 'level'> {
+  const u = l && usualBand(ctx, metric, l, minSpread);
+  if (!l || !u) return { status: null, level: null };
+  const status = l.value > u.mean + u.band ? 'high' : l.value < u.mean - u.band ? 'low' : 'normal';
+  // From the status, so the colour and the words can't disagree at the edge of the band.
+  const level = status === 'normal' ? 'normal' : Math.abs(l.value - u.mean) <= 2 * u.band ? 'unusual' : 'off';
+  return { status, level };
 }
 
 function windowMean(points: Point[], from: string, to: string) {
@@ -370,9 +393,9 @@ export async function summary(scope: Scope, hosted: boolean, asOfParam?: string)
   const tempLabel = { body_temp: 'Body temp', wrist_temp: 'Wrist temp', skin_temp: 'Skin temp' }[temp.metric] ?? 'Body temp';
 
   const vitals: Summary['vitals'] = {
-    heart: { label: 'Resting heart', latest: heart, status: rangeStatus(ctx, 'resting_hr', heart, 2) } satisfies Vital,
-    breathing: { label: 'Breathing', latest: breathing, status: rangeStatus(ctx, 'resp_rate', breathing, 0.5) },
-    temp: { label: tempLabel, latest: temp.latest, status: rangeStatus(ctx, temp.metric, temp.latest, 0.3) },
+    heart: { label: 'Resting heart', latest: heart, ...vitalRange(ctx, 'resting_hr', heart, 2) } satisfies Vital,
+    breathing: { label: 'Breathing', latest: breathing, ...vitalRange(ctx, 'resp_rate', breathing, 0.5) },
+    temp: { label: tempLabel, latest: temp.latest, ...vitalRange(ctx, temp.metric, temp.latest, 0.3) },
   };
 
   // Readiness: WHOOP recovery when there is one, else Apple's cardio fitness (VO2 max).

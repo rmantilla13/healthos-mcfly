@@ -358,6 +358,26 @@ test("nobody else sees it: not another member, not the summary, the admin view o
   for (const word of ['MyFitnessPal', 'energy_kcal', 'protein', 'nutrition']) assert.ok(!bobsBoard.includes(word), word);
 });
 
+test("Nutrition's cards can be hidden by the person, and are invisible to and untouchable by an admin", async () => {
+  // Bob hides one Nutrition card and one Home card for himself.
+  const mine = await bob.put('/api/settings', { hiddenCards: ['home.hrv', 'nutrition.energy'] });
+  assert.deepEqual(mine.json.settings.hiddenCards, ['home.hrv', 'nutrition.energy']);
+  const bobRow = async () => (await owner.get('/api/admin/overview')).json.users.find((u: { id: string }) => u.id === bobId);
+  // The admin screens see only the Home card, so they can't tell Bob uses Nutrition.
+  assert.deepEqual((await bobRow()).hiddenCards, ['home.hrv']);
+  // An admin can't set a Nutrition card, either way it's sent, and gets the same answer as for an unknown card.
+  for (const body of [{ hiddenCards: ['nutrition.water'] }, { cardShown: { id: 'nutrition.energy', shown: true } }]) {
+    const res = await owner.call('PATCH', `/api/admin/users/${bobId}`, body);
+    assert.equal(res.status, 400);
+    assert.match(res.json.error, /Unknown card/);
+  }
+  // "Show all" from the admin screens clears the cards it can see and keeps the ones it can't.
+  const shown = await owner.call('PATCH', `/api/admin/users/${bobId}`, { hiddenCards: [] });
+  assert.deepEqual(shown.json.hiddenCards, []);
+  assert.deepEqual((await bob.get('/api/status')).json.settings.hiddenCards, ['nutrition.energy']);
+  await bob.put('/api/settings', { hiddenCards: [] });
+});
+
 test('Ask McFly gets the nutrition tool only while it is on, and only what the setting shows', async () => {
   requests.length = 0;
   script = [

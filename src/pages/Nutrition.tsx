@@ -3,11 +3,12 @@
 // has already removed every number the person chose not to see (server/nutrition.ts). This page adds no judgement
 // on top: no score, no "remaining" or "on track", nothing over or under, no red or green. A target is one the
 // person set, drawn as a plain line. A day with nothing logged is a gap, never a zero.
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import type { Nutrient, NutritionData, NutritionDay, NutritionNumbers, NutritionTargets, Pattern, Settings, Status } from '../../shared/types.ts';
 import { BarChart, ChartCard } from '../charts/Charts.tsx';
 import { DayBars, GlassBars } from '../charts/DayBars.tsx';
 import { Donut } from '../charts/Donut.tsx';
+import { AllHiddenNote, CardRow, useAllHidden } from '../components/CardRow.tsx';
 import { Icon, type IconName } from '../components/Icon.tsx';
 import { PageHead, RANGES, Tabs } from './Detail.tsx';
 import { fmt, fmtDate, href, notifyDataChanged, relativeDay, sendJson, shiftDate, useApi } from '../lib.ts';
@@ -107,6 +108,7 @@ function useNutrition(path: string) {
 /** The last two weeks: the latest day and its week on the cards, the week before only for the protein chip. */
 function Overview({ status }: { status: Status }) {
   const { data, loading, fallback } = useNutrition('/nutrition?days=14&insights=1');
+  const allHidden = useAllHidden('nutrition');
   if (!data) return fallback;
   const numbers = data.numbers ?? 'none';
   const byDate = new Map(data.days.map((d) => [d.date, d]));
@@ -120,30 +122,46 @@ function Overview({ status }: { status: Status }) {
   if (!latest && !data.hydration.water.length) return <NothingYet hosted={status.hosted} />;
   if (numbers === 'none') {
     return (
-      <div className={`grid-2 ${loading ? 'is-refreshing' : ''}`}>
-        <LoggedCard data={data} />
-        <section className="card">
-          <h2>{latest ? relativeDay(latest.date, data.today) : 'Nothing logged lately'}</h2>
-          <p className="muted">
-            {latest ? `You logged food in ${latest.app}.` : ''} You chose to see no amounts, so this page shows only the days you logged. Change it in{' '}
-            <a href={href('settings')}>Settings</a>.
-          </p>
-        </section>
+      <div className={`nutrition-overview ${loading ? 'is-refreshing' : ''}`}>
+        <CardRow
+          className="split split-even"
+          pair
+          cards={[
+            ['nutrition.logged', <LoggedCard data={data} />],
+            [
+              'nutrition.none-note',
+              <section className="card">
+                <h2>{latest ? relativeDay(latest.date, data.today) : 'Nothing logged lately'}</h2>
+                <p className="muted">
+                  {latest ? `You logged food in ${latest.app}.` : ''} You chose to see no amounts, so this page shows only the days you logged. Change it in{' '}
+                  <a href={href('settings')}>Settings</a>.
+                </p>
+              </section>,
+            ],
+          ]}
+        />
       </div>
     );
   }
+  // Rows lay out from the cards left after the ones the person hid (Settings → Cards), like Home, Sleep and Body.
+  const cards: [string, ReactNode][] = [
+    ...(numbers === 'all' ? ([['nutrition.energy', <EnergyCard week={series('energy_kcal', week)} target={data.targets.energy_kcal} today={data.today} />]] as [string, ReactNode][]) : []),
+    ['nutrition.protein', <ProteinCard week={series('protein_g', week)} before={series('protein_g', before)} target={data.targets.protein_g} today={data.today} />],
+    ['nutrition.water', <WaterCard week={week.map((date) => ({ date, value: waterByDate.get(date) ?? null }))} target={data.targets.water_ml} today={data.today} units={status.settings.units} />],
+    ['nutrition.logged', <LoggedCard data={data} />],
+  ];
   return (
     <div className={`nutrition-overview ${loading ? 'is-refreshing' : ''}`}>
-      <div className={`cards cards-4 ${numbers === 'all' ? '' : 'is-3'}`}>
-        {numbers === 'all' && <EnergyCard week={series('energy_kcal', week)} target={data.targets.energy_kcal} today={data.today} />}
-        <ProteinCard week={series('protein_g', week)} before={series('protein_g', before)} target={data.targets.protein_g} today={data.today} />
-        <WaterCard week={week.map((date) => ({ date, value: waterByDate.get(date) ?? null }))} target={data.targets.water_ml} today={data.today} units={status.settings.units} />
-        <LoggedCard data={data} />
-      </div>
-      <div className="grid-2">
-        {latest ? <MacroBalanceCard day={latest} today={data.today} numbers={numbers} caffeine={caffeineByDate.get(latest.date)} /> : <NothingYet hosted={status.hosted} />}
-        <FoodInsights insights={data.insights} />
-      </div>
+      <CardRow className="cards cards-4" fill={{ wide: 4, mid: 3, small: 2 }} cards={cards} />
+      <CardRow
+        className="split split-even"
+        pair
+        cards={[
+          ['nutrition.macros', latest ? <MacroBalanceCard day={latest} today={data.today} numbers={numbers} caffeine={caffeineByDate.get(latest.date)} /> : <NothingYet hosted={status.hosted} />],
+          ['nutrition.insights', <FoodInsights insights={data.insights} />],
+        ]}
+      />
+      {allHidden && <AllHiddenNote />}
     </div>
   );
 }

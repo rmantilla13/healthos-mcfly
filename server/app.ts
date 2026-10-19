@@ -7,6 +7,7 @@ import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { waitUntil } from '@vercel/functions';
 import express, { type NextFunction, type Request, type Response } from 'express';
+import { cleanHiddenCards, readHiddenCards, storedHiddenCards, withCardShown } from '../shared/cards.ts';
 import type { ImportJob, NutritionTargets, Settings, Status } from '../shared/types.ts';
 import { adminRouter } from './admin.ts';
 import { DAY_METRICS, dayView } from './day.ts';
@@ -206,6 +207,16 @@ export function createApp({ db, hosted, ingestToken, mcflyClient }: AppOptions) 
     if (body.nutrition === true && !numbers && !(await readSettings({ db, userId }, hosted)).nutritionNumbers) {
       return void res.status(400).json({ error: 'Choose what to show before turning nutrition on.' });
     }
+    // Checked before anything is written, so a bad list doesn't leave the rest half saved. Either the whole list
+    // (Show all) or one card's change, applied to the stored list as it is now.
+    const change = (req.body as { cardShown?: unknown }).cardShown;
+    const hidden =
+      body.hiddenCards !== undefined
+        ? cleanHiddenCards(body.hiddenCards)
+        : change !== undefined
+          ? withCardShown(readHiddenCards(await getUserSetting(db, userId, 'hidden_cards')), change)
+          : undefined;
+    if (hidden === null) return void res.status(400).json({ error: 'Unknown card, or not a list of cards.' });
     if (typeof body.name === 'string') {
       const name = body.name.trim().slice(0, 40);
       await setUserSetting(db, userId, 'name', name || null);
@@ -225,6 +236,7 @@ export function createApp({ db, hosted, ingestToken, mcflyClient }: AppOptions) 
     // and turning either off withdraws it, so turning them back on doesn't share it again by surprise.
     if (typeof body.familySharing === 'boolean') await setUserSetting(db, userId, 'family_sharing', body.familySharing ? null : 'off');
     if (body.familyNoticeSeen === true) await setUserSetting(db, userId, 'family_notice_seen', '2');
+    if (hidden) await setUserSetting(db, userId, 'hidden_cards', storedHiddenCards(hidden));
     if (body.cycleTracking === false || body.familySharing === false) await setUserSetting(db, userId, 'family_cycle_phase', null);
     else if (typeof body.shareCyclePhase === 'boolean') {
       const now = await readSettings({ db, userId }, hosted);

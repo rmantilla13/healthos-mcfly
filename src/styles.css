@@ -179,6 +179,17 @@
 * {
   box-sizing: border-box;
 }
+/* Images, the figure and charts can't be dragged off or saved with a long press (main.tsx blocks the menus). */
+img,
+svg {
+  -webkit-user-drag: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+img,
+.figure {
+  -webkit-touch-callout: none;
+}
 html,
 body {
   margin: 0;
@@ -421,7 +432,8 @@ nav {
   stroke-width: 1.5;
 }
 .callout-dot {
-  fill: #f5d76e;
+  /* Green, amber or red by how far the reading is from the person's usual; neutral without a baseline. */
+  fill: var(--level, var(--level-none));
   stroke: #fff;
   stroke-width: 2;
 }
@@ -1814,20 +1826,48 @@ td {
 /* ---------- vitals animations (Home figure callouts) ----------
    Each callout moves at its own number, set on .callout-mark from the live reading (Figure.tsx, CalloutMark):
    the heart dot beats every --beat (60 / bpm s), the throat halo breathes every --breath (60 / rpm s), and the
-   forehead glows cool / neutral / amber by data-status. Only .is-live marks (a reading exists) animate. */
+   temperature glows. Only .is-live marks (a reading exists) animate. Every dot, and the glow, takes its level's
+   colour from data-level: the status colours, green within the person's usual, amber beyond it, red well beyond. */
 :root {
   --vital-pulse: #e0567c;
-  --temp-cool: #4f95ea;
-  --temp-neutral: #f2cf63;
-  --temp-warm: #f08a24;
+  --level-none: #cfccc4;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
     --vital-pulse: #f27798;
-    --temp-cool: #6da7ec;
-    --temp-neutral: #e9c45a;
-    --temp-warm: #f59a3c;
+    --level-none: #77746d;
   }
+}
+.callout-mark[data-level='normal'],
+.callout-level[data-level='normal'] {
+  --level: var(--good);
+}
+.callout-mark[data-level='unusual'],
+.callout-level[data-level='unusual'] {
+  --level: var(--warning);
+}
+.callout-mark[data-level='off'],
+.callout-level[data-level='off'] {
+  --level: var(--critical);
+}
+/* The halo takes a light tint of the level, so the colour reads at a glance even where the dot is small. */
+/* (Opacities, not color-mix: a var() inside an unsupported color-mix would leave the halo black on older Safari.) */
+.callout-mark[data-level='normal'] .callout-halo,
+.callout-mark[data-level='unusual'] .callout-halo,
+.callout-mark[data-level='off'] .callout-halo {
+  fill: var(--level);
+  fill-opacity: 0.16;
+  stroke: var(--level);
+  stroke-opacity: 0.5;
+}
+/* The level's colour beside its words in the label: the words carry it too, so it never rests on colour alone. */
+.callout-level {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: var(--level);
 }
 /* Scale SVG circles about their own centre, not the SVG origin. */
 .callout-mark .callout-dot,
@@ -1907,15 +1947,9 @@ td {
   }
 }
 
-/* Temperature: a slow warmth glow behind the forehead dot, coloured by the person's own range. */
+/* Temperature: a slow glow behind its dot, in the level's colour. */
 .mark-temp {
-  --temp-glow: var(--temp-neutral);
-}
-.mark-temp[data-status='low'] {
-  --temp-glow: var(--temp-cool);
-}
-.mark-temp[data-status='high'] {
-  --temp-glow: var(--temp-warm);
+  --temp-glow: var(--level, var(--level-none));
 }
 .temp-glow-stop {
   stop-color: var(--temp-glow);
@@ -1939,7 +1973,7 @@ td {
   }
 }
 
-/* Reduced motion: hold still. The temperature tint stays (it's colour, not motion); the pulse ring hides. */
+/* Reduced motion: hold still. The level colours stay (they're colour, not motion); the pulse ring hides. */
 @media (prefers-reduced-motion: reduce) {
   .callout-mark * {
     animation: none !important;
@@ -2951,12 +2985,6 @@ td {
 .nutrition-foot {
   max-width: 720px;
 }
-/* Nutrition's row of cards is the shared .cards-4; without calories it holds three. */
-@media (min-width: 1361px) {
-  .nutrition-overview .cards-4.is-3 {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
 .nutrition-overview,
 .nutrition-tab {
   display: flex;
@@ -3850,5 +3878,242 @@ nav.tabs {
   }
   .body-metric-spark {
     display: none;
+  }
+}
+
+/* ---------- hidden cards (Settings → Cards; src/components/CardRow.tsx) ---------- */
+/* A pair with one card left shows it full width. */
+.lower.is-single,
+.split.is-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+.all-hidden p {
+  margin: 0;
+}
+.all-hidden a {
+  color: var(--ink);
+  font-weight: 600;
+}
+/* On the wide Sleep layout the figure stands in for resting heart rate; a row left with only that card goes. */
+@media (min-width: 1400px) {
+  .has-hero .night-cards:has(> .rhr-card:only-child) {
+    display: none;
+  }
+}
+.settings-cards {
+  max-width: 560px;
+}
+.settings-cards .card-title-row {
+  margin-bottom: 4px;
+}
+.card-choices {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 12px;
+}
+.card-choices fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.card-choices legend {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-2);
+  margin-bottom: 4px;
+  padding: 0;
+}
+.card-choices label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.card-choices input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--ink);
+}
+.card-choices fieldset:disabled label {
+  opacity: 0.55;
+  cursor: default;
+}
+.admin-cards {
+  margin-bottom: 8px;
+}
+.admin-cards summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.admin-cards[open] {
+  min-width: 460px;
+}
+.admin-cards .card-choices {
+  grid-template-columns: repeat(3, minmax(130px, 1fr));
+}
+@media (max-width: 820px) {
+  .card-choices {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ---------- McFly's charts (src/components/McflyVisual.tsx) ----------
+   A chart or a few tiles inside an answer: the dashboard's own cards, a little tighter. */
+.mcfly-visual {
+  padding: 14px 14px 12px;
+  border-radius: 16px;
+  box-shadow: none;
+  background: var(--surface);
+}
+.mcfly-visual.chart-card {
+  gap: 10px;
+}
+.mcfly-visual .chart-card-value {
+  font-size: 22px;
+}
+.mcfly-visual-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.mcfly-visual-head h3 {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+.mcfly-compare ul,
+.mcfly-sports ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.mcfly-compare li,
+.mcfly-sports li {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.9fr) minmax(0, 2fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+.mcfly-compare-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.mcfly-compare-label small {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--ink-3);
+}
+.mcfly-compare-track {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.mcfly-compare-track span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--bar);
+}
+.mcfly-compare-track span.is-first,
+.mcfly-sports .mcfly-compare-track span {
+  background: var(--bar-accent);
+}
+.mcfly-compare li b,
+.mcfly-sports li b {
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  min-width: 64px;
+}
+.mcfly-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+}
+.mcfly-stats > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+.mcfly-stats span {
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.mcfly-stats b {
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+.mcfly-stats small {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+@media (max-width: 560px) {
+  .mcfly-compare li,
+  .mcfly-sports li {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .mcfly-compare-track {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
+
+/* ---------- card rows that follow what's shown (CardRow `fill`) ----------
+   A row lays out from how many of its cards are left: CardRow sets --cols-wide / --cols-mid (/ --cols-hero) to
+   the fewest even rows (4 in a 3-up row are 2 × 2), and each card is that share of the width. Body's row also
+   has --cols-small: up to 4 wide, 3 below 1360px, 2 below 1080px. Cards grow, so a
+   short last row stretches to fill it. One card is full width; a phone shows one per row. */
+.cards.fill-row {
+  display: flex;
+  flex-wrap: wrap;
+  --cols: var(--cols-wide, 3);
+}
+.cards.fill-row > * {
+  flex: 1 1 calc((100% - (var(--cols) - 1) * 14px) / var(--cols) - 0.5px);
+  min-width: 0;
+}
+@media (max-width: 1360px) {
+  .cards-4.fill-row {
+    --cols: var(--cols-mid, 2);
+  }
+}
+@media (max-width: 1080px) {
+  .cards.fill-row {
+    --cols: var(--cols-small, var(--cols-mid, 2));
+  }
+}
+@media (min-width: 1400px) {
+  /* Beside the figure, without the resting heart rate card it already shows. */
+  .has-hero .night-cards.fill-row {
+    --cols: var(--cols-hero, 2);
+  }
+}
+@media (max-width: 560px) {
+  .cards.fill-row {
+    --cols: 1;
   }
 }

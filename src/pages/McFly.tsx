@@ -1,12 +1,20 @@
 // Ask McFly: a chat about your own data. Answers stream in from /api/mcfly/chat (server-sent events),
 // with a line for each piece of data McFly reads. The conversation lives only in this browser tab.
 import { Fragment, useEffect, useRef, useState } from 'react';
-import type { McflyStatus, McflyTurn, SessionUser } from '../../shared/types.ts';
+import type { McflyStatus, McflyTurn, McflyVisual as Visual, SessionUser } from '../../shared/types.ts';
 import { Icon } from '../components/Icon.tsx';
+import { McflyVisual, visualNote } from '../components/McflyVisual.tsx';
 import { ShinyText } from '../components/ShinyText.tsx';
 import { useApi } from '../lib.ts';
 
-type Msg = { role: 'user' | 'assistant'; content: string; steps?: string[]; error?: string; pending?: boolean };
+/** An answer in the order it arrived: text, and the charts McFly drew between it. */
+type Part = { type: 'text'; text: string } | { type: 'visual'; visual: Visual };
+type Msg = { role: 'user' | 'assistant'; content: string; parts?: Part[]; steps?: string[]; error?: string; pending?: boolean };
+
+const hasVisual = (m: Msg) => Boolean(m.parts?.some((p) => p.type === 'visual'));
+/** What McFly reads back next time: its words, with a one-line note where each chart was. */
+const spoken = (m: Msg) =>
+  m.parts ? m.parts.map((p) => (p.type === 'text' ? p.text : `\n\n${visualNote(p.visual)}\n\n`)).join('').replace(/\n{3,}/g, '\n\n').trim() : m.content;
 
 const SUGGESTIONS = [
   'How did I sleep this week compared with last week?',
@@ -24,7 +32,7 @@ function load(userId: string): Msg[] {
     const raw = sessionStorage.getItem(storageKey(userId));
     const msgs = raw ? (JSON.parse(raw) as Msg[]) : [];
     // An answer that was still streaming when the page closed can't resume.
-    return msgs.map((m) => (m.pending ? { ...m, pending: false, error: m.content ? undefined : 'Interrupted.' } : m));
+    return msgs.map((m) => (m.pending ? { ...m, pending: false, error: m.content || hasVisual(m) ? undefined : 'Interrupted.' } : m));
   } catch {
     return [];
   }
@@ -44,8 +52,8 @@ function historyFor(msgs: Msg[], question: string): McflyTurn[] {
   for (let i = 0; i < msgs.length; i++) {
     const m = msgs[i];
     const next = msgs[i + 1];
-    if (m.role === 'user' && next?.role === 'assistant' && !next.error && next.content.trim()) {
-      out.push({ role: 'user', content: m.content }, { role: 'assistant', content: next.content });
+    if (m.role === 'user' && next?.role === 'assistant' && !next.error && spoken(next)) {
+      out.push({ role: 'user', content: m.content }, { role: 'assistant', content: spoken(next) });
       i++;
     }
   }
@@ -120,19 +128,31 @@ export function McFly({ me }: { me: SessionUser }) {
           const event = /^event: (.+)$/m.exec(chunk)?.[1];
           const data = /^data: (.+)$/m.exec(chunk)?.[1];
           if (!event || !data) continue;
-          const payload = JSON.parse(data) as { text?: string; label?: string; error?: string };
-          if (event === 'text') update((m) => ({ ...m, content: m.content + (payload.text ?? '') }));
+          const payload = JSON.parse(data) as { text?: string; label?: string; error?: string; visual?: Visual };
+          if (event === 'text') {
+            const text = payload.text ?? '';
+            update((m) => {
+              const parts = [...(m.parts ?? [])];
+              const last = parts.at(-1);
+              if (last?.type === 'text') parts[parts.length - 1] = { type: 'text', text: last.text + text };
+              else parts.push({ type: 'text', text });
+              return { ...m, content: m.content + text, parts };
+            });
+          } else if (event === 'visual' && payload.visual) {
+            const visual = payload.visual;
+            update((m) => ({ ...m, parts: [...(m.parts ?? []), { type: 'visual', visual }] }));
+          }
           else if (event === 'tool') update((m) => ({ ...m, steps: [...(m.steps ?? []), payload.label ?? ''] }));
           // A refusal can arrive after some text: drop the partial answer.
-          else if (event === 'refusal') update((m) => ({ ...m, content: '', error: payload.error }));
+          else if (event === 'refusal') update((m) => ({ ...m, content: '', parts: [], error: payload.error }));
           else if (event === 'error') update((m) => ({ ...m, error: payload.error }));
         }
       }
     } catch (e) {
-      if (controller.signal.aborted) update((m) => ({ ...m, error: m.content ? undefined : 'Stopped.' }));
+      if (controller.signal.aborted) update((m) => ({ ...m, error: m.content || hasVisual(m) ? undefined : 'Stopped.' }));
       else update((m) => ({ ...m, error: (e as Error).message }));
     } finally {
-      update((m) => ({ ...m, pending: false, error: m.error ?? (m.content.trim() ? undefined : 'McFly had no answer. Try asking another way.') }));
+      update((m) => ({ ...m, pending: false, error: m.error ?? (m.content.trim() || hasVisual(m) ? undefined : 'McFly had no answer. Try asking another way.') }));
       abort.current = null;
       setBusy(false);
       reload();
@@ -211,7 +231,7 @@ export function McFly({ me }: { me: SessionUser }) {
                         <ul className="mcfly-steps" aria-label="What McFly looked at">
                           {m.steps!.map((s, j) => {
                             // The step McFly is on shimmers until its answer starts; finished ones get a check.
-                            const working = m.pending && !m.content && j === m.steps!.length - 1;
+                            const working = m.pending && !m.content && !hasVisual(m) && j === m.steps!.length - 1;
                             return (
                               <li key={j}>
                                 {working ? <span className="mcfly-step-ring" aria-hidden="true" /> : <Icon name="check" size={12} />}
@@ -221,7 +241,9 @@ export function McFly({ me }: { me: SessionUser }) {
                           })}
                         </ul>
                       )}
-                      {m.content && <Answer text={m.content} />}
+                      {m.parts?.length
+                        ? m.parts.map((p, j) => (p.type === 'text' ? p.text.trim() && <Answer key={j} text={p.text} /> : <McflyVisual key={j} visual={p.visual} />))
+                        : m.content && <Answer text={m.content} />}
                       {m.pending && !m.content && !m.steps?.length && <ShinyText className="mcfly-thinking">McFly is thinking…</ShinyText>}
                       {m.error && (
                         <p className="note-bad">

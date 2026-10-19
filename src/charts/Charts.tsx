@@ -67,6 +67,8 @@ export function TrendChart({
   refLines = [],
   median: showMedian = true,
   label,
+  gapDays = 3,
+  periodLabel,
 }: {
   points: Point[];
   format: (v: number) => string;
@@ -77,6 +79,10 @@ export function TrendChart({
   refLines?: { value: number; label: string }[];
   median?: boolean;
   label: string;
+  /** Points further apart than this many days are a gap, and the line breaks there (weekly points need more). */
+  gapDays?: number;
+  /** The tooltip's name for a point's period, e.g. "Week of Oct 13"; a date otherwise. */
+  periodLabel?: (date: string) => string;
 }) {
   const [ref, width] = useWidth<HTMLDivElement>();
   const n = points.length;
@@ -99,7 +105,7 @@ export function TrendChart({
     const segs: [number, number][][] = [];
     let cur: [number, number][] = [];
     points.forEach((p, i) => {
-      if (i > 0 && daysBetween(points[i - 1].date, p.date) > 3) {
+      if (i > 0 && daysBetween(points[i - 1].date, p.date) > gapDays) {
         segs.push(cur);
         cur = [];
       }
@@ -108,7 +114,7 @@ export function TrendChart({
     if (cur.length) segs.push(cur);
     return segs;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [points, xOf, lo, hi, height]);
+  }, [points, xOf, lo, hi, height, gapDays]);
 
   if (!n) return <EmptyChart height={height} />;
   const last = n - 1;
@@ -157,7 +163,11 @@ export function TrendChart({
       )}
       {index !== null && (
         <Tooltip x={xOf(index)} y={yOf(points[index].value)} width={width}>
-          <TooltipRow color={color} value={format(points[index].value)} label={fmtDate(points[index].date, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} />
+          <TooltipRow
+            color={color}
+            value={format(points[index].value)}
+            label={periodLabel ? periodLabel(points[index].date) : fmtDate(points[index].date, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+          />
         </Tooltip>
       )}
     </div>

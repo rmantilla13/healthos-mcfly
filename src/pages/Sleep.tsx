@@ -5,9 +5,10 @@ import type { Insight, Pattern, Patterns, PhotoMeta, SleepNightDetail, SleepSegm
 import { ChartCard, Legend, StackedBars } from '../charts/Charts.tsx';
 import { MiniBars, MiniLine } from '../charts/Mini.tsx';
 import { Change, Hypnogram, NightBars, STAGE_COLOR, ScoreBar, StageBar, StageTimeline } from '../charts/Neka.tsx';
+import { AllHiddenNote, CardRow, useAllHidden } from '../components/CardRow.tsx';
 import { Figure } from '../components/Figure.tsx';
 import { Icon, type IconName } from '../components/Icon.tsx';
-import { clock, daysBetween, fmt, fmtDate, hoursMinutes, useApi } from '../lib.ts';
+import { clock, daysBetween, fmt, fmtDate, hoursMinutes, useApi, useCardShown } from '../lib.ts';
 import { DAY, DayNav, PageHead, STAGES, Tabs, Trend, avg, useRange, weekLabel, weekly } from './Detail.tsx';
 import { CardHead, INSIGHT_TONE } from './Home.tsx';
 
@@ -37,6 +38,8 @@ function Overview({ tabs, photo, date, setDate }: { tabs: ReactNode; photo: Phot
   const { data: s } = useApi<Summary>(`/summary${q}`);
   const { data: t } = useApi<Trends>(`/trends?metrics=resting_hr&days=14${date ? `&date=${date}` : ''}`);
   const { data: p } = useApi<Patterns>('/patterns');
+  const shown = useCardShown();
+  const allHidden = useAllHidden('sleep');
 
   if (error && !night) return <div className="page-message">Couldn't load your sleep: {error.message}</div>;
   if (!night) return <div className="page-message">Loading…</div>;
@@ -52,16 +55,25 @@ function Overview({ tabs, photo, date, setDate }: { tabs: ReactNode; photo: Phot
           </div>
         )}
         <div className="night-main">
-          <div className="cards night-cards">
-            <ScoreCard night={night} />
-            <TotalSleepCard night={night} s={s} />
-            <RestingHrCard s={s} points={t?.resting_hr ?? []} />
-          </div>
-          <div className="split split-stages">
-            <StagesCard night={night} />
-            <InsightsCard night={night} home={s?.insights ?? []} patterns={p?.patterns ?? []} />
-          </div>
-          <TimelineCard night={night} />
+          <CardRow
+            className="cards night-cards"
+            fill={{ wide: 3, mid: 2, hero: { without: 'sleep.rhr' } }}
+            cards={[
+              ['sleep.score', <ScoreCard night={night} />],
+              ['sleep.total', <TotalSleepCard night={night} s={s} />],
+              ['sleep.rhr', <RestingHrCard s={s} points={t?.resting_hr ?? []} />],
+            ]}
+          />
+          <CardRow
+            className="split split-stages"
+            pair
+            cards={[
+              ['sleep.stages', <StagesCard night={night} />],
+              ['sleep.insights', <InsightsCard night={night} home={s?.insights ?? []} patterns={p?.patterns ?? []} />],
+            ]}
+          />
+          {shown('sleep.timeline') && <TimelineCard night={night} />}
+          {allHidden && <AllHiddenNote />}
         </div>
       </div>
     </div>
