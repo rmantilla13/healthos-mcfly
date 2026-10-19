@@ -1,5 +1,6 @@
 import os from 'node:os';
 import type { Flag, Insight, Latest, Point, RangeStatus, Settings, Summary, TimelineEvent, Trends, Vital, WeekSummary, Workout } from '../shared/types.ts';
+import { readHiddenCards } from '../shared/cards.ts';
 import { OWNER_ID, type Scope, getSettings, getUserSettings } from './db.ts';
 import { addDays, todayLocal } from './dates.ts';
 
@@ -41,6 +42,7 @@ export function settingsFrom(mine: Map<string, string>, platform: Map<string, st
     shareCyclePhase: mine.get('family_cycle_phase') === 'on',
     // Version 2: the board now also shows the last 30 days, so everyone hears about it again.
     familyNoticeSeen: mine.get('family_notice_seen') === '2',
+    hiddenCards: readHiddenCards(mine.get('hidden_cards')),
   };
 }
 

@@ -1,12 +1,14 @@
 import type { ReactNode } from 'react';
 import type { Insight, PhotoMeta, Summary, TimelineEvent, WeekSummary } from '../../shared/types.ts';
 import { Gauge, MiniBars, MiniDots, MiniLine, RangeScale } from '../charts/Mini.tsx';
+import { AllHiddenNote, CardRow, useAllHidden } from '../components/CardRow.tsx';
 import { Figure } from '../components/Figure.tsx';
 import { Icon, type IconName } from '../components/Icon.tsx';
 import { clock, compact, duration, fmt, fmtDate, hoursMinutes, href, minutesOfDay, relativeDay, shiftDate, useApi } from '../lib.ts';
 
 export function Home({ date, onDate, photo }: { date: string | null; onDate: (d: string | null) => void; photo: PhotoMeta | null }) {
   const { data, error, loading } = useApi<Summary>(`/summary${date ? `?date=${date}` : ''}`);
+  const allHidden = useAllHidden('home');
   if (error && !data) return <div className="page-message">Couldn't load your data: {error.message}</div>;
   if (!data) return <div className="page-message">Loading…</div>;
   const s = data;
@@ -56,19 +58,27 @@ export function Home({ date, onDate, photo }: { date: string | null; onDate: (d:
           </a>
         </div>
 
-        <div className="cards">
-          <ReadinessCard s={s} />
-          <Spo2Card s={s} />
-          <HrvCard s={s} />
-          <SleepCard s={s} />
-          <LoadCard s={s} />
-          <ActivityCard s={s} />
-        </div>
+        <CardRow
+          className="cards"
+          cards={[
+            ['home.readiness', <ReadinessCard s={s} />],
+            ['home.spo2', <Spo2Card s={s} />],
+            ['home.hrv', <HrvCard s={s} />],
+            ['home.sleep', <SleepCard s={s} />],
+            ['home.load', <LoadCard s={s} />],
+            ['home.activity', <ActivityCard s={s} />],
+          ]}
+        />
 
-        <div className="lower">
-          <TimelineCard timeline={s.timeline} today={s.today} />
-          <InsightsCard insights={s.insights} today={s.today} />
-        </div>
+        <CardRow
+          className="lower"
+          pair
+          cards={[
+            ['home.timeline', <TimelineCard timeline={s.timeline} today={s.today} />],
+            ['home.insights', <InsightsCard insights={s.insights} today={s.today} />],
+          ]}
+        />
+        {allHidden && <AllHiddenNote />}
       </div>
     </div>
   );

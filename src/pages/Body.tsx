@@ -5,6 +5,7 @@ import type { DayData, Point, Summary, Trends } from '../../shared/types.ts';
 import { cumulative, drawThrough, extent } from '../charts/day.ts';
 import { Gauge, MiniBars, MiniDots, MiniLine } from '../charts/Mini.tsx';
 import { AreaCurve, Change, HourBars } from '../charts/Neka.tsx';
+import { AllHiddenNote, CardRow, useAllHidden } from '../components/CardRow.tsx';
 import { Icon, type IconName } from '../components/Icon.tsx';
 import { compact, fmt, fmtDate, shiftDate, temp, useApi, useUnits } from '../lib.ts';
 import { Activity, DAY, DayNav, Metabolism, PageHead, Tabs, Trend, useRange } from './Detail.tsx';
@@ -44,6 +45,7 @@ function Overview({ tabs, date, setDate }: { tabs: ReactNode; date: string | nul
   // 45 days: the temperature row compares with the 30 days before its latest reading, which can be two weeks old.
   const { data: t } = useApi<Trends>(`/trends?metrics=${OVERVIEW_TRENDS}&days=45${date ? `&date=${date}` : ''}`);
   const { data: day } = useApi<DayData>(`/day?metrics=heart_rate,steps,active_energy${date ? `&date=${date}` : ''}`);
+  const allHidden = useAllHidden('body');
   if (error && !s) return <div className="page-message">Couldn't load your data: {error.message}</div>;
   if (!s) return <div className="page-message">Loading…</div>;
   const tr = t ?? {};
@@ -52,20 +54,32 @@ function Overview({ tabs, date, setDate }: { tabs: ReactNode; date: string | nul
   return (
     <div className={`page page-wide ${loading ? 'is-refreshing' : ''}`}>
       <PageHead title={TITLE} sub={SUB} tabs={tabs} tools={<DayNav today={s.today} date={date} setDate={setDate} label={label} />} />
-      <div className="cards cards-4">
-        <RestingHrCard s={s} points={tr.resting_hr ?? []} />
-        <HrvCard s={s} />
-        <StrainCard s={s} />
-        <RecoveryCard s={s} points={tr.recovery ?? []} />
-      </div>
-      <div className="split split-body">
-        <HeartTodayCard day={day} />
-        <BodyMetricsCard s={s} t={tr} />
-      </div>
-      <div className="split split-even">
-        <EnergyCard day={day} points={tr.active_energy ?? []} date={s.date} />
-        <StepsCard day={day} s={s} />
-      </div>
+      <CardRow
+        className="cards cards-4"
+        cards={[
+          ['body.rhr', <RestingHrCard s={s} points={tr.resting_hr ?? []} />],
+          ['body.hrv', <HrvCard s={s} />],
+          ['body.strain', <StrainCard s={s} />],
+          ['body.recovery', <RecoveryCard s={s} points={tr.recovery ?? []} />],
+        ]}
+      />
+      <CardRow
+        className="split split-body"
+        pair
+        cards={[
+          ['body.heart', <HeartTodayCard day={day} />],
+          ['body.metrics', <BodyMetricsCard s={s} t={tr} />],
+        ]}
+      />
+      <CardRow
+        className="split split-even"
+        pair
+        cards={[
+          ['body.energy', <EnergyCard day={day} points={tr.active_energy ?? []} date={s.date} />],
+          ['body.steps', <StepsCard day={day} s={s} />],
+        ]}
+      />
+      {allHidden && <AllHiddenNote />}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AuthMe, Page, Status, SyncResult } from '../shared/types.ts';
 import { Icon, type IconName } from './components/Icon.tsx';
-import { UnitsContext, clearLoadedData, fmtDate, href, notifyDataChanged, sendJson, useAccountLink, useApi, useBackgroundRefresh, useRoute } from './lib.ts';
+import { HiddenCardsContext, UnitsContext, clearLoadedData, fmtDate, href, notifyDataChanged, sendJson, useAccountLink, useApi, useBackgroundRefresh, useRoute } from './lib.ts';
 import { Admin } from './pages/Admin.tsx';
 import { Cycle } from './pages/Cycle.tsx';
 import { Family } from './pages/Family.tsx';
@@ -33,6 +33,9 @@ const DATA_NAV: { page: Page; label: string; icon: IconName }[] = [
 ];
 
 const ADMIN_NAV: { page: Page; label: string; icon: IconName }[] = [{ page: 'admin', label: 'Admin', icon: 'shield' }];
+
+/** Until the status loads (or from an older server): nothing hidden. One array, so the context stays stable. */
+const NONE_HIDDEN: string[] = [];
 
 type AuthState = { state: 'checking' } | { state: 'signin' | 'misconfigured'; setup: boolean } | { state: 'open'; signedIn: boolean };
 
@@ -124,6 +127,7 @@ function Dashboard({ signedIn }: { signedIn: boolean }) {
 
   return (
     <UnitsContext.Provider value={status?.settings.units ?? 'metric'}>
+      <HiddenCardsContext.Provider value={status?.settings.hiddenCards ?? NONE_HIDDEN}>
       <div className="app">
         <aside className="sidebar">
           <a className="brand" href={href('home')}>
@@ -172,6 +176,7 @@ function Dashboard({ signedIn }: { signedIn: boolean }) {
           {page === 'admin' && (isAdmin ? <Admin me={status!.user} /> : status && <NotAllowed />)}
         </main>
       </div>
+      </HiddenCardsContext.Provider>
     </UnitsContext.Provider>
   );
 }

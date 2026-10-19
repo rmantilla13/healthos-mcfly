@@ -114,6 +114,8 @@ export type Settings = {
   shareCyclePhase: boolean;
   /** The one-time note that the Family board shows your daily status was dismissed. */
   familyNoticeSeen: boolean;
+  /** Cards this person doesn't want on Home, Sleep or Body (ids from shared/cards.ts). Layout only. */
+  hiddenCards: string[];
 };
 
 export type PhotoMeta = {
@@ -189,6 +191,8 @@ export type AdminUser = {
   photo: boolean;
   /** Ask McFly over the last 30 days: how many questions and tokens, never their content. */
   mcfly: { questions30d: number; tokens30d: number };
+  /** Cards hidden on their dashboard (layout only). */
+  hiddenCards: string[];
 };
 
 export type AdminInvite = {

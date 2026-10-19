@@ -201,6 +201,14 @@ export async function copyText(text: string) {
 export const UnitsContext = createContext<Units>('metric');
 export const useUnits = () => useContext(UnitsContext);
 
+/** The cards this person hid (Settings → Cards; shared/cards.ts). */
+export const HiddenCardsContext = createContext<string[]>([]);
+/** Whether a card shows: every one does, except those the person hid. */
+export function useCardShown() {
+  const hidden = useContext(HiddenCardsContext);
+  return useCallback((id: string) => !hidden.includes(id), [hidden]);
+}
+
 export function fmt(value: number, digits = 0) {
   return value.toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
