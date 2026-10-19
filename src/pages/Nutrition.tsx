@@ -8,10 +8,10 @@ import type { Nutrient, NutritionData, NutritionDay, NutritionNumbers, Nutrition
 import { BarChart, ChartCard } from '../charts/Charts.tsx';
 import { DayBars, GlassBars } from '../charts/DayBars.tsx';
 import { Donut } from '../charts/Donut.tsx';
-import { AllHiddenNote, CardRow, useAllHidden } from '../components/CardRow.tsx';
+import { AllHiddenNote, CardRow } from '../components/CardRow.tsx';
 import { Icon, type IconName } from '../components/Icon.tsx';
 import { PageHead, RANGES, Tabs } from './Detail.tsx';
-import { fmt, fmtDate, href, notifyDataChanged, relativeDay, sendJson, shiftDate, useApi } from '../lib.ts';
+import { fmt, fmtDate, href, notifyDataChanged, relativeDay, sendJson, shiftDate, useApi, useCardShown, useCardsKnown } from '../lib.ts';
 
 const NUTRIENT: Record<Nutrient, { name: string; unit: string }> = {
   energy_kcal: { name: 'Energy', unit: 'kcal' },
@@ -108,7 +108,8 @@ function useNutrition(path: string) {
 /** The last two weeks: the latest day and its week on the cards, the week before only for the protein chip. */
 function Overview({ status }: { status: Status }) {
   const { data, loading, fallback } = useNutrition('/nutrition?days=14&insights=1');
-  const allHidden = useAllHidden('nutrition');
+  const shownCard = useCardShown();
+  const cardsKnown = useCardsKnown();
   if (!data) return fallback;
   const numbers = data.numbers ?? 'none';
   const byDate = new Map(data.days.map((d) => [d.date, d]));
@@ -150,6 +151,8 @@ function Overview({ status }: { status: Status }) {
     ['nutrition.water', <WaterCard week={week.map((date) => ({ date, value: waterByDate.get(date) ?? null }))} target={data.targets.water_ml} today={data.today} units={status.settings.units} />],
     ['nutrition.logged', <LoggedCard data={data} />],
   ];
+  // Every card this setting would show is hidden (Energy doesn't count while calories are hidden).
+  const allHidden = cardsKnown && [...cards.map(([id]) => id), 'nutrition.macros', 'nutrition.insights'].every((id) => !shownCard(id));
   return (
     <div className={`nutrition-overview ${loading ? 'is-refreshing' : ''}`}>
       <CardRow className="cards cards-4" fill={{ wide: 4, mid: 3, small: 2 }} cards={cards} />
