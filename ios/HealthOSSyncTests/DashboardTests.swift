@@ -1051,6 +1051,16 @@ final class FamilyLayoutTests: XCTestCase {
     }
 }
 
+final class DayCardTitleTests: XCTestCase {
+    func testTheCardNamesItsMetric() {
+        XCTAssertEqual(DayCard.title("Steps", running: true, isToday: true), "Steps so far today")
+        XCTAssertEqual(DayCard.title("Active energy", running: true, isToday: true), "Active energy so far today")
+        XCTAssertEqual(DayCard.title("Heart rate", running: false, isToday: true), "Heart rate today")
+        XCTAssertEqual(DayCard.title("Steps", running: true, isToday: false), "Steps by hour")
+        XCTAssertEqual(DayCard.title("Heart rate", running: false, isToday: false), "Heart rate by hour")
+    }
+}
+
 final class CancellationTests: XCTestCase {
     func testADroppedRequestIsNotAnError() {
         XCTAssertTrue(APIClient.isCancellation(CancellationError()))
