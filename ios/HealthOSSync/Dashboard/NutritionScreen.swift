@@ -27,6 +27,7 @@ struct NutritionScreen: View {
                         ProgressView()
                     }
                 } else {
+                    ScrollViewReader { proxy in
                     ScrollView {
                         VStack(alignment: .leading, spacing: 14) {
                             Text("From the food app you log in, through Apple Health. Only you can see it.")
@@ -34,7 +35,7 @@ struct NutritionScreen: View {
                             if dashboard.nutritionOn {
                                 NutritionTrends()
                             } else if dashboard.nutritionAvailable {
-                                NutritionOptIn()
+                                NutritionOptIn { withAnimation { proxy.scrollTo(NutritionOptIn.choicesID, anchor: .bottom) } }
                             } else {
                                 Text("This healthOS server doesn't have Nutrition yet.")
                                     .font(.footnote).foregroundStyle(Palette.ink2)
@@ -44,6 +45,7 @@ struct NutritionScreen: View {
                         .padding(16)
                     }
                     .refreshable { await dashboard.load() }
+                    }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -71,6 +73,9 @@ struct NutritionChoice: Identifiable {
 /// Nutrition is off: what it is, and turning it on. The choice comes first and nothing is preselected; the server
 /// refuses to turn it on without one.
 private struct NutritionOptIn: View {
+    static let choicesID = "nutritionChoices"
+    /// Brings the choices into view once they appear (they open below a long explanation).
+    let showChoices: () -> Void
     @Environment(Dashboard.self) private var dashboard
     @Environment(AppModel.self) private var sync
     @State private var choosing = false
@@ -94,7 +99,10 @@ private struct NutritionOptIn: View {
                     .font(.footnote).foregroundStyle(Palette.ink3)
                     .fixedSize(horizontal: false, vertical: true)
                 if !choosing {
-                    Button("Turn on Nutrition") { choosing = true }
+                    Button("Turn on Nutrition") {
+                        choosing = true
+                        DispatchQueue.main.async { showChoices() }
+                    }
                         .buttonStyle(.borderedProminent)
                         .padding(.top, 4)
                         .accessibilityIdentifier("turnOnNutrition")
@@ -137,6 +145,7 @@ private struct NutritionOptIn: View {
                     .disabled(saving != nil)
                 }
                 .card()
+                .id(Self.choicesID)
             }
         }
     }
