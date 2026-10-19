@@ -3770,7 +3770,8 @@ nav.tabs {
 
 /* ---------- card rows that follow what's shown (CardRow `fill`) ----------
    A row lays out from how many of its cards are left: CardRow sets --cols-wide / --cols-mid (/ --cols-hero) to
-   the fewest even rows (4 in a 3-up row are 2 × 2), and each card is that share of the width. Cards grow, so a
+   the fewest even rows (4 in a 3-up row are 2 × 2), and each card is that share of the width. Body's row also
+   has --cols-small: up to 4 wide, 3 below 1360px, 2 below 1080px. Cards grow, so a
    short last row stretches to fill it. One card is full width; a phone shows one per row. */
 .cards.fill-row {
   display: flex;
@@ -3788,7 +3789,7 @@ nav.tabs {
 }
 @media (max-width: 1080px) {
   .cards.fill-row {
-    --cols: var(--cols-mid, 2);
+    --cols: var(--cols-small, var(--cols-mid, 2));
   }
 }
 @media (min-width: 1400px) {

@@ -7,6 +7,8 @@ import { href, useCardShown, useCardsKnown } from '../lib.ts';
 export type Fill = {
   wide: number;
   mid: number;
+  /** At most this many on a small screen (≤1080px), when it's fewer than `mid`. */
+  small?: number;
   /** Sleep's wide layout beside the figure: two columns, without this card (the figure shows it instead). */
   hero?: { without: string };
 };
@@ -25,6 +27,7 @@ export function CardRow({ className, cards, pair, fill }: { className: string; c
     ? ({
         '--cols-wide': fillColumns(n, fill.wide),
         '--cols-mid': fillColumns(n, fill.mid),
+        ...(fill.small ? { '--cols-small': fillColumns(n, fill.small) } : {}),
         ...(fill.hero ? { '--cols-hero': fillColumns(n - (visible.some(([id]) => id === fill.hero!.without) ? 1 : 0), 2) } : {}),
       } as CSSProperties)
     : undefined;

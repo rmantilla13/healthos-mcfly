@@ -56,7 +56,7 @@ function Overview({ tabs, date, setDate }: { tabs: ReactNode; date: string | nul
       <PageHead title={TITLE} sub={SUB} tabs={tabs} tools={<DayNav today={s.today} date={date} setDate={setDate} label={label} />} />
       <CardRow
         className="cards cards-4"
-        fill={{ wide: 4, mid: 2 }}
+        fill={{ wide: 4, mid: 3, small: 2 }}
         cards={[
           ['body.rhr', <RestingHrCard s={s} points={tr.resting_hr ?? []} />],
           ['body.hrv', <HrvCard s={s} />],
