@@ -4,7 +4,24 @@
 
 import { createHash, timingSafeEqual } from 'node:crypto';
 import express, { type NextFunction, type Request, type Response } from 'express';
-import { type DailyRow, type Db, type EventRow, HOURLY_FOLD, type HourlyRow, OWNER_ID, type Scope, type WorkoutRow, setUserSetting, upsertDaily, upsertEvents, upsertHourly, upsertWorkouts, bumpDataVersion } from '../db.ts';
+import {
+  type DailyRow,
+  type Db,
+  type EventRow,
+  HOURLY_FOLD,
+  type HourlyRow,
+  OWNER_ID,
+  type Scope,
+  type SleepStageRow,
+  type WorkoutRow,
+  bumpDataVersion,
+  replaceSleepStages,
+  setUserSetting,
+  upsertDaily,
+  upsertEvents,
+  upsertHourly,
+  upsertWorkouts,
+} from '../db.ts';
 import type { CycleDay } from '../../shared/types.ts';
 import { parseCycleDay, replaceCycleDays } from '../cycle/index.ts';
 import { SOURCE } from './import.ts';
@@ -62,6 +79,11 @@ const MAX_ROWS = 100_000;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/;
 const EVENT_KINDS = new Set(['sleep', 'nap', 'mindful']);
+const SLEEP_STAGES = new Set(['in_bed', 'awake', 'asleep', 'light', 'rem', 'deep']);
+/** A night is a few dozen stretches; this is far beyond any real one. */
+const MAX_STAGES_PER_NIGHT = 1000;
+const MAX_STAGE_NIGHTS = 400;
+const MAX_STRETCH_MS = 20 * 3_600_000;
 
 export type IngestPayload = {
   daily: DailyRow[];
@@ -76,8 +98,15 @@ export type IngestPayload = {
    * replaces it; a day with only its date clears it. Stored whether or not the person has tracking on.
    */
   cycle: CycleDay[];
+  /**
+   * The stages through each night (wake date), from the source the night's totals came from. Each night sent is that
+   * night's complete timeline and replaces it; an empty list clears it.
+   */
+  sleepStages: { date: string; segments: SleepStageRow[] }[];
+  /** Stretches left out because they were empty, too long, or overlapped the one before. */
+  sleepStagesDropped: number;
 };
-export type IngestResult = { daily: number; hourly: number; workouts: number; events: number; deleted: number; cycle: number };
+export type IngestResult = { daily: number; hourly: number; workouts: number; events: number; deleted: number; cycle: number; sleepStages: number };
 
 export class IngestError extends Error {}
 
@@ -188,7 +217,45 @@ export function parseIngest(body: unknown): IngestPayload {
       return id;
     });
   const cycle = list(b, 'cycle').map((raw, i) => parseCycleDay(raw, `cycle[${i}]`, fail));
-  return { daily, hourly, workouts, events, deleted: { workouts: deletedIds('workouts'), events: deletedIds('events') }, cycle };
+  const { nights: sleepStages, dropped: sleepStagesDropped } = parseSleepStages(list(b, 'sleepStages'));
+  return { daily, hourly, workouts, events, deleted: { workouts: deletedIds('workouts'), events: deletedIds('events') }, cycle, sleepStages, sleepStagesDropped };
+}
+
+/**
+ * Nights of sleep stages. A wrong shape fails the request like any other field; a stretch that's merely bad (empty,
+ * longer than any night, or overlapping the one before it) is left out, so one odd sample can't hold up the day's
+ * other rows.
+ */
+function parseSleepStages(raw: unknown[]): { nights: IngestPayload['sleepStages']; dropped: number } {
+  if (raw.length > MAX_STAGE_NIGHTS) fail('sleepStages', `at most ${MAX_STAGE_NIGHTS} nights per request`);
+  let dropped = 0;
+  const seen = new Set<string>();
+  const nights = raw.map((rawNight, i) => {
+    const p = `sleepStages[${i}]`;
+    const n = record(rawNight, p);
+    const d = date(n.date, `${p}.date`);
+    if (seen.has(d)) fail(`${p}.date`, `${d} appears twice`);
+    seen.add(d);
+    if (!Array.isArray(n.segments)) fail(`${p}.segments`, 'expected an array');
+    if (n.segments.length > MAX_STAGES_PER_NIGHT) fail(`${p}.segments`, `at most ${MAX_STAGES_PER_NIGHT} per night`);
+    const segments = n.segments
+      .map((rawSeg, j) => {
+        const sp = `${p}.segments[${j}]`;
+        const g = record(rawSeg, sp);
+        if (typeof g.stage !== 'string' || !SLEEP_STAGES.has(g.stage)) fail(`${sp}.stage`, 'expected in_bed, awake, asleep, light, rem or deep');
+        return { start: iso(g.start, `${sp}.start`), end: iso(g.end, `${sp}.end`), stage: g.stage };
+      })
+      .sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
+    const kept: SleepStageRow[] = [];
+    for (const g of segments) {
+      const span = Date.parse(g.end) - Date.parse(g.start);
+      const prev = kept.at(-1);
+      if (span <= 0 || span > MAX_STRETCH_MS || (prev && Date.parse(g.start) < Date.parse(prev.end))) dropped++;
+      else kept.push(g);
+    }
+    return { date: d, segments: kept };
+  });
+  return { nights, dropped };
 }
 
 /** Upserts a validated push. Each daily row is a complete recomputed day, so it replaces the stored value. */
@@ -244,11 +311,21 @@ export async function ingestApple(scope: Scope, p: IngestPayload): Promise<Inges
     }
     await upsertEvents(q, userId, p.events);
     await replaceCycleDays(q, userId, SOURCE, p.cycle);
+    await replaceSleepStages(q, userId, SOURCE, p.sleepStages);
   });
-  const result = { daily: p.daily.length, hourly: p.hourly.length, workouts: p.workouts.length, events: p.events.length, deleted, cycle: p.cycle.length };
-  if (result.daily + result.hourly + result.workouts + result.events + deleted + result.cycle > 0) {
-    // The saved sync summary leaves out the cycle count: it's shown in places cycle data isn't.
-    const { cycle: _cycle, ...shown } = result;
+  // sleepStages counts nights, and is always there (0 for none): it tells the app this server stores them.
+  const result = {
+    daily: p.daily.length,
+    hourly: p.hourly.length,
+    workouts: p.workouts.length,
+    events: p.events.length,
+    deleted,
+    cycle: p.cycle.length,
+    sleepStages: p.sleepStages.length,
+  };
+  if (result.daily + result.hourly + result.workouts + result.events + deleted + result.cycle + result.sleepStages > 0) {
+    // The saved sync summary leaves out the cycle and stage counts: it's shown in places those aren't.
+    const { cycle: _cycle, sleepStages: _stages, ...shown } = result;
     await setUserSetting(db, userId, 'apple_last_sync', JSON.stringify({ ...shown, syncedAt: new Date().toISOString() }));
     await bumpDataVersion(db, userId);
   }

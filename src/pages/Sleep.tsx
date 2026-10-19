@@ -7,7 +7,7 @@ import { MiniBars, MiniLine } from '../charts/Mini.tsx';
 import { Change, Hypnogram, NightBars, STAGE_COLOR, ScoreBar, StageBar, StageTimeline } from '../charts/Neka.tsx';
 import { Figure } from '../components/Figure.tsx';
 import { Icon, type IconName } from '../components/Icon.tsx';
-import { clock, fmt, fmtDate, hoursMinutes, useApi } from '../lib.ts';
+import { clock, daysBetween, fmt, fmtDate, hoursMinutes, useApi } from '../lib.ts';
 import { DAY, DayNav, PageHead, STAGES, Tabs, Trend, avg, useRange, weekLabel, weekly } from './Detail.tsx';
 import { CardHead, INSIGHT_TONE } from './Home.tsx';
 
@@ -196,11 +196,20 @@ function StagesCard({ night }: { night: SleepNightDetail }) {
         <NoData text="No stages for this night. Apple Watch and WHOOP both record them." />
       )}
       {st && total > 0 && !staged && (
-        <p className="card-note">{night.source === 'whoop' ? "WHOOP shares each stage's total, not when in the night it happened." : 'The stages through the night arrive with the next iPhone sync.'}</p>
+        <p className="card-note">
+          {night.source === 'whoop'
+            ? "WHOOP shares each stage's total, not when in the night it happened."
+            : daysBetween(night.date, night.today) <= RESENT_DAYS
+              ? 'The stages through the night arrive with the next sync from the healthOS iPhone app.'
+              : "The stages through the night aren't available for this night."}
+        </p>
       )}
     </section>
   );
 }
+
+/** The iPhone app sends the last month's nights again once, with their stages (SyncState.recentDays). */
+const RESENT_DAYS = 30;
 
 const PATTERN_TONE: Record<Pattern['icon'], string> = { ...INSIGHT_TONE, spark: 'tone-blue' };
 
