@@ -178,6 +178,20 @@ export const MIGRATIONS: { id: number; name: string; statements: string[] }[] = 
         AND user_id NOT IN (SELECT user_id FROM tokens WHERE provider = 'whoop')`,
     ],
   },
+  {
+    // 7 is the nutrition branch's; whichever lands first, both apply (a missing id is applied whenever it appears).
+    id: 8,
+    name: 'Sleep stages through the night, for the Sleep page',
+    statements: [
+      // One row per stretch of one stage, by wake date. Written by the iPhone app (and the export importer)
+      // for the device that won the night; WHOOP's API has no stage-by-stage data.
+      `CREATE TABLE sleep_stages (
+        user_id TEXT NOT NULL, date TEXT NOT NULL, source TEXT NOT NULL, start TEXT NOT NULL, "end" TEXT NOT NULL,
+        stage TEXT NOT NULL CHECK (stage IN ('awake', 'rem', 'light', 'deep', 'asleep', 'in_bed')),
+        PRIMARY KEY (user_id, date, source, start))`,
+      'CREATE INDEX sleep_stages_user_date ON sleep_stages (user_id, date)',
+    ],
+  },
 ];
 
 async function migrate(db: Db) {
