@@ -1840,9 +1840,14 @@ td {
   --level: var(--critical);
 }
 /* The halo takes a light tint of the level, so the colour reads at a glance even where the dot is small. */
-.callout-mark:is([data-level='normal'], [data-level='unusual'], [data-level='off']) .callout-halo {
-  fill: color-mix(in srgb, var(--level) 16%, transparent);
-  stroke: color-mix(in srgb, var(--level) 50%, var(--halo-ring));
+/* (Opacities, not color-mix: a var() inside an unsupported color-mix would leave the halo black on older Safari.) */
+.callout-mark[data-level='normal'] .callout-halo,
+.callout-mark[data-level='unusual'] .callout-halo,
+.callout-mark[data-level='off'] .callout-halo {
+  fill: var(--level);
+  fill-opacity: 0.16;
+  stroke: var(--level);
+  stroke-opacity: 0.5;
 }
 /* The level's colour beside its words in the label: the words carry it too, so it never rests on colour alone. */
 .callout-level {
