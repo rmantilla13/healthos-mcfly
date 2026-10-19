@@ -3,7 +3,7 @@
 // keeps no conversation: the browser sends the visible history (plain text) with each question.
 import Anthropic from '@anthropic-ai/sdk';
 import express, { type Request, type Response } from 'express';
-import type { Digest, DigestReply, Units } from '../shared/types.ts';
+import type { Digest, DigestReply, McflyVisual, Point, Units } from '../shared/types.ts';
 import { platformSettings } from './admin.ts';
 import { currentUser } from './auth.ts';
 import { cycleView } from './cycle/index.ts';
@@ -93,8 +93,12 @@ function inUnits(kind: Kind | undefined, value: number, unit: string, units: Uni
 
 const unitOf = (metric: string, units: Units) => inUnits(METRICS[metric]?.kind, 0, METRICS[metric]?.unit ?? '', units).unit;
 
-/** cycle: the person has cycle tracking on, so McFly may read it. */
-type Ctx = { scope: Scope; hosted: boolean; units: Units; today: string; demo: boolean; cycle: boolean };
+/** cycle: the person has cycle tracking on, so McFly may read it. shown: visuals already in this answer. */
+type Ctx = { scope: Scope; hosted: boolean; units: Units; today: string; demo: boolean; cycle: boolean; stepGoal: number; shown: number };
+
+/** Charts and tiles per answer: enough for a trend and a comparison, few enough that the words still lead. */
+const MAX_VISUALS = 3;
+const TOO_MANY = `This answer already has ${MAX_VISUALS} visuals. Finish in words.`;
 
 const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
 
@@ -118,8 +122,10 @@ class ToolInputError extends Error {}
 
 function asDate(v: unknown, ctx: Ctx, field: string): string | undefined {
   if (v === undefined || v === null || v === '') return undefined;
-  if (typeof v !== 'string' || !DATE.test(v)) throw new ToolInputError(`${field} must be a date like 2026-10-16.`);
-  return v > ctx.today ? ctx.today : v;
+  // A real calendar date: 2026-02-30 would roll over to March, and 2026-10-00 would break the date maths.
+  const ms = typeof v === 'string' && DATE.test(v) ? Date.parse(`${v}T00:00:00Z`) : NaN;
+  if (Number.isNaN(ms) || new Date(ms).toISOString().slice(0, 10) !== v) throw new ToolInputError(`${field} must be a real date like 2026-10-16.`);
+  return (v as string) > ctx.today ? ctx.today : (v as string);
 }
 
 function asDays(v: unknown, max: number, fallback: number): number {
@@ -134,7 +140,148 @@ type Tool = BetaTool & {
   run: (ctx: Ctx, input: Record<string, unknown>) => Promise<unknown>;
   /** Offered only when this holds. A tool left out isn't even described to the model. */
   when?: (ctx: Ctx) => boolean;
+  /** It draws into the answer: run returns { visual, forModel }, the visual goes to the browser and forModel to McFly. */
+  visual?: true;
 };
+
+const METRIC_NAMES = Object.keys(METRICS);
+/** Daily totals: today's is only so far, so it's left out of averages until the day is over. */
+const SUMMED = new Set(['steps', 'active_energy', 'whoop_kcal', 'exercise_min', 'distance_km', 'flights', 'stand_hours', 'daylight_min', 'caffeine_mg', 'water_ml']);
+/** The days an average counts: every day with data, except today's unfinished total. */
+const forAverage = (ctx: Ctx, metric: string, pts: Point[]) => (SUMMED.has(metric) ? pts.filter((p) => p.date !== ctx.today) : pts);
+const lowerLabel = (m: string) => (METRICS[m]?.label ?? m).replace(/ \(.*\)$/, '').toLowerCase();
+
+function asMetric(v: unknown, field: string): string {
+  if (typeof v !== 'string' || !(v in METRICS)) throw new ToolInputError(`${field} must be a metric name from list_metrics.`);
+  return v;
+}
+
+/** A metric's daily values in the person's units, oldest first. */
+async function dailyPoints(ctx: Ctx, metric: string, days: number, end?: string): Promise<Point[]> {
+  const info = METRICS[metric];
+  const t = await trends(ctx.scope, ctx.hosted, [metric], days, end);
+  return t[metric].map((p) => ({ date: p.date, value: inUnits(info.kind, p.value, info.unit, ctx.units).value }));
+}
+
+const stretch = (points: Point[], key: 'min' | 'max') =>
+  points.reduce<Point | null>((a, p) => (!a || (key === 'min' ? p.value < a.value : p.value > a.value) ? p : a), null);
+
+/** One chart or a few tiles for an answer, from the person's own data. Throws ToolInputError when there's nothing to draw. */
+async function buildVisual(ctx: Ctx, input: Record<string, unknown>): Promise<{ visual: McflyVisual; forModel: unknown }> {
+  const title = typeof input.title === 'string' ? input.title.trim().slice(0, 80) : '';
+  if (!title) throw new ToolInputError('title is required: a short plain title for the chart.');
+  const end = asDate(input.end_date, ctx, 'end_date');
+  const to = end ?? ctx.today;
+  const none = (what: string) => new ToolInputError(`No ${what} recorded in that range, so there's nothing to draw. Say so in words instead.`);
+
+  if (input.kind === 'trend' || input.kind === 'bars') {
+    const metric = asMetric(input.metric, 'metric');
+    const days = asDays(input.days, 730, 30);
+    const daily = await dailyPoints(ctx, metric, days, end);
+    if (!daily.length) throw none(lowerLabel(metric));
+    const resolution = days <= 120 ? 'day' : 'week';
+    const points = bucket(daily, resolution).map((b) => ({ date: b.period, value: b.value }));
+    const counted = forAverage(ctx, metric, daily);
+    const avg = counted.length ? round(mean(counted.map((p) => p.value))!) : null;
+    const goal = metric === 'steps' && resolution === 'day' ? ctx.stepGoal : undefined;
+    const unit = unitOf(metric, ctx.units);
+    const partialToday = counted.length < daily.length;
+    return {
+      visual: { kind: input.kind, title, unit, resolution, points, mean: avg, days: counted.length, partialToday, ...(goal ? { goal } : {}) },
+      forModel: {
+        shown: input.kind,
+        title,
+        unit,
+        from: addDays(to, -(days - 1)),
+        to,
+        chartShows: resolution === 'day' ? 'one value per day' : 'weekly averages of the daily values',
+        daysWithData: daily.length,
+        averageOfDays: avg,
+        ...(partialToday ? { todayLeftOutOfTheAverage: 'today is not over yet' } : {}),
+        lowestDay: stretch(daily, 'min'),
+        highestDay: stretch(daily, 'max'),
+        latestDay: daily.at(-1),
+        ...(resolution === 'week' ? { lowestWeek: stretch(points, 'min'), highestWeek: stretch(points, 'max') } : {}),
+        ...(goal ? { goal, daysAtGoal: counted.filter((p) => p.value >= goal).length } : {}),
+      },
+    };
+  }
+
+  if (input.kind === 'compare') {
+    const metric = asMetric(input.metric, 'metric');
+    const raw = input.periods;
+    if (!Array.isArray(raw) || raw.length !== 2) throw new ToolInputError('compare needs exactly two periods, each { label, days, end_date? }.');
+    const periods = await Promise.all(
+      raw.map(async (p, i) => {
+        const r = (p && typeof p === 'object' ? p : {}) as Record<string, unknown>;
+        const label = typeof r.label === 'string' && r.label.trim() ? r.label.trim().slice(0, 40) : `Period ${i + 1}`;
+        const days = asDays(r.days, 366, 7);
+        const pEnd = asDate(r.end_date, ctx, `periods[${i}].end_date`) ?? ctx.today;
+        const pts = forAverage(ctx, metric, await dailyPoints(ctx, metric, days, pEnd));
+        const partialToday = SUMMED.has(metric) && pEnd === ctx.today;
+        return { label, from: addDays(pEnd, -(days - 1)), to: pEnd, mean: pts.length ? round(mean(pts.map((x) => x.value))!) : null, days: pts.length, partialToday };
+      }),
+    );
+    if (periods.every((p) => p.mean === null)) throw none(lowerLabel(metric));
+    const [a, b] = periods;
+    const change = a.mean !== null && b.mean !== null && b.mean !== 0 ? round(((a.mean - b.mean) / Math.abs(b.mean)) * 100) : null;
+    const unit = unitOf(metric, ctx.units);
+    return { visual: { kind: 'compare', title, unit, periods }, forModel: { shown: 'compare', title, unit, periods, changePercentFirstVsSecond: change } };
+  }
+
+  if (input.kind === 'stats') {
+    const raw = input.metrics;
+    if (!Array.isArray(raw) || raw.length < 1 || raw.length > 4) throw new ToolInputError('stats needs 1 to 4 metrics.');
+    const metrics = raw.map((m, i) => asMetric(m, `metrics[${i}]`));
+    const latest = input.stat === 'latest';
+    const days = asDays(input.days, 366, latest ? 30 : 7);
+    const items = await Promise.all(
+      metrics.map(async (m) => {
+        const all = await dailyPoints(ctx, m, days, end);
+        const pts = latest ? all : forAverage(ctx, m, all);
+        const label = (METRICS[m].label ?? m).replace(/ \(.*\)$/, '');
+        const unit = unitOf(m, ctx.units);
+        const from = addDays(to, -(days - 1));
+        if (!pts.length) return { label, value: null, unit, note: 'No data', from, to };
+        if (latest) return { label, value: pts.at(-1)!.value, unit, note: pts.at(-1)!.date, from, to };
+        return { label, value: round(mean(pts.map((p) => p.value))!), unit, note: `average of ${pts.length} ${pts.length === 1 ? 'day' : 'days'}`, from, to };
+      }),
+    );
+    if (items.every((it) => it.value === null)) throw none('of those metrics');
+    return { visual: { kind: 'stats', title, items }, forModel: { shown: 'stats', title, items } };
+  }
+
+  if (input.kind === 'sleep_stages') {
+    const days = asDays(input.days, 90, 14);
+    const keys = ['sleep_deep', 'sleep_light', 'sleep_rem', 'sleep_awake'];
+    const t = await trends(ctx.scope, ctx.hosted, keys, days, end);
+    const byDate = new Map<string, Record<string, number>>();
+    for (const k of keys) for (const p of t[k]) byDate.set(p.date, { ...byDate.get(p.date), [k]: round(p.value) });
+    const rows = [...byDate].sort(([x], [y]) => x.localeCompare(y)).map(([date, values]) => ({ date, values }));
+    if (!rows.length) throw none('sleep stages');
+    const avg = Object.fromEntries(keys.map((k) => [k, round(mean(rows.map((r) => r.values[k] ?? 0))!)]));
+    return { visual: { kind: 'stages', title, rows }, forModel: { shown: 'sleep_stages', title, unit: 'h', nights: rows.length, averageHours: avg } };
+  }
+
+  if (input.kind === 'workouts_by_sport') {
+    const days = asDays(input.days, 730, 30);
+    const list = await workouts(ctx.scope, ctx.hosted, days, end);
+    const by = new Map<string, { count: number; minutes: number }>();
+    for (const w of list) {
+      const s = by.get(w.sport) ?? { count: 0, minutes: 0 };
+      by.set(w.sport, { count: s.count + 1, minutes: s.minutes + w.duration_min });
+    }
+    const all = [...by].map(([sport, v]) => ({ sport, count: v.count, minutes: Math.round(v.minutes) })).sort((x, y) => y.minutes - x.minutes);
+    if (!all.length) throw none('workouts');
+    // Up to 8 bars; anything past that is one "Other" bar, so nothing is quietly left out.
+    const rest = all.slice(7);
+    const items = all.length > 8 ? [...all.slice(0, 7), { sport: `Other (${rest.length} types)`, count: rest.reduce((a, r) => a + r.count, 0), minutes: rest.reduce((a, r) => a + r.minutes, 0) }] : all;
+    const total = { count: all.reduce((a, r) => a + r.count, 0), minutes: all.reduce((a, r) => a + r.minutes, 0) };
+    return { visual: { kind: 'sports', title, items }, forModel: { shown: 'workouts_by_sport', title, from: addDays(to, -(days - 1)), to, items, total } };
+  }
+
+  throw new ToolInputError('kind must be trend, bars, compare, stats, sleep_stages or workouts_by_sport.');
+}
 
 const TOOLS: Tool[] = [
   {
@@ -383,6 +530,56 @@ const TOOLS: Tool[] = [
       };
     },
   },
+  {
+    name: 'show_visual',
+    visual: true,
+    description:
+      "Put a chart or a few stat tiles into your answer, drawn from this person's own data: you choose what to show and the numbers are read for you, in their units. Use it when a picture is clearer than words: a change over time (trend for a line, bars for daily amounts like steps or sleep), two periods side by side (compare), a few numbers at once (stats), sleep stages night by night (sleep_stages), or workouts by type (workouts_by_sport). Not for a single number. At most 3 per answer. It returns what it drew, so your words can refer to it without repeating it.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        kind: { type: 'string', enum: ['trend', 'bars', 'compare', 'stats', 'sleep_stages', 'workouts_by_sport'] },
+        title: { type: 'string', description: 'A short plain title, e.g. "Resting heart rate, last 30 days".' },
+        metric: { type: 'string', enum: METRIC_NAMES, description: 'For trend, bars and compare.' },
+        metrics: { type: 'array', items: { type: 'string', enum: METRIC_NAMES }, minItems: 1, maxItems: 4, description: 'For stats.' },
+        stat: { type: 'string', enum: ['average', 'latest'], description: 'For stats: each metric\'s average over days (the default) or its latest value.' },
+        days: {
+          type: 'integer',
+          minimum: 1,
+          maximum: 730,
+          description: 'Days back from end_date, inclusive. Defaults: 30 for trend, bars and workouts_by_sport; 7 for stats averages; 14 for sleep_stages (at most 90). Over 120 days, trend and bars show weekly averages.',
+        },
+        end_date: { type: 'string', description: 'YYYY-MM-DD. Defaults to today.' },
+        periods: {
+          type: 'array',
+          minItems: 2,
+          maxItems: 2,
+          description: 'For compare: the two periods, the more recent first, e.g. [{ label: "This week", days: 7 }, { label: "The week before", days: 7, end_date: <7 days ago> }].',
+          items: {
+            type: 'object',
+            properties: { label: { type: 'string' }, days: { type: 'integer', minimum: 1, maximum: 366 }, end_date: { type: 'string', description: 'YYYY-MM-DD. Defaults to today.' } },
+            required: ['label', 'days'],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ['kind', 'title'],
+      additionalProperties: false,
+    },
+    label: (i) => {
+      const m = typeof i.metric === 'string' ? lowerLabel(i.metric) : '';
+      if (i.kind === 'compare') return `Comparing your ${m || 'numbers'}`;
+      if (i.kind === 'stats') return 'Putting your numbers side by side';
+      if (i.kind === 'sleep_stages') return 'Drawing your sleep stages';
+      if (i.kind === 'workouts_by_sport') return 'Drawing your workouts by type';
+      return `Drawing your ${m || 'data'}${Number(i.days) ? ` over ${Number(i.days)} days` : ''}`;
+    },
+    async run(ctx, input) {
+      // Earlier rounds' charts count here; charts drawn together in one round are counted as they go out.
+      if (ctx.shown >= MAX_VISUALS) throw new ToolInputError(TOO_MANY);
+      return buildVisual(ctx, input);
+    },
+  },
 ];
 
 /** The tools this person's question may use. */
@@ -413,7 +610,12 @@ function systemPrompt(name: string, today: string, timeZone: string | null, unit
 How to answer
 - Look numbers up with the tools before answering. Don't estimate or invent values, and mention the dates (and the source, when it matters) of the figures you use.
 - If the data needed isn't there, such as a metric they don't record or a gap in dates, say so plainly.
-- Lead with the answer, then the few numbers that support it. Keep it short: a few sentences or a short list. Use **bold** and "- " bullets sparingly, and no tables or headings.
+- Shape every answer the same simple way:
+  1. The answer first, in one plain sentence.
+  2. When a picture says it faster (a change over time, two periods compared, several numbers at once, sleep stages, workouts by type), show it with show_visual: usually one, at most two for one question. Skip it for a single number or a yes/no.
+  3. Then at most three short "- " bullets with the numbers that matter, rounded, and their dates. Don't walk through the chart point by point; it's right there.
+  4. If it helps, one practical takeaway, in a sentence.
+- Plain words. Explain a term in a few words if you have to use one. **Bold** at most two key numbers. No tables or headings.
 - Where you can, compare with their own history (their usual range, recent weeks) rather than population norms.
 
 ${DATA_NOTES}${
@@ -667,7 +869,7 @@ export function mcflyRouter(db: Db, { hosted, client = defaultClient }: McflyOpt
       return void res.status(429).json({ error: `You've asked McFly ${limit} questions today, the daily limit. Ask again tomorrow.` });
     }
 
-    const ctx: Ctx = { scope, hosted, units: rc.settings.units, today: rc.today, demo: rc.demo, cycle: rc.settings.cycleTracking };
+    const ctx: Ctx = { scope, hosted, units: rc.settings.units, today: rc.today, demo: rc.demo, cycle: rc.settings.cycleTracking, stepGoal: rc.settings.stepGoal, shown: 0 };
     const tools = toolsFor(ctx);
     const toolByName = new Map(tools.map((t) => [t.name, t]));
     const messages: BetaMessageParam[] = history.map((t) => ({ role: t.role, content: t.content }));
@@ -742,20 +944,39 @@ export function mcflyRouter(db: Db, { hosted, client = defaultClient }: McflyOpt
         }
 
         messages.push({ role: 'assistant', content: message.content });
+        // Pictures go out once every call in the round is done, in the order McFly asked for them.
+        const drawn: (McflyVisual | null)[] = calls.map(() => null);
         const results = await Promise.all(
-          calls.map(async (call): Promise<BetaToolResultBlockParam> => {
+          calls.map(async (call, i): Promise<BetaToolResultBlockParam> => {
             const tool = toolByName.get(call.name);
             const input = call.input && typeof call.input === 'object' && !Array.isArray(call.input) ? (call.input as Record<string, unknown>) : null;
             if (!tool || !input) return { type: 'tool_result', tool_use_id: call.id, is_error: true, content: `Unknown tool or malformed input: ${call.name}` };
             send('tool', { label: tool.label(input) });
             try {
-              return { type: 'tool_result', tool_use_id: call.id, content: JSON.stringify(await tool.run(ctx, input)) };
+              const result = await tool.run(ctx, input);
+              if (tool.visual) {
+                // The picture goes to the browser; McFly gets back what was drawn.
+                const { visual, forModel } = result as { visual: McflyVisual; forModel: unknown };
+                drawn[i] = visual;
+                return { type: 'tool_result', tool_use_id: call.id, content: JSON.stringify(forModel) };
+              }
+              return { type: 'tool_result', tool_use_id: call.id, content: JSON.stringify(result) };
             } catch (err) {
               if (err instanceof ToolInputError) return { type: 'tool_result', tool_use_id: call.id, is_error: true, content: err.message };
               throw err;
             }
           }),
         );
+        // Only the first charts that fit: one past the limit becomes an error McFly reads, like any other.
+        drawn.forEach((visual, i) => {
+          if (!visual) return;
+          if (ctx.shown < MAX_VISUALS) {
+            ctx.shown++;
+            send('visual', { visual });
+          } else {
+            results[i] = { type: 'tool_result', tool_use_id: calls[i].id, is_error: true, content: TOO_MANY };
+          }
+        });
         messages.push({ role: 'user', content: results });
       }
       send('done', {});
