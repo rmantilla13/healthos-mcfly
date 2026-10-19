@@ -173,7 +173,7 @@ function Dashboard({ signedIn }: { signedIn: boolean }) {
             </a>
           )}
           {page === 'home' && status && family && !status.settings.familyNoticeSeen && <FamilyNotice refresh={reload} />}
-          {page === 'home' && <Home date={date} onDate={setDate} photo={status?.photo ?? null} nutrition={Boolean(status?.settings.nutrition)} />}
+          {page === 'home' && <Home date={date} onDate={setDate} photo={status?.photo ?? null} nutrition={status?.settings.nutrition ? status.settings.nutritionNumbers : null} />}
           {page === 'family' && (family ? <Family isAdmin={isAdmin} refreshStatus={reload} params={params} /> : status && <FamilyOff signedIn={signedIn} />)}
           {page === 'vitals' && <Vitals />}
           {page === 'sleep' && <Sleep params={params} photo={status?.photo ?? null} date={date} setDate={setDate} />}

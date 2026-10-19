@@ -1,5 +1,5 @@
 import { type KeyboardEvent, type PointerEvent, type ReactNode, useEffect, useRef, useState } from 'react';
-import type { DayData, Insight, PhotoMeta, Summary, TimelineEvent, WeekSummary } from '../../shared/types.ts';
+import type { DayData, Insight, NutritionNumbers, PhotoMeta, Summary, TimelineEvent, WeekSummary } from '../../shared/types.ts';
 import { Gauge, MiniBars, MiniDots, MiniLine, RangeScale } from '../charts/Mini.tsx';
 import { clockOf, DAY_MINUTES, eventSpan, type HeartAt, hourClock, type Moment, momentAt, pressMinute, scrubMax, stepMinute, type TotalAt } from '../charts/scrub.ts';
 import { AllHiddenNote, CardRow, useAllHidden } from '../components/CardRow.tsx';
@@ -8,7 +8,18 @@ import { Icon, type IconName } from '../components/Icon.tsx';
 import { NutritionCard } from './Nutrition.tsx';
 import { clock, compact, duration, fmt, fmtDate, hoursMinutes, href, relativeDay, shiftDate, useApi } from '../lib.ts';
 
-export function Home({ date, onDate, photo, nutrition = false }: { date: string | null; onDate: (d: string | null) => void; photo: PhotoMeta | null; nutrition?: boolean }) {
+export function Home({
+  date,
+  onDate,
+  photo,
+  nutrition = null,
+}: {
+  date: string | null;
+  onDate: (d: string | null) => void;
+  photo: PhotoMeta | null;
+  /** What the person chose to see of Nutrition, or null while it's off. */
+  nutrition?: NutritionNumbers | null;
+}) {
   const { data, error, loading } = useApi<Summary>(`/summary${date ? `?date=${date}` : ''}`);
   const allHidden = useAllHidden('home');
   // While the timeline is scrubbed, the figure's heart beats at that hour's rate.
@@ -75,7 +86,7 @@ export function Home({ date, onDate, photo, nutrition = false }: { date: string 
           ]}
         />
         {/* Only for people with Nutrition on: its own row, so the cards above keep their layout. */}
-        {nutrition && <CardRow className="cards" cards={[['home.food', <NutritionCard />]]} />}
+        {nutrition && <CardRow className="cards" cards={[['home.food', <NutritionCard numbers={nutrition} />]]} />}
 
         <CardRow
           className="lower"

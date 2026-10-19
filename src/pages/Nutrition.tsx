@@ -80,8 +80,8 @@ export function Nutrition({ status, params, refresh }: { status: Status; params:
         ranges={RANGES.filter((r) => r.days <= 90)}
       />
       {current === 'overview' && <Overview status={status} />}
-      {current === 'macros' && <Macros days={days} hosted={status.hosted} />}
-      {current === 'hydration' && <Hydration days={days} units={status.settings.units} />}
+      {current === 'macros' && <Macros days={days} hosted={status.hosted} numbers={numbers} />}
+      {current === 'hydration' && <Hydration days={days} units={status.settings.units} numbers={numbers} />}
     </div>
   );
 }
@@ -226,8 +226,14 @@ function NumbersChoice({ current, busy, onChoose }: { current: NutritionNumbers 
   );
 }
 
-function useNutrition(path: string) {
-  const { data, error, loading, reload } = useApi<NutritionData>(path);
+/**
+ * Loaded data is cached by address, so the setting goes in it: after a change, no view reuses an answer filtered for
+ * the old one (which could still show calories someone just chose to hide). The server ignores it.
+ */
+const nutritionPath = (path: string, numbers: NutritionNumbers | null) => `${path}${path.includes('?') ? '&' : '?'}numbers=${numbers ?? 'off'}`;
+
+function useNutrition(path: string, numbers: NutritionNumbers | null) {
+  const { data, error, loading, reload } = useApi<NutritionData>(nutritionPath(path, numbers));
   const fallback = error ? <div className="page-message">Couldn't load your nutrition: {error.message}</div> : !data ? <div className="page-message">Loading…</div> : null;
   return { data, loading, reload, fallback };
 }
@@ -236,7 +242,7 @@ function useNutrition(path: string) {
 
 /** The last two weeks: the latest day and its week on the cards, the week before only for the protein chip. */
 function Overview({ status }: { status: Status }) {
-  const { data, loading, fallback } = useNutrition('/nutrition?days=14&insights=1');
+  const { data, loading, fallback } = useNutrition('/nutrition?days=14&insights=1', status.settings.nutritionNumbers);
   const shownCard = useCardShown();
   const cardsKnown = useCardsKnown();
   if (!data) return fallback;
@@ -480,8 +486,8 @@ function FoodInsights({ insights }: { insights: Pattern[] }) {
 
 // ---------- Macros ----------
 
-function Macros({ days, hosted }: { days: number; hosted: boolean }) {
-  const { data, loading, reload, fallback } = useNutrition(`/nutrition?days=${days}`);
+function Macros({ days, hosted, numbers }: { days: number; hosted: boolean; numbers: NutritionNumbers }) {
+  const { data, loading, reload, fallback } = useNutrition(`/nutrition?days=${days}`, numbers);
   if (!data) return fallback;
   if (!data.days.length) return <NothingYet hosted={hosted} />;
   const charted = ORDER.filter((n) => data.days.some((d) => d.values[n] !== undefined));
@@ -509,8 +515,8 @@ function Macros({ days, hosted }: { days: number; hosted: boolean }) {
 
 // ---------- Hydration ----------
 
-function Hydration({ days, units }: { days: number; units: Settings['units'] }) {
-  const { data, loading, fallback } = useNutrition(`/nutrition?days=${days}`);
+function Hydration({ days, units, numbers }: { days: number; units: Settings['units']; numbers: NutritionNumbers }) {
+  const { data, loading, fallback } = useNutrition(`/nutrition?days=${days}`, numbers);
   if (!data) return fallback;
   const { water: w, caffeine } = data.hydration;
   return (
@@ -728,8 +734,8 @@ function AppChoice({ data, onSaved }: { data: NutritionData; onSaved: () => void
 // ---------- the Home card ----------
 
 /** A strip under the Home cards, only for people who turned nutrition on. Its own request: Summary stays food-free. */
-export function NutritionCard() {
-  const { data } = useApi<NutritionData>('/nutrition?days=7');
+export function NutritionCard({ numbers }: { numbers: NutritionNumbers }) {
+  const { data } = useApi<NutritionData>(nutritionPath('/nutrition?days=7', numbers));
   if (!data?.enabled) return null;
   const latest = data.days.at(-1);
   const logged = new Set(data.days.map((d) => d.date));
