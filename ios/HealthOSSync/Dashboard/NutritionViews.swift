@@ -614,7 +614,11 @@ private struct FoodDayCard: View {
             HStack {
                 Text(Fmt.relativeDay(day.date, today: today)).font(.headline).foregroundStyle(Palette.ink)
                 Spacer()
-                Chip(text: day.app)
+                Text(day.app)
+                    .font(.caption.weight(.medium))
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(Palette.surface2, in: Capsule())
+                    .foregroundStyle(Palette.ink2)
             }
             if mode == .none || shown.isEmpty {
                 Text("You logged food in \(([day.app] + day.otherApps).joined(separator: ", ")).").font(.footnote).foregroundStyle(Palette.ink2)
@@ -688,7 +692,7 @@ private struct NutritionHydration: View {
         } else {
             FoodChartCard(title: "Water", points: data.water, start: data.start, end: data.end, target: data.targets?["water_ml"],
                           note: "1 glass = \(FoodMath.glassSize(units))", format: { FoodMath.water($0, units: units) },
-                          axis: { units == .imperial ? Fmt.number($0 / 29.5735) : Fmt.compact($0) })
+                          axis: { units == .imperial ? Fmt.number($0 / 29.5735) : Fmt.number($0) })
             FoodChartCard(title: "Caffeine", points: data.caffeine, start: data.start, end: data.end, target: nil,
                           note: "daily total", format: { "\(Fmt.number($0)) mg" })
         }
@@ -740,8 +744,8 @@ private struct FoodChartCard: View {
             }
             if let median {
                 RuleMark(y: .value("Median", median))
-                    .foregroundStyle(Palette.ink3.opacity(0.6))
-                    .lineStyle(StrokeStyle(lineWidth: 1))
+                    .foregroundStyle(Palette.ink3.opacity(0.35))
+                    .lineStyle(StrokeStyle(lineWidth: 0.75))
             }
             if let target {
                 RuleMark(y: .value("Your target", target))
@@ -749,6 +753,8 @@ private struct FoodChartCard: View {
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
                     .annotation(position: .top, alignment: .trailing) {
                         Text("Your target").font(.caption2).foregroundStyle(Palette.ink2)
+                            .padding(.horizontal, 4)
+                            .background(Palette.surface.opacity(0.9), in: RoundedRectangle(cornerRadius: 4))
                     }
             }
             if let picked {

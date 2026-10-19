@@ -14,6 +14,10 @@ The app reads the same API as the website (`/api/summary`, `/api/trends`, `/api/
   - Arrows step through past days. Pull down to refresh, which also pushes any new Health data.
   - **Ask McFly:** a pill above the tab bar opens a chat with the dashboard's assistant (`/api/mcfly`, streamed from `/api/mcfly/chat`). The conversation stays in memory only. It shows how many questions are left today, and the pill is hidden when the server has McFly off.
 - **Trends:** Vitals, Sleep (stacked stages), Activity (steps against goal, plus workouts) and Body, over 30 days, 90 days or a year. Drag across a chart to read a single day.
+- **Nutrition** (only while Nutrition is on): the web's Neka layout from `GET /api/nutrition`.
+  - **Overview:** Energy (only when calories are shown), Protein with a neutral week-on-week note, Water in glasses, Days logged, a macro balance donut with fiber, sugar, sodium and caffeine, and food insights worded as associations.
+  - **Macros and Hydration:** a bar per logged day over 7, 30 or 90 days. With "No amounts", only the Overview shows, and only which days were logged.
+  - **No judgement:** a day with nothing logged is a gap, never a zero. A target you set (Settings → Nutrition targets) is a plain dashed line. No score, no "remaining", no red or green.
 - **Cycle** (only while cycle tracking is on): this cycle's phase ring and estimates, each fertile day's estimated chance, the temperature curve for any cycle (cover line, ovulation, the rise after it), a five-week calendar, past cycles split before and after ovulation, and patterns from your own cycles. Estimates never mark a day as safe.
 - **Settings:**
   - server address and sign-in status;
