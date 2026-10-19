@@ -101,8 +101,10 @@ export async function seedDemo(db: Db, userId = OWNER_ID) {
 
     const bed = 22 * 60 + 55 + Math.round(noise(35)) + (weekend ? 35 : 0);
     const wake = bed + Math.round((sleepHours + awake) * 60);
-    events.push({ id: `demo-sleep-${date}`, source: SOURCE, kind: 'sleep', title: 'Sleep', start: at(addDays(date, -1), bed), end: at(addDays(date, -1), wake), date });
-    if (i < DETAIL_DAYS) nights.push({ date, segments: nightStages(detail, (m) => at(addDays(date, -1), m), bed, wake, { deep, rem, light, awake }) });
+    // The night starts with a while in bed before falling asleep (from its own stream, like the hourly detail).
+    const latency = Math.round(8 + detail() * 18);
+    events.push({ id: `demo-sleep-${date}`, source: SOURCE, kind: 'sleep', title: 'Sleep', start: at(addDays(date, -1), bed + latency), end: at(addDays(date, -1), wake), date });
+    if (i < DETAIL_DAYS) nights.push({ date, segments: nightStages(detail, (m) => at(addDays(date, -1), m), bed, wake, latency, { deep, rem, light, awake }) });
 
     if (i === 0 || rand() < 0.45) {
       const t = i === 0 ? 8 * 60 : 7 * 60 + Math.round(rand() * 90);
@@ -153,10 +155,17 @@ export async function seedDemo(db: Db, userId = OWNER_ID) {
   });
 
   const hourly = demoHours(detail, today, daily, workouts);
-  // Today's totals are what the hours add up to so far.
+  // Today's totals are what the hours add up to so far, and the figures that go with them scale alike.
+  const todayRow = (metric: string) => daily.find((r) => r.date === today && r.metric === metric);
+  const stepsRow = todayRow('steps');
+  const share = stepsRow && stepsRow.value > 0 ? hourly.filter((h) => h.date === today && h.metric === 'steps').reduce((a, h) => a + h.value, 0) / stepsRow.value : 1;
   for (const metric of ['steps', 'active_energy']) {
-    const row = daily.find((r) => r.date === today && r.metric === metric);
+    const row = todayRow(metric);
     if (row) row.value = hourly.filter((h) => h.date === today && h.metric === metric).reduce((a, h) => a + h.value, 0);
+  }
+  for (const metric of ['distance_km', 'exercise_min']) {
+    const row = todayRow(metric);
+    if (row) row.value *= share;
   }
 
   await db.tx(async (q) => {
@@ -173,8 +182,14 @@ export async function seedDemo(db: Db, userId = OWNER_ID) {
  * A night as the Watch records it: time in bed before falling asleep, then about 90-minute cycles of light,
  * deep and REM sleep (more deep early, more REM late) with brief wakings, adding up to the night's totals.
  */
-function nightStages(rand: () => number, at: (m: number) => string, bed: number, wake: number, hours: { deep: number; rem: number; light: number; awake: number }): SleepStageRow[] {
-  const latency = Math.round(8 + rand() * 18);
+function nightStages(
+  rand: () => number,
+  at: (m: number) => string,
+  bed: number,
+  wake: number,
+  latency: number,
+  hours: { deep: number; rem: number; light: number; awake: number },
+): SleepStageRow[] {
   const asleep = (hours.deep + hours.rem + hours.light) * 60;
   const n = Math.max(3, Math.round(asleep / 90));
   const share = (w: (k: number) => number) => {

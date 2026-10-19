@@ -97,3 +97,69 @@ test('latency and deep peak from segments', () => {
   assert.equal(latency([{ start: '2026-10-18T22:00:00-05:00', end: '2026-10-18T23:00:00-05:00', stage: 'light' }]), null, 'no time in bed recorded');
   assert.equal(deepPeak([{ start: '2026-10-19T01:00:00+02:00', end: '2026-10-19T02:00:00+02:00', stage: 'deep' }]), '2026-10-19T01:30:00+02:00');
 });
+
+test('a night both devices recorded keeps every figure on one device', async (t) => {
+  const db = await openStore();
+  t.after(() => db.close());
+  const scope = { db, userId: OWNER_ID };
+  await setUserSetting(db, OWNER_ID, 'timezone', 'UTC');
+  await setUserSetting(db, OWNER_ID, 'demo', 'off');
+  const night = (whoopHours: number) => [
+    { date: today, metric: 'sleep_hours', source: 'apple', value: 7.4 },
+    { date: today, metric: 'sleep_in_bed', source: 'apple', value: 8 },
+    { date: today, metric: 'sleep_deep', source: 'apple', value: 0.9 },
+    { date: today, metric: 'sleep_rem', source: 'apple', value: 1.6 },
+    { date: today, metric: 'sleep_light', source: 'apple', value: 4.9 },
+    { date: today, metric: 'sleep_awake', source: 'apple', value: 0.6 },
+    { date: today, metric: 'sleep_hours', source: 'whoop', value: whoopHours },
+    { date: today, metric: 'sleep_in_bed', source: 'whoop', value: whoopHours + 0.5 },
+    { date: today, metric: 'sleep_deep', source: 'whoop', value: 1.6 },
+    { date: today, metric: 'sleep_rem', source: 'whoop', value: 1.5 },
+    { date: today, metric: 'sleep_light', source: 'whoop', value: whoopHours - 3.1 },
+    { date: today, metric: 'sleep_awake', source: 'whoop', value: 0.5 },
+  ];
+  await upsertEvents(db, OWNER_ID, [
+    { id: 'a', source: 'apple', kind: 'sleep', title: 'Sleep', start: at(back(1), '22:40'), end: at(today, '06:40'), date: today },
+    // WHOOP's record is its whole sleep, so usually the longer one.
+    { id: 'w', source: 'whoop', kind: 'sleep', title: 'Sleep', start: at(back(1), '22:10'), end: at(today, '06:55'), date: today },
+  ]);
+  await insertMany(db, 'sleep_stages', ['user_id', 'date', 'source', 'start', 'end', 'stage'], [
+    [OWNER_ID, today, 'apple', at(back(1), '22:40'), at(today, '01:00'), 'light'],
+    [OWNER_ID, today, 'apple', at(today, '01:00'), at(today, '01:54'), 'deep'],
+    [OWNER_ID, today, 'apple', at(today, '01:54'), at(today, '06:40'), 'light'],
+  ]);
+
+  // They agree (7.4 and 7.1 hours): the total is their average, and the night is the Watch's, the one with stages.
+  await upsertDaily(db, OWNER_ID, night(7.1));
+  const both = await sleepNight(scope, false, today);
+  assert.equal(both.source, 'apple');
+  assert.equal(both.stages?.deep, 0.9, "the Watch's deep sleep, under the Watch's hypnogram");
+  assert.equal(both.segments.length, 3);
+  assert.equal(both.fellAsleep, at(back(1), '22:40'));
+  assert.equal(both.inBedHours, 8);
+
+  // They disagree (the strap slipped off): WHOOP is trusted, so it's WHOOP's night throughout, with no Apple timeline.
+  await upsertDaily(db, OWNER_ID, night(3.2));
+  const whoop = await sleepNight(scope, false, today);
+  assert.equal(whoop.source, 'whoop');
+  assert.equal(whoop.stages?.deep, 1.6);
+  assert.deepEqual(whoop.segments, []);
+  assert.equal(whoop.fellAsleep, at(back(1), '22:10'));
+  assert.equal(whoop.latencyMin, null);
+});
+
+test('stretches come back in time order even when the clocks went back that night', async (t) => {
+  const db = await openStore();
+  t.after(() => db.close());
+  const scope = { db, userId: OWNER_ID };
+  await setUserSetting(db, OWNER_ID, 'timezone', 'UTC');
+  await setUserSetting(db, OWNER_ID, 'demo', 'off');
+  await upsertDaily(db, OWNER_ID, [{ date: today, metric: 'sleep_hours', source: 'apple', value: 7 }]);
+  await insertMany(db, 'sleep_stages', ['user_id', 'date', 'source', 'start', 'end', 'stage'], [
+    [OWNER_ID, today, 'apple', `${back(1)}T23:10:00-05:00`, `${today}T01:20:00-05:00`, 'light'],
+    [OWNER_ID, today, 'apple', `${today}T01:20:00-05:00`, `${today}T01:05:00-06:00`, 'deep'],
+    [OWNER_ID, today, 'apple', `${today}T01:05:00-06:00`, `${today}T06:40:00-06:00`, 'light'],
+  ]);
+  const n = await sleepNight(scope, false, today);
+  assert.deepEqual(n.segments.map((g) => g.stage), ['light', 'deep', 'light']);
+});

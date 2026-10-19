@@ -64,13 +64,26 @@ export function localClock(t: number, offsetIso: string) {
   return new Date(t + offsetOf(offsetIso) * 60_000).toISOString().slice(11, 16);
 }
 
-/** Whole local hours between two instants, every `every` hours, in the offset of the night's first timestamp. */
-function hourTicks(from: number, to: number, offsetIso: string, every: number) {
+/**
+ * The wall clock at an instant, in the offset the night was recorded in then: that of the latest timestamp at or
+ * before it. A night the clocks change is written in two offsets, and "woke up 07:00" must match the axis.
+ */
+export function clockAt(t: number, segments: SleepSegment[], fallbackIso: string) {
+  let iso = segments[0]?.start ?? fallbackIso;
+  for (const g of segments) {
+    if (ms(g.start) <= t) iso = g.start;
+    if (ms(g.end) <= t) iso = g.end;
+  }
+  return localClock(t, iso);
+}
+
+/** Whole local hours between two instants, every `every` hours, each labelled in the offset in force then. */
+function hourTicks(from: number, to: number, label: (t: number) => string, offsetIso: string, every: number) {
   const off = offsetOf(offsetIso) * 60_000;
   const out: { at: number; label: string }[] = [];
   for (let t = Math.ceil((from + off) / 3_600_000) * 3_600_000 - off; t <= to; t += 3_600_000) {
-    const label = localClock(t, offsetIso);
-    if (Number(label.slice(0, 2)) % every === 0) out.push({ at: t, label });
+    const text = label(t);
+    if (Number(text.slice(0, 2)) % every === 0) out.push({ at: t, label: text });
   }
   return out;
 }
@@ -85,7 +98,7 @@ export function Hypnogram({ segments, height = 170 }: { segments: SleepSegment[]
   const rowH = (height - bottom) / ROWS.length;
   const x = (t: number) => left + ((t - from) / Math.max(1, to - from)) * (width - left - 4);
   const rowOf = (s: SleepStage) => ROWS.findIndex((r) => r.stages.includes(s));
-  const ticks = width > 0 ? hourTicks(from, to, segments[0].start, width < 420 ? 3 : 2) : [];
+  const ticks = width > 0 ? hourTicks(from, to, (t) => clockAt(t, segments, segments[0].start), segments[0].start, width < 420 ? 3 : 2) : [];
   return (
     <div className="hypnogram" ref={ref} style={{ height }}>
       {width > 0 && (
@@ -178,7 +191,7 @@ export function StageTimeline({ segments, start, end, marker }: { segments: Slee
   const pos = (t: number) => `${clamp(((t - from) / Math.max(1, to - from)) * 100, 0, 100)}%`;
   const at = hover ?? (marker ? ms(marker) : null);
   const stageAt = at !== null ? segments.find((s) => ms(s.start) <= at && at < ms(s.end))?.stage : undefined;
-  const ticks = hourTicks(from, to, start, to - from > 11 * 3_600_000 ? 2 : 1);
+  const ticks = hourTicks(from, to, (t) => clockAt(t, segments, start), start, to - from > 11 * 3_600_000 ? 2 : 1);
   return (
     <div className="stage-tl">
       <div
@@ -201,7 +214,7 @@ export function StageTimeline({ segments, start, end, marker }: { segments: Slee
         {at !== null && (
           <div className="stage-tl-marker" style={{ left: pos(at) }}>
             <span>
-              {localClock(at, start)}
+              {clockAt(at, segments, start)}
               {stageAt ? ` · ${STAGE_LABEL[stageAt]}` : ''}
             </span>
           </div>

@@ -1,7 +1,7 @@
 // The Sleep page: one night (Overview), the stages over a range, trends, and coaching from the person's own
 // nights. Every figure is from one device for that night; nothing here is a score we made up.
 import type { ReactNode } from 'react';
-import type { Insight, Pattern, Patterns, PhotoMeta, SleepNightDetail, SleepTiming, Summary, Trends } from '../../shared/types.ts';
+import type { Insight, Pattern, Patterns, PhotoMeta, SleepNightDetail, SleepSegment, SleepTiming, Summary, Trends } from '../../shared/types.ts';
 import { ChartCard, Legend, StackedBars } from '../charts/Charts.tsx';
 import { MiniBars, MiniLine } from '../charts/Mini.tsx';
 import { Change, Hypnogram, NightBars, STAGE_COLOR, ScoreBar, StageBar, StageTimeline } from '../charts/Neka.tsx';
@@ -170,10 +170,24 @@ const STAGE_ROWS = [
   { key: 'deep', label: 'Deep', color: STAGE_COLOR.deep },
 ] as const;
 
+/** Hours in each stage, added up from the night's stretches (for a night with no stage totals of its own). */
+function totalsOf(segments: SleepSegment[]) {
+  const t = { awake: 0, rem: 0, light: 0, deep: 0 };
+  for (const g of segments) {
+    const h = (Date.parse(g.end) - Date.parse(g.start)) / 3_600_000;
+    if (g.stage === 'awake') t.awake += h;
+    else if (g.stage === 'rem') t.rem += h;
+    else if (g.stage === 'light' || g.stage === 'asleep') t.light += h;
+    else if (g.stage === 'deep') t.deep += h;
+  }
+  return t;
+}
+
 function StagesCard({ night }: { night: SleepNightDetail }) {
-  const st = night.stages;
   // Watch nights recorded before stages ("asleep" only) have nothing to draw by stage.
   const staged = night.segments.some((x) => x.stage === 'deep' || x.stage === 'rem' || x.stage === 'light');
+  // A short night the Watch scored as core and awake only gets no stage totals from the phone; its stretches still add up.
+  const st = night.stages ?? (staged ? totalsOf(night.segments) : null);
   const total = st ? st.awake + st.rem + st.light + st.deep : 0;
   return (
     <section className="card night-stages">
@@ -268,7 +282,7 @@ function TimelineCard({ night }: { night: SleepNightDetail }) {
             {night.wokeUp && <Fact color={STAGE_COLOR.light} label="Woke up" value={clock(night.wokeUp)} />}
             {night.inBedHours !== null && <Fact label="In bed" value={hoursMinutes(night.inBedHours)} />}
           </div>
-          {night.source === 'whoop' && <p className="card-note">From WHOOP's sleep record: when it started and ended.</p>}
+          {night.source === 'whoop' && segs.length === 0 && <p className="card-note">From WHOOP's sleep record: when it started and ended.</p>}
         </>
       ) : (
         <NoData text="No sleep recorded for this night." />
@@ -375,7 +389,7 @@ function TrendsTab({ tabs }: { tabs: ReactNode }) {
         {has('sleep_performance') ? (
           <Trend title="Sleep performance" points={t.sleep_performance} format={(v) => `${fmt(v)}%`} unitNote="WHOOP: sleep vs sleep needed" color="var(--series-3)" />
         ) : (
-          <Trend title="Sleep efficiency" points={t.sleep_efficiency ?? []} format={(v) => `${fmt(v)}%`} unitNote="time asleep ÷ time in bed" color="var(--series-3)" />
+          has('sleep_efficiency') && <Trend title="Sleep efficiency" points={t.sleep_efficiency} format={(v) => `${fmt(v)}%`} unitNote="WHOOP: time asleep ÷ time in bed" color="var(--series-3)" />
         )}
         {has('sleep_in_bed') && <Trend title="Time in bed" points={t.sleep_in_bed} format={hoursMinutes} tickFormat={h} />}
         {has('sleep_consistency') && <Trend title="Sleep consistency" points={t.sleep_consistency} format={(v) => `${fmt(v)}%`} unitNote="WHOOP" color="var(--series-3)" />}

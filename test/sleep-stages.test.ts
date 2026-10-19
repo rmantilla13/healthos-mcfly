@@ -167,3 +167,18 @@ test('an export import fills the stages too, so replacing Apple data keeps the n
   await importAppleHealth({ db, userId: OWNER_ID }, file);
   assert.deepEqual((await stored(db, '2026-10-15')).map((r) => r.stage), ['light', 'deep']);
 });
+
+test("demo hours never show as someone's own once demo data is off", async (t) => {
+  const db = await openStore();
+  t.after(() => db.close());
+  const { upsertHourly, setUserSetting } = await import('../server/db.ts');
+  const { dayView } = await import('../server/day.ts');
+  const { todayLocal } = await import('../server/dates.ts');
+  await setUserSetting(db, OWNER_ID, 'timezone', 'UTC');
+  const today = todayLocal('UTC');
+  await upsertHourly(db, OWNER_ID, [{ date: today, hour: 8, metric: 'hr_avg', source: 'demo', value: 70 }]);
+  await setUserSetting(db, OWNER_ID, 'demo', 'on');
+  assert.ok((await dayView({ db, userId: OWNER_ID }, false, ['heart_rate'], today)).metrics.heart_rate);
+  await setUserSetting(db, OWNER_ID, 'demo', 'off');
+  assert.deepEqual((await dayView({ db, userId: OWNER_ID }, false, ['heart_rate'], today)).metrics, {});
+});

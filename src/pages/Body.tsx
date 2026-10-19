@@ -2,7 +2,7 @@
 // address (#/activity) opens that tab. Every number is a reading or a plain sum of readings; none is invented.
 import type { ReactNode } from 'react';
 import type { DayData, Point, Summary, Trends } from '../../shared/types.ts';
-import { cumulative, drawThrough } from '../charts/day.ts';
+import { cumulative, drawThrough, extent } from '../charts/day.ts';
 import { Gauge, MiniBars, MiniDots, MiniLine } from '../charts/Mini.tsx';
 import { AreaCurve, Change, HourBars } from '../charts/Neka.tsx';
 import { Icon, type IconName } from '../components/Icon.tsx';
@@ -75,22 +75,13 @@ function NoData({ text }: { text: string }) {
 
 const mean = (vs: number[]) => (vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null);
 
-/** The person's usual range: the mean ± one standard deviation (at least `minSpread`) of the days before the latest. */
-function usual(points: Point[], minSpread: number) {
-  const prior = points.slice(0, -1).map((p) => p.value);
-  if (prior.length < 7) return null;
-  const m = mean(prior)!;
-  const sd = Math.sqrt(prior.reduce((a, v) => a + (v - m) ** 2, 0) / (prior.length - 1));
-  const band = Math.max(sd, minSpread);
-  return [m - band, m + band] as const;
-}
-
 const STATUS = { low: 'Below your usual', normal: 'Within your usual', high: 'Above your usual' } as const;
+/** The summary's HRV status: 'optimal' is any night at or above the person's mean, as on Home. */
+const HRV_STATUS = { optimal: 'At or above your usual', normal: 'Within your usual', low: 'Below your usual' } as const;
 const weekPct = (w: { avg: number | null; prev: number | null } | undefined) => (w?.avg != null && w.prev ? ((w.avg - w.prev) / w.prev) * 100 : null);
 
 function RestingHrCard({ s, points }: { s: Summary; points: Point[] }) {
   const v = s.vitals.heart;
-  const range = usual(points, 2);
   return (
     <article className="card metric metric-green">
       <div className="metric-head">
@@ -112,7 +103,7 @@ function RestingHrCard({ s, points }: { s: Summary; points: Point[] }) {
               {v.status ? STATUS[v.status] : 'Building your baseline'}
               <Stale date={v.latest.date} asOf={s.date} />
             </span>
-            {range && <span title="Your usual range: the last three weeks">{`${fmt(range[0])}–${fmt(range[1])}`}</span>}
+            <span title="Compared with your own last 30 days, from the same device">last 30 days</span>
           </div>
         </>
       ) : (
@@ -124,7 +115,7 @@ function RestingHrCard({ s, points }: { s: Summary; points: Point[] }) {
 
 function HrvCard({ s }: { s: Summary }) {
   const l = s.hrv.latest;
-  const statusText = { optimal: 'Above your usual', normal: 'Within your usual', low: 'Below your usual' };
+  const statusText = HRV_STATUS;
   return (
     <article className="card metric metric-blue">
       <CardHead title="HRV" to={bodyHref('recovery')} />
@@ -241,6 +232,9 @@ function HeartTodayCard({ day }: { day: DayData | undefined }) {
   const through = day ? drawThrough(day.date, day.today, day.asOf) : null;
   const hours = hr ? hr.hours.map((v, h) => (through !== null && h <= through ? v : null)) : [];
   const readings = hours.filter((v): v is number => v !== null);
+  // The day's lowest and highest readings, not the range of the hourly averages (as on Vitals).
+  const upTo = (l?: (number | null)[]) => (through === null ? [] : l?.slice(0, through + 1));
+  const range = extent(upTo(hr?.min), upTo(hr?.max)) ?? extent(readings);
   const last = isToday ? (day?.asOf ?? null) : null;
   const latest = last !== null ? hours[last] : null;
   return (
@@ -253,9 +247,11 @@ function HeartTodayCard({ day }: { day: DayData | undefined }) {
               {fmt(latest ?? Math.round(mean(readings)!))}
               <small>{latest !== null ? `bpm, ${String(last).padStart(2, '0')}:00–${String(last! + 1).padStart(2, '0')}:00` : 'bpm, average for the day'}</small>
             </div>
-            <span className="metric-status">
-              {fmt(Math.min(...readings))}–{fmt(Math.max(...readings))} bpm {isToday ? 'so far' : 'that day'}
-            </span>
+            {range && (
+              <span className="metric-status">
+                {fmt(range[0])}–{fmt(range[1])} bpm {isToday ? 'so far' : 'that day'}
+              </span>
+            )}
           </div>
           <AreaCurve hours={hours} typical={hr.typical} marker={last} format={(v) => fmt(v)} label={`Heart rate by the hour, ${isToday ? 'today' : day!.date}`} />
           <div className="metric-foot">
@@ -281,7 +277,9 @@ function BodyMetricsCard({ s, t }: { s: Summary; t: Trends }) {
   if (tv.latest) {
     const pts = t[tm] ?? [];
     // A watch or band reads the skin, so its number means little alone: show the difference from your usual.
-    const base = tm === 'body_temp' ? null : mean(pts.filter((p) => p.date < tv.latest!.date).map((p) => p.value));
+    const prior = pts.filter((p) => p.date < tv.latest!.date).map((p) => p.value);
+    // Seven earlier nights at least, as the status needs, before a difference means anything.
+    const base = tm === 'body_temp' || prior.length < 7 ? null : mean(prior);
     const f = (c: number) => temp(c, units);
     const delta = base !== null ? (tv.latest.value - base) * (units === 'imperial' ? 9 / 5 : 1) : null;
     rows.push({
@@ -289,7 +287,7 @@ function BodyMetricsCard({ s, t }: { s: Summary; t: Trends }) {
       icon: 'sun',
       label: tv.label === 'Body temp' ? 'Body temperature' : `${tv.label === 'Wrist temp' ? 'Wrist' : 'Skin'} temperature`,
       value: delta !== null ? `${Math.abs(delta) < 0.05 ? '±' : delta > 0 ? '+' : '−'}${fmt(Math.abs(delta), 1)} ${f(0).unit}` : `${fmt(f(tv.latest.value).value, 1)} ${f(0).unit}`,
-      status: tv.status ? STATUS[tv.status] : delta !== null ? 'Against your usual' : null,
+      status: tv.status ? STATUS[tv.status] : delta !== null ? 'Against your usual' : tm === 'body_temp' ? null : 'Building your baseline',
       points: pts,
       to: bodyHref('temperature'),
       color: 'var(--series-3)',
@@ -315,7 +313,7 @@ function BodyMetricsCard({ s, t }: { s: Summary; t: Trends }) {
       icon: 'trend-up',
       label: 'Heart rate variability',
       value: `${fmt(s.hrv.latest.value)} ms`,
-      status: s.hrv.status ? { optimal: 'Above your usual', normal: 'Within your usual', low: 'Below your usual' }[s.hrv.status] : null,
+      status: s.hrv.status ? HRV_STATUS[s.hrv.status] : null,
       points: s.hrv.series,
       to: bodyHref('recovery'),
       color: 'var(--series-1)',

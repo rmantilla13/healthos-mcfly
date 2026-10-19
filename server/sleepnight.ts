@@ -28,41 +28,54 @@ export async function sleepNight(scope: Scope, hosted: boolean, dateParam?: stri
     ),
   ]);
   const ctx = { daily, demo };
-  const at = (bySource: Map<string, number> | undefined, d: string) => bySource?.get(d);
-
-  // The night: the longest sleep that ended on this wake date, from whichever device recorded it.
-  const nightOf = (d: string) =>
+  const at = (metric: string, source: string | undefined, d: string) => (source ? daily.get(metric)?.get(source)?.get(d) : undefined);
+  // Segments by start instant: a night the clocks went back mixes offsets, so their text doesn't sort by time.
+  segmentRows.sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
+  const segmentsFrom = (source: string | undefined, d: string) =>
+    segmentRows.filter((r) => r.date === d && r.source === source).map(({ start, end, stage }): SleepSegment => ({ start, end, stage }));
+  const hasSegments = (source: string, d: string) => segmentRows.some((r) => r.date === d && r.source === source);
+  const eventsOf = (d: string, source?: string) =>
     events
-      .filter((e) => e.date === d && Date.parse(e.end) > Date.parse(e.start))
-      .sort((a, b) => Date.parse(b.end) - Date.parse(b.start) - (Date.parse(a.end) - Date.parse(a.start)))[0];
-  const night = nightOf(date);
+      .filter((e) => e.date === d && (source === undefined || e.source === source) && Date.parse(e.end) > Date.parse(e.start))
+      .sort((a, b) => Date.parse(b.end) - Date.parse(b.start) - (Date.parse(a.end) - Date.parse(a.start)));
 
-  // Stage totals from one device: the one the night's total comes from when it measured stages, else either.
-  const hours = valueOn(ctx, 'sleep_hours', date);
-  const stageSource = [hours?.source, 'whoop', 'apple', 'demo'].find((s) => s && at(daily.get('sleep_deep')?.get(s), date) !== undefined);
-  const stages = stageSource
-    ? {
-        awake: round(at(daily.get('sleep_awake')?.get(stageSource), date) ?? 0, 2),
-        rem: round(at(daily.get('sleep_rem')?.get(stageSource), date) ?? 0, 2),
-        light: round(at(daily.get('sleep_light')?.get(stageSource), date) ?? 0, 2),
-        deep: round(at(daily.get('sleep_deep')?.get(stageSource), date) ?? 0, 2),
-      }
-    : null;
-
-  // Segments from one device too: the stages chart's, else the night's.
-  const bySource = (d: string) => {
-    const rows = segmentRows.filter((r) => r.date === d);
-    const pick = [stageSource, night?.source, 'apple', 'demo'].find((s) => s && rows.some((r) => r.source === s));
-    return rows.filter((r) => r.source === pick).map(({ start, end, stage }): SleepSegment => ({ start, end, stage }));
+  /**
+   * The one device a night's stages, timeline, bed and wake times and source come from, so none of them is
+   * paired with another device's. It's the device the night's total came from; when the total is both devices'
+   * average, the one with the stages through the night (else the one with stage totals).
+   */
+  const deviceOf = (d: string): string | undefined => {
+    const src = valueOn(ctx, 'sleep_hours', d)?.source;
+    if (src && src !== 'apple+whoop') return src;
+    if (src === 'apple+whoop') return ['apple', 'whoop'].find((x) => hasSegments(x, d)) ?? ['apple', 'whoop'].find((x) => at('sleep_deep', x, d) !== undefined) ?? 'apple';
+    // No total that night: whichever device recorded something.
+    return [...sources].find((x) => hasSegments(x, d) || eventsOf(d, x).length > 0);
   };
-  const segments = bySource(date);
+  const device = deviceOf(date);
+  const night = device ? eventsOf(date, device)[0] : undefined;
+  const nightOf = (d: string) => {
+    const dev = deviceOf(d);
+    return dev ? eventsOf(d, dev)[0] : undefined;
+  };
 
-  const inBed = valueOn(ctx, 'sleep_in_bed', date);
-  const performance = at(daily.get('sleep_performance')?.get('whoop'), date) ?? at(daily.get('sleep_performance')?.get('demo'), date);
+  const hours = valueOn(ctx, 'sleep_hours', date);
+  const stages =
+    at('sleep_deep', device, date) !== undefined
+      ? {
+          awake: round(at('sleep_awake', device, date) ?? 0, 2),
+          rem: round(at('sleep_rem', device, date) ?? 0, 2),
+          light: round(at('sleep_light', device, date) ?? 0, 2),
+          deep: round(at('sleep_deep', device, date) ?? 0, 2),
+        }
+      : null;
+  const segments = segmentsFrom(device, date);
+  const inBed = at('sleep_in_bed', device, date);
+
+  const performance = at('sleep_performance', 'whoop', date) ?? at('sleep_performance', 'demo', date);
   const asleep = hours?.value ?? null;
   // Efficiency only from one device's own two numbers, and only when it measured sleep (not just time in bed).
   const effSource = hours && hours.source !== 'apple+whoop' ? hours.source : undefined;
-  const effBed = effSource ? at(daily.get('sleep_in_bed')?.get(effSource), date) : undefined;
+  const effBed = at('sleep_in_bed', effSource, date);
   const efficiency = asleep !== null && effBed && effBed - asleep > 1 / 60 ? (asleep / effBed) * 100 : null;
   const score: SleepNightDetail['score'] =
     performance !== undefined ? { kind: 'performance', value: Math.round(performance) } : efficiency !== null ? { kind: 'efficiency', value: Math.round(efficiency) } : null;
@@ -70,17 +83,17 @@ export async function sleepNight(scope: Scope, hosted: boolean, dateParam?: stri
   return {
     date,
     today,
-    source: night ? (night.source === 'whoop' ? 'whoop' : 'apple') : hours ? (hours.source === 'whoop' ? 'whoop' : 'apple') : null,
+    source: device ? (device === 'whoop' ? 'whoop' : 'apple') : null,
     fellAsleep: night?.start ?? null,
     wokeUp: night?.end ?? null,
     asleepHours: asleep === null ? null : round(asleep, 2),
-    inBedHours: inBed ? round(inBed.value, 2) : null,
+    inBedHours: inBed !== undefined ? round(inBed, 2) : null,
     stages,
     score,
     segments,
     latencyMin: latency(segments),
     deepPeak: deepPeak(segments),
-    insights: nightInsights({ date, ctx, segmentsOf: bySource, nights: (d) => nightOf(d) }),
+    insights: nightInsights({ date, ctx, segmentsOf: (d) => segmentsFrom(deviceOf(d), d), nights: nightOf }),
   };
 }
 
@@ -122,7 +135,10 @@ export function nightInsights({ date, ctx, segmentsOf, nights }: InsightInput): 
   const out: SleepNightDetail['insights'] = [];
   const back = (n: number) => addDays(date, -n);
   const days = (fromBack: number, toBack: number) => Array.from({ length: fromBack - toBack + 1 }, (_, i) => back(fromBack - i));
-  const minutes = (m: number) => (m >= 60 ? `${Math.floor(m / 60)}h ${String(Math.round(m % 60)).padStart(2, '0')}m` : `${Math.round(m)} min`);
+  const minutes = (m: number) => {
+    const r = Math.round(m);
+    return r >= 60 ? `${Math.floor(r / 60)}h ${String(r % 60).padStart(2, '0')}m` : `${r} min`;
+  };
 
   // Falling asleep, against the last two weeks.
   const tonight = latency(segmentsOf(date));
@@ -133,9 +149,14 @@ export function nightInsights({ date, ctx, segmentsOf, nights }: InsightInput): 
     out.push({ id: 'latency', icon: 'moon', text: `You fell asleep ${diff} min ${tonight < usualLatency ? 'faster' : 'slower'} than usual.` });
   }
 
-  // Deep sleep, this week against last week.
+  // Deep sleep, this week against last week, from one device: Apple's deep and WHOOP's slow-wave sleep are measured
+  // differently, so a week on each would show a change that's only the device. The one with the most nights in both.
+  const deepBy = ctx.daily.get('sleep_deep');
+  const deepSource = [...(deepBy?.keys() ?? [])]
+    .map((src) => ({ src, n: Math.min(...[days(6, 0), days(13, 7)].map((ds) => ds.filter((d) => deepBy!.get(src)!.has(d)).length)) }))
+    .sort((a, b) => b.n - a.n)[0]?.src;
   const avg = (ds: string[]) => {
-    const vs = ds.map((d) => valueOn(ctx, 'sleep_deep', d)?.value).filter((v): v is number => v !== undefined);
+    const vs = ds.map((d) => (deepSource ? deepBy?.get(deepSource)?.get(d) : undefined)).filter((v): v is number => v !== undefined);
     return vs.length >= 4 ? mean(vs) : null;
   };
   const thisWeek = avg(days(6, 0));
@@ -164,7 +185,7 @@ export function nightInsights({ date, ctx, segmentsOf, nights }: InsightInput): 
     const sNow = spread(days(6, 0));
     const sBefore = spread(days(13, 7));
     if (sNow !== null && sBefore !== null && Math.abs(sNow - sBefore) >= 10) {
-      out.push({ id: 'consistency', icon: 'shield', text: `Your bedtimes were ${sNow < sBefore ? 'steadier' : 'less steady'} this week (within about ${minutes(sNow)} of each other).` });
+      out.push({ id: 'consistency', icon: 'shield', text: `Your bedtimes were ${sNow < sBefore ? 'steadier' : 'less steady'} this week: usually within about ${minutes(sNow)} of your average bedtime.` });
     }
   }
 
