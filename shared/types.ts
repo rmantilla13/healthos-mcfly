@@ -232,9 +232,21 @@ export type McflyTurn = { role: 'user' | 'assistant'; content: string };
  * Monday, a month's 1st).
  */
 export type McflyVisual =
-  | { kind: 'trend' | 'bars'; title: string; unit: string; resolution: 'day' | 'week' | 'month'; points: Point[]; mean: number | null; goal?: number }
-  | { kind: 'compare'; title: string; unit: string; periods: { label: string; from: string; to: string; mean: number | null; days: number }[] }
-  | { kind: 'stats'; title: string; items: { label: string; value: number | null; unit: string; note: string }[] }
+  | {
+      kind: 'trend' | 'bars';
+      title: string;
+      unit: string;
+      resolution: 'day' | 'week' | 'month';
+      points: Point[];
+      /** The average of the daily values (weekly charts too), over `days` days. */
+      mean: number | null;
+      days?: number;
+      /** A daily total whose today isn't over: left out of the average. */
+      partialToday?: boolean;
+      goal?: number;
+    }
+  | { kind: 'compare'; title: string; unit: string; periods: { label: string; from: string; to: string; mean: number | null; days: number; partialToday?: boolean }[] }
+  | { kind: 'stats'; title: string; items: { label: string; value: number | null; unit: string; note: string; from?: string; to?: string }[] }
   | { kind: 'stages'; title: string; rows: { date: string; values: Record<string, number> }[] }
   | { kind: 'sports'; title: string; items: { sport: string; count: number; minutes: number }[] };
 

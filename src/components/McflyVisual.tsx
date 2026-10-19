@@ -6,14 +6,23 @@ import { Change } from '../charts/Neka.tsx';
 import { compact, fmt, fmtDate, hoursMinutes } from '../lib.ts';
 import { STAGES, weekLabel } from '../pages/Detail.tsx';
 
-/** How a unit's values read: hours as "7h 24m", percentages with "%", small fractional values to one decimal. */
+/** Units read to one decimal (temperatures, weights, distances, speeds, breathing), and units read whole. */
+const ONE_DECIMAL = new Set(['°C', '°F', 'kg', 'lb', 'km', 'mi', 'mph', 'km/h', 'breaths/min', 'mL/kg/min']);
+const WHOLE = new Set(['steps', 'kcal', 'bpm', 'min', 'mL', 'ms', 'mg', 'flights', 'hours', 'mmHg', 'mg/dL']);
+
+/**
+ * How a unit's values read: hours as "7h 24m", per-unit decimals (a fever of 100.4 °F keeps its .4), and axis
+ * ticks with a decimal only when the chart's range is narrow enough that whole numbers would repeat.
+ */
 function formats(unit: string, values: number[]) {
-  if (unit === 'h') return { format: hoursMinutes, tick: (v: number) => `${fmt(v)}h` };
-  const decimals = values.some((v) => Math.abs(v) < 100 && Math.round(v) !== v) ? 1 : 0;
+  const range = values.length ? Math.max(...values) - Math.min(...values) : 0;
+  if (unit === 'h') return { format: hoursMinutes, tick: (v: number) => (range < 3 ? `${fmt(v, 1)}h` : `${fmt(v)}h`) };
+  const decimals = ONE_DECIMAL.has(unit) ? 1 : WHOLE.has(unit) ? 0 : values.some((v) => Math.round(v) !== v) ? 1 : 0;
   const suffix = !unit ? '' : unit === '%' ? '%' : ` ${unit}`;
+  const max = values.length ? Math.max(...values.map(Math.abs)) : 0;
   return {
     format: (v: number) => `${fmt(v, decimals)}${suffix}`,
-    tick: (v: number) => (Math.abs(v) >= 10_000 ? compact(v) : fmt(v, Math.abs(v) < 10 ? decimals : 0)),
+    tick: (v: number) => (max >= 10_000 ? compact(v) : fmt(v, range < 5 ? Math.max(decimals, 1) : 0)),
   };
 }
 
@@ -24,12 +33,20 @@ export function McflyVisual({ visual: v }: { visual: Visual }) {
   if (v.kind === 'trend' || v.kind === 'bars') {
     const { format, tick } = formats(v.unit, v.points.map((p) => p.value));
     const weekly = v.resolution !== 'day';
+    const days = v.days ?? v.points.length;
+    // The headline is always the average of the daily values, weekly charts too.
+    const note = [
+      weekly ? `daily average over ${days} ${days === 1 ? 'day' : 'days'} · shown as weekly averages` : `average of ${days} ${days === 1 ? 'day' : 'days'}`,
+      v.partialToday ? "today isn't counted until it's over" : '',
+    ]
+      .filter(Boolean)
+      .join(' · ');
     return (
       <ChartCard
         className="mcfly-visual"
         title={v.title}
         value={v.mean !== null ? format(v.mean) : undefined}
-        note={`${weekly ? 'weekly averages · ' : ''}average over ${v.points.length} ${weekly ? 'weeks' : v.points.length === 1 ? 'day' : 'days'}`}
+        note={note}
         table={{ columns: [weekly ? 'Week of' : 'Date', v.title], rows: v.points.map((p) => [longDate(p.date), format(p.value)]) }}
       >
         {v.kind === 'bars' ? (
@@ -43,7 +60,7 @@ export function McflyVisual({ visual: v }: { visual: Visual }) {
             periodLabel={weekly ? weekLabel : undefined}
           />
         ) : (
-          <TrendChart points={v.points} format={format} tickFormat={tick} height={180} label={v.title} />
+          <TrendChart points={v.points} format={format} tickFormat={tick} height={180} label={v.title} gapDays={weekly ? 10 : 3} periodLabel={weekly ? weekLabel : undefined} />
         )}
       </ChartCard>
     );
@@ -67,6 +84,7 @@ export function McflyVisual({ visual: v }: { visual: Visual }) {
                 {p.label}
                 <small>
                   {fmtDate(p.from)} – {fmtDate(p.to)} · {p.days} {p.days === 1 ? 'day' : 'days'} with data
+                  {p.partialToday ? " · today isn't counted yet" : ''}
                 </small>
               </span>
               <span className="mcfly-compare-track">
@@ -93,7 +111,10 @@ export function McflyVisual({ visual: v }: { visual: Visual }) {
               <div key={i}>
                 <span>{it.label}</span>
                 <b>{it.value === null ? '—' : format(it.value)}</b>
-                <small>{/^\d{4}-\d{2}-\d{2}$/.test(it.note) ? dayLabel(it.note) : it.note}</small>
+                <small>
+                  {/^\d{4}-\d{2}-\d{2}$/.test(it.note) ? dayLabel(it.note) : it.note}
+                  {it.from && it.to && !/^\d{4}-\d{2}-\d{2}$/.test(it.note) && it.value !== null ? `, ${fmtDate(it.from)} – ${fmtDate(it.to)}` : ''}
+                </small>
               </div>
             );
           })}

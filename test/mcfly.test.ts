@@ -286,7 +286,7 @@ test("McFly's charts carry the person's own numbers, read by the server, and McF
   assert.ok(visual.points.every((p: { value: number }) => p.value === 80), "Bob's own 80s, never the owner's 60s");
   // McFly gets a summary of the chart, not the chart.
   const toolResult = JSON.parse(requests[1].messages.at(-1).content[0].content);
-  assert.deepEqual([toolResult.shown, toolResult.mean, toolResult.daysWithData], ['bars', 80, 7]);
+  assert.deepEqual([toolResult.shown, toolResult.averageOfDays, toolResult.daysWithData, toolResult.chartShows], ['bars', 80, 7, 'one value per day']);
   // The answer shape asks for a picture where it helps.
   assert.match(requests[0].system, /show_visual/);
   assert.ok(requests[0].tools.some((t: { name: string }) => t.name === 'show_visual'));
@@ -349,6 +349,53 @@ test('nothing to draw is an error McFly reads, not an empty chart; at most three
   assert.equal(results[0].is_error, true);
   assert.match(results[0].content, /nothing to draw/);
   assert.equal(results.filter((r: { is_error?: boolean }) => r.is_error).length, 2, 'the glucose one, and the fourth chart');
+});
+
+test('impossible dates, long trends, unfinished days and many sports', async () => {
+  const today = todayLocal();
+  await upsertDaily(
+    db,
+    bobId,
+    Array.from({ length: 200 }, (_, i) => ({ date: addDays(today, -i), metric: 'steps', source: 'apple', value: i === 0 ? 1000 : 8000 })),
+  );
+  requests.length = 0;
+  script = [
+    reply(
+      [
+        { type: 'tool_use', id: 'tw_1', name: 'show_visual', input: { kind: 'trend', metric: 'resting_hr', days: 7, end_date: '2026-10-00', title: 'Bad date' } },
+        { type: 'tool_use', id: 'tw_2', name: 'show_visual', input: { kind: 'trend', metric: 'steps', days: 180, title: 'Steps, six months' } },
+        {
+          type: 'tool_use',
+          id: 'tw_3',
+          name: 'show_visual',
+          input: { kind: 'compare', metric: 'steps', title: 'Steps', periods: [{ label: 'This week', days: 7 }, { label: 'The week before', days: 7, end_date: addDays(today, -7) }] },
+        },
+      ],
+      'tool_use',
+    ),
+    reply([{ type: 'text', text: 'ok' }], 'end_turn'),
+  ];
+  const ev = events((await bob.ask('Steps lately?')).text);
+  const results = requests[1].messages.at(-1).content;
+  // A date that doesn't exist is an error McFly reads, not a broken answer.
+  assert.equal(results[0].is_error, true);
+  assert.match(results[0].content, /real date/);
+  assert.equal(ev.at(-1)?.event, 'done');
+  // Over 120 days: weekly points, and the headline is still the daily average, today's unfinished count left out.
+  const [trend, compare] = ev.filter((e) => e.event === 'visual').map((e) => e.data.visual);
+  assert.equal(trend.resolution, 'week');
+  assert.equal(trend.mean, 8000);
+  assert.equal(trend.partialToday, true);
+  const summary = JSON.parse(results[1].content);
+  assert.equal(summary.chartShows, 'weekly averages of the daily values');
+  assert.equal(summary.lowestDay.value, 1000, "the lowest single day is today's, so far");
+  assert.deepEqual(
+    compare.periods.map((p: { mean: number; days: number; partialToday: boolean }) => [p.mean, p.days, p.partialToday]),
+    [
+      [8000, 6, true],
+      [8000, 7, false],
+    ],
+  );
 });
 
 // ---------- the weekly digest ----------

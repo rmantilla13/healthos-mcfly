@@ -122,8 +122,10 @@ class ToolInputError extends Error {}
 
 function asDate(v: unknown, ctx: Ctx, field: string): string | undefined {
   if (v === undefined || v === null || v === '') return undefined;
-  if (typeof v !== 'string' || !DATE.test(v)) throw new ToolInputError(`${field} must be a date like 2026-10-16.`);
-  return v > ctx.today ? ctx.today : v;
+  // A real calendar date: 2026-02-30 would roll over to March, and 2026-10-00 would break the date maths.
+  const ms = typeof v === 'string' && DATE.test(v) ? Date.parse(`${v}T00:00:00Z`) : NaN;
+  if (Number.isNaN(ms) || new Date(ms).toISOString().slice(0, 10) !== v) throw new ToolInputError(`${field} must be a real date like 2026-10-16.`);
+  return (v as string) > ctx.today ? ctx.today : (v as string);
 }
 
 function asDays(v: unknown, max: number, fallback: number): number {
@@ -143,6 +145,10 @@ type Tool = BetaTool & {
 };
 
 const METRIC_NAMES = Object.keys(METRICS);
+/** Daily totals: today's is only so far, so it's left out of averages until the day is over. */
+const SUMMED = new Set(['steps', 'active_energy', 'whoop_kcal', 'exercise_min', 'distance_km', 'flights', 'stand_hours', 'daylight_min', 'caffeine_mg', 'water_ml']);
+/** The days an average counts: every day with data, except today's unfinished total. */
+const forAverage = (ctx: Ctx, metric: string, pts: Point[]) => (SUMMED.has(metric) ? pts.filter((p) => p.date !== ctx.today) : pts);
 const lowerLabel = (m: string) => (METRICS[m]?.label ?? m).replace(/ \(.*\)$/, '').toLowerCase();
 
 function asMetric(v: unknown, field: string): string {
@@ -175,25 +181,28 @@ async function buildVisual(ctx: Ctx, input: Record<string, unknown>): Promise<{ 
     if (!daily.length) throw none(lowerLabel(metric));
     const resolution = days <= 120 ? 'day' : 'week';
     const points = bucket(daily, resolution).map((b) => ({ date: b.period, value: b.value }));
-    const values = daily.map((p) => p.value);
+    const counted = forAverage(ctx, metric, daily);
+    const avg = counted.length ? round(mean(counted.map((p) => p.value))!) : null;
     const goal = metric === 'steps' && resolution === 'day' ? ctx.stepGoal : undefined;
-    const avg = round(mean(values)!);
     const unit = unitOf(metric, ctx.units);
+    const partialToday = counted.length < daily.length;
     return {
-      visual: { kind: input.kind, title, unit, resolution, points, mean: avg, ...(goal ? { goal } : {}) },
+      visual: { kind: input.kind, title, unit, resolution, points, mean: avg, days: counted.length, partialToday, ...(goal ? { goal } : {}) },
       forModel: {
         shown: input.kind,
         title,
         unit,
         from: addDays(to, -(days - 1)),
         to,
-        resolution,
+        chartShows: resolution === 'day' ? 'one value per day' : 'weekly averages of the daily values',
         daysWithData: daily.length,
-        mean: avg,
-        min: stretch(daily, 'min'),
-        max: stretch(daily, 'max'),
-        latest: daily.at(-1),
-        ...(goal ? { goal, daysAtGoal: daily.filter((p) => p.value >= goal).length } : {}),
+        averageOfDays: avg,
+        ...(partialToday ? { todayLeftOutOfTheAverage: 'today is not over yet' } : {}),
+        lowestDay: stretch(daily, 'min'),
+        highestDay: stretch(daily, 'max'),
+        latestDay: daily.at(-1),
+        ...(resolution === 'week' ? { lowestWeek: stretch(points, 'min'), highestWeek: stretch(points, 'max') } : {}),
+        ...(goal ? { goal, daysAtGoal: counted.filter((p) => p.value >= goal).length } : {}),
       },
     };
   }
@@ -208,8 +217,9 @@ async function buildVisual(ctx: Ctx, input: Record<string, unknown>): Promise<{ 
         const label = typeof r.label === 'string' && r.label.trim() ? r.label.trim().slice(0, 40) : `Period ${i + 1}`;
         const days = asDays(r.days, 366, 7);
         const pEnd = asDate(r.end_date, ctx, `periods[${i}].end_date`) ?? ctx.today;
-        const pts = await dailyPoints(ctx, metric, days, pEnd);
-        return { label, from: addDays(pEnd, -(days - 1)), to: pEnd, mean: pts.length ? round(mean(pts.map((x) => x.value))!) : null, days: pts.length };
+        const pts = forAverage(ctx, metric, await dailyPoints(ctx, metric, days, pEnd));
+        const partialToday = SUMMED.has(metric) && pEnd === ctx.today;
+        return { label, from: addDays(pEnd, -(days - 1)), to: pEnd, mean: pts.length ? round(mean(pts.map((x) => x.value))!) : null, days: pts.length, partialToday };
       }),
     );
     if (periods.every((p) => p.mean === null)) throw none(lowerLabel(metric));
@@ -227,12 +237,14 @@ async function buildVisual(ctx: Ctx, input: Record<string, unknown>): Promise<{ 
     const days = asDays(input.days, 366, latest ? 30 : 7);
     const items = await Promise.all(
       metrics.map(async (m) => {
-        const pts = await dailyPoints(ctx, m, days, end);
+        const all = await dailyPoints(ctx, m, days, end);
+        const pts = latest ? all : forAverage(ctx, m, all);
         const label = (METRICS[m].label ?? m).replace(/ \(.*\)$/, '');
         const unit = unitOf(m, ctx.units);
-        if (!pts.length) return { label, value: null, unit, note: 'No data' };
-        if (latest) return { label, value: pts.at(-1)!.value, unit, note: pts.at(-1)!.date };
-        return { label, value: round(mean(pts.map((p) => p.value))!), unit, note: `${pts.length}-day average` };
+        const from = addDays(to, -(days - 1));
+        if (!pts.length) return { label, value: null, unit, note: 'No data', from, to };
+        if (latest) return { label, value: pts.at(-1)!.value, unit, note: pts.at(-1)!.date, from, to };
+        return { label, value: round(mean(pts.map((p) => p.value))!), unit, note: `average of ${pts.length} ${pts.length === 1 ? 'day' : 'days'}`, from, to };
       }),
     );
     if (items.every((it) => it.value === null)) throw none('of those metrics');
@@ -259,12 +271,13 @@ async function buildVisual(ctx: Ctx, input: Record<string, unknown>): Promise<{ 
       const s = by.get(w.sport) ?? { count: 0, minutes: 0 };
       by.set(w.sport, { count: s.count + 1, minutes: s.minutes + w.duration_min });
     }
-    const items = [...by]
-      .map(([sport, v]) => ({ sport, count: v.count, minutes: Math.round(v.minutes) }))
-      .sort((x, y) => y.minutes - x.minutes)
-      .slice(0, 8);
-    if (!items.length) throw none('workouts');
-    return { visual: { kind: 'sports', title, items }, forModel: { shown: 'workouts_by_sport', title, from: addDays(to, -(days - 1)), to, items } };
+    const all = [...by].map(([sport, v]) => ({ sport, count: v.count, minutes: Math.round(v.minutes) })).sort((x, y) => y.minutes - x.minutes);
+    if (!all.length) throw none('workouts');
+    // Up to 8 bars; anything past that is one "Other" bar, so nothing is quietly left out.
+    const rest = all.slice(7);
+    const items = all.length > 8 ? [...all.slice(0, 7), { sport: `Other (${rest.length} types)`, count: rest.reduce((a, r) => a + r.count, 0), minutes: rest.reduce((a, r) => a + r.minutes, 0) }] : all;
+    const total = { count: all.reduce((a, r) => a + r.count, 0), minutes: all.reduce((a, r) => a + r.minutes, 0) };
+    return { visual: { kind: 'sports', title, items }, forModel: { shown: 'workouts_by_sport', title, from: addDays(to, -(days - 1)), to, items, total } };
   }
 
   throw new ToolInputError('kind must be trend, bars, compare, stats, sleep_stages or workouts_by_sport.');

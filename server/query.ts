@@ -267,7 +267,10 @@ export async function trends(scope: Scope, hosted: boolean, metrics: string[], d
   const { demo, today } = await requestContext(scope, hosted);
   const asOf = asOfParam ?? today;
   const from = addDays(asOf, -(days - 1));
-  const daily = await loadDaily(scope, demo, from, asOf, metrics);
+  // A night's stages follow its sleep_hours decision (FOLLOWS), so that's read too even when not asked for:
+  // without it, deep sleep alone would come from one device where the dashboard averages the two.
+  const load = [...new Set([...metrics, ...metrics.flatMap((m) => (FOLLOWS[m] ? [FOLLOWS[m]] : []))])];
+  const daily = await loadDaily(scope, demo, from, asOf, load);
   return Object.fromEntries(metrics.map((m) => [m, series({ daily, demo }, m, from, asOf)]));
 }
 
