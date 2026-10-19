@@ -214,7 +214,7 @@ function StagesCard({ night }: { night: SleepNightDetail }) {
           {night.source === 'whoop'
             ? "WHOOP shares each stage's total, not when in the night it happened."
             : daysBetween(night.date, night.today) <= RESENT_DAYS
-              ? 'The stages through the night arrive with the next sync from the healthOS iPhone app.'
+              ? 'The stages through the night arrive once the healthOS iPhone app is updated and syncs.'
               : "The stages through the night aren't available for this night."}
         </p>
       )}
