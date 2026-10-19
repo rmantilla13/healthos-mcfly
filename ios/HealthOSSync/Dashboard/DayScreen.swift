@@ -2,7 +2,7 @@ import Charts
 import SwiftUI
 
 // The Day view (src/pages/Detail.tsx DayCard, src/charts/Day.tsx): one day hour by hour next to a typical day,
-// from GET /api/day. Today's "Hours so far" card pushes it onto Today's NavigationStack.
+// from GET /api/day. Today's card ("Steps so far today", named for its metric) pushes it onto Today's NavigationStack.
 
 /// Steps, active energy and heart rate by hour for one day, with a date stepper that never goes past today.
 struct DayScreen: View {
@@ -119,10 +119,14 @@ struct DayCard: View {
             let (metric, series) = picked
             let reading = DayReading(metric: metric, series: series, data: data)
             let isToday = data.date >= data.today
+            let title = Self.title(metric.title, running: metric.kind == .running, isToday: isToday)
             NavigationLink(value: DayScreen.Route(date: date)) {
                 VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text(isToday ? "Hours so far" : "The day by hour").font(.headline).foregroundStyle(Palette.ink)
+                    HStack(alignment: .firstTextBaseline) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(title).font(.headline).foregroundStyle(Palette.ink)
+                            if isToday { Text("By the hour").font(.caption).foregroundStyle(Palette.ink3) }
+                        }
                         Spacer()
                         Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(Palette.ink3)
                     }
@@ -137,9 +141,16 @@ struct DayCard: View {
             }
             .buttonStyle(.plain)
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("\(isToday ? "Hours so far" : "The day by hour"): \(reading.value.map(metric.format) ?? "no readings"), \(reading.note)")
+            .accessibilityLabel("\(title), by the hour: \(reading.value.map(metric.format) ?? "no readings"), \(reading.note)")
             .accessibilityHint("Opens the day by hour")
         }
+    }
+
+    /// The card names what it shows: "Steps so far today" (a running total, today), "Heart rate today" (hourly
+    /// averages, today), or "Steps by hour" for a past day.
+    static func title(_ metric: String, running: Bool, isToday: Bool) -> String {
+        guard isToday else { return "\(metric) by hour" }
+        return running ? "\(metric) so far today" : "\(metric) today"
     }
 
     /// Steps when there are any, else active energy, else heart rate.
