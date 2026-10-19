@@ -277,7 +277,7 @@ export function Vitals() {
   const d = day.mode === 'day' ? day.data : undefined;
 
   return (
-    <div className={`page ${loading || (day.mode !== 'range' && day.loading) ? 'is-refreshing' : ''}`}>
+    <div className={`page page-wide ${loading || (day.mode !== 'range' && day.loading) ? 'is-refreshing' : ''}`}>
       <PageHead
         title="Vitals"
         sub="Overnight readings from WHOOP and Apple Watch."
@@ -339,7 +339,7 @@ export function Activity({ stepGoal, title = 'Activity', sub = 'Movement from yo
   const d = day.mode === 'day' ? day.data : undefined;
 
   return (
-    <div className={`page ${loading || (day.mode !== 'range' && day.loading) ? 'is-refreshing' : ''}`}>
+    <div className={`page page-wide ${loading || (day.mode !== 'range' && day.loading) ? 'is-refreshing' : ''}`}>
       <PageHead
         title={title}
         sub={sub}
@@ -456,7 +456,7 @@ export function Metabolism({ tabs }: { tabs?: ReactNode }) {
   const mf = (kg: number) => `${fmt(mass(kg, units).value, 1)} ${mass(kg, units).unit}`;
 
   return (
-    <div className={`page ${loading ? 'is-refreshing' : ''}`}>
+    <div className={`page page-wide ${loading ? 'is-refreshing' : ''}`}>
       <PageHead title="Body" sub="Weight and composition from Apple Health; cardio fitness from Apple Watch." days={days} setDays={setDays} tabs={tabs} />
       <div className="grid-2">
         <Trend title="Weight" points={t.weight ?? []} format={mf} tickFormat={(v) => fmt(mass(v, units).value)} />
