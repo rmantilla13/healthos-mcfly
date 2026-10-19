@@ -304,21 +304,97 @@ final class McFlyFollow {
 
 private let threadSpace = "mcfly-thread"
 
-/// The floating pill at the bottom of Today.
+/// The floating pill at the bottom of Today: a glassy indigo capsule with a softly pulsing sparkle and a slow shimmer,
+/// a spring and a light tap when pressed. Reduce Motion stills it; Reduce Transparency drops the glass highlight.
+/// White text on the gradient stays above 7:1 in light mode and 5:1 in dark.
 struct AskMcFlyPill: View {
     let action: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @State private var taps = 0
+
+    static let deep = Palette.dynamic(0x1E2552, 0x2E3A8C)
+    static let bright = Palette.dynamic(0x3C3FA8, 0x5B4FD0)
+    static let glow = Palette.dynamic(0x4B4FD6, 0x7A6CF0)
+
     var body: some View {
-        Button(action: action) {
-            Label("Ask McFly", systemImage: "sparkles")
-                .font(.subheadline.weight(.semibold))
-                .padding(.horizontal, 18)
-                .frame(minHeight: 44)
-                .foregroundStyle(Palette.page)
-                .background(Palette.ink, in: Capsule())
-                .shadow(color: .black.opacity(0.18), radius: 12, y: 4)
+        Button {
+            taps += 1
+            action()
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "sparkles")
+                    .font(.subheadline.weight(.bold))
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(Color.white, Color(UIColor(hex: 0xFFD98A)))
+                    .modifier(SparklePulse(active: !reduceMotion))
+                    .symbolEffect(.bounce, value: taps)
+                Text("Ask McFly")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+            }
+            .padding(.horizontal, 20)
+            .frame(minHeight: 46)
+            .background {
+                Capsule()
+                    .fill(LinearGradient(colors: [Self.deep, Self.bright], startPoint: .leading, endPoint: .trailing))
+                    .overlay {
+                        if !reduceTransparency {
+                            // Glass: a soft light along the top edge.
+                            Capsule().fill(LinearGradient(colors: [.white.opacity(0.28), .white.opacity(0)], startPoint: .top, endPoint: .center))
+                        }
+                    }
+                    .overlay { if !reduceMotion { Shimmer().clipShape(Capsule()) } }
+                    .overlay(Capsule().strokeBorder(.white.opacity(0.22), lineWidth: 1))
+            }
+            .shadow(color: Self.glow.opacity(0.45), radius: 14, y: 6)
+            .shadow(color: .black.opacity(0.12), radius: 3, y: 1)
+            .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PillPress(animate: !reduceMotion))
+        .sensoryFeedback(.impact(weight: .light), trigger: taps)
+        .accessibilityLabel("Ask McFly")
         .accessibilityHint("Opens a chat about your health data")
+    }
+}
+
+/// A gentle repeating pulse on the sparkle, or none.
+private struct SparklePulse: ViewModifier {
+    let active: Bool
+    func body(content: Content) -> some View {
+        if active {
+            content.symbolEffect(.pulse.byLayer, options: .repeating.speed(0.5))
+        } else {
+            content
+        }
+    }
+}
+
+/// A slow band of light across the pill every few seconds.
+private struct Shimmer: View {
+    @State private var phase: CGFloat = -1
+    var body: some View {
+        GeometryReader { geo in
+            LinearGradient(colors: [.white.opacity(0), .white.opacity(0.22), .white.opacity(0)], startPoint: .leading, endPoint: .trailing)
+                .frame(width: geo.size.width * 0.45)
+                .offset(x: phase * geo.size.width * 1.5)
+                .blendMode(.plusLighter)
+        }
+        .allowsHitTesting(false)
+        .onAppear {
+            withAnimation(.easeInOut(duration: 1.6).delay(2.4).repeatForever(autoreverses: false)) { phase = 1 }
+        }
+    }
+}
+
+/// Shrinks a touch with a spring while pressed.
+private struct PillPress: ButtonStyle {
+    let animate: Bool
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.94 : 1)
+            .brightness(configuration.isPressed ? -0.04 : 0)
+            .animation(animate ? .spring(response: 0.28, dampingFraction: 0.6) : nil, value: configuration.isPressed)
     }
 }
 

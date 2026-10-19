@@ -324,12 +324,53 @@ struct HeartScrub: Equatable {
     }
 }
 
-/// The portrait and Today's path sit side by side on Today with nothing above them that shares state, so the
-/// scrubbed heart goes through this one object: Today's path writes it, the portrait reads it.
+/// Where Today's path has its marker, and what the heart reads there, shared through Today (web Home.tsx: the
+/// timeline card's scrub, and the heartScrub it hands the figure). Today owns it; the path moves the marker and
+/// says what the hour's heart rate is, and the portrait shows that, but only on its own day.
 @MainActor @Observable
-final class ScrubbedHeart {
-    static let shared = ScrubbedHeart()
-    var value: HeartScrub?
+final class TodayScrub {
+    /// The minute the marker was moved to, and the day it was moved on; nil is live.
+    private var held: (date: String, minute: Int)?
+    /// That hour's heart while the marker is off live and the path is on screen; nil otherwise.
+    private(set) var heart: HeartScrub?
+
+    /// The marker's minute on `date`; nil (live) when it was moved on another day, so a new day starts live.
+    func minute(on date: String) -> Int? {
+        guard let held, held.date == date else { return nil }
+        return held.minute
+    }
+
+    /// Moves the marker on `date`; nil goes back to live.
+    func move(to minute: Int?, on date: String) {
+        held = minute.map { (date, $0) }
+    }
+
+    /// The path now shows `date`. A marker left on another day goes back to live, and the heart with it, so
+    /// coming back to that day starts at now again (the web keys its timeline card by day).
+    func show(_ date: String) {
+        guard let held, held.date != date else { return }
+        self.held = nil
+        set(nil)
+    }
+
+    /// The heart at the path's moment (`HeartScrub.from`): that hour's while off live, nil at live or without
+    /// hourly heart rate.
+    func follow(_ heart: HeartScrub?) { set(heart) }
+
+    /// The path left the screen (its card hidden, another tab, a pushed page): back to the resting rate. The marker
+    /// keeps its place, and `follow` brings the heart back when the path returns.
+    func hide() { set(nil) }
+
+    /// What the portrait of `date` shows for the heart: the scrubbed hour only when the path is on that same day.
+    func heart(on date: String) -> HeartScrub? {
+        guard let heart, heart.date == date else { return nil }
+        return heart
+    }
+
+    /// Only a real change reaches the portrait, so a drag within one hour doesn't redraw it.
+    private func set(_ next: HeartScrub?) {
+        if next != heart { heart = next }
+    }
 }
 
 // MARK: - View

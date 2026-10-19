@@ -47,6 +47,8 @@ struct OrganicPortrait: View {
     let photo: PhotoMeta?
     let units: Units
     let stepGoal: Double
+    /// Today's path's marker, shared through Today: while it's moved, the heart shows that hour.
+    let scrubbed: TodayScrub
     @Environment(Dashboard.self) private var dashboard
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -94,9 +96,7 @@ struct OrganicPortrait: View {
     }
 
     /// While Today's path is moved off live on this same day, the heart shows that hour (web Home.tsx heartScrub).
-    private var heartScrub: HeartScrub? {
-        ScrubbedHeart.shared.value.flatMap { $0.date == summary.date ? $0 : nil }
-    }
+    private var heartScrub: HeartScrub? { scrubbed.heart(on: summary.date) }
 
     private var aspect: CGFloat {
         guard let photo, photo.height > 0 else { return 0.62 }
@@ -216,8 +216,7 @@ struct OrganicPortrait: View {
     @ViewBuilder
     private func callouts(_ plan: PortraitLayout.Plan, scrub: HeartScrub?) -> some View {
         let placed = plan.labels
-        // A scrubbed hour without a reading has nothing to beat at.
-        let bpm: Double? = if let scrub { scrub.bpm } else { summary.vitals?.heart?.latest?.value ?? 60 }
+        let bpm = Self.beatRate(resting: summary.vitals?.heart, scrub: scrub)
         let rpm = summary.vitals?.breathing?.latest?.value ?? 15
         TimelineView(.animation(paused: reduceMotion)) { context in
             let t = context.date.timeIntervalSinceReferenceDate
@@ -230,7 +229,7 @@ struct OrganicPortrait: View {
                             path.addQuadCurve(to: p.anchor, control: CGPoint(x: (p.dot.x + p.anchor.x) / 2, y: min(p.dot.y, p.anchor.y) - 14))
                         }
                         .stroke(Palette.ink3, style: StrokeStyle(lineWidth: 1, lineCap: .round))
-                        VitalDot(level: r.level, pulse: reduceMotion ? 0 : Self.pulse(key, t: t, bpm: bpm, rpm: rpm), key: key)
+                        VitalDot(level: r.level, pulse: Self.pulse(key, t: t, bpm: bpm, rpm: rpm, reduceMotion: reduceMotion), key: key)
                             .position(p.dot)
                         VStack(alignment: p.left ? .trailing : .leading, spacing: 1) {
                             HStack(spacing: 3) {
@@ -276,13 +275,22 @@ struct OrganicPortrait: View {
         }
     }
 
+    /// The rate the heart dot beats at: the scrubbed hour's average while Today's path is moved (nil, so still, when
+    /// that hour has no reading), otherwise the resting rate, or 60 without one.
+    static func beatRate(resting: Vital?, scrub: HeartScrub?) -> Double? {
+        if let scrub { return scrub.bpm }
+        return resting?.latest?.value ?? 60
+    }
+
     /// 0…1: the heart dot beats every 60/bpm s (still without a bpm); the breathing halo swells every 60/rpm s;
-    /// temperature glows slowly.
-    private static func pulse(_ key: VitalKey, t: Double, bpm: Double?, rpm: Double) -> Double {
+    /// temperature glows slowly. Everything is still under Reduce Motion. The clamps (web Figure.tsx liveVars)
+    /// only catch impossible data, so a bad row can't freeze or strobe a dot.
+    static func pulse(_ key: VitalKey, t: Double, bpm: Double?, rpm: Double, reduceMotion: Bool) -> Double {
+        guard !reduceMotion else { return 0 }
         switch key {
         case .heart:
             guard let bpm else { return 0 }
-            let period = 60 / max(30, min(bpm, 200))
+            let period = 60 / max(30, min(bpm, 220))
             let phase = t.truncatingRemainder(dividingBy: period) / period
             return phase < 0.18 ? sin(phase / 0.18 * .pi) : 0
         case .breathing:
@@ -716,13 +724,23 @@ private struct AsciiBand: View {
 /// dashed path with a pebble per recent event. Today runs from 00:00 to now; a past day runs the whole day.
 struct TodayPath: View {
     let timeline: Summary.Timeline
+    /// The marker and the heart at it, shared with the portrait through Today.
+    let scrubbed: TodayScrub
     @Environment(Dashboard.self) private var dashboard
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The timeline day's hourly readings (GET /api/day), which day the server last answered for, and whether
     /// asking failed; a failure never reads as "no readings".
     @State private var load = DayLoad()
-    /// The minute the marker was moved to; nil is live (now, or the end of a past day).
-    @State private var scrub: Int?
+
+    /// The minute the marker was moved to on this day; nil is live (now, or the end of a past day).
+    private var scrub: Int? {
+        get { scrubbed.minute(on: timeline.date) }
+        nonmutating set { scrubbed.move(to: newValue, on: timeline.date) }
+    }
+
+    private var scrubBinding: Binding<Int?> {
+        Binding(get: { scrub }, set: { scrub = $0 })
+    }
 
     var body: some View {
         // The timeline's own day, which can be earlier than the summary's when nothing is on the chosen day.
@@ -730,10 +748,11 @@ struct TodayPath: View {
         let isToday = timeline.date == today
         let events = timeline.events.sorted { $0.start < $1.start }
         let hours = load.hours(for: timeline.date)
+        let held = scrub
         TimelineView(.everyMinute) { context in
             let upper = TimelineScrub.scrubMax(isToday: isToday, nowMinute: TimelineScrub.nowMinute(context.date, day: today), asOf: hours?.asOf)
-            let live = scrub == nil
-            let minute = live ? upper : min(scrub ?? upper, upper)
+            let live = held == nil
+            let minute = live ? upper : min(held ?? upper, upper)
             let moment = TimelineScrub.moment(day: hours, events: events, date: timeline.date, minute: minute, live: live)
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
@@ -758,19 +777,18 @@ struct TodayPath: View {
                 }
                 TimelineScrubber(events: events, date: timeline.date, isToday: isToday, day: hours,
                                  answered: load.answered(timeline.date), failed: load.failed(timeline.date),
-                                 upper: upper, moment: moment, scrub: $scrub)
+                                 upper: upper, moment: moment, scrub: scrubBinding)
                 pebbles(Array(events.suffix(5)), current: Set(moment.events.map(\.id)))
             }
             // The portrait's heart follows the marker while it's off live (web Home.tsx onHeart), and again on coming
             // back to Today with a moment still held.
-            .onAppear { ScrubbedHeart.shared.value = HeartScrub.from(moment, live: live, date: timeline.date) }
-            .onChange(of: HeartScrub.from(moment, live: live, date: timeline.date)) { _, heart in
-                ScrubbedHeart.shared.value = heart
-            }
+            .onAppear { scrubbed.follow(HeartScrub.from(moment, live: live, date: timeline.date)) }
+            .onChange(of: HeartScrub.from(moment, live: live, date: timeline.date)) { _, heart in scrubbed.follow(heart) }
         }
         .task(id: "\(timeline.date)|\(dashboard.generation)") { await fetchDay() }
-        .onChange(of: timeline.date) { scrub = nil }
-        .onDisappear { ScrubbedHeart.shared.value = nil }
+        // A new day starts live, and the portrait goes back to the resting rate with it.
+        .onChange(of: timeline.date, initial: true) { scrubbed.show(timeline.date) }
+        .onDisappear { scrubbed.hide() }
     }
 
     /// Asks for the timeline day's hours. A 404 (a server without the Day view) is an answer: no hours. A real
