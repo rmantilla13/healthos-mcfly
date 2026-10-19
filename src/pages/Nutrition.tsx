@@ -60,22 +60,11 @@ const meanOf = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs
 const water = (ml: number, units: Settings['units']) => (units === 'imperial' ? `${fmt(ml / 29.5735)} fl oz` : ml >= 1000 ? `${fmt(ml / 1000, 1)} L` : `${fmt(ml)} mL`);
 const glasses = (ml: number) => Math.round((ml / 250) * 2) / 2;
 
-export function Nutrition({ status, params }: { status: Status; params: URLSearchParams }) {
+export function Nutrition({ status, params, refresh }: { status: Status; params: URLSearchParams; refresh: () => void }) {
   const [days, setDays] = useState(30);
   const { nutrition, nutritionNumbers: numbers } = status.settings;
 
-  if (!nutrition || !numbers) {
-    return (
-      <div className="page">
-        <PageHead title="Nutrition" sub="Nutrition is off." />
-        <section className="card">
-          <p className="muted">
-            Turn on nutrition in <a href={href('settings')}>Settings</a> to see what you log in a food app like MyFitnessPal or Cronometer next to your sleep and recovery.
-          </p>
-        </section>
-      </div>
-    );
-  }
+  if (!nutrition || !numbers) return <NutritionIntro refresh={refresh} />;
   // With no amounts, there's nothing for the Macros and Hydration tabs to show.
   const tabs = numbers === 'none' ? TABS.slice(0, 1) : TABS;
   const current = tabs.find((t) => t.id === params.get('tab'))?.id ?? 'overview';
@@ -91,14 +80,160 @@ export function Nutrition({ status, params }: { status: Status; params: URLSearc
         ranges={RANGES.filter((r) => r.days <= 90)}
       />
       {current === 'overview' && <Overview status={status} />}
-      {current === 'macros' && <Macros days={days} hosted={status.hosted} />}
-      {current === 'hydration' && <Hydration days={days} units={status.settings.units} />}
+      {current === 'macros' && <Macros days={days} hosted={status.hosted} numbers={numbers} />}
+      {current === 'hydration' && <Hydration days={days} units={status.settings.units} numbers={numbers} />}
     </div>
   );
 }
 
-function useNutrition(path: string) {
-  const { data, error, loading, reload } = useApi<NutritionData>(path);
+// ---------- while it's off ----------
+
+/**
+ * Nutrition while it's off: what it shows, what stays private, and turning it on from here through the same choice
+ * as Settings (what to see first, nothing preselected). Nothing is read or kept until then.
+ */
+function NutritionIntro({ refresh }: { refresh: () => void }) {
+  const [choosing, setChoosing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  async function turnOn(numbers: NutritionNumbers) {
+    setBusy(true);
+    setError(null);
+    try {
+      await sendJson('PUT', '/settings', { nutrition: true, nutritionNumbers: numbers });
+      refresh();
+      notifyDataChanged();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="page page-wide nutrition-page">
+      {/* No tabs here, so no PageHead: its tools row keeps a fixed height for pages that switch tabs. */}
+      <header className="page-head">
+        <div>
+          <h1>Nutrition</h1>
+          <p>What you eat, next to how you sleep and recover. Off until you turn it on.</p>
+        </div>
+      </header>
+      <div className="split split-even">
+        <section className="card nutrition-intro">
+          <h2>What it shows</h2>
+          <ul>
+            <li>
+              <span className="intro-icon">
+                <Icon name="nutrition" size={16} />
+              </span>
+              <div>
+                <strong>Your food app's daily totals</strong>
+                <span className="muted small">Calories, protein, carbs, fat, fiber, sugar and sodium from MyFitnessPal, Cronometer, Lose It!, MacroFactor or Yazio, through Apple Health.</span>
+              </div>
+            </li>
+            <li>
+              <span className="intro-icon">
+                <Icon name="chart" size={16} />
+              </span>
+              <div>
+                <strong>Macro balance, water and caffeine</strong>
+                <span className="muted small">Your day by weight, the water you log as glasses, and your daily caffeine.</span>
+              </div>
+            </li>
+            <li>
+              <span className="intro-icon">
+                <Icon name="moon" size={16} />
+              </span>
+              <div>
+                <strong>How it goes with your sleep and HRV</strong>
+                <span className="muted small">Patterns from your own days, worded as things that tend to go together, never as causes.</span>
+              </div>
+            </li>
+          </ul>
+        </section>
+        <section className="card nutrition-intro">
+          <h2>What stays private</h2>
+          <ul>
+            <li>
+              <span className="intro-icon">
+                <Icon name="shield" size={16} />
+              </span>
+              <div>
+                <strong>Only you see it</strong>
+                <span className="muted small">Never on the Family board, never in the admin screens.</span>
+              </div>
+            </li>
+            <li>
+              <span className="intro-icon">
+                <Icon name="check" size={16} />
+              </span>
+              <div>
+                <strong>You choose how much you see</strong>
+                <span className="muted small">Everything, everything except calories, or no amounts at all. Ask McFly sees only that much.</span>
+              </div>
+            </li>
+            <li>
+              <span className="intro-icon">
+                <Icon name="spark" size={16} />
+              </span>
+              <div>
+                <strong>No scores, streaks or set targets</strong>
+                <span className="muted small">Set your own targets later if you like; they show only as a plain line. Turn it off or delete it any time in Settings.</span>
+              </div>
+            </li>
+          </ul>
+        </section>
+      </div>
+      <section className="card nutrition-turn-on">
+        {!choosing ? (
+          <div className="turn-on-row">
+            <p className="muted">Nothing is read or kept until you turn it on.</p>
+            <button className="btn btn-primary" onClick={() => setChoosing(true)}>
+              Turn on Nutrition
+            </button>
+          </div>
+        ) : (
+          <>
+            <div>
+              <h2>First, choose what you want to see</h2>
+              <p className="muted small">You can change it any time in Settings.</p>
+            </div>
+            <NumbersChoice current={null} busy={busy} onChoose={turnOn} />
+            <div className="btn-row">
+              <button className="btn btn-quiet" disabled={busy} onClick={() => setChoosing(false)}>
+                Cancel
+              </button>
+            </div>
+          </>
+        )}
+        {error && <p className="note-bad small">{error}</p>}
+      </section>
+    </div>
+  );
+}
+
+/** The three ways to see Nutrition, shared by Settings and the page above. Nothing is preselected for someone turning it on. */
+function NumbersChoice({ current, busy, onChoose }: { current: NutritionNumbers | null; busy: boolean; onChoose: (numbers: NutritionNumbers) => void }) {
+  return (
+    <div className="choice-list" role="group" aria-label="What you see">
+      {CHOICES.map((c) => (
+        <button key={c.value} className={`choice ${current === c.value ? 'on' : ''}`} aria-pressed={current === c.value} disabled={busy} onClick={() => onChoose(c.value)}>
+          <strong>{c.title}</strong>
+          <span className="muted small">{c.text}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Loaded data is cached by address, so the setting goes in it: after a change, no view reuses an answer filtered for
+ * the old one (which could still show calories someone just chose to hide). The server ignores it.
+ */
+const nutritionPath = (path: string, numbers: NutritionNumbers | null) => `${path}${path.includes('?') ? '&' : '?'}numbers=${numbers ?? 'off'}`;
+
+function useNutrition(path: string, numbers: NutritionNumbers | null) {
+  const { data, error, loading, reload } = useApi<NutritionData>(nutritionPath(path, numbers));
   const fallback = error ? <div className="page-message">Couldn't load your nutrition: {error.message}</div> : !data ? <div className="page-message">Loading…</div> : null;
   return { data, loading, reload, fallback };
 }
@@ -107,7 +242,7 @@ function useNutrition(path: string) {
 
 /** The last two weeks: the latest day and its week on the cards, the week before only for the protein chip. */
 function Overview({ status }: { status: Status }) {
-  const { data, loading, fallback } = useNutrition('/nutrition?days=14&insights=1');
+  const { data, loading, fallback } = useNutrition('/nutrition?days=14&insights=1', status.settings.nutritionNumbers);
   const shownCard = useCardShown();
   const cardsKnown = useCardsKnown();
   if (!data) return fallback;
@@ -351,16 +486,15 @@ function FoodInsights({ insights }: { insights: Pattern[] }) {
 
 // ---------- Macros ----------
 
-function Macros({ days, hosted }: { days: number; hosted: boolean }) {
-  const { data, loading, reload, fallback } = useNutrition(`/nutrition?days=${days}`);
+function Macros({ days, hosted, numbers }: { days: number; hosted: boolean; numbers: NutritionNumbers }) {
+  const { data, loading, reload, fallback } = useNutrition(`/nutrition?days=${days}`, numbers);
   if (!data) return fallback;
-  const latest = data.days.at(-1);
-  if (!latest) return <NothingYet hosted={hosted} />;
+  if (!data.days.length) return <NothingYet hosted={hosted} />;
   const charted = ORDER.filter((n) => data.days.some((d) => d.values[n] !== undefined));
   return (
     <div className={`nutrition-tab ${loading ? 'is-refreshing' : ''}`}>
-      <div className="grid-2">
-        <DayCard day={latest} today={data.today} numbers={data.numbers ?? 'none'} />
+      <div className="split split-body">
+        <AverageCard data={data} />
         <LoggedCard data={data} />
       </div>
       {charted.length > 0 && (
@@ -381,8 +515,8 @@ function Macros({ days, hosted }: { days: number; hosted: boolean }) {
 
 // ---------- Hydration ----------
 
-function Hydration({ days, units }: { days: number; units: Settings['units'] }) {
-  const { data, loading, fallback } = useNutrition(`/nutrition?days=${days}`);
+function Hydration({ days, units, numbers }: { days: number; units: Settings['units']; numbers: NutritionNumbers }) {
+  const { data, loading, fallback } = useNutrition(`/nutrition?days=${days}`, numbers);
   if (!data) return fallback;
   const { water: w, caffeine } = data.hydration;
   return (
@@ -393,7 +527,12 @@ function Hydration({ days, units }: { days: number; units: Settings['units'] }) 
           <p className="muted">Apps that log drinks, like WaterMinder or your food app, write water and caffeine to Apple Health, and they show up here.</p>
         </section>
       ) : (
-        <div className="grid-2">
+        <>
+          <div className="split split-even">
+            <HydrationSummary title="Water" points={w} format={(ml) => `${fmt(glasses(ml), glasses(ml) % 1 ? 1 : 0)} glasses · ${water(ml, units)}`} target={data.targets.water_ml ? water(data.targets.water_ml, units) : undefined} days={days} />
+            <HydrationSummary title="Caffeine" points={caffeine} format={(mg) => `${fmt(mg)} mg`} days={days} />
+          </div>
+          <div className="grid-2">
           <ChartCard
             title="Water"
             note={`${w.length} ${w.length === 1 ? 'day' : 'days'} logged · 1 glass = ${units === 'imperial' ? '8.5 fl oz' : '250 mL'}`}
@@ -415,13 +554,93 @@ function Hydration({ days, units }: { days: number; units: Settings['units'] }) 
           >
             <BarChart points={caffeine} format={(v) => `${fmt(v)} mg`} tickFormat={(v) => fmt(v)} height={200} label="Caffeine by day" />
           </ChartCard>
-        </div>
+          </div>
+        </>
       )}
     </div>
   );
 }
 
+/** A drink's average over the days it was logged in the range, and how many days that was. */
+function HydrationSummary({ title, points, format, target, days }: { title: string; points: { date: string; value: number }[]; format: (v: number) => string; target?: string; days: number }) {
+  const avg = meanOf(points.map((p) => p.value));
+  return (
+    <section className="card hydration-summary">
+      <div className="metric-head">
+        <span>{title}</span>
+        <span className="muted small">Last {days} days</span>
+      </div>
+      {avg === null ? (
+        <p className="muted small">Nothing logged in these {days} days.</p>
+      ) : (
+        <>
+          <div className="metric-value">
+            {format(avg)}
+            <small>a day on average, over the {points.length} {points.length === 1 ? 'day' : 'days'} logged</small>
+          </div>
+          {target && <span className="target-note small">Your target {target}</span>}
+        </>
+      )}
+    </section>
+  );
+}
+
 // ---------- shared pieces ----------
+
+/**
+ * The range's average day: each nutrient's mean over the days it was logged (a day without it doesn't count as zero),
+ * and protein, carbs and fat by weight. In place of repeating the latest day, which the Overview already shows.
+ */
+function AverageCard({ data }: { data: NutritionData }) {
+  const avg: Partial<Record<Nutrient, number>> = {};
+  for (const n of ORDER) {
+    const m = meanOf(data.days.flatMap((d) => (d.values[n] === undefined ? [] : [d.values[n]!])));
+    if (m !== null) avg[n] = m;
+  }
+  const shown = ORDER.filter((n) => avg[n] !== undefined);
+  const parts = MACROS.flatMap((m) => (avg[m.key] === undefined ? [] : [{ key: m.key, label: NUTRIENT[m.key].name, value: avg[m.key]!, color: m.color }]));
+  const total = parts.reduce((a, p) => a + p.value, 0);
+  const span = Math.round((Date.parse(`${data.end}T00:00:00Z`) - Date.parse(`${data.start}T00:00:00Z`)) / 86_400_000) + 1;
+  return (
+    <section className="card average-day">
+      <div className="nutrition-day-head">
+        <h2>Average day</h2>
+        <span className="muted small">
+          {data.days.length} logged {data.days.length === 1 ? 'day' : 'days'} in the last {span}
+        </span>
+      </div>
+      <div className="average-day-body">
+        {parts.length === 3 && total > 0 && (
+          <Donut
+            parts={parts}
+            size={124}
+            thickness={14}
+            label={`Average by weight: ${parts.map((p) => `${p.label.toLowerCase()} ${Math.round((p.value / total) * 100)}%`).join(', ')}`}
+            center={
+              avg.energy_kcal !== undefined ? (
+                <>
+                  <strong>{fmt(avg.energy_kcal)}</strong>
+                  <span>kcal</span>
+                </>
+              ) : (
+                <span>by weight</span>
+              )
+            }
+          />
+        )}
+        <dl className="nutrition-values">
+          {shown.map((n) => (
+            <div key={n}>
+              <dt>{NUTRIENT[n].name}</dt>
+              <dd>{amount(n, avg[n]!)}</dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+      <p className="muted small">Each average counts only the days that nutrient was logged.</p>
+    </section>
+  );
+}
 
 function NothingYet({ hosted }: { hosted: boolean }) {
   return (
@@ -430,65 +649,15 @@ function NothingYet({ hosted }: { hosted: boolean }) {
       <p className="muted">
         healthOS reads what your food app writes to Apple Health: MyFitnessPal, Cronometer, Lose It!, MacroFactor and Yazio all can. Turn on its Apple Health connection in
         that app.
-        {hosted ? ' Your food log comes in once the healthOS iPhone app is updated to read it.' : ' Then bring it in here:'}
+        {hosted ? ' Then open the healthOS iPhone app (1.1, build 16 or later): it asks to read food and sends your log at its next sync.' : ' Then bring it in here:'}
       </p>
       {!hosted && (
         <ul className="muted">
           <li>
             Import your Health export again from <a href={href('integrations')}>Integrations</a>.
           </li>
-          <li>Or let the healthOS iPhone app send it, once it's updated to read food.</li>
+          <li>Or open the healthOS iPhone app (1.1, build 16 or later), which sends it at its next sync.</li>
         </ul>
-      )}
-    </section>
-  );
-}
-
-function DayCard({ day, today, numbers }: { day: NutritionDay; today: string; numbers: NutritionNumbers }) {
-  const shown = ORDER.filter((n) => day.values[n] !== undefined);
-  const macros = MACROS.filter((m) => day.values[m.key] !== undefined);
-  const total = macros.reduce((a, m) => a + day.values[m.key]!, 0);
-  return (
-    <section className="card nutrition-day">
-      <div className="nutrition-day-head">
-        <h2>{relativeDay(day.date, today)}</h2>
-        <span className="chip">{day.app}</span>
-      </div>
-      {numbers === 'none' || !shown.length ? (
-        <p className="muted">
-          You logged food in {day.app}
-          {day.otherApps.length ? ` and ${day.otherApps.join(', ')}` : ''}.
-        </p>
-      ) : (
-        <>
-          <dl className="nutrition-values">
-            {shown.map((n) => (
-              <div key={n}>
-                <dt>{NUTRIENT[n].name}</dt>
-                <dd>{amount(n, day.values[n]!)}</dd>
-              </div>
-            ))}
-          </dl>
-          {macros.length === 3 && total > 0 && (
-            <div className="macro-split" role="img" aria-label={`By weight: ${macros.map((m) => `${NUTRIENT[m.key].name.toLowerCase()} ${Math.round((day.values[m.key]! / total) * 100)}%`).join(', ')}`}>
-              <div className="macro-bar">
-                {macros.map((m) => (
-                  <i key={m.key} style={{ flexGrow: day.values[m.key]!, background: m.color }} />
-                ))}
-              </div>
-              <div className="macro-legend">
-                {macros.map((m) => (
-                  <span key={m.key}>
-                    <i style={{ background: m.color }} />
-                    {NUTRIENT[m.key].name} {Math.round((day.values[m.key]! / total) * 100)}%
-                  </span>
-                ))}
-                <span className="muted">by weight</span>
-              </div>
-            </div>
-          )}
-          {day.otherApps.length > 0 && <p className="muted small">Also logged in {day.otherApps.join(', ')}, not added in.</p>}
-        </>
       )}
     </section>
   );
@@ -565,8 +734,8 @@ function AppChoice({ data, onSaved }: { data: NutritionData; onSaved: () => void
 // ---------- the Home card ----------
 
 /** A strip under the Home cards, only for people who turned nutrition on. Its own request: Summary stays food-free. */
-export function NutritionCard() {
-  const { data } = useApi<NutritionData>('/nutrition?days=7');
+export function NutritionCard({ numbers }: { numbers: NutritionNumbers }) {
+  const { data } = useApi<NutritionData>(nutritionPath('/nutrition?days=7', numbers));
   if (!data?.enabled) return null;
   const latest = data.days.at(-1);
   const logged = new Set(data.days.map((d) => d.date));
@@ -651,20 +820,11 @@ export function NutritionSettings({ status, refresh }: { status: Status; refresh
         {(choosing || nutrition) && (
           <div className="settings-row">
             <span>{nutrition ? 'What you see' : 'First, choose what you want to see. You can change it any time.'}</span>
-            <div className="choice-list" role="group" aria-label="What you see">
-              {CHOICES.map((c) => (
-                <button
-                  key={c.value}
-                  className={`choice ${nutrition && nutritionNumbers === c.value ? 'on' : ''}`}
-                  aria-pressed={nutrition && nutritionNumbers === c.value}
-                  disabled={busy}
-                  onClick={() => save(nutrition ? { nutritionNumbers: c.value } : { nutrition: true, nutritionNumbers: c.value })}
-                >
-                  <strong>{c.title}</strong>
-                  <span className="muted small">{c.text}</span>
-                </button>
-              ))}
-            </div>
+            <NumbersChoice
+              current={nutrition ? nutritionNumbers : null}
+              busy={busy}
+              onChoose={(v) => save(nutrition ? { nutritionNumbers: v } : { nutrition: true, nutritionNumbers: v })}
+            />
           </div>
         )}
         {nutrition && nutritionNumbers !== 'none' && <TargetInputs status={status} save={save} busy={busy} />}
@@ -672,8 +832,8 @@ export function NutritionSettings({ status, refresh }: { status: Status; refresh
           {!nutrition
             ? "While this is off, healthOS doesn't read or keep your food logs."
             : status.hosted
-              ? 'Your food log comes in from the healthOS iPhone app once it’s updated to read food.'
-              : 'History comes in with your next Health export import, or from the iPhone app once it reads food.'}
+              ? 'Your food log comes in from the healthOS iPhone app (1.1, build 16 or later) at its next sync.'
+              : 'History comes in with your next Health export import, or from the healthOS iPhone app at its next sync.'}
         </p>
       </section>
       <DeleteNutritionData />

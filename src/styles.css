@@ -2921,37 +2921,6 @@ td {
 .nutrition-day .chip {
   background: var(--surface-2);
 }
-.macro-split {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.macro-bar {
-  display: flex;
-  gap: 3px;
-  height: 10px;
-}
-.macro-bar i {
-  border-radius: 5px;
-  min-width: 4px;
-}
-.macro-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 14px;
-  font-size: 12px;
-  color: var(--ink-2);
-}
-.macro-legend span {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.macro-legend i {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-}
 .logged-strip {
   display: flex;
   flex-wrap: wrap;
@@ -3142,6 +3111,81 @@ td {
 }
 .settings .target-field input {
   width: 96px;
+}
+/* Nutrition while it's off (NutritionIntro), the Macros tab's average day and Hydration's summaries. */
+.nutrition-intro {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.nutrition-intro ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.nutrition-intro li {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.nutrition-intro li div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.intro-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+.nutrition-turn-on {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.nutrition-turn-on .choice-list {
+  max-width: 560px;
+}
+.turn-on-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.turn-on-row p {
+  margin: 0;
+}
+.average-day {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.average-day-body {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+.average-day-body .nutrition-values {
+  flex: 1;
+  min-width: 220px;
+}
+.hydration-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.hydration-summary .metric-value {
+  font-size: 32px;
 }
 .choice-list {
   display: flex;
