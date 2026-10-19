@@ -57,6 +57,8 @@ private struct TodayContent: View {
     /// The day by hour (GET /api/day) and the cycle (GET /api/cycle): nil hides their cards.
     @State private var day: DayData?
     @State private var cycle: CycleData?
+    /// Today's path's marker, shared with the portrait: while it's moved, the portrait's heart shows that hour.
+    @State private var scrub = TodayScrub()
 
     /// Under a resting heart rate flag, in the luteal or menstrual phase. The summary never mentions the cycle.
     private static let cycleNote = "Temperature and resting heart rate often run a little higher in this part of your cycle."
@@ -80,8 +82,8 @@ private struct TodayContent: View {
                     FlagBanner(flag: flag, note: showNote ? Self.cycleNote : nil)
                 }
                 if dashboard.showsFamilyNotice { FamilyNotice() }
-                OrganicPortrait(summary: summary, photo: dashboard.status?.photo, units: dashboard.units, stepGoal: dashboard.stepGoal)
-                if let timeline = summary.timeline, !hidden.contains("home.timeline") { TodayPath(timeline: timeline) }
+                OrganicPortrait(summary: summary, photo: dashboard.status?.photo, units: dashboard.units, stepGoal: dashboard.stepGoal, scrubbed: scrub)
+                if let timeline = summary.timeline, !hidden.contains("home.timeline") { TodayPath(timeline: timeline, scrubbed: scrub) }
                 if let cycle, let phase { CycleCard(cycle: cycle, phase: phase) }
                 if let day, !day.metrics.isEmpty { DayCard(data: day, date: isToday ? nil : summary.date) }
                 if let week = summary.week { WeekCard(week: week, stepGoal: dashboard.stepGoal) }
@@ -95,10 +97,11 @@ private struct TodayContent: View {
             .animation(.easeInOut(duration: 0.2), value: dashboard.loading)
         }
         .refreshable { await sync.syncAll(force: true) }
-        // In the safe area, so it floats just above the tab bar instead of under it.
+        // In the safe area, so it floats above the tab bar instead of under it, with room to breathe; the inset also pads
+        // the scroll content, so the last card scrolls clear of it.
         .safeAreaInset(edge: .bottom) {
             if mcfly.status?.available == true {
-                AskMcFlyPill { chatOpen = true }.padding(.bottom, 6)
+                AskMcFlyPill { chatOpen = true }.padding(.top, 8).padding(.bottom, 18)
             }
         }
         .sheet(isPresented: $chatOpen) { McFlySheet(chat: mcfly) }
