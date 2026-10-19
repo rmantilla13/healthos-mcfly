@@ -344,7 +344,7 @@ function StagesTab({ tabs }: { tabs: ReactNode }) {
   const sum = totals.reduce((x, s) => x + s.hours, 0) || 1;
 
   return (
-    <div className={`page ${loading ? 'is-refreshing' : ''}`}>
+    <div className={`page page-wide ${loading ? 'is-refreshing' : ''}`}>
       <PageHead title="Sleep" sub={SUB} tabs={tabs} days={days} setDays={setDays} />
       <div className="grid-1">
         <ChartCard
@@ -394,7 +394,7 @@ function TrendsTab({ tabs }: { tabs: ReactNode }) {
   const has = (m: string) => (t[m]?.length ?? 0) > 0;
   const h = (v: number) => `${fmt(v)}h`;
   return (
-    <div className={`page ${loading ? 'is-refreshing' : ''}`}>
+    <div className={`page page-wide ${loading ? 'is-refreshing' : ''}`}>
       <PageHead title="Sleep" sub={SUB} tabs={tabs} days={days} setDays={setDays} />
       <div className="grid-2">
         <Trend title="Time asleep" points={t.sleep_hours ?? []} format={hoursMinutes} tickFormat={h} />
@@ -427,7 +427,7 @@ function CoachingTab({ tabs }: { tabs: ReactNode }) {
   const st = data?.stats;
   const sleepPatterns = (p?.patterns ?? []).filter((x) => x.page === 'sleep');
   return (
-    <div className={`page ${loading ? 'is-refreshing' : ''}`}>
+    <div className={`page page-wide ${loading ? 'is-refreshing' : ''}`}>
       <PageHead title="Sleep" sub={SUB} tabs={tabs} />
       {!st ? (
         <div className="page-message">Loading…</div>

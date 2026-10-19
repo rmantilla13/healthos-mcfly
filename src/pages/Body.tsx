@@ -478,7 +478,7 @@ function TrendTab({ tabs, specs }: { tabs: ReactNode; specs: Spec[] }) {
   const t = data ?? {};
   const shown = specs.filter((x) => x.always || (t[x.key]?.length ?? 0) > 0);
   return (
-    <div className={`page ${loading ? 'is-refreshing' : ''}`}>
+    <div className={`page page-wide ${loading ? 'is-refreshing' : ''}`}>
       <PageHead title={TITLE} sub={SUB} tabs={tabs} days={days} setDays={setDays} />
       {data && shown.length === 0 && (
         <section className="card">

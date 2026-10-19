@@ -81,7 +81,7 @@ export function Nutrition({ status, params }: { status: Status; params: URLSearc
   const current = tabs.find((t) => t.id === params.get('tab'))?.id ?? 'overview';
   const ranged = current !== 'overview';
   return (
-    <div className="page nutrition-page">
+    <div className="page page-wide nutrition-page">
       <PageHead
         title="Nutrition"
         sub="From the food app you log in, through Apple Health. Only you can see it."
