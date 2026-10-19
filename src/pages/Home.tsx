@@ -1,12 +1,12 @@
 import { type KeyboardEvent, type PointerEvent, type ReactNode, useEffect, useRef, useState } from 'react';
 import type { DayData, Insight, PhotoMeta, Summary, TimelineEvent, WeekSummary } from '../../shared/types.ts';
 import { Gauge, MiniBars, MiniDots, MiniLine, RangeScale } from '../charts/Mini.tsx';
-import { clockOf, DAY_MINUTES, type HeartAt, hourClock, momentAt, scrubMax, stepMinute, type TotalAt } from '../charts/scrub.ts';
+import { clockOf, DAY_MINUTES, eventSpan, type HeartAt, hourClock, type Moment, momentAt, pressMinute, scrubMax, stepMinute, type TotalAt } from '../charts/scrub.ts';
 import { AllHiddenNote, CardRow, useAllHidden } from '../components/CardRow.tsx';
 import { Figure, type HeartScrub } from '../components/Figure.tsx';
 import { Icon, type IconName } from '../components/Icon.tsx';
 import { NutritionCard } from './Nutrition.tsx';
-import { clock, compact, duration, fmt, fmtDate, hoursMinutes, href, minutesOfDay, relativeDay, shiftDate, useApi } from '../lib.ts';
+import { clock, compact, duration, fmt, fmtDate, hoursMinutes, href, relativeDay, shiftDate, useApi } from '../lib.ts';
 
 export function Home({ date, onDate, photo, nutrition = false }: { date: string | null; onDate: (d: string | null) => void; photo: PhotoMeta | null; nutrition?: boolean }) {
   const { data, error, loading } = useApi<Summary>(`/summary${date ? `?date=${date}` : ''}`);
@@ -474,27 +474,47 @@ const DAY_METRICS = 'heart_rate,steps,active_energy';
 /** Keyboard steps along the timeline: the arrows move 15 minutes, Page Up and Page Down an hour. */
 const STEP = 15;
 const BIG_STEP = 60;
-/** Dragging lands on 5-minute marks. */
+/** Dragging lands on 5-minute marks (or inside a short event it's over). */
 const SNAP = 5;
+/** How far a touch moves sideways before it's a drag rather than a tap or the start of a scroll, in px. */
+const SLOP = 6;
 
 /** What the person was doing at the marker: asleep, napping, or the workout or session's own name. */
 const doing = (e: TimelineEvent) => (e.kind === 'sleep' ? 'Asleep' : e.kind === 'nap' ? 'Napping' : e.title);
 const hourRange = (h: number) => `${hourClock(h)}–${hourClock(h + 1)}`;
 
-/** The browser's minute of the day, kept current while `on`. */
-function useNowMinute(on: boolean) {
+/** Focused from the keyboard (where a screen reader would be), not just left focused by a click or a tap. */
+function keyboardFocus(el: Element | null) {
+  try {
+    return !!el?.matches(':focus-visible');
+  } catch {
+    return false; // A browser without :focus-visible.
+  }
+}
+
+/**
+ * The browser's date and minute of the day, kept current while `on`, except while `hold` says not to (a live
+ * slider with keyboard focus: its value moving every minute would be read out every minute).
+ */
+function useNow(on: boolean, hold: () => boolean) {
   const read = () => {
     const d = new Date();
-    return d.getHours() * 60 + d.getMinutes();
+    return { day: d.toLocaleDateString('en-CA'), minute: d.getHours() * 60 + d.getMinutes() };
   };
-  const [minute, setMinute] = useState(read);
+  const [now, setNow] = useState(read);
+  const holdRef = useRef(hold);
+  holdRef.current = hold;
   useEffect(() => {
     if (!on) return;
-    setMinute(read());
-    const t = setInterval(() => setMinute(read()), 30_000);
+    setNow(read());
+    const t = setInterval(() => {
+      if (holdRef.current()) return;
+      const n = read();
+      setNow((p) => (p.day === n.day && p.minute === n.minute ? p : n));
+    }, 30_000);
     return () => clearInterval(t);
   }, [on]);
-  return minute;
+  return now;
 }
 
 /**
@@ -505,21 +525,34 @@ function useNowMinute(on: boolean) {
  */
 function TimelineCard({ timeline, today, onHeart }: { timeline: Summary['timeline']; today: string; onHeart: (h: HeartScrub | null) => void }) {
   const isToday = timeline.date === today;
-  const nowMin = useNowMinute(isToday);
-  const nowIso = `${today}T${clockOf(nowMin)}`;
+  const handleRef = useRef<HTMLDivElement>(null);
+  const liveRef = useRef(true);
+  const now = useNow(isToday, () => liveRef.current && keyboardFocus(handleRef.current));
+  // Past midnight, until the summary catches up with the new day (within a minute), the shown day is over.
+  const dayOver = now.day > today;
+  const nowMin = dayOver ? DAY_MINUTES : now.minute;
+  const nowIso = dayOver ? `${now.day}T00:00` : `${today}T${clockOf(now.minute)}`;
   const { data } = useApi<DayData>(`/day?metrics=${DAY_METRICS}${isToday ? '' : `&date=${timeline.date}`}`);
   const day = data?.date === timeline.date ? data : undefined;
+  // The end of the track, which is also where live sits: now (or the last synced hour, when the browser's clock is
+  // behind the person's time zone) on today, 24:00 on a past day.
   const max = scrubMax(isToday, nowMin, day?.asOf ?? null);
-  /** The minute the marker was moved to; null is live: now on today, the end of a past day. */
+  /** The minute the marker was moved to; null is live. */
   const [scrub, setScrub] = useState<number | null>(null);
   const [dragging, setDragging] = useState(false);
   const live = scrub === null;
-  const minute = live ? (isToday ? nowMin : DAY_MINUTES) : Math.min(scrub, max);
+  liveRef.current = live;
+  const minute = live ? max : Math.min(scrub, max);
   const moment = momentAt(day, timeline.events, timeline.date, minute, live);
 
   const trackRef = useRef<HTMLDivElement>(null);
-  const handleRef = useRef<HTMLDivElement>(null);
-  const press = useRef<{ id: number; x: number; moved: boolean } | null>(null);
+  const momentRef = useRef<HTMLDivElement>(null);
+  /**
+   * The press in progress. `grab`: the minute the marker was at when its own pill was grabbed (it then moves by
+   * how far the pointer moves); null for a press elsewhere on the track (the marker jumps there). `started`: the
+   * marker follows it (a mouse at once; a touch once it moves sideways). `moved`: it's a drag, not a tap.
+   */
+  const press = useRef<{ id: number; x: number; mouse: boolean; grab: number | null; started: boolean; moved: boolean } | null>(null);
 
   // The figure's heart follows the marker (that hour's average, or nothing) only while it's moved off live.
   const h = live ? undefined : moment.heart;
@@ -531,12 +564,6 @@ function TimelineCard({ timeline, today, onHeart }: { timeline: Summary['timelin
   useEffect(() => () => onHeart(null), [onHeart]);
 
   const pos = (m: number) => `${(m / DAY_MINUTES) * 100}%`;
-  // An event that started the previous evening is drawn from midnight.
-  const span = (e: TimelineEvent) => {
-    const s = e.start.slice(0, 10) < timeline.date ? 0 : minutesOfDay(e.start);
-    const end = e.end.slice(0, 10) > timeline.date ? 1440 : minutesOfDay(e.end);
-    return [s, Math.max(end, s + 12)] as const;
-  };
   const state = (e: TimelineEvent) => {
     if (!isToday) return 'Completed';
     const local = (iso: string) => iso.slice(0, 16);
@@ -550,34 +577,58 @@ function TimelineCard({ timeline, today, onHeart }: { timeline: Summary['timelin
   const go = (m: number) => setScrub(toScrub(m));
   // From the latest state, so held-down keys that repeat faster than renders still step one at a time.
   const nudge = (step: number, dir: 1 | -1) => setScrub((cur) => toScrub(stepMinute(cur === null ? minute : Math.min(cur, max), step, dir, max)));
+  const trackWidth = () => trackRef.current!.getBoundingClientRect().width;
   const minuteAt = (clientX: number) => {
     const r = trackRef.current!.getBoundingClientRect();
-    return Math.min(max, Math.max(0, Math.round((((clientX - r.left) / r.width) * DAY_MINUTES) / SNAP) * SNAP));
+    return pressMinute(timeline.events, timeline.date, ((clientX - r.left) / r.width) * DAY_MINUTES, SNAP);
+  };
+  // A grabbed marker moves by whole 5-minute steps from where it was, so a click that doesn't move leaves it
+  // exactly there (live stays live).
+  const follow = (clientX: number) => {
+    const p = press.current!;
+    go(p.grab === null ? minuteAt(clientX) : p.grab + Math.round((((clientX - p.x) / trackWidth()) * DAY_MINUTES) / SNAP) * SNAP);
+  };
+  /** While the marker follows a press, the readout keeps at least its height, so the track can't shift under it. */
+  const holdHeight = (on: boolean) => {
+    const el = momentRef.current;
+    if (el) el.style.minHeight = on ? `${el.offsetHeight}px` : '';
+  };
+  const begin = (clientX: number) => {
+    press.current!.started = true;
+    setDragging(true);
+    holdHeight(true);
+    follow(clientX);
   };
   const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
-    if (e.pointerType === 'mouse' && e.button !== 0) return;
-    // Keeps the mouse from moving focus off the marker (and from selecting text while dragging).
-    e.preventDefault();
-    press.current = { id: e.pointerId, x: e.clientX, moved: false };
+    if ((e.pointerType === 'mouse' && e.button !== 0) || press.current) return;
+    const mouse = e.pointerType === 'mouse';
+    const onPill = handleRef.current?.contains(e.target as Node) ?? false;
+    press.current = { id: e.pointerId, x: e.clientX, mouse, grab: onPill ? minute : null, started: false, moved: false };
     e.currentTarget.setPointerCapture(e.pointerId);
-    handleRef.current?.focus({ preventScroll: true });
-    setDragging(true);
-    go(minuteAt(e.clientX));
+    // A touch waits: it may be a tap, a sideways drag, or the start of a page scroll.
+    if (mouse) begin(e.clientX);
   };
   const onPointerMove = (e: PointerEvent<HTMLDivElement>) => {
     const p = press.current;
     if (!p || p.id !== e.pointerId) return;
-    if (Math.abs(e.clientX - p.x) > 4) p.moved = true;
-    if (p.moved) go(minuteAt(e.clientX));
+    const far = Math.abs(e.clientX - p.x) > (p.mouse ? 3 : SLOP);
+    if (far) p.moved = true;
+    if (p.started) follow(e.clientX);
+    else if (far) begin(e.clientX);
   };
-  // A drag springs back to live on release, as a stock chart does; a tap keeps the moment it picked. A touch that
-  // turns into a page scroll is cancelled, and goes back to live too.
+  // A drag springs back to live on release, as a stock chart does; a tap keeps the moment it picked. A touch the
+  // browser takes over for a scroll (cancelled before it moved sideways) changes nothing.
   const onPointerEnd = (e: PointerEvent<HTMLDivElement>, cancelled: boolean) => {
     const p = press.current;
     if (!p || p.id !== e.pointerId) return;
     press.current = null;
     setDragging(false);
-    if (cancelled || p.moved) setScrub(null);
+    holdHeight(false);
+    // The marker takes focus (for the arrow keys) once the press is over, so the browser counts it as focus from
+    // a pointer, with no keyboard focus ring.
+    if (!cancelled) handleRef.current?.focus({ preventScroll: true });
+    if (p.moved) setScrub(null);
+    else if (!cancelled && !p.mouse && p.grab === null) go(minuteAt(p.x));
   };
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     const keys: Record<string, () => void> = {
@@ -601,19 +652,14 @@ function TimelineCard({ timeline, today, onHeart }: { timeline: Summary['timelin
   };
 
   const liveName = isToday ? 'Now' : 'End of day';
-  const what = moment.events.length ? moment.events.map(doing).join(' and ') : 'nothing logged';
-  const valueText = [
-    live ? (isToday ? `Now, ${clockOf(nowMin)}` : 'End of day') : clockOf(minute),
-    what,
-    moment.heart?.kind === 'reading' ? `heart ${fmt(moment.heart.avg)} bpm, average from ${hourClock(moment.heart.hour)} to ${hourClock(moment.heart.hour + 1)}` : null,
-  ]
-    .filter(Boolean)
-    .join('; ');
+  // Live, it says "Now" without the clock, so a focused slider isn't re-read every minute.
+  const valueText = spoken(moment, live ? liveName : clockOf(minute));
 
-  // A WHOOP day count (its API has no hours) is larger than the phone's hours add up to: say whose hours these are.
+  // The day's step count, as the Activity card shows it, when the hours don't add up to it: a WHOOP count (its API
+  // has no hours), or hours not all sent yet. Small rounding differences don't count.
   const st = day?.metrics.steps;
   const hourSteps = st ? st.hours.reduce<number>((a, v) => a + (v ?? 0), 0) : 0;
-  const whoopSteps = st?.total?.source === 'whoop' && st.total.value > hourSteps ? st.total.value : null;
+  const dayCount = st?.total && st.total.value > hourSteps * 1.01 + 1 ? st.total : null;
 
   return (
     <section className="card timeline">
@@ -623,7 +669,7 @@ function TimelineCard({ timeline, today, onHeart }: { timeline: Summary['timelin
           {liveName}
         </button>
       </div>
-      <div className="tl-moment">
+      <div className="tl-moment" ref={momentRef}>
         <div className="tl-moment-head">
           <span className="tl-moment-time">{live ? liveName : clockOf(minute)}</span>
           <span className="tl-moment-what">
@@ -649,7 +695,13 @@ function TimelineCard({ timeline, today, onHeart }: { timeline: Summary['timelin
             {moment.energy && <TotalStat name="Active energy" unit="kcal" t={moment.energy} isToday={isToday} />}
           </div>
         )}
-        {whoopSteps !== null && moment.steps && <p className="card-note">Steps by the hour are from your iPhone or Apple Watch. WHOOP counted {fmt(whoopSteps)} for the day.</p>}
+        {dayCount && moment.steps && (
+          <p className="card-note">
+            {dayCount.source === 'whoop'
+              ? `Steps by the hour are from your iPhone or Apple Watch. WHOOP counted ${fmt(dayCount.value)} for the day.`
+              : `The hours here add up to ${fmt(hourSteps)} steps; the day's count is ${fmt(dayCount.value)}.`}
+          </p>
+        )}
       </div>
       <div
         className={`tl-track-wrap tl-scrub${dragging ? ' is-dragging' : ''}`}
@@ -661,18 +713,19 @@ function TimelineCard({ timeline, today, onHeart }: { timeline: Summary['timelin
       >
         <div className="tl-track" ref={trackRef}>
           {timeline.events.map((e) => {
-            const [a, b] = span(e);
+            // An event that started the previous evening is drawn from midnight; a short one at least 12 minutes wide.
+            const { from, drawnTo } = eventSpan(e, timeline.date);
             return (
               <span
                 key={e.id}
                 className="tl-seg"
-                style={{ left: pos(a), width: `calc(${pos(b - a)} - 2px)`, background: KIND_COLOR[e.kind] }}
+                style={{ left: pos(from), width: `calc(${pos(drawnTo - from)} - 2px)`, background: KIND_COLOR[e.kind] }}
                 title={`${e.title} ${clock(e.start)}–${clock(e.end)}`}
               />
             );
           })}
         </div>
-        {isToday && !live && <div className="tl-now-ghost" style={{ left: pos(nowMin) }} aria-hidden="true" />}
+        {isToday && !live && <div className="tl-now-ghost" style={{ left: pos(max) }} aria-hidden="true" />}
         <div
           ref={handleRef}
           className={`tl-now${live ? '' : ' is-scrubbed'}`}
@@ -737,6 +790,25 @@ function heartStatus(h: HeartAt, isToday: boolean): ReactNode {
 function figureStatus(h: HeartAt) {
   if (h.kind === 'reading') return h.partial ? `Avg since ${hourClock(h.hour)}` : `Avg ${hourRange(h.hour)}`;
   return h.kind === 'pending' ? 'Not synced yet' : h.kind === 'none' ? 'No reading then' : 'No readings';
+}
+
+/** The slider's spoken value: the moment, what was going on, and every figure the readout shows, as it labels them. */
+function spoken(m: Moment, time: string) {
+  const parts = [time, m.events.length ? m.events.map(doing).join(' and ') : 'nothing logged'];
+  const h = m.heart;
+  if (h?.kind === 'reading')
+    parts.push(`heart ${fmt(h.avg)} bpm, average ${h.partial ? `since ${hourClock(h.hour)}` : `from ${hourClock(h.hour)} to ${hourClock(h.hour + 1)}`}`);
+  else if (h?.kind === 'none') parts.push(`no heart reading from ${hourClock(h.hour)} to ${hourClock(h.hour + 1)}`);
+  else if (h?.kind === 'pending') parts.push('heart rate not synced yet');
+  const total = (t: TotalAt | undefined, what: string, unit: string) => {
+    if (!t || t.kind === 'empty') return;
+    if (t.kind === 'so-far') return parts.push(`${what} ${fmt(t.value)}${unit} so far today`);
+    const when = t.at === 24 ? 'for the whole day' : `by ${hourClock(t.at)}`;
+    parts.push(`${what} ${fmt(t.value)}${unit} ${when}${t.typical !== null ? `, typical ${fmt(t.typical)}` : ''}`);
+  };
+  total(m.steps, 'steps', '');
+  total(m.energy, 'active energy', ' kcal');
+  return parts.join('; ');
 }
 
 function HeartStat({ h, isToday }: { h: HeartAt; isToday: boolean }) {

@@ -190,7 +190,7 @@ test("with both devices worn, a rise on WHOOP still shows, measured against WHOO
 
 // ---------- which day the timeline shows ----------
 
-test('the timeline falls back to the last day with events, unless the chosen day has hourly readings', async () => {
+test('the timeline shows the last day with events or hourly readings', async () => {
   const sleep = (id: string, date: string) => ({ id, source: 'apple', kind: 'sleep' as const, title: 'Sleep', start: `${addDays(date, -1)}T23:00:00-05:00`, end: `${date}T06:30:00-05:00`, date });
   // Nothing logged today: the card keeps showing yesterday's night, as before.
   await upsertEvents(flagDb, 'tl-events-only', [sleep('tl-a', ago(1))]);
@@ -211,4 +211,8 @@ test('the timeline falls back to the last day with events, unless the chosen day
     { date: today, hour: 9, metric: 'steps', source: 'demo', value: 300 },
   ]);
   assert.equal((await summary({ db: flagDb, userId: 'tl-other' }, false)).timeline.date, ago(1));
+  // With nothing on the chosen day, a later day with only hours wins over an earlier one with events.
+  await upsertEvents(flagDb, 'tl-gap', [sleep('tl-d', ago(5))]);
+  await upsertHourly(flagDb, 'tl-gap', [{ date: ago(3), hour: 12, metric: 'active_energy', source: 'apple', value: 20 }]);
+  assert.deepEqual((await summary({ db: flagDb, userId: 'tl-gap' }, false, ago(1))).timeline, { date: ago(3), events: [] });
 });

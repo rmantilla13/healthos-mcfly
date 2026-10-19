@@ -1,7 +1,7 @@
 // Scrubbing Home's timeline (src/charts/scrub.ts): which events and hourly figures belong to a moment of the day.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { clockOf, eventsAt, momentAt, scrubMax, stepMinute } from '../src/charts/scrub.ts';
+import { clockOf, eventSpan, eventsAt, momentAt, pressMinute, scrubMax, stepMinute } from '../src/charts/scrub.ts';
 import type { DayData, TimelineEvent } from '../shared/types.ts';
 
 const hours = (values: Record<number, number>) => Array.from({ length: 24 }, (_, h) => values[h] ?? null);
@@ -56,6 +56,17 @@ test("events are matched by their real times, so a 3-minute session doesn't clai
   // A night that began the evening before covers the small hours; it has ended by 06:40.
   assert.deepEqual(eventsAt([run, sleep], TODAY, 120).map((e) => e.id), ['s']);
   assert.deepEqual(eventsAt([run, sleep], TODAY, 400), []);
+});
+
+test('a press on a short session lands inside it; elsewhere it snaps to 5 minutes', () => {
+  // The run lasted 07:05–07:08 but is drawn 07:05–07:17.
+  assert.deepEqual(eventSpan(run, TODAY), { from: 425, to: 428, drawnTo: 437 });
+  assert.equal(pressMinute([run, sleep], TODAY, 426.6, 5), 426, 'inside: the exact minute, not rounded out to 07:05/07:10');
+  assert.equal(pressMinute([run, sleep], TODAY, 433.2, 5), 427, 'on the drawn tail: its last real minute');
+  assert.equal(eventsAt([run], TODAY, pressMinute([run], TODAY, 433.2, 5)).length, 1);
+  assert.equal(pressMinute([run, sleep], TODAY, 452.4, 5), 450);
+  // The night from the evening before is drawn from 00:00.
+  assert.deepEqual(eventSpan(sleep, TODAY), { from: 0, to: 400, drawnTo: 400 });
 });
 
 test("heart rate is the hour's own average and range; an hour without readings says so", () => {

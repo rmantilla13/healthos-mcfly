@@ -4119,14 +4119,17 @@ nav.tabs {
 }
 
 /* ---------- timeline scrubbing (Home: TimelineCard; src/charts/scrub.ts) ----------
-   The marker (.tl-now) is a slider: press anywhere on the track and drag, tap a moment, or use the arrow keys.
-   The moment's readout sits above the track, where a finger on the track doesn't cover it. A drag springs back
-   to now on release; a tap or the keys hold the moment until "Now". */
+   The marker (.tl-now) is a slider: press anywhere on the track and drag (or grab the marker's pill), tap a
+   moment, or use the arrow keys. The moment's readout sits above the track, where a finger on the track doesn't
+   cover it. A drag springs back to now on release; a tap or the keys hold the moment until "Now". */
 .tl-scrub {
   padding-top: 30px;
   cursor: pointer;
-  /* Sideways drags scrub; up and down still scroll the page (the browser cancels the press, which goes live). */
+  /* Sideways drags scrub; up and down still scroll the page (the browser cancels the press), and pinch still zooms.
+     The plain pan-y first, for a browser without pinch-zoom (it would drop the whole second line, and scrolling
+     would take every drag). */
   touch-action: pan-y;
+  touch-action: pan-y pinch-zoom;
   user-select: none;
   -webkit-user-select: none;
   -webkit-tap-highlight-color: transparent;

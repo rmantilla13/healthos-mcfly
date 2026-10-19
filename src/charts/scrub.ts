@@ -26,6 +26,34 @@ export function stepMinute(minute: number, step: number, dir: 1 | -1, max: numbe
   return Math.min(max, Math.max(0, next));
 }
 
+/** The shortest an event is drawn, in minutes, so a brief session can still be seen and pressed. */
+export const MIN_DRAWN = 12;
+
+const minutesOf = (iso: string) => Number(iso.slice(11, 13)) * 60 + Number(iso.slice(14, 16));
+
+/**
+ * An event's minutes on `date`, as recorded (from–to, clipped to the day: a night that began the evening before
+ * starts at 0) and as drawn (at least MIN_DRAWN wide).
+ */
+export function eventSpan(e: TimelineEvent, date: string) {
+  const from = e.start.slice(0, 10) < date ? 0 : minutesOf(e.start);
+  const to = e.end.slice(0, 10) > date ? DAY_MINUTES : minutesOf(e.end);
+  return { from, to, drawnTo: Math.max(to, from + MIN_DRAWN) };
+}
+
+/**
+ * The minute a press at `raw` minutes picks: inside an event, that exact minute (so a short one isn't rounded
+ * past); on the part of a short event's segment drawn beyond its end, its last real minute (so pressing what you
+ * see shows it); anywhere else, the nearest `snap` minutes.
+ */
+export function pressMinute(events: TimelineEvent[], date: string, raw: number, snap: number): number {
+  const m = Math.floor(raw);
+  const spans = events.map((e) => eventSpan(e, date));
+  if (spans.some((s) => m >= s.from && m < s.to)) return m;
+  const drawn = spans.find((s) => s.to > s.from && m >= s.to && m < s.drawnTo);
+  return drawn ? drawn.to - 1 : Math.round(raw / snap) * snap;
+}
+
 /** The events going on at a minute of `date`, by their recorded wall-clock start and end (not as drawn). */
 export function eventsAt(events: TimelineEvent[], date: string, minute: number): TimelineEvent[] {
   const t = `${date}T${clockOf(Math.min(minute, DAY_MINUTES - 1))}`;
