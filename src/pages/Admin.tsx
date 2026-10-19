@@ -4,7 +4,7 @@ import { useState } from 'react';
 import type { AdminInvite, AdminOverview, AdminUser, PlatformSettings, Role, SessionUser } from '../../shared/types.ts';
 import { Icon } from '../components/Icon.tsx';
 import { fmt, fmtDate, notifyDataChanged, sendJson, useApi } from '../lib.ts';
-import { CardChoices } from '../components/CardChoices.tsx';
+import { CardChoices, useCardEditor } from '../components/CardChoices.tsx';
 import { CopyField } from './Integrations.tsx';
 
 type Tab = 'users' | 'invites' | 'settings';
@@ -226,20 +226,18 @@ function People({ data, me, act, onLink }: { data: AdminOverview; me: SessionUse
 
 /** The cards a person sees, which an admin can change for them (only the layout, never their data). */
 function AdminCards({ u, self, act }: { u: AdminUser; self: boolean; act: Act }) {
-  const [busy, setBusy] = useState(false);
-  const hidden = u.hiddenCards ?? [];
-  async function change(next: string[]) {
-    setBusy(true);
-    await act(() => sendJson('PATCH', `/admin/users/${u.id}`, { hiddenCards: next }));
-    setBusy(false);
+  const cards = useCardEditor(u.hiddenCards ?? [], async (body) => {
+    const r = await act(() => sendJson<{ hiddenCards: string[] }>('PATCH', `/admin/users/${u.id}`, body));
+    if (!r) throw new Error('Not saved.');
     // Your own pages pick it up now, not at the next background check.
     if (self) notifyDataChanged();
-  }
+    return r.hiddenCards;
+  });
   return (
     <details className="admin-cards">
-      <summary>{hidden.length ? `Cards · ${hidden.length} hidden` : 'Cards · all shown'}</summary>
+      <summary>{cards.hidden.length ? `Cards · ${cards.hidden.length} hidden` : 'Cards · all shown'}</summary>
       <p className="muted small">{self ? 'The cards on your Home, Sleep and Body pages.' : `The cards ${u.name || u.email} sees on Home, Sleep and Body. They can change these in their Settings too.`}</p>
-      <CardChoices hidden={hidden} onChange={change} busy={busy} idPrefix={`admin-${u.id}`} />
+      <CardChoices hidden={cards.hidden} onToggle={cards.toggle} idPrefix={`admin-${u.id}`} />
     </details>
   );
 }

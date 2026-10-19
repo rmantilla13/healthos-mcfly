@@ -201,13 +201,15 @@ export async function copyText(text: string) {
 export const UnitsContext = createContext<Units>('metric');
 export const useUnits = () => useContext(UnitsContext);
 
-/** The cards this person hid (Settings → Cards; shared/cards.ts). */
-export const HiddenCardsContext = createContext<string[]>([]);
-/** Whether a card shows: every one does, except those the person hid. */
+/** The cards this person hid (Settings → Cards; shared/cards.ts); null until their settings have loaded. */
+export const HiddenCardsContext = createContext<string[] | null>([]);
+/** Whether a card shows: every one does, except those the person hid. None until the settings are known, so a hidden card never flashes up. */
 export function useCardShown() {
   const hidden = useContext(HiddenCardsContext);
-  return useCallback((id: string) => !hidden.includes(id), [hidden]);
+  return useCallback((id: string) => hidden !== null && !hidden.includes(id), [hidden]);
 }
+/** The person's settings have loaded, so a card that isn't shown was hidden on purpose. */
+export const useCardsKnown = () => useContext(HiddenCardsContext) !== null;
 
 export function fmt(value: number, digits = 0) {
   return value.toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits });

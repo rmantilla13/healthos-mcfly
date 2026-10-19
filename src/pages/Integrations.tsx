@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Settings, Status, SyncResult } from '../../shared/types.ts';
 import { Icon } from '../components/Icon.tsx';
-import { CardChoices } from '../components/CardChoices.tsx';
+import { CardChoices, useCardEditor } from '../components/CardChoices.tsx';
 import { copyText, fmt, fmtDate, notifyDataChanged, sendJson, uploadFile } from '../lib.ts';
 import { CycleSettings } from './Cycle.tsx';
 import { FamilySettings } from './Family.tsx';
@@ -701,33 +701,24 @@ export function SettingsPage({ status, refresh, signedIn }: { status: Status; re
 
 /** Which cards show on Home, Sleep and Body. Only the layout: nothing is deleted, and an unticked card comes back as it was. */
 function CardSettings({ status, refresh }: { status: Status; refresh: () => void }) {
-  const [hidden, setHidden] = useState(status.settings.hiddenCards ?? []);
-  const [error, setError] = useState<string | null>(null);
-  async function change(next: string[]) {
-    const before = hidden;
-    setHidden(next);
-    setError(null);
-    try {
-      await sendJson('PUT', '/settings', { hiddenCards: next });
-      refresh();
-    } catch (e) {
-      setHidden(before);
-      setError((e as Error).message);
-    }
-  }
+  const cards = useCardEditor(status.settings.hiddenCards ?? [], async (body) => {
+    const next = await sendJson<Status>('PUT', '/settings', body);
+    refresh();
+    return next.settings.hiddenCards;
+  });
   return (
     <section className="card settings-cards">
       <div className="card-title-row">
         <h2>Cards</h2>
-        {hidden.length > 0 && (
-          <button className="btn btn-quiet" onClick={() => change([])}>
+        {cards.hidden.length > 0 && (
+          <button className="btn btn-quiet" onClick={cards.showAll}>
             Show all
           </button>
         )}
       </div>
       <p className="muted small">Choose the cards you see on Home, Sleep and Body. Hiding one only changes the page; your data stays.</p>
-      <CardChoices hidden={hidden} onChange={change} idPrefix="me" />
-      {error && <p className="note-bad small">{error}</p>}
+      <CardChoices hidden={cards.hidden} onToggle={cards.toggle} idPrefix="me" />
+      {cards.error && <p className="note-bad small">{cards.error}</p>}
     </section>
   );
 }

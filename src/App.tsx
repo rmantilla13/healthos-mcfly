@@ -34,7 +34,7 @@ const DATA_NAV: { page: Page; label: string; icon: IconName }[] = [
 
 const ADMIN_NAV: { page: Page; label: string; icon: IconName }[] = [{ page: 'admin', label: 'Admin', icon: 'shield' }];
 
-/** Until the status loads (or from an older server): nothing hidden. One array, so the context stays stable. */
+/** From an older server without the setting: nothing hidden. One array, so the context stays stable. */
 const NONE_HIDDEN: string[] = [];
 
 type AuthState = { state: 'checking' } | { state: 'signin' | 'misconfigured'; setup: boolean } | { state: 'open'; signedIn: boolean };
@@ -104,7 +104,7 @@ function Dashboard({ signedIn }: { signedIn: boolean }) {
   const { page: route, params } = useRoute();
   // Activity is a tab of Body now; its old address still opens it there.
   const page = route === 'activity' ? 'body' : route;
-  const { data: status, reload } = useApi<Status>('/status');
+  const { data: status, error: statusError, reload } = useApi<Status>('/status');
   const [date, setDate] = useState<string | null>(null);
   // Only meaningful when sign-in is on; the server enforces it either way.
   const isAdmin = signedIn && status?.user.role === 'admin';
@@ -127,7 +127,8 @@ function Dashboard({ signedIn }: { signedIn: boolean }) {
 
   return (
     <UnitsContext.Provider value={status?.settings.units ?? 'metric'}>
-      <HiddenCardsContext.Provider value={status?.settings.hiddenCards ?? NONE_HIDDEN}>
+      {/* Until the settings load, no card shows (so a hidden one never flashes up); if they can't load, all do. */}
+      <HiddenCardsContext.Provider value={status ? (status.settings.hiddenCards ?? NONE_HIDDEN) : statusError ? NONE_HIDDEN : null}>
       <div className="app">
         <aside className="sidebar">
           <a className="brand" href={href('home')}>

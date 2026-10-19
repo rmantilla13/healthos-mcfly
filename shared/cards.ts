@@ -59,3 +59,14 @@ export function readHiddenCards(raw: string | undefined | null): string[] {
 
 /** What to store for a list: nothing when no card is hidden. */
 export const storedHiddenCards = (ids: string[]) => (ids.length ? JSON.stringify(ids) : null);
+
+/**
+ * One card shown or hidden, applied to the list as it is now: so a change made elsewhere meanwhile (another tab,
+ * or an admin) isn't undone by a page that loaded an older list. Null for an unknown card or a non-boolean.
+ */
+export function withCardShown(current: string[], change: unknown): string[] | null {
+  if (typeof change !== 'object' || change === null) return null;
+  const { id, shown } = change as { id?: unknown; shown?: unknown };
+  if (typeof id !== 'string' || !KNOWN.has(id) || typeof shown !== 'boolean') return null;
+  return cleanHiddenCards(shown ? current.filter((x) => x !== id) : [...current, id]);
+}

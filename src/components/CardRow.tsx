@@ -1,7 +1,7 @@
 // Rows of dashboard cards that leave out the ones a person hid (Settings → Cards).
 import { Fragment, type ReactNode } from 'react';
 import { CARDS, type CardPage } from '../../shared/cards.ts';
-import { href, useCardShown } from '../lib.ts';
+import { href, useCardShown, useCardsKnown } from '../lib.ts';
 
 /**
  * A grid of cards, each with its id, minus the hidden ones. Nothing at all when every one is hidden. A `pair`
@@ -20,10 +20,11 @@ export function CardRow({ className, cards, pair }: { className: string; cards: 
   );
 }
 
-/** Every card on this page is hidden. */
+/** Every card on this page is hidden (known only once the person's settings have loaded). */
 export function useAllHidden(page: CardPage) {
   const shown = useCardShown();
-  return CARDS.filter((c) => c.page === page).every((c) => !shown(c.id));
+  const known = useCardsKnown();
+  return known && CARDS.filter((c) => c.page === page).every((c) => !shown(c.id));
 }
 
 export function AllHiddenNote() {

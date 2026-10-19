@@ -2,8 +2,8 @@
 // account's data volume and sync health, but never anyone's health values.
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { HttpError, type Role, countActiveAdmins, createLink, currentUser, formatCode, getUser, normalizeEmail, requireAdmin } from './auth.ts';
-import { cleanHiddenCards, readHiddenCards, storedHiddenCards } from '../shared/cards.ts';
-import { type Db, bumpDataVersion, deleteUserData, getSettings, setSetting, setUserSetting } from './db.ts';
+import { cleanHiddenCards, readHiddenCards, storedHiddenCards, withCardShown } from '../shared/cards.ts';
+import { type Db, bumpDataVersion, deleteUserData, getSettings, getUserSetting, setSetting, setUserSetting } from './db.ts';
 import * as whoop from './whoop.ts';
 
 const ROLES: Role[] = ['admin', 'user'];
@@ -156,9 +156,15 @@ export function adminRouter(db: Db) {
       if (!target) throw new HttpError(404, 'No such account.');
       const role = req.body?.role as Role | undefined;
       const status = req.body?.status as 'active' | 'disabled' | undefined;
-      // Which cards their dashboard shows: layout only, nothing about their health.
-      const hidden = req.body?.hiddenCards === undefined ? undefined : cleanHiddenCards(req.body.hiddenCards);
-      if (hidden === null) throw new HttpError(400, 'hiddenCards must be a list of card ids.');
+      // Which cards their dashboard shows: layout only, nothing about their health. The whole list, or one card's
+      // change applied to their list as it is now (they may have changed it since this page loaded).
+      const hidden =
+        req.body?.hiddenCards !== undefined
+          ? cleanHiddenCards(req.body.hiddenCards)
+          : req.body?.cardShown !== undefined
+            ? withCardShown(readHiddenCards(await getUserSetting(db, target.id, 'hidden_cards')), req.body.cardShown)
+            : undefined;
+      if (hidden === null) throw new HttpError(400, 'Unknown card, or not a list of cards.');
       if (role !== undefined && !ROLES.includes(role)) throw new HttpError(400, 'Unknown role.');
       if (status !== undefined && !['active', 'disabled'].includes(status)) throw new HttpError(400, 'Unknown status.');
       if (target.id === me.id && (role === 'user' || status === 'disabled')) throw new HttpError(400, "You can't demote or disable your own account.");
@@ -174,7 +180,7 @@ export function adminRouter(db: Db) {
         // Their open dashboard picks it up at its next check.
         await bumpDataVersion(db, target.id);
       }
-      res.json({ ok: true });
+      res.json(hidden ? { ok: true, hiddenCards: hidden } : { ok: true });
     }),
   );
 

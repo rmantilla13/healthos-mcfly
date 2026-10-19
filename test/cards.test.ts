@@ -99,3 +99,18 @@ test("an admin can set a member's cards; a member can't use the admin route", as
   assert.equal((await ana.call('PATCH', `/api/admin/users/${anaId}`, { hiddenCards: [] })).status, 403);
   assert.deepEqual((await ana.call('GET', '/api/status')).json.settings.hiddenCards, ['sleep.insights']);
 });
+
+test("one card's change applies to the list as stored now, so a change made elsewhere stays", async () => {
+  // Ana's own page loaded when nothing was hidden; meanwhile an admin hid sleep.insights for her.
+  await owner.call('PATCH', `/api/admin/users/${anaId}`, { hiddenCards: ['sleep.insights'] });
+  const r = await ana.call('PUT', '/api/settings', { cardShown: { id: 'home.hrv', shown: false } });
+  assert.deepEqual(r.json.settings.hiddenCards, ['home.hrv', 'sleep.insights']);
+  // And the other way round: the admin shows one card for her without undoing hers.
+  const a = await owner.call('PATCH', `/api/admin/users/${anaId}`, { cardShown: { id: 'sleep.insights', shown: true } });
+  assert.deepEqual(a.json.hiddenCards, ['home.hrv']);
+  assert.deepEqual((await ana.call('GET', '/api/status')).json.settings.hiddenCards, ['home.hrv']);
+  // Unknown cards and wrong shapes are refused.
+  assert.equal((await ana.call('PUT', '/api/settings', { cardShown: { id: 'home.nope', shown: false } })).status, 400);
+  assert.equal((await ana.call('PUT', '/api/settings', { cardShown: { id: 'home.hrv', shown: 'yes' } })).status, 400);
+  assert.equal((await owner.call('PATCH', `/api/admin/users/${anaId}`, { cardShown: 'home.hrv' })).status, 400);
+});

@@ -3585,6 +3585,11 @@ nav.tabs {
   .has-hero .night-cards:has(> .rhr-card:only-child) {
     display: none;
   }
+  /* One card left beside it (or alone) spans the row rather than sitting at half width. */
+  .has-hero .night-cards > .card:only-child,
+  .has-hero .night-cards > .card:first-child:nth-last-child(2):has(+ .rhr-card) {
+    grid-column: 1 / -1;
+  }
 }
 .settings-cards {
   max-width: 560px;
