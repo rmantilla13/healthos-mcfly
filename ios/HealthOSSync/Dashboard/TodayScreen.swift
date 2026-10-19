@@ -97,10 +97,11 @@ private struct TodayContent: View {
             .animation(.easeInOut(duration: 0.2), value: dashboard.loading)
         }
         .refreshable { await sync.syncAll(force: true) }
-        // In the safe area, so it floats just above the tab bar instead of under it.
+        // In the safe area, so it floats above the tab bar instead of under it, with room to breathe; the inset also pads
+        // the scroll content, so the last card scrolls clear of it.
         .safeAreaInset(edge: .bottom) {
             if mcfly.status?.available == true {
-                AskMcFlyPill { chatOpen = true }.padding(.bottom, 6)
+                AskMcFlyPill { chatOpen = true }.padding(.top, 8).padding(.bottom, 18)
             }
         }
         .sheet(isPresented: $chatOpen) { McFlySheet(chat: mcfly) }
