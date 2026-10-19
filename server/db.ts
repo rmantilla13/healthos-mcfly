@@ -115,6 +115,21 @@ export async function upsertHourly(q: Queryable, userId: string, rows: HourlyRow
   );
 }
 
+/** One night's sleep stages from one device. */
+export type SleepStageRow = { start: string; end: string; stage: string };
+
+/**
+ * Replaces the stages for each of these nights (wake dates) from this source: a resent night is the device's
+ * whole night again, so what it no longer reports goes too.
+ */
+export async function replaceSleepStages(q: Queryable, userId: string, source: string, nights: { date: string; segments: SleepStageRow[] }[]) {
+  if (!nights.length) return;
+  await q.query('DELETE FROM sleep_stages WHERE user_id = $1 AND source = $2 AND date = ANY($3)', [userId, source, nights.map((n) => n.date)]);
+  const rows = new Map<string, unknown[]>();
+  for (const n of nights) for (const g of n.segments) rows.set(`${n.date}|${g.start}`, [userId, n.date, source, g.start, g.end, g.stage]);
+  await insertMany(q, 'sleep_stages', ['user_id', 'date', 'source', 'start', 'end', 'stage'], [...rows.values()]);
+}
+
 export async function deleteSource(q: Queryable, userId: string, source: string) {
   for (const table of ['daily', 'hourly', 'workouts', 'events', 'cycle', 'sleep_stages']) {
     await q.query(`DELETE FROM ${table} WHERE user_id = $1 AND source = $2`, [userId, source]);

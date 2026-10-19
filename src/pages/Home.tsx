@@ -190,7 +190,7 @@ function WeekSummaryText({ week, stepGoal }: { week: WeekSummary; stepGoal: numb
 
 // ---------- metric cards ----------
 
-function CardHead({ title, to }: { title: string; to: string }) {
+export function CardHead({ title, to }: { title: string; to: string }) {
   return (
     <div className="metric-head">
       <span>{title}</span>
@@ -201,7 +201,7 @@ function CardHead({ title, to }: { title: string; to: string }) {
   );
 }
 
-function Stale({ date, asOf }: { date: string; asOf: string }) {
+export function Stale({ date, asOf }: { date: string; asOf: string }) {
   return date === asOf ? null : <span className="stale">{fmtDate(date)}</span>;
 }
 
@@ -214,7 +214,7 @@ function Empty({ text }: { text: string }) {
   );
 }
 
-function signed(n: number, digits = 0) {
+export function signed(n: number, digits = 0) {
   const v = fmt(Math.abs(n), digits);
   return n > 0 ? `+${v}` : n < 0 ? `−${v}` : v;
 }
@@ -529,7 +529,7 @@ function TimelineCard({ timeline, today }: { timeline: Summary['timeline']; toda
 
 // ---------- insights ----------
 
-const INSIGHT_TONE: Record<Insight['icon'], string> = {
+export const INSIGHT_TONE: Record<Insight['icon'], string> = {
   'trend-up': 'tone-green',
   'trend-down': 'tone-peach',
   moon: 'tone-blue',

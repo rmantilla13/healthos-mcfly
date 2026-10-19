@@ -1,11 +1,27 @@
 // Synthetic data so the dashboard has something to show before real data is connected.
 // Stored under source 'demo' and regenerated (up to today) when the local server starts on a local
 // database. Never written to the hosted (Neon) database.
-import { type DailyRow, type Db, type EventRow, OWNER_ID, type WorkoutRow, deleteSource, upsertDaily, upsertEvents, upsertWorkouts } from './db.ts';
+import {
+  type DailyRow,
+  type Db,
+  type EventRow,
+  type HourlyRow,
+  OWNER_ID,
+  type SleepStageRow,
+  type WorkoutRow,
+  deleteSource,
+  replaceSleepStages,
+  upsertDaily,
+  upsertEvents,
+  upsertHourly,
+  upsertWorkouts,
+} from './db.ts';
 import { addDays, todayLocal, toLocalIso, type Stamp } from './dates.ts';
 
 export const SOURCE = 'demo';
 const DAYS = 400;
+/** Days with hourly readings and stages through the night, as the iPhone app sends for recent days. */
+const DETAIL_DAYS = 35;
 
 function rng(seed: number) {
   return () => {
@@ -31,6 +47,9 @@ export async function seedDemo(db: Db, userId = OWNER_ID) {
   const daily: DailyRow[] = [];
   const events: EventRow[] = [];
   const workouts: WorkoutRow[] = [];
+  const nights: { date: string; segments: SleepStageRow[] }[] = [];
+  // Its own stream, so the daily figures stay the same as before hourly detail existed.
+  const detail = rng(20261019);
   const put = (date: string, metric: string, value: number) => daily.push({ date, metric, source: SOURCE, value });
 
   let weight = 81.5;
@@ -83,6 +102,7 @@ export async function seedDemo(db: Db, userId = OWNER_ID) {
     const bed = 22 * 60 + 55 + Math.round(noise(35)) + (weekend ? 35 : 0);
     const wake = bed + Math.round((sleepHours + awake) * 60);
     events.push({ id: `demo-sleep-${date}`, source: SOURCE, kind: 'sleep', title: 'Sleep', start: at(addDays(date, -1), bed), end: at(addDays(date, -1), wake), date });
+    if (i < DETAIL_DAYS) nights.push({ date, segments: nightStages(detail, (m) => at(addDays(date, -1), m), bed, wake, { deep, rem, light, awake }) });
 
     if (i === 0 || rand() < 0.45) {
       const t = i === 0 ? 8 * 60 : 7 * 60 + Math.round(rand() * 90);
@@ -132,10 +152,101 @@ export async function seedDemo(db: Db, userId = OWNER_ID) {
     strain: 4.8,
   });
 
+  const hourly = demoHours(detail, today, daily, workouts);
+  // Today's totals are what the hours add up to so far.
+  for (const metric of ['steps', 'active_energy']) {
+    const row = daily.find((r) => r.date === today && r.metric === metric);
+    if (row) row.value = hourly.filter((h) => h.date === today && h.metric === metric).reduce((a, h) => a + h.value, 0);
+  }
+
   await db.tx(async (q) => {
     await deleteSource(q, userId, SOURCE);
     await upsertDaily(q, userId, daily);
     await upsertEvents(q, userId, events);
     await upsertWorkouts(q, userId, workouts);
+    await upsertHourly(q, userId, hourly);
+    await replaceSleepStages(q, userId, SOURCE, nights);
   });
+}
+
+/**
+ * A night as the Watch records it: time in bed before falling asleep, then about 90-minute cycles of light,
+ * deep and REM sleep (more deep early, more REM late) with brief wakings, adding up to the night's totals.
+ */
+function nightStages(rand: () => number, at: (m: number) => string, bed: number, wake: number, hours: { deep: number; rem: number; light: number; awake: number }): SleepStageRow[] {
+  const latency = Math.round(8 + rand() * 18);
+  const asleep = (hours.deep + hours.rem + hours.light) * 60;
+  const n = Math.max(3, Math.round(asleep / 90));
+  const share = (w: (k: number) => number) => {
+    const ws = Array.from({ length: n }, (_, k) => w(k));
+    const sum = ws.reduce((a, b) => a + b, 0);
+    return ws.map((x) => x / sum);
+  };
+  const deep = share((k) => (n - k) ** 1.6);
+  const rem = share((k) => (k + 1) ** 1.2);
+  const wakeBudget = Math.max(0, hours.awake * 60 - latency);
+  const wakings = share((k) => (k === n - 1 ? 0.2 : rand() < 0.55 ? 0.5 + rand() : 0));
+  const plan: [string, number][] = [['in_bed', latency]];
+  for (let k = 0; k < n; k++) {
+    const light = (hours.light * 60) / n;
+    const split = 0.4 + rand() * 0.25;
+    plan.push(['light', light * split], ['deep', hours.deep * 60 * deep[k]], ['light', light * (1 - split)], ['rem', hours.rem * 60 * rem[k]]);
+    if (wakings[k] > 0) plan.push(['awake', wakeBudget * wakings[k]]);
+  }
+  // Whole minutes, with the last stretch ending at the night's end; tiny stretches fold into their neighbour.
+  const out: SleepStageRow[] = [];
+  let t = bed;
+  let carry = 0;
+  for (const [stage, min] of plan) {
+    const len = Math.round(min + carry);
+    if (len < 2) {
+      carry += min;
+      continue;
+    }
+    carry = 0;
+    const end = Math.min(wake, t + len);
+    if (end <= t) break;
+    const prev = out.at(-1);
+    if (prev && prev.stage === stage) prev.end = at(end);
+    else out.push({ start: at(t), end: at(end), stage });
+    t = end;
+  }
+  if (t < wake) {
+    const prev = out.at(-1)!;
+    prev.end = at(wake);
+  }
+  return out;
+}
+
+/** Hour by hour for recent days: steps and active energy spread over waking hours, heart rate low overnight. */
+function demoHours(rand: () => number, today: string, daily: DailyRow[], workouts: WorkoutRow[]): HourlyRow[] {
+  const out: HourlyRow[] = [];
+  const nowHour = new Date().getHours();
+  const value = (date: string, metric: string) => daily.find((r) => r.date === date && r.metric === metric)?.value;
+  // Time of day people tend to move: a morning commute, lunch and the evening.
+  const shape = [0, 0, 0, 0, 0, 0, 0.2, 0.9, 1.4, 0.8, 0.6, 0.7, 1.2, 1, 0.6, 0.6, 0.8, 1.3, 1.2, 0.9, 0.6, 0.4, 0.2, 0.05];
+  for (let i = DETAIL_DAYS - 1; i >= 0; i--) {
+    const date = addDays(today, -i);
+    const last = i === 0 ? nowHour : 23;
+    const steps = value(date, 'steps') ?? 0;
+    const energy = value(date, 'active_energy') ?? 0;
+    const rhr = value(date, 'resting_hr') ?? 58;
+    const w = workouts.find((x) => x.date === date && x.id.startsWith('demo-workout'));
+    const wHour = w ? Number(w.start.slice(11, 13)) : -1;
+    const weights = shape.map((x, h) => x * (0.6 + rand() * 0.8) + (h === wHour ? 3 : 0));
+    const total = weights.reduce((a, b) => a + b, 0);
+    for (let h = 0; h <= last; h++) {
+      const part = weights[h] / total;
+      if (part > 0) {
+        out.push({ date, hour: h, metric: 'steps', source: SOURCE, value: Math.round(steps * part) });
+        out.push({ date, hour: h, metric: 'active_energy', source: SOURCE, value: Math.round(energy * part) });
+      }
+      const asleep = h < 6 || h === 23;
+      const avg = h === wHour && w?.avg_hr ? (w.avg_hr + rhr + 20) / 2 : asleep ? rhr + 2 + rand() * 4 : rhr + 12 + weights[h] * 6 + rand() * 6;
+      out.push({ date, hour: h, metric: 'hr_avg', source: SOURCE, value: Math.round(avg) });
+      out.push({ date, hour: h, metric: 'hr_min', source: SOURCE, value: Math.round(Math.max(rhr - 3, avg - 8 - rand() * 6)) });
+      out.push({ date, hour: h, metric: 'hr_max', source: SOURCE, value: Math.round(avg + 10 + rand() * (h === wHour ? 40 : 18)) });
+    }
+  }
+  return out;
 }
