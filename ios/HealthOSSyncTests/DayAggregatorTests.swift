@@ -1197,6 +1197,95 @@ final class ScrubVitalsFixTests: XCTestCase {
         XCTAssertNil(none.value)
         XCTAssertEqual(none.level, .neutral)
         XCTAssertEqual(none.a11y, "Heart rate, no reading then")
+
+        let partial = OrganicPortrait.heartReading(resting, asOf: today, scrub: scrubbed(14 * 60 + 40, dayOf(today, asOf: 14)))
+        XCTAssertEqual(partial.a11y, "Heart rate 74 bpm, average since 14:00")
+    }
+
+    // MARK: Sharing the marker through Today
+
+    @MainActor func testThePortraitFollowsTheMarkerAndGoesBackToTheRestingRateAtNow() {
+        let scrub = TodayScrub()
+        let day = dayOf(today, asOf: 14)
+        XCTAssertNil(scrub.minute(on: today), "starts live")
+        XCTAssertNil(scrub.heart(on: today))
+
+        // A tap holds 07:20, and the path says what the heart reads there.
+        scrub.move(to: 7 * 60 + 20, on: today)
+        XCTAssertEqual(scrub.minute(on: today), 440)
+        scrub.follow(scrubbed(440, day))
+        XCTAssertEqual(scrub.heart(on: today)?.bpm, 131.4)
+        XCTAssertEqual(scrub.heart(on: today)?.label, "Avg 07:00–08:00")
+
+        // "Now": live again, and the portrait shows the resting rate.
+        scrub.move(to: nil, on: today)
+        XCTAssertNil(scrub.minute(on: today))
+        scrub.follow(scrubbed(16 * 60, day, live: true))
+        XCTAssertNil(scrub.heart(on: today))
+    }
+
+    @MainActor func testAHeartFromAnotherDayNeverShowsOnThePortrait() {
+        // The path fell back to yesterday (nothing on today yet), so today's portrait keeps its resting rate.
+        let scrub = TodayScrub()
+        scrub.move(to: 440, on: past)
+        scrub.follow(scrubbed(440, dayOf(past, asOf: 14), date: past))
+        XCTAssertEqual(scrub.heart(on: past)?.label, "Avg 07:00–08:00")
+        XCTAssertNil(scrub.heart(on: today))
+    }
+
+    @MainActor func testANewDayStartsLiveAndComingBackDoesNotBringTheOldMomentBack() {
+        let scrub = TodayScrub()
+        scrub.move(to: 440, on: today)
+        scrub.follow(scrubbed(440, dayOf(today, asOf: 14)))
+        // The previous day is live at once, before the path has redrawn, and the heart is the resting rate.
+        XCTAssertNil(scrub.minute(on: past), "a marker held on another day never applies")
+        scrub.show(past)
+        XCTAssertNil(scrub.heart(on: today))
+        XCTAssertNil(scrub.heart(on: past))
+        // Back on today it's live again (the web keys its timeline card by day).
+        scrub.show(today)
+        XCTAssertNil(scrub.minute(on: today))
+    }
+
+    @MainActor func testShowingTheSameDayAgainKeepsTheHeldMoment() {
+        // A refresh redraws the same day's path; the moment stays held.
+        let scrub = TodayScrub()
+        scrub.move(to: 440, on: today)
+        scrub.follow(scrubbed(440, dayOf(today, asOf: 14)))
+        scrub.show(today)
+        XCTAssertEqual(scrub.minute(on: today), 440)
+        XCTAssertEqual(scrub.heart(on: today)?.bpm, 131.4)
+    }
+
+    @MainActor func testThePathLeavingTheScreenRestsTheHeartButKeepsTheMarker() {
+        // A hidden card, another tab or a pushed page: the resting rate. Back on Today, the held hour again.
+        let scrub = TodayScrub()
+        let day = dayOf(today, asOf: 14)
+        scrub.move(to: 440, on: today)
+        scrub.follow(scrubbed(440, day))
+        scrub.hide()
+        XCTAssertNil(scrub.heart(on: today))
+        XCTAssertEqual(scrub.minute(on: today), 440)
+        scrub.follow(scrubbed(440, day))
+        XCTAssertEqual(scrub.heart(on: today)?.label, "Avg 07:00–08:00")
+    }
+
+    @MainActor func testTheHeartBeatsAtTheScrubbedHoursRateAndStaysStillUnderReduceMotion() {
+        let resting = Vital(label: "Resting HR", latest: Latest(date: today, value: 62, source: "apple"), status: "normal", level: "normal")
+        let day = dayOf(today, asOf: 14)
+        XCTAssertEqual(OrganicPortrait.beatRate(resting: resting, scrub: nil), 62)
+        XCTAssertEqual(OrganicPortrait.beatRate(resting: nil, scrub: nil), 60)
+        XCTAssertEqual(OrganicPortrait.beatRate(resting: resting, scrub: scrubbed(440, day)), 131.4)
+        XCTAssertNil(OrganicPortrait.beatRate(resting: resting, scrub: scrubbed(8 * 60 + 5, day)), "an hour with no reading has nothing to beat at")
+
+        // A beat peaks 9% into its period: every 60/131.4 s at the scrubbed hour, not every 60/62 s.
+        func peak(_ bpm: Double) -> Double { 60 / bpm * 0.09 }
+        XCTAssertEqual(OrganicPortrait.pulse(.heart, t: peak(131.4), bpm: 131.4, rpm: 15, reduceMotion: false), 1, accuracy: 1e-9)
+        XCTAssertEqual(OrganicPortrait.pulse(.heart, t: peak(62), bpm: 131.4, rpm: 15, reduceMotion: false), 0)
+        XCTAssertEqual(OrganicPortrait.pulse(.heart, t: peak(131.4), bpm: nil, rpm: 15, reduceMotion: false), 0)
+        for key in VitalKey.allCases {
+            XCTAssertEqual(OrganicPortrait.pulse(key, t: peak(131.4), bpm: 131.4, rpm: 15, reduceMotion: true), 0, "\(key)")
+        }
     }
 
     // MARK: Loading the day's hours
