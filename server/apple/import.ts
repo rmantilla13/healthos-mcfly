@@ -3,7 +3,23 @@ import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { SaxesParser, type SaxesTagPlain } from 'saxes';
 import yauzl from 'yauzl';
-import { type DailyRow, type EventRow, type HourlyRow, type Scope, type WorkoutRow, deleteSource, getUserSetting, setUserSetting, upsertDaily, upsertEvents, upsertHourly, upsertWorkouts, bumpDataVersion } from '../db.ts';
+import {
+  type DailyRow,
+  type EventRow,
+  type HourlyRow,
+  type Scope,
+  type SleepStageRow,
+  type WorkoutRow,
+  deleteSource,
+  getUserSetting,
+  replaceSleepStages,
+  setUserSetting,
+  upsertDaily,
+  upsertEvents,
+  upsertHourly,
+  upsertWorkouts,
+  bumpDataVersion,
+} from '../db.ts';
 import { DAY_ROLLOVER_MS, localDate, localHour, parseAppleDate, toLocalIso, type Stamp, zoneOffsets } from '../dates.ts';
 import type { CervicalMucus, Flow, Nutrient, OvulationTest } from '../../shared/types.ts';
 import { type CycleKind, type CycleRow, upsertCycle } from '../cycle/index.ts';
@@ -193,6 +209,72 @@ export function resolveNight(segments: SleepSegment[]): SleepNight {
     }
   }
   return night;
+}
+
+/** A stretch of the night as the Sleep page draws it (the sleep_stages table). Apple's "asleep, unspecified" is 'asleep'. */
+export type TimelineStage = 'in_bed' | 'awake' | 'asleep' | 'light' | 'rem' | 'deep';
+export type TimelineSegment = { start: Stamp; end: Stamp; stage: TimelineStage };
+// Time in bed shows only where nothing else was recorded: the lead-in before falling asleep, and lying awake after.
+const TIMELINE_PRIORITY: Stage[] = [...STAGE_PRIORITY, 'in_bed'];
+const TIMELINE_NAME: Record<Stage, TimelineStage> = { in_bed: 'in_bed', awake: 'awake', unspecified: 'asleep', light: 'light', rem: 'rem', deep: 'deep' };
+/** Shorter stretches fold into their neighbour: they can't be seen, and rounding leaves them behind. */
+const MIN_STRETCH_MS = 60_000;
+
+/**
+ * One source's night as a timeline: one stage at each moment (the same priority resolveNight counts by), only
+ * the main sleep and the time in bed just before it (a same-day nap is left out, though its minutes count in the
+ * totals), with neighbouring stretches of the same stage joined. The stretches never overlap.
+ */
+export function nightTimeline(segments: SleepSegment[]): TimelineSegment[] {
+  const edges = segments.flatMap((s) => [
+    { t: s.start, stage: s.stage, d: 1 },
+    { t: s.end, stage: s.stage, d: -1 },
+  ]);
+  edges.sort((a, b) => a.t.ms - b.t.ms || a.d - b.d);
+  const active = new Map<Stage, number>();
+  let spans: { start: Stamp; end: Stamp; stage: Stage }[] = [];
+  for (let i = 0; i < edges.length; i++) {
+    const e = edges[i];
+    active.set(e.stage, (active.get(e.stage) ?? 0) + e.d);
+    const next = edges[i + 1];
+    if (!next || next.t.ms <= e.t.ms) continue;
+    const stage = TIMELINE_PRIORITY.find((st) => (active.get(st) ?? 0) > 0);
+    if (!stage) continue;
+    const last = spans.at(-1);
+    if (last && last.stage === stage && last.end.ms === e.t.ms) last.end = next.t;
+    else spans.push({ start: e.t, end: next.t, stage });
+  }
+
+  // The main sleep's run: stretches with gaps of up to SLEEP_GAP_MS between them.
+  const main = mainSleep(segments.filter((s) => s.stage !== 'in_bed'));
+  const runs: (typeof spans)[] = [];
+  for (const sp of spans) {
+    const run = runs.at(-1);
+    if (run && sp.start.ms - run.at(-1)!.end.ms <= SLEEP_GAP_MS) run.push(sp);
+    else runs.push([sp]);
+  }
+  const asleepMs = (run: typeof spans) => run.reduce((a, sp) => a + (sp.stage === 'in_bed' || sp.stage === 'awake' ? 0 : sp.end.ms - sp.start.ms), 0);
+  spans =
+    (main && runs.find((run) => run[0].start.ms <= main.start.ms && main.start.ms < run.at(-1)!.end.ms)) ??
+    runs.reduce<typeof spans>((best, run) => (asleepMs(run) > asleepMs(best) ? run : best), []);
+
+  // Slivers join the stretch before them (the first one, the stretch after), then like stages join up again.
+  const out: TimelineSegment[] = [];
+  for (const sp of spans) {
+    const stage = TIMELINE_NAME[sp.stage];
+    const last = out.at(-1);
+    const touching = last !== undefined && last.end.ms === sp.start.ms;
+    if (touching && (last.stage === stage || sp.end.ms - sp.start.ms < MIN_STRETCH_MS)) {
+      last.end = sp.end;
+    } else if (touching && last.end.ms - last.start.ms < MIN_STRETCH_MS) {
+      // Only a stretch after a gap can still be a sliver here; this one takes it over.
+      last.end = sp.end;
+      last.stage = stage;
+    } else {
+      out.push({ start: sp.start, end: sp.end, stage });
+    }
+  }
+  return out.filter((sp) => sp.end.ms - sp.start.ms >= MIN_STRETCH_MS);
 }
 
 // Cycle tracking records (server/cycle.ts), kept apart from the daily metrics. Apple renamed menstrual flow's
@@ -508,7 +590,15 @@ export class AppleAggregator {
     if (!cur || start.ms < cur.ms) this.basalTemp.set(date, { ms: start.ms, value: toCelsius(raw, a.unit ?? '') });
   }
 
-  finish(): { daily: DailyRow[]; hourly: HourlyRow[]; workouts: WorkoutRow[]; events: EventRow[]; cycle: CycleRow[]; nutrition: NutritionRow[] } {
+  finish(): {
+    daily: DailyRow[];
+    hourly: HourlyRow[];
+    workouts: WorkoutRow[];
+    events: EventRow[];
+    cycle: CycleRow[];
+    sleepStages: { date: string; segments: SleepStageRow[] }[];
+    nutrition: NutritionRow[];
+  } {
     const daily: DailyRow[] = [];
     const push = (date: string, metric: string, value: number) => daily.push({ date, metric, source: SOURCE, value });
 
@@ -556,6 +646,7 @@ export class AppleAggregator {
     }
 
     const events: EventRow[] = [...this.mindful];
+    const sleepStages: { date: string; segments: SleepStageRow[] }[] = [];
     for (const [date, bySource] of this.sleep) {
       let best: SleepNight | undefined;
       let bestSource = '';
@@ -568,6 +659,9 @@ export class AppleAggregator {
         }
       }
       if (!best) continue;
+      // The night's stages from the same source as its totals, so the chart and the figures agree.
+      const timeline = nightTimeline(bySource.get(bestSource)!);
+      if (timeline.length) sleepStages.push({ date, segments: timeline.map((sp) => ({ start: toLocalIso(sp.start), end: toLocalIso(sp.end), stage: sp.stage })) });
       const asleep = best.light + best.deep + best.rem;
       // Older watches and phone-only tracking log only "in bed" or "asleep"; keep whatever exists.
       const hours = (asleep || best.in_bed) / 60;
@@ -599,7 +693,7 @@ export class AppleAggregator {
       const [date, nutrient, ...app] = k.split('|');
       return { date, nutrient: nutrient as Nutrient, source: SOURCE, app: app.join('|'), value };
     });
-    return { daily, hourly, workouts: this.workouts, events, cycle, nutrition };
+    return { daily, hourly, workouts: this.workouts, events, cycle, sleepStages, nutrition };
   }
 }
 
@@ -753,7 +847,7 @@ export async function importAppleHealth(scope: Scope, file: string, onProgress?:
     },
     { timeZone },
   );
-  const { daily, hourly, workouts, events, cycle, nutrition } = agg.finish();
+  const { daily, hourly, workouts, events, cycle, sleepStages, nutrition } = agg.finish();
   const keepNutrition = (await getUserSetting(db, userId, 'nutrition')) === 'on';
 
   await db.tx(async (q) => {
@@ -768,6 +862,7 @@ export async function importAppleHealth(scope: Scope, file: string, onProgress?:
     await upsertHourly(q, userId, hourly);
     await upsertWorkouts(q, userId, workouts);
     await upsertEvents(q, userId, events);
+    await replaceSleepStages(q, userId, SOURCE, sleepStages);
   });
 
   const dates = [...new Set(daily.map((d) => d.date))].sort();

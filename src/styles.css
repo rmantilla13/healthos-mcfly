@@ -83,6 +83,18 @@
   --fertile-peak: #4a60c8;
   --fertile-peak-ink: #ffffff;
   --cycle-luteal: #fbe0cf;
+
+  /* Sleep and Body pages: awake time in pink as in the reference, time in bed a quiet grey; the score bar's
+     lavender-to-green; green and orange bars (recovery, steps, energy); a blue card tint for HRV */
+  --hyp-awake: #ee9aa6;
+  --hyp-inbed: #e2e1db;
+  --score-from: #c3cbf6;
+  --score-mid: #b48cf0;
+  --score-to: #34b35f;
+  --bar-green: #a8dea0;
+  --bar-green-accent: #2f9e44;
+  --bar-orange: #f7c1a4;
+  --grad-blue: radial-gradient(120% 90% at 100% 0%, #dde5fb 0%, #ecf0fc 45%, #fafbfe 100%);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -151,6 +163,15 @@
     --fertile-peak: #a6b3f7;
     --fertile-peak-ink: #0d0d0d;
     --cycle-luteal: #6a4230;
+    --hyp-awake: #c45a6c;
+    --hyp-inbed: #33332f;
+    --score-from: #46518c;
+    --score-mid: #7b58c8;
+    --score-to: #2fa457;
+    --bar-green: #2a5e2c;
+    --bar-green-accent: #5cc665;
+    --bar-orange: #6e3a22;
+    --grad-blue: radial-gradient(120% 90% at 100% 0%, #1f2747 0%, #1c1f2b 50%, #1a1a19 100%);
   }
 }
 
@@ -2930,54 +2951,10 @@ td {
 .nutrition-foot {
   max-width: 720px;
 }
-/* The Nutrition page's tabs and its row of cards. Own class names: the Sleep and Body pages bring a shared
-   Tabs component and .cards-4 (branch neka-pages); once that lands, this page can move onto them. */
-.nutrition-tabs {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-top: -8px;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.nutrition-tabs button {
-  border: 0;
-  background: transparent;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--ink-2);
-  padding: 7px 16px;
-  border-radius: 999px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.nutrition-tabs button:hover {
-  background: var(--surface-hover);
-  color: var(--ink);
-}
-.nutrition-tabs button.on {
-  background: var(--ink);
-  color: var(--surface);
-}
-.nutrition-cards {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
-}
+/* Nutrition's row of cards is the shared .cards-4; without calories it holds three. */
 @media (min-width: 1361px) {
-  .nutrition-cards.is-3 {
+  .nutrition-overview .cards-4.is-3 {
     grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
-@media (max-width: 1360px) {
-  .nutrition-cards {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-@media (max-width: 560px) {
-  .nutrition-cards {
-    grid-template-columns: minmax(0, 1fr);
   }
 }
 .nutrition-overview,
@@ -3372,5 +3349,506 @@ a.family-tile:hover {
   }
   .family-notice {
     flex-wrap: wrap;
+  }
+}
+
+/* ---------- Sleep and Body pages (src/pages/Sleep.tsx, Body.tsx; charts in src/charts/Neka.tsx) ---------- */
+.page-wide {
+  max-width: 1500px;
+}
+nav.tabs {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-top: -8px;
+}
+.tabs-center {
+  justify-content: center;
+}
+.tabs a {
+  padding: 7px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.tabs a:hover {
+  background: var(--surface-hover);
+  color: var(--ink);
+}
+.tabs a.on {
+  background: var(--ink);
+  color: var(--surface);
+}
+.cards-4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.metric-blue {
+  background: var(--grad-blue);
+}
+.metric-head-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.change-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.change-chip.is-neutral {
+  background: var(--chip);
+  box-shadow: inset 0 0 0 1px var(--border);
+  color: var(--ink-2);
+}
+.split {
+  display: grid;
+  gap: 14px;
+}
+.split-stages {
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+}
+.split-body {
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+}
+.split-even {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.card-note {
+  font-size: 12px;
+  color: var(--ink-3);
+  margin-top: 10px;
+}
+
+/* one night, with the figure beside it on wide screens (as on Home) */
+.night-layout {
+  display: grid;
+  gap: 16px;
+}
+.night-main {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+.page-hero {
+  display: none;
+}
+
+/* score bar */
+.score-pill {
+  align-self: flex-start;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.score-good {
+  background: var(--tone-blue-bg);
+  color: var(--tone-blue-ink);
+}
+.score-fair {
+  background: var(--tone-yellow-bg);
+  color: var(--tone-yellow-ink);
+}
+.score-low {
+  background: var(--tone-peach-bg);
+  color: var(--tone-peach-ink);
+}
+.scorebar {
+  margin-top: auto;
+  padding-top: 12px;
+}
+.scorebar + .metric-foot {
+  margin-top: 8px;
+}
+.scorebar-track {
+  position: relative;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.scorebar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  background-image: linear-gradient(90deg, var(--score-from), var(--score-mid) 62%, var(--score-to));
+}
+.scorebar-knob {
+  position: absolute;
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--score-to);
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 3px var(--surface), 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+.scorebar-ticks {
+  position: relative;
+  height: 14px;
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.scorebar-ticks span {
+  position: absolute;
+  transform: translateX(-50%);
+}
+.scorebar-ticks span:first-child {
+  transform: none;
+}
+.scorebar-ticks span:last-child {
+  transform: translateX(-100%);
+}
+.scorebar-ticks .is-on {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* the night's stages */
+.hypnogram {
+  position: relative;
+  width: 100%;
+  margin-top: 8px;
+}
+.hypnogram svg {
+  display: block;
+  overflow: visible;
+}
+.hyp-grid {
+  stroke: var(--grid);
+  stroke-width: 1;
+}
+.hyp-step {
+  stroke: var(--axis);
+  stroke-width: 1;
+}
+.hyp-label,
+.hyp-tick {
+  font-size: 11px;
+  fill: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.night-bar {
+  fill: var(--stage-rem);
+}
+.stage-bar {
+  display: flex;
+  gap: 2px;
+  height: 14px;
+  margin: 12px 0 2px;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.stage-bar span {
+  min-width: 2px;
+}
+.stage-totals {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+.stage-totals > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.stage-totals-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.stage-totals-label i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.stage-totals b {
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+.stage-totals small {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+/* the night as one bar */
+.stage-tl {
+  position: relative;
+  padding-top: 26px;
+}
+.stage-tl-track {
+  position: relative;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--border);
+  cursor: crosshair;
+  touch-action: pan-y;
+}
+.stage-tl-segs {
+  position: absolute;
+  inset: 3px;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.stage-tl-seg {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+.stage-tl-marker {
+  position: absolute;
+  top: -8px;
+  bottom: -10px;
+  width: 1px;
+  background: var(--ink);
+  pointer-events: none;
+}
+.stage-tl-marker span {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  transform: translate(-50%, -3px);
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--surface);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.stage-tl-ticks {
+  position: relative;
+  height: 14px;
+  margin-top: 12px;
+  font-size: 11px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.stage-tl-ticks span {
+  position: absolute;
+  transform: translateX(-50%);
+}
+.night-facts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+.night-fact {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.night-fact i {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  margin-top: 2px;
+  border-radius: 50%;
+}
+.night-fact > svg {
+  flex: none;
+  color: var(--ink-2);
+}
+.night-fact span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.night-fact b {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* hours of a day */
+.hb-green .bar {
+  fill: var(--bar-green);
+}
+.hb-green .bar-accent,
+.bars-green .bar-accent,
+.bars-green .bar-hover {
+  fill: var(--bar-green-accent);
+}
+.bars-green .bar {
+  fill: var(--bar-green);
+}
+.hb-orange .bar {
+  fill: var(--bar-orange);
+}
+.hb-orange .bar-accent {
+  fill: var(--series-2);
+}
+.curve-marker {
+  stroke: var(--ink);
+  stroke-width: 1;
+}
+.curve-dot {
+  fill: var(--good);
+  stroke: var(--ring-on-card);
+  stroke-width: 2;
+}
+.curve-pill {
+  fill: var(--ink);
+}
+.curve-pill-text {
+  fill: var(--surface);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Body metrics list */
+.body-metrics ul {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.body-metrics a {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto minmax(60px, 120px) 16px;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 6px;
+  margin: 0 -6px;
+  border-radius: 12px;
+  color: var(--ink-3);
+}
+.body-metrics a:hover {
+  background: var(--surface-2);
+}
+.body-metrics .insight-icon {
+  width: 32px;
+  height: 32px;
+}
+.body-metric-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.body-metric-value {
+  display: flex;
+  flex-direction: column;
+  text-align: right;
+}
+.body-metric-value b {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.body-metric-value small {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+/* Coaching */
+.coach-times {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 10px;
+}
+.coach-times div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.coach-times b {
+  font-size: 30px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.coach-times small {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.insight-row {
+  display: grid;
+  grid-template-columns: 36px 1fr;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 0;
+}
+
+@media (min-width: 1400px) {
+  .night-layout.has-hero {
+    grid-template-columns: minmax(300px, 0.8fr) minmax(0, 2fr);
+    align-items: start;
+  }
+  .has-hero .page-hero {
+    display: block;
+    position: sticky;
+    top: 16px;
+  }
+  .has-hero .night-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  /* The figure already shows resting heart rate. */
+  .has-hero .rhr-card {
+    display: none;
+  }
+}
+@media (max-width: 1360px) {
+  .cards-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 1080px) {
+  .split-stages,
+  .split-body,
+  .split-even {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 820px) {
+  nav.tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    margin: -8px -16px 0;
+    padding: 0 16px;
+  }
+  .tabs-center {
+    justify-content: flex-start;
+  }
+}
+@media (max-width: 560px) {
+  .cards-4 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .stage-totals,
+  .night-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .stage-tl-ticks span:nth-child(even) {
+    display: none;
+  }
+  .body-metrics a {
+    grid-template-columns: 32px minmax(0, 1fr) auto 16px;
+  }
+  .body-metric-spark {
+    display: none;
   }
 }

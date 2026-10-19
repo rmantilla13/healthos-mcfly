@@ -324,6 +324,44 @@ export type SleepTiming = {
   };
 };
 
+// ---------- One night (GET /api/sleep/night?date=) ----------
+
+/** A stretch of one sleep stage, as the device recorded it. `asleep`: asleep with no stage (older watches,
+ * phones); `in_bed`: in bed, not asleep yet (or again). */
+export type SleepStage = 'awake' | 'rem' | 'light' | 'deep' | 'asleep' | 'in_bed';
+export type SleepSegment = {
+  /** ISO timestamps with the local offset they were recorded in. */
+  start: string;
+  end: string;
+  stage: SleepStage;
+};
+
+/** The night that ended on `date` (the wake date), for the Sleep page. */
+export type SleepNightDetail = {
+  date: string;
+  today: string;
+  /** The device the night's figures come from. */
+  source: 'apple' | 'whoop' | null;
+  /** First and last moment asleep (Apple), or the sleep record's start and end (WHOOP). */
+  fellAsleep: string | null;
+  wokeUp: string | null;
+  asleepHours: number | null;
+  inBedHours: number | null;
+  /** Hours in each stage, from the same device as the stages chart. */
+  stages: { awake: number; rem: number; light: number; deep: number } | null;
+  /** WHOOP's sleep performance, else asleep ÷ in bed (labelled as efficiency); 0–100. */
+  score: { kind: 'performance' | 'efficiency'; value: number } | null;
+  /** Stage by stage through the night, oldest first. Only when the iPhone app sent them (Apple Watch nights);
+   * WHOOP's API gives totals only. */
+  segments: SleepSegment[];
+  /** Minutes from getting into bed to falling asleep, when the segments include time in bed. */
+  latencyMin: number | null;
+  /** The middle of the longest stretch of deep sleep. */
+  deepPeak: string | null;
+  /** Plain sentences about this night against the person's own recent nights. */
+  insights: { id: string; icon: 'moon' | 'trend-up' | 'trend-down' | 'shield' | 'sun'; text: string }[];
+};
+
 // ---------- Patterns (GET /api/patterns) ----------
 
 /** Something that tends to go together in a person's own history. Correlation only, never cause. */

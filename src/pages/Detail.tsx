@@ -1,12 +1,12 @@
 import { type ReactNode, useState } from 'react';
 import type { DayData, DaySeries, Point, Trends, Workout } from '../../shared/types.ts';
-import { BarChart, ChartCard, Legend, StackedBars, TrendChart, type StackSeries } from '../charts/Charts.tsx';
+import { BarChart, ChartCard, Legend, TrendChart, type StackSeries } from '../charts/Charts.tsx';
 import { DayChart } from '../charts/Day.tsx';
 import { cumulative, drawThrough, extent, hourLabel, hourSpan, lastReading } from '../charts/day.ts';
 import { Icon } from '../components/Icon.tsx';
-import { compact, distance, duration, fmt, fmtDate, hoursMinutes, mass, relativeDay, shiftDate, temp, useApi, useUnits } from '../lib.ts';
+import { compact, distance, duration, fmt, fmtDate, mass, relativeDay, shiftDate, temp, useApi, useUnits } from '../lib.ts';
 
-const RANGES = [
+export const RANGES = [
   { days: 7, label: '7 days' },
   { days: 30, label: '30 days' },
   { days: 90, label: '90 days' },
@@ -14,10 +14,10 @@ const RANGES = [
 ];
 
 /** The Day view's value in the shared range setting. Pages without a Day view treat it as 30 days. */
-const DAY = 1;
-const DAY_RANGE = { days: DAY, label: 'Day' };
+export const DAY = 1;
+export const DAY_RANGE = { days: DAY, label: 'Day' };
 
-function useRange() {
+export function useRange() {
   const [days, setDays] = useState(() => Number(sessionStorageGet('healthos-range')) || 30);
   const set = (d: number) => {
     setDays(d);
@@ -38,38 +38,59 @@ function sessionStorageGet(key: string) {
   }
 }
 
-function PageHead({
+/** The page's title, its tools (a date or a range), and the page's tabs under it when it has them. */
+export function PageHead({
   title,
   sub,
   days,
   setDays,
   ranges = RANGES,
   tools,
+  tabs,
 }: {
   title: string;
   sub: string;
-  days: number;
-  setDays: (d: number) => void;
+  days?: number;
+  setDays?: (d: number) => void;
   ranges?: { days: number; label: string }[];
   tools?: ReactNode;
+  tabs?: ReactNode;
 }) {
   return (
-    <header className="page-head">
-      <div>
-        <h1>{title}</h1>
-        <p>{sub}</p>
-      </div>
-      <div className="page-head-tools">
-        {tools}
-        <div className="filters" role="group" aria-label="Date range">
-          {ranges.map((r) => (
-            <button key={r.days} className={days === r.days ? 'on' : ''} aria-pressed={days === r.days} onClick={() => setDays(r.days)}>
-              {r.label}
-            </button>
-          ))}
+    <>
+      <header className="page-head">
+        <div>
+          <h1>{title}</h1>
+          <p>{sub}</p>
         </div>
-      </div>
-    </header>
+        <div className="page-head-tools">
+          {tools}
+          {setDays && (
+            <div className="filters" role="group" aria-label="Date range">
+              {ranges.map((r) => (
+                <button key={r.days} className={days === r.days ? 'on' : ''} aria-pressed={days === r.days} onClick={() => setDays(r.days)}>
+                  {r.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </header>
+      {tabs}
+    </>
+  );
+}
+
+/** A page's tabs: links, so each tab has its own address (#/sleep?tab=stages) and the back button works. */
+export function Tabs({ tabs, current, hrefOf, label, center }: { tabs: { id: string; label: string }[]; current: string; hrefOf: (id: string) => string; label: string; center?: boolean }) {
+  return (
+    <nav className={center ? 'tabs tabs-center' : 'tabs'} aria-label={label}>
+      {tabs.map((t) => (
+        <a key={t.id} href={hrefOf(t.id)} className={t.id === current ? 'on' : ''} aria-current={t.id === current ? 'page' : undefined}>
+          {t.label}
+        </a>
+      ))}
+    </nav>
   );
 }
 
@@ -79,7 +100,7 @@ function PageHead({
  * One day of these metrics, hour by hour, from GET /api/day. The Day option exists only once that endpoint
  * answers with at least one of them, so it stays hidden until hourly data is being collected.
  */
-function useDay(range: number, metrics: string) {
+export function useDay(range: number, metrics: string) {
   const [date, setDate] = useState<string | null>(null);
   const { data, error, loading } = useApi<DayData>(`/day?metrics=${metrics}${date ? `&date=${date}` : ''}`);
   const available = !!data && Object.keys(data.metrics ?? {}).length > 0;
@@ -89,16 +110,17 @@ function useDay(range: number, metrics: string) {
   return { data, available, loading, date, setDate, mode };
 }
 
-function DayNav({ data, date, setDate }: { data: DayData; date: string | null; setDate: (d: string | null) => void }) {
-  const current = date ?? data.today;
+/** Previous and next day; null is today. */
+export function DayNav({ today, date, setDate, label = (d) => relativeDay(d, today) }: { today: string; date: string | null; setDate: (d: string | null) => void; label?: (d: string) => string }) {
+  const current = date ?? today;
   const next = shiftDate(current, 1);
   return (
     <div className="date-nav">
-      <span>{relativeDay(current, data.today)}</span>
+      <span>{label(current)}</span>
       <button className="icon-btn" onClick={() => setDate(shiftDate(current, -1))} aria-label="Previous day">
         <Icon name="chevron-left" size={16} />
       </button>
-      <button className="icon-btn" onClick={() => setDate(next >= data.today ? null : next)} disabled={current >= data.today} aria-label="Next day">
+      <button className="icon-btn" onClick={() => setDate(next >= today ? null : next)} disabled={current >= today} aria-label="Next day">
         <Icon name="chevron-right" size={16} />
       </button>
     </div>
@@ -181,10 +203,10 @@ function DayCard({
   );
 }
 
-const avg = (ps: Point[]) => (ps.length ? ps.reduce((a, p) => a + p.value, 0) / ps.length : null);
+export const avg = (ps: Point[]) => (ps.length ? ps.reduce((a, p) => a + p.value, 0) / ps.length : null);
 
 /** Over long ranges, daily bars get too thin to read; average them by week instead. */
-function weekly(ps: Point[], days: number): Point[] {
+export function weekly(ps: Point[], days: number): Point[] {
   if (days <= 90) return ps;
   const out = new Map<string, number[]>();
   for (const p of ps) {
@@ -196,9 +218,9 @@ function weekly(ps: Point[], days: number): Point[] {
   return [...out].map(([date, vs]) => ({ date, value: vs.reduce((a, b) => a + b, 0) / vs.length }));
 }
 
-const weekLabel = (d: string) => `Week of ${fmtDate(d, { month: 'short', day: 'numeric' })}`;
+export const weekLabel = (d: string) => `Week of ${fmtDate(d, { month: 'short', day: 'numeric' })}`;
 
-function Trend({
+export function Trend({
   title,
   points,
   format,
@@ -262,7 +284,7 @@ export function Vitals() {
         days={day.mode === 'range' ? days : DAY}
         setDays={setRange}
         ranges={day.available ? [DAY_RANGE, ...RANGES] : RANGES}
-        tools={d && <DayNav data={d} date={day.date} setDate={day.setDate} />}
+        tools={d && <DayNav today={d.today} date={day.date} setDate={day.setDate} />}
       />
       {d && (
         <div className="grid-1">
@@ -293,74 +315,17 @@ export function Vitals() {
 
 // ---------- Sleep ----------
 
-const STAGES: StackSeries[] = [
+export const STAGES: StackSeries[] = [
   { key: 'sleep_deep', label: 'Deep', color: 'var(--stage-deep)' },
   { key: 'sleep_light', label: 'Light / core', color: 'var(--stage-light)' },
   { key: 'sleep_rem', label: 'REM', color: 'var(--stage-rem)' },
   { key: 'sleep_awake', label: 'Awake', color: 'var(--stage-awake)' },
 ];
 
-export function Sleep() {
-  const [range, setDays] = useRange();
-  const days = range === DAY ? 30 : range;
-  const { data, loading } = useApi<Trends>(`/trends?metrics=sleep_hours,sleep_deep,sleep_light,sleep_rem,sleep_awake,sleep_performance,sleep_efficiency&days=${days}`);
-  const t = data ?? {};
-  const byDate = new Map<string, Record<string, number>>();
-  for (const s of STAGES) for (const p of t[s.key] ?? []) byDate.set(p.date, { ...byDate.get(p.date), [s.key]: p.value });
-  let rows = [...byDate].sort(([a], [b]) => a.localeCompare(b)).map(([date, values]) => ({ date, values }));
-  if (days > 90) {
-    const weeks = new Map<string, { n: number; values: Record<string, number> }>();
-    for (const r of rows) {
-      const k = weekly([{ date: r.date, value: 0 }], days)[0].date;
-      const w = weeks.get(k) ?? { n: 0, values: {} };
-      w.n++;
-      for (const [key, v] of Object.entries(r.values)) w.values[key] = (w.values[key] ?? 0) + v;
-      weeks.set(k, w);
-    }
-    rows = [...weeks].map(([date, w]) => ({ date, values: Object.fromEntries(Object.entries(w.values).map(([k, v]) => [k, v / w.n])) }));
-  }
-  const hours = t.sleep_hours ?? [];
-  const a = avg(hours);
-
-  return (
-    <div className={`page ${loading ? 'is-refreshing' : ''}`}>
-      <PageHead title="Sleep" sub="Each night is counted on the day you wake up." days={days} setDays={setDays} />
-      <div className="grid-1">
-        <ChartCard
-          title={days > 90 ? 'Sleep stages, weekly average' : 'Sleep stages'}
-          value={a !== null ? hoursMinutes(a) : '—'}
-          note="average time asleep"
-          legend={<Legend items={STAGES.map((s) => ({ label: s.label, color: s.color }))} />}
-          table={{
-            columns: ['Night', ...STAGES.map((s) => s.label)],
-            rows: rows.map((r) => [fmtDate(r.date, { year: 'numeric', month: 'short', day: 'numeric' }), ...STAGES.map((s) => hoursMinutes(r.values[s.key] ?? 0))]),
-          }}
-        >
-          <StackedBars
-            rows={rows}
-            series={STAGES}
-            format={hoursMinutes}
-            tickFormat={(v) => `${fmt(v)}h`}
-            label="Sleep stages per night"
-            periodLabel={days > 90 ? weekLabel : undefined}
-          />
-        </ChartCard>
-      </div>
-      <div className="grid-2">
-        <Trend title="Time asleep" points={hours} format={hoursMinutes} tickFormat={(v) => `${fmt(v)}h`} />
-        {(t.sleep_performance?.length ?? 0) > 0 ? (
-          <Trend title="Sleep performance" points={t.sleep_performance} format={(v) => `${fmt(v)}%`} unitNote="WHOOP: sleep vs sleep needed" color="var(--series-3)" />
-        ) : (
-          <Trend title="Sleep efficiency" points={t.sleep_efficiency ?? []} format={(v) => `${fmt(v)}%`} color="var(--series-3)" />
-        )}
-      </div>
-    </div>
-  );
-}
-
 // ---------- Activity ----------
 
-export function Activity({ stepGoal }: { stepGoal: number }) {
+/** Steps, energy, strain and workouts. The Body page shows it as its Activity tab, under its own title and tabs. */
+export function Activity({ stepGoal, title = 'Activity', sub = 'Movement from your iPhone and Apple Watch, strain from WHOOP.', tabs }: { stepGoal: number; title?: string; sub?: string; tabs?: ReactNode }) {
   const [range, setRange] = useRange();
   const days = range === DAY ? 30 : range;
   const day = useDay(range, 'steps,active_energy');
@@ -376,12 +341,13 @@ export function Activity({ stepGoal }: { stepGoal: number }) {
   return (
     <div className={`page ${loading || (day.mode !== 'range' && day.loading) ? 'is-refreshing' : ''}`}>
       <PageHead
-        title="Activity"
-        sub="Movement from your iPhone and Apple Watch, strain from WHOOP."
+        title={title}
+        sub={sub}
+        tabs={tabs}
         days={inRange ? days : DAY}
         setDays={setRange}
         ranges={day.available ? [DAY_RANGE, ...RANGES] : RANGES}
-        tools={d && <DayNav data={d} date={day.date} setDate={day.setDate} />}
+        tools={d && <DayNav today={d.today} date={day.date} setDate={day.setDate} />}
       />
       {d && (
         <div className="grid-2">
@@ -480,7 +446,8 @@ export function Activity({ stepGoal }: { stepGoal: number }) {
 
 // ---------- Body ----------
 
-export function Body() {
+/** Weight and composition: the Body page's Metabolism tab. */
+export function Metabolism({ tabs }: { tabs?: ReactNode }) {
   const [range, setDays] = useRange();
   const days = range === DAY ? 30 : range;
   const units = useUnits();
@@ -490,7 +457,7 @@ export function Body() {
 
   return (
     <div className={`page ${loading ? 'is-refreshing' : ''}`}>
-      <PageHead title="Body" sub="Weight and composition from Apple Health; cardio fitness from Apple Watch." days={days} setDays={setDays} />
+      <PageHead title="Body" sub="Weight and composition from Apple Health; cardio fitness from Apple Watch." days={days} setDays={setDays} tabs={tabs} />
       <div className="grid-2">
         <Trend title="Weight" points={t.weight ?? []} format={mf} tickFormat={(v) => fmt(mass(v, units).value)} />
         <Trend title="Body fat" points={t.body_fat ?? []} format={(v) => `${fmt(v, 1)}%`} tickFormat={(v) => fmt(v)} color="var(--series-2)" />

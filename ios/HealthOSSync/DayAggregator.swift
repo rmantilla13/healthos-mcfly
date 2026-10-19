@@ -44,6 +44,19 @@ struct HourlyRow: Codable, Equatable {
     var value: Double
 }
 
+/// One stretch of a night (POST /api/apple/ingest `sleepStages`): in_bed, awake, asleep, light, rem or deep.
+struct SleepStageRow: Codable, Equatable {
+    var start: String
+    var end: String
+    var stage: String
+}
+
+/// A night's whole timeline by wake date; the server replaces the night with it, and an empty one clears it.
+struct SleepStageNight: Codable, Equatable {
+    var date: String
+    var segments: [SleepStageRow]
+}
+
 struct IngestPayload: Codable {
     var daily: [DailyRow] = []
     /// Every hour with data for each (date, metric) sent: the server replaces that day's hours for the metric.
@@ -53,6 +66,9 @@ struct IngestPayload: Codable {
     var workouts: [WorkoutRow] = []
     var events: [EventRow] = []
     var deleted: Deleted?
+    /// The stages through each night sent, for the Sleep page. Only when the window had any sleep at all, so a phone
+    /// without access to sleep never clears nights an export import stored.
+    var sleepStages: [SleepStageNight]?
 
     /// Workouts and mindful sessions sent earlier that were since deleted in Health.
     struct Deleted: Codable {
@@ -122,6 +138,8 @@ final class DayAggregator {
     private var standHours: [String: Set<Int>] = [:]
     // wake date -> source -> segments. The source with the most sleep wins the night.
     private var sleep: [String: [String: [SleepSegment]]] = [:]
+    /// Any sleep sample (not WHOOP's copy) was read for these dates, so a date without one has no night.
+    private var sawSleep = false
     private var mindful: [EventRow] = []
     /// WHOOP wrote steps into Health for these days (it does only when Health → Apps → WHOOP → Steps is allowed).
     private(set) var sawWhoopSteps = false
@@ -216,6 +234,7 @@ final class DayAggregator {
             guard span > 0, span <= Self.maxSegment else { continue }
             let date = r.end.localDate(shift: Day.rollover)
             guard dates.contains(date) else { continue }
+            sawSleep = true
             sleep[date, default: [:]][r.source.name, default: []].append(SleepSegment(start: r.start, end: r.end, stage: r.stage))
         }
     }
@@ -308,6 +327,7 @@ final class DayAggregator {
         for (date, hours) in standHours { push(date, "stand_hours", Double(hours.count)) }
 
         p.events = mindful
+        var stages: [String: [SleepStageRow]] = [:]
         for (date, bySource) in sleep {
             var best: SleepNight?
             var bestSource = ""
@@ -319,6 +339,10 @@ final class DayAggregator {
                 }
             }
             guard let night = best else { continue }
+            // The night's stages from the same source as its totals, so the chart and the figures agree.
+            stages[date] = Self.nightTimeline(bySource[bestSource] ?? []).map {
+                SleepStageRow(start: $0.start.localIso, end: $0.end.localIso, stage: $0.stage.name)
+            }
             // Older watches and phone-only tracking log only "in bed" or "asleep"; keep whatever exists.
             let hours = (night.asleep > 0 ? night.asleep : night.inBed) / 60
             guard hours > 0 else { continue }
@@ -335,6 +359,9 @@ final class DayAggregator {
                     id: hashId("apple", "sleep", bestSource, date),
                     kind: "sleep", title: "Sleep", start: start.localIso, end: end.localIso, date: date))
             }
+        }
+        if sawSleep {
+            p.sleepStages = dates.sorted().map { SleepStageNight(date: $0, segments: stages[$0] ?? []) }
         }
         p.workouts = workouts
         let hourly = hourlyRows
@@ -384,6 +411,73 @@ final class DayAggregator {
             }
         }
         return night
+    }
+
+    /// A stretch of the drawn night.
+    struct Stretch {
+        var start: Stamp
+        var end: Stamp
+        var stage: SleepStage
+    }
+
+    /// Time in bed shows only where nothing else was recorded: the lead-in before falling asleep, and lying awake after.
+    static let timelinePriority: [SleepStage] = stagePriority + [.inBed]
+    /// Shorter stretches fold into their neighbour: they can't be seen, and rounding leaves them behind.
+    static let minStretch: TimeInterval = 60
+
+    /// One source's night as a timeline: one stage at each moment (the priority `resolveNight` counts by), only the
+    /// main sleep and the time in bed just before it (a same-day nap is left out, though its minutes count in the
+    /// totals), with neighbouring stretches of the same stage joined. Never overlapping. Port of `nightTimeline` in
+    /// server/apple/import.ts.
+    static func nightTimeline(_ segments: [SleepSegment]) -> [Stretch] {
+        var edges = segments.flatMap { [(t: $0.start, stage: $0.stage, d: 1), (t: $0.end, stage: $0.stage, d: -1)] }
+        edges.sort { $0.t.date != $1.t.date ? $0.t.date < $1.t.date : $0.d < $1.d }
+        var active: [SleepStage: Int] = [:]
+        var spans: [Stretch] = []
+        for i in edges.indices {
+            let e = edges[i]
+            active[e.stage, default: 0] += e.d
+            guard i + 1 < edges.count, edges[i + 1].t.date > e.t.date,
+                  let stage = timelinePriority.first(where: { (active[$0] ?? 0) > 0 }) else { continue }
+            let next = edges[i + 1].t
+            if let last = spans.last, last.stage == stage, last.end.date == e.t.date {
+                spans[spans.count - 1].end = next
+            } else {
+                spans.append(Stretch(start: e.t, end: next, stage: stage))
+            }
+        }
+
+        // The main sleep's run: stretches with gaps of up to `sleepGap` between them.
+        var runs: [[Stretch]] = []
+        for sp in spans {
+            if let last = runs.last?.last, sp.start.date.timeIntervalSince(last.end.date) <= sleepGap {
+                runs[runs.count - 1].append(sp)
+            } else {
+                runs.append([sp])
+            }
+        }
+        func asleep(_ run: [Stretch]) -> TimeInterval {
+            run.reduce(0) { $0 + ($1.stage == .inBed || $1.stage == .awake ? 0 : $1.end.date.timeIntervalSince($1.start.date)) }
+        }
+        let main = mainSleep(segments.filter { $0.stage != .inBed })
+        let chosen = main.flatMap { m in runs.first { $0.first!.start.date <= m.start.date && m.start.date < $0.last!.end.date } }
+            ?? runs.reduce([Stretch]()) { asleep($1) > asleep($0) ? $1 : $0 }
+
+        // Slivers join the stretch before them (the first one, the stretch after), then like stages join up again.
+        var out: [Stretch] = []
+        for sp in chosen {
+            let touching = out.last.map { $0.end.date == sp.start.date } ?? false
+            if touching, out.last!.stage == sp.stage || sp.end.date.timeIntervalSince(sp.start.date) < minStretch {
+                out[out.count - 1].end = sp.end
+            } else if touching, out.last!.end.date.timeIntervalSince(out.last!.start.date) < minStretch {
+                // Only a stretch after a gap can still be a sliver here; this one takes it over.
+                out[out.count - 1].end = sp.end
+                out[out.count - 1].stage = sp.stage
+            } else {
+                out.append(sp)
+            }
+        }
+        return out.filter { $0.end.date.timeIntervalSince($0.start.date) >= minStretch }
     }
 
     /// Gaps longer than this split a source's segments into separate sleeps (server SLEEP_GAP_MS).

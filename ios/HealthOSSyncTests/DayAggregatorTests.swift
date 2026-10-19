@@ -101,6 +101,85 @@ final class DayAggregatorTests: XCTestCase {
         XCTAssertTrue(whoopOnly.finish().daily.isEmpty)
     }
 
+    // MARK: sleep stages through the night (mirrors test/sleep-stages.test.ts)
+
+    private func timeline(_ segments: [(SleepStage, String, String)]) -> [String] {
+        DayAggregator.nightTimeline(segments.map { SleepSegment(start: at($0.1), end: at($0.2), stage: $0.0) }).map {
+            "\($0.start.localIso.dropFirst(11).prefix(5))-\($0.end.localIso.dropFirst(11).prefix(5)) \($0.stage.name)"
+        }
+    }
+
+    func testANightsTimelineHasOneStageAtATimeAndAddsUpToTheTotals() {
+        let watch = SampleSource(name: "Sam's Apple Watch", bundleIdentifier: "com.apple.health.81A5D1E0")
+        let records: [(SleepStage, String, String)] = [
+            (.inBed, "14 22:00", "15 06:30"),
+            (.light, "14 22:20", "15 00:00"),
+            (.deep, "15 00:00", "15 01:00"),
+            (.deep, "15 00:30", "15 01:00"),
+            (.light, "15 01:00", "15 03:00"),
+            (.awake, "15 03:00", "15 03:10"),
+            (.rem, "15 03:10", "15 04:00"),
+            (.light, "15 04:00", "15 05:00"),
+            (.light, "15 05:00", "15 06:00"),
+        ]
+        XCTAssertEqual(timeline(records), [
+            "22:00-22:20 in_bed", "22:20-00:00 light", "00:00-01:00 deep", "01:00-03:00 light",
+            "03:00-03:10 awake", "03:10-04:00 rem", "04:00-06:00 light", "06:00-06:30 in_bed",
+        ])
+
+        let agg = DayAggregator(dates: ["2026-10-15"])
+        agg.add(sleepRecords: records.map { SleepRecord(start: at($0.1), end: at($0.2), stage: $0.0, source: watch) })
+        let p = agg.finish()
+        let night = p.sleepStages?.first
+        XCTAssertEqual(night?.date, "2026-10-15")
+        let segs = night?.segments ?? []
+        for (a, b) in zip(segs, segs.dropFirst()) { XCTAssertLessThanOrEqual(a.end, b.start) }
+        func minutes(_ stage: String) -> Double {
+            segs.filter { $0.stage == stage }.reduce(0) { total, g in
+                let f = ISO8601DateFormatter()
+                return total + f.date(from: g.end)!.timeIntervalSince(f.date(from: g.start)!) / 60
+            }
+        }
+        for (stage, metric) in [("deep", "sleep_deep"), ("rem", "sleep_rem"), ("light", "sleep_light"), ("awake", "sleep_awake")] {
+            XCTAssertEqual(minutes(stage), (p.daily.first { $0.metric == metric }!.value * 60).rounded(), stage)
+        }
+    }
+
+    func testASameDayNapCountsInTheTotalsButIsntDrawn() {
+        let segs = timeline([(.light, "14 23:00", "15 03:00"), (.deep, "15 03:00", "15 04:00"), (.light, "15 04:00", "15 07:00"), (.light, "15 14:00", "15 14:40")])
+        XCTAssertEqual(segs, ["23:00-03:00 light", "03:00-04:00 deep", "04:00-07:00 light"])
+    }
+
+    func testSliversFoldInAndUnspecifiedSleepIsAsleep() {
+        XCTAssertEqual(timeline([(.light, "14 23:00", "15 06:00")]).count, 1)
+        let sliver = DayAggregator.nightTimeline([
+            SleepSegment(start: at("14 23:00"), end: at("15 06:00"), stage: .light),
+            SleepSegment(start: at("15 01:00"), end: Stamp(at("15 01:00").date.addingTimeInterval(30), timeZone: pdt), stage: .deep),
+        ])
+        XCTAssertEqual(sliver.map(\.stage), [.light])
+        XCTAssertEqual(timeline([(.unspecified, "14 23:00", "15 06:00")]), ["23:00-06:00 asleep"])
+    }
+
+    func testStagesGoUpOnlyWhenTheWindowHadSleepAndClearNightsWithout() {
+        let watch = SampleSource(name: "Sam's Apple Watch", bundleIdentifier: "com.apple.health.81A5D1E0")
+        let none = DayAggregator(dates: ["2026-10-14", "2026-10-15"])
+        XCTAssertNil(none.finish().sleepStages, "no sleep read at all (no access): nothing sent, nothing cleared")
+
+        let one = DayAggregator(dates: ["2026-10-14", "2026-10-15"])
+        one.add(sleepRecords: [SleepRecord(start: at("14 23:00"), end: at("15 06:00"), stage: .light, source: watch)])
+        XCTAssertEqual(one.finish().sleepStages?.map(\.date), ["2026-10-14", "2026-10-15"])
+        XCTAssertEqual(one.finish().sleepStages?.first?.segments, [], "a night with no sleep is cleared")
+    }
+
+    func testOlderStateFilesDecodeWithTheStageResendStillToDo() throws {
+        let old = try JSONDecoder().decode(SyncState.self, from: Data(#"{"server":"https://health.mcfly.bot","whoopStepsResent":true}"#.utf8))
+        XCTAssertFalse(old.sleepStagesResent)
+        var state = old
+        state.sleepStagesResent = true
+        let round = try JSONDecoder().decode(SyncState.self, from: JSONEncoder().encode(state))
+        XCTAssertTrue(round.sleepStagesResent)
+    }
+
     private func point(_ hour: Int, _ minute: Int, _ value: Double, _ source: SampleSource) -> QuantityPoint {
         QuantityPoint(start: at("15 \(String(format: "%02d:%02d", hour, minute))"), value: value, source: source)
     }
@@ -570,7 +649,7 @@ final class DayAggregatorTests: XCTestCase {
             if let i = payload.daily.firstIndex(where: { !takes.contains($0.metric) }) {
                 throw IngestClient.Rejected(status: 400, detail: "daily[\(i)].metric: unknown metric \"\(payload.daily[i].metric)\"")
             }
-            return IngestClient.Response(daily: payload.daily.count, workouts: 0, events: 0, hourly: 0, cycle: 0, metrics: lists ? metrics.sorted() : nil)
+            return IngestClient.Response(daily: payload.daily.count, workouts: 0, events: 0, hourly: 0, cycle: 0, sleepStages: 0, metrics: lists ? metrics.sorted() : nil)
         }
     }
 

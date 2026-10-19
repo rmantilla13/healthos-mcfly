@@ -98,6 +98,7 @@ test('ingest upserts rows as source apple and replaces a day on re-send', async 
       events: 1,
       deleted: 0,
       cycle: 0,
+      sleepStages: 0,
       nutrition: 0,
       metrics: [...APPLE_METRICS].sort(),
       nutrients: [...NUTRIENTS],

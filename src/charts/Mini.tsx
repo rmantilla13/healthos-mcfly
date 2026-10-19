@@ -16,7 +16,7 @@ export function MiniBars({
   points: Point[];
   format: Fmt;
   height?: number;
-  tone?: 'blue' | 'neutral';
+  tone?: 'blue' | 'neutral' | 'green';
   label: string;
 }) {
   const [ref, width] = useWidth<HTMLDivElement>();
@@ -31,7 +31,7 @@ export function MiniBars({
   return (
     <div className="mini" ref={ref} style={{ height }}>
       {width > 0 && (
-        <svg width={width} height={height} {...handlers} aria-label={label} role="img" className={`mini-bars tone-${tone}`}>
+        <svg width={width} height={height} {...handlers} aria-label={label} role="img" className={tone === 'green' ? 'mini-bars bars-green' : `mini-bars tone-${tone}`}>
           {points.map((p, i) => {
             const x = xOf(i) - barW / 2;
             const y = yOf(p.value);

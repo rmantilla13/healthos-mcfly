@@ -9,6 +9,7 @@ import { BarChart, ChartCard } from '../charts/Charts.tsx';
 import { DayBars, GlassBars } from '../charts/DayBars.tsx';
 import { Donut } from '../charts/Donut.tsx';
 import { Icon, type IconName } from '../components/Icon.tsx';
+import { PageHead, RANGES, Tabs } from './Detail.tsx';
 import { fmt, fmtDate, href, notifyDataChanged, relativeDay, sendJson, shiftDate, useApi } from '../lib.ts';
 
 const NUTRIENT: Record<Nutrient, { name: string; unit: string }> = {
@@ -40,13 +41,14 @@ const CHOICES: { value: NutritionNumbers; title: string; text: string }[] = [
 
 // ---------- the page ----------
 
-const RANGES = [7, 30, 90];
 type Tab = 'overview' | 'macros' | 'hydration';
 const TABS: { id: Tab; label: string }[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'macros', label: 'Macros' },
   { id: 'hydration', label: 'Hydration' },
 ];
+/** Each tab has its own address (#/nutrition?tab=macros), as on Sleep and Body, so the back button works. */
+const tabHref = (id: string) => (id === 'overview' ? '#/nutrition' : `#/nutrition?tab=${id}`);
 
 /** A run of calendar days ending at `end`. */
 function datesTo(end: string, count: number) {
@@ -57,20 +59,14 @@ const meanOf = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs
 const water = (ml: number, units: Settings['units']) => (units === 'imperial' ? `${fmt(ml / 29.5735)} fl oz` : ml >= 1000 ? `${fmt(ml / 1000, 1)} L` : `${fmt(ml)} mL`);
 const glasses = (ml: number) => Math.round((ml / 250) * 2) / 2;
 
-export function Nutrition({ status }: { status: Status }) {
-  const [tab, setTab] = useState<Tab>('overview');
+export function Nutrition({ status, params }: { status: Status; params: URLSearchParams }) {
   const [days, setDays] = useState(30);
   const { nutrition, nutritionNumbers: numbers } = status.settings;
 
   if (!nutrition || !numbers) {
     return (
       <div className="page">
-        <header className="page-head">
-          <div>
-            <h1>Nutrition</h1>
-            <p>Nutrition is off.</p>
-          </div>
-        </header>
+        <PageHead title="Nutrition" sub="Nutrition is off." />
         <section className="card">
           <p className="muted">
             Turn on nutrition in <a href={href('settings')}>Settings</a> to see what you log in a food app like MyFitnessPal or Cronometer next to your sleep and recovery.
@@ -81,33 +77,18 @@ export function Nutrition({ status }: { status: Status }) {
   }
   // With no amounts, there's nothing for the Macros and Hydration tabs to show.
   const tabs = numbers === 'none' ? TABS.slice(0, 1) : TABS;
-  const current = tabs.some((t) => t.id === tab) ? tab : 'overview';
+  const current = tabs.find((t) => t.id === params.get('tab'))?.id ?? 'overview';
+  const ranged = current !== 'overview';
   return (
     <div className="page nutrition-page">
-      <header className="page-head">
-        <div>
-          <h1>Nutrition</h1>
-          <p>From the food app you log in, through Apple Health. Only you can see it.</p>
-        </div>
-        {current !== 'overview' && (
-          <div className="filters" role="group" aria-label="Date range">
-            {RANGES.map((r) => (
-              <button key={r} className={days === r ? 'on' : ''} aria-pressed={days === r} onClick={() => setDays(r)}>
-                {r} days
-              </button>
-            ))}
-          </div>
-        )}
-      </header>
-      {tabs.length > 1 && (
-        <div className="nutrition-tabs" role="tablist" aria-label="Nutrition">
-          {tabs.map((t) => (
-            <button key={t.id} role="tab" aria-selected={current === t.id} className={current === t.id ? 'on' : ''} onClick={() => setTab(t.id)}>
-              {t.label}
-            </button>
-          ))}
-        </div>
-      )}
+      <PageHead
+        title="Nutrition"
+        sub="From the food app you log in, through Apple Health. Only you can see it."
+        tabs={tabs.length > 1 ? <Tabs tabs={tabs} current={current} hrefOf={tabHref} label="Nutrition" center /> : undefined}
+        days={ranged ? days : undefined}
+        setDays={ranged ? setDays : undefined}
+        ranges={RANGES.filter((r) => r.days <= 90)}
+      />
       {current === 'overview' && <Overview status={status} />}
       {current === 'macros' && <Macros days={days} hosted={status.hosted} />}
       {current === 'hydration' && <Hydration days={days} units={status.settings.units} />}
@@ -153,7 +134,7 @@ function Overview({ status }: { status: Status }) {
   }
   return (
     <div className={`nutrition-overview ${loading ? 'is-refreshing' : ''}`}>
-      <div className={`nutrition-cards ${numbers === 'all' ? '' : 'is-3'}`}>
+      <div className={`cards cards-4 ${numbers === 'all' ? '' : 'is-3'}`}>
         {numbers === 'all' && <EnergyCard week={series('energy_kcal', week)} target={data.targets.energy_kcal} today={data.today} />}
         <ProteinCard week={series('protein_g', week)} before={series('protein_g', before)} target={data.targets.protein_g} today={data.today} />
         <WaterCard week={week.map((date) => ({ date, value: waterByDate.get(date) ?? null }))} target={data.targets.water_ml} today={data.today} units={status.settings.units} />

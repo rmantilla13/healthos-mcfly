@@ -18,6 +18,7 @@ import { nutritionRouter } from './nutrition.ts';
 import { familyRouter } from './family.ts';
 import { DATA_DIR, type Db, type Scope, bumpDataVersion, deleteSource, getUserSetting, setUserSetting } from './db.ts';
 import { patterns, sleepTiming } from './insights.ts';
+import { sleepNight } from './sleepnight.ts';
 import { type McflyClient, mcflyRouter } from './mcfly.ts';
 import { PHOTO_ASSETS, parsePhotoUpload, photoAsset, photoMeta, processPhoto, removePhoto, storePhotoAssets } from './photo.ts';
 import { NUMBERS, TARGET_RANGE, readSettings, requestContext, summary, trends, workouts } from './query.ts';
@@ -129,6 +130,12 @@ export function createApp({ db, hosted, ingestToken, mcflyClient }: AppOptions) 
 
   api.get('/workouts', async (req, res) => {
     res.json(await workouts(scopeOf(res), hosted, days(req), asOf(req)));
+  });
+
+  api.get('/sleep/night', async (req, res) => {
+    const date = req.query.date === undefined ? undefined : String(req.query.date);
+    if (date !== undefined && !DATE.test(date)) return void res.status(400).json({ error: 'date must be YYYY-MM-DD' });
+    res.json(await sleepNight(scopeOf(res), hosted, date));
   });
 
   api.get('/sleep', async (req, res) => {
