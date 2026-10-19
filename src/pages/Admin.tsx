@@ -3,7 +3,8 @@
 import { useState } from 'react';
 import type { AdminInvite, AdminOverview, AdminUser, PlatformSettings, Role, SessionUser } from '../../shared/types.ts';
 import { Icon } from '../components/Icon.tsx';
-import { fmt, fmtDate, sendJson, useApi } from '../lib.ts';
+import { fmt, fmtDate, notifyDataChanged, sendJson, useApi } from '../lib.ts';
+import { CardChoices, useCardEditor } from '../components/CardChoices.tsx';
 import { CopyField } from './Integrations.tsx';
 
 type Tab = 'users' | 'invites' | 'settings';
@@ -182,6 +183,7 @@ function People({ data, me, act, onLink }: { data: AdminOverview; me: SessionUse
                     {u.mcfly.tokens30d > 0 && <div className="muted small">{fmt(u.mcfly.tokens30d / 1000)}K tokens</div>}
                   </td>
                   <td>
+                    <AdminCards u={u} self={self} act={act} />
                     {self ? (
                       <span className="muted small">Change your own password in Settings</span>
                     ) : (
@@ -219,6 +221,24 @@ function People({ data, me, act, onLink }: { data: AdminOverview; me: SessionUse
         </table>
       </div>
     </section>
+  );
+}
+
+/** The cards a person sees, which an admin can change for them (only the layout, never their data). */
+function AdminCards({ u, self, act }: { u: AdminUser; self: boolean; act: Act }) {
+  const cards = useCardEditor(u.hiddenCards ?? [], async (body) => {
+    const r = await act(() => sendJson<{ hiddenCards: string[] }>('PATCH', `/admin/users/${u.id}`, body));
+    if (!r) throw new Error('Not saved.');
+    // Your own pages pick it up now, not at the next background check.
+    if (self) notifyDataChanged();
+    return r.hiddenCards;
+  });
+  return (
+    <details className="admin-cards">
+      <summary>{cards.hidden.length ? `Cards · ${cards.hidden.length} hidden` : 'Cards · all shown'}</summary>
+      <p className="muted small">{self ? 'The cards on your Home, Sleep and Body pages.' : `The cards ${u.name || u.email} sees on Home, Sleep and Body. They can change these in their Settings too.`}</p>
+      <CardChoices hidden={cards.hidden} onToggle={cards.toggle} idPrefix={`admin-${u.id}`} />
+    </details>
   );
 }
 

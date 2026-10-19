@@ -115,6 +115,18 @@ enum HealthTypes {
 enum SleepStage: Hashable {
     case inBed, awake, unspecified, light, rem, deep
 
+    /// The stage's name in the server's sleep_stages table.
+    var name: String {
+        switch self {
+        case .inBed: "in_bed"
+        case .awake: "awake"
+        case .unspecified: "asleep"
+        case .light: "light"
+        case .rem: "rem"
+        case .deep: "deep"
+        }
+    }
+
     init?(_ value: Int) {
         guard let v = HKCategoryValueSleepAnalysis(rawValue: value) else { return nil }
         switch v {

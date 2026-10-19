@@ -41,6 +41,7 @@ Cards hide or switch to fit your sources, as on the web: no WHOOP means VO₂ ma
   - Sum metrics keep the best single source per day.
   - Steps WHOOP writes into Health compete too (iPhone, Watch or WHOOP; the highest total wins, never the sum), and the hours follow the winner. WHOOP's other records stay skipped, because healthOS reads WHOOP's API.
   - Sleep counts toward the wake day (6 h rollover). Overlapping segments are merged, and the source with the most sleep wins.
+  - Each night's stages also go up as a timeline (`sleepStages`) for the Sleep page: one stage at a time, the main sleep only (a same-day nap counts in the totals but isn't drawn), from the source that won the night. A night with no sleep is sent empty, which clears it, but only when the window had any sleep at all, so a phone without sleep access never erases nights from an export import. The first sync with a server that stores stages sends the last month again once, so recent nights have them; older nights get theirs with "Upload all history".
   - Days use each record's own time zone (`HKMetadataKeyTimeZone`, or the device's).
 - **Uploads** a week of days per request to `POST /api/apple/ingest` with the bearer token, newest week first. A day whose upload fails stays queued for the next sync.
   - Every sync sends today, plus any changed day in the last 30.

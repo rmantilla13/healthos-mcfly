@@ -231,7 +231,7 @@ final class NutritionTests: XCTestCase {
             if !Set(keys).isSubset(of: takes) {
                 throw IngestClient.Rejected(status: 400, detail: "nutrition[0].apps[0].values: unknown nutrient; expected \(takes.sorted().joined(separator: ", "))")
             }
-            return IngestClient.Response(daily: payload.daily.count, workouts: 0, events: 0, hourly: 0, cycle: 0, metrics: nil,
+            return IngestClient.Response(daily: payload.daily.count, workouts: 0, events: 0, hourly: 0, cycle: 0, sleepStages: 0, metrics: nil,
                                          nutrients: takes.sorted(), nutritionOn: true, nutrition: payload.nutrition?.count ?? 0)
         }
     }

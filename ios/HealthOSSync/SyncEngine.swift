@@ -42,6 +42,8 @@ struct SyncState: Codable {
     var nutritionOn = false
     /// Days where a food sample was deleted, still to send (as `apps: []` if nothing is left there).
     var nutritionClear: [String] = []
+    /// The recent month went up again once the server stored sleep stages, so those nights have their timelines.
+    var sleepStagesResent = false
 
     init(server: String = "", since: Date? = nil, last: SyncReport? = nil) {
         self.server = server
@@ -71,6 +73,7 @@ struct SyncState: Codable {
         acceptedNutrients = try c.decodeIfPresent([String].self, forKey: .acceptedNutrients)
         nutritionOn = try c.decodeIfPresent(Bool.self, forKey: .nutritionOn) ?? false
         nutritionClear = try c.decodeIfPresent([String].self, forKey: .nutritionClear) ?? []
+        sleepStagesResent = try c.decodeIfPresent(Bool.self, forKey: .sleepStagesResent) ?? false
     }
 
     /// Daily metrics every server took before replies listed them (APPLE_METRICS in server/apple/ingest.ts before iOS 1.1).
@@ -322,12 +325,14 @@ actor SyncEngine {
             // metrics it takes, before reading changes: a metric it takes for the first time clears its types' anchors.
             // While Nutrition is on, ask every time, so food isn't read once more after it was turned off.
             var storedHours = false
-            if !state.hourlyBackfillDone || !Config.serverStoresCycle || state.acceptedMetrics == nil || state.nutritionOn {
+            var storesStages = false
+            if !state.hourlyBackfillDone || !Config.serverStoresCycle || state.acceptedMetrics == nil || state.nutritionOn || !state.sleepStagesResent {
                 let probe = try await push(IngestPayload(), via: client, state: &state).reply
                 storedHours = probe.hourly != nil
                 state.startHourlyBackfill(serverStoresHours: storedHours)
                 // Cycle types start with no anchor, so their whole history goes up the first time they're read.
                 if probe.cycle != nil { Config.serverStoresCycle = true }
+                storesStages = probe.sleepStages != nil
             }
 
             // Once: read cycle history again so every sent cycle sample's day is known (for deletions).
@@ -381,6 +386,12 @@ actor SyncEngine {
             if !state.whoopStepsResent {
                 dirty.formUnion((0...SyncState.recentDays).map { Day.add(today, -$0) })
                 state.whoopStepsResent = true
+            }
+            // Once the server stores sleep stages: the recent month goes up again so its nights have them. Older nights
+            // get theirs with "Upload all history". Not before: an older server would drop them, and the flag be spent.
+            if storesStages, !state.sleepStagesResent {
+                dirty.formUnion((0...SyncState.recentDays).map { Day.add(today, -$0) })
+                state.sleepStagesResent = true
             }
             let changed = dirty.count
             // Today goes up on every sync, so the dashboard's today and its hours are never behind the phone.

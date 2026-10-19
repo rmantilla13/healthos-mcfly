@@ -2,7 +2,8 @@
 // account's data volume and sync health, but never anyone's health values.
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { HttpError, type Role, countActiveAdmins, createLink, currentUser, formatCode, getUser, normalizeEmail, requireAdmin } from './auth.ts';
-import { type Db, deleteUserData, getSettings, setSetting } from './db.ts';
+import { cleanHiddenCards, readHiddenCards, storedHiddenCards, withCardShown } from '../shared/cards.ts';
+import { type Db, bumpDataVersion, deleteUserData, getSettings, getUserSetting, setSetting, setUserSetting } from './db.ts';
 import * as whoop from './whoop.ts';
 
 const ROLES: Role[] = ['admin', 'user'];
@@ -56,7 +57,7 @@ export function adminRouter(db: Db) {
           "SELECT user_id, COUNT(*)::int AS rows, COUNT(DISTINCT date)::int AS days, MIN(date) AS first, MAX(date) AS last FROM daily WHERE source <> 'demo' GROUP BY user_id",
         ),
         db.query<{ user_id: string; key: string; value: string }>(
-          "SELECT user_id, key, value FROM user_settings WHERE key IN ('apple_last_import', 'apple_last_sync', 'whoop_last_sync', 'whoop_sync', 'photo_meta')",
+          "SELECT user_id, key, value FROM user_settings WHERE key IN ('apple_last_import', 'apple_last_sync', 'whoop_last_sync', 'whoop_sync', 'photo_meta', 'hidden_cards')",
         ),
         db.query<{ user_id: string }>("SELECT user_id FROM tokens WHERE provider = 'whoop'"),
         db.query<{ id: string; kind: string; email: string | null; role: Role; user_id: string | null; created_at: number; expires_at: number; used_at: number | null; used_by: string | null; revoked_at: number | null }>(
@@ -99,6 +100,7 @@ export function adminRouter(db: Db) {
             },
             photo: Boolean(setting(u.id, 'photo_meta')),
             mcfly: { questions30d: mcfly.get(u.id)?.questions ?? 0, tokens30d: Number(mcfly.get(u.id)?.tokens ?? 0) },
+            hiddenCards: readHiddenCards(setting(u.id, 'hidden_cards')),
           };
         }),
         invites: invites.map((i) => ({
@@ -154,6 +156,15 @@ export function adminRouter(db: Db) {
       if (!target) throw new HttpError(404, 'No such account.');
       const role = req.body?.role as Role | undefined;
       const status = req.body?.status as 'active' | 'disabled' | undefined;
+      // Which cards their dashboard shows: layout only, nothing about their health. The whole list, or one card's
+      // change applied to their list as it is now (they may have changed it since this page loaded).
+      const hidden =
+        req.body?.hiddenCards !== undefined
+          ? cleanHiddenCards(req.body.hiddenCards)
+          : req.body?.cardShown !== undefined
+            ? withCardShown(readHiddenCards(await getUserSetting(db, target.id, 'hidden_cards')), req.body.cardShown)
+            : undefined;
+      if (hidden === null) throw new HttpError(400, 'Unknown card, or not a list of cards.');
       if (role !== undefined && !ROLES.includes(role)) throw new HttpError(400, 'Unknown role.');
       if (status !== undefined && !['active', 'disabled'].includes(status)) throw new HttpError(400, 'Unknown status.');
       if (target.id === me.id && (role === 'user' || status === 'disabled')) throw new HttpError(400, "You can't demote or disable your own account.");
@@ -164,7 +175,12 @@ export function adminRouter(db: Db) {
          session_version = session_version + CASE WHEN $2::text = 'disabled' THEN 1 ELSE 0 END WHERE id = $3`,
         [role ?? null, status ?? null, target.id],
       );
-      res.json({ ok: true });
+      if (hidden) {
+        await setUserSetting(db, target.id, 'hidden_cards', storedHiddenCards(hidden));
+        // Their open dashboard picks it up at its next check.
+        await bumpDataVersion(db, target.id);
+      }
+      res.json(hidden ? { ok: true, hiddenCards: hidden } : { ok: true });
     }),
   );
 

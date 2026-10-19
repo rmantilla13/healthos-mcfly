@@ -19,6 +19,8 @@ struct IngestClient {
         let hourly: Int?
         /// Only servers that store cycle days report this.
         let cycle: Int?
+        /// Nights of sleep stages stored; only servers that store them report this (0 for none).
+        let sleepStages: Int?
         /// Every daily metric the server takes. Older servers don't list them (SyncState.legacyMetrics).
         let metrics: [String]?
         /// The nutrients the server takes in `nutrition`. Servers without Nutrition don't list them, and get no food.

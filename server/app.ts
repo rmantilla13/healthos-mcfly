@@ -7,6 +7,7 @@ import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { waitUntil } from '@vercel/functions';
 import express, { type NextFunction, type Request, type Response } from 'express';
+import { cleanHiddenCards, readHiddenCards, storedHiddenCards, withCardShown } from '../shared/cards.ts';
 import type { ImportJob, Settings, Status } from '../shared/types.ts';
 import { adminRouter } from './admin.ts';
 import { DAY_METRICS, dayView } from './day.ts';
@@ -17,6 +18,7 @@ import { cycleRouter } from './cycle/index.ts';
 import { familyRouter } from './family.ts';
 import { DATA_DIR, type Db, type Scope, bumpDataVersion, deleteSource, getUserSetting, setUserSetting } from './db.ts';
 import { patterns, sleepTiming } from './insights.ts';
+import { sleepNight } from './sleepnight.ts';
 import { type McflyClient, mcflyRouter } from './mcfly.ts';
 import { PHOTO_ASSETS, parsePhotoUpload, photoAsset, photoMeta, processPhoto, removePhoto, storePhotoAssets } from './photo.ts';
 import { readSettings, requestContext, summary, trends, workouts } from './query.ts';
@@ -129,6 +131,12 @@ export function createApp({ db, hosted, ingestToken, mcflyClient }: AppOptions) 
     res.json(await workouts(scopeOf(res), hosted, days(req), asOf(req)));
   });
 
+  api.get('/sleep/night', async (req, res) => {
+    const date = req.query.date === undefined ? undefined : String(req.query.date);
+    if (date !== undefined && !DATE.test(date)) return void res.status(400).json({ error: 'date must be YYYY-MM-DD' });
+    res.json(await sleepNight(scopeOf(res), hosted, date));
+  });
+
   api.get('/sleep', async (req, res) => {
     res.json(await sleepTiming(scopeOf(res), hosted, Math.min(Math.max(Number(req.query.days) || 30, 7), 365)));
   });
@@ -192,6 +200,16 @@ export function createApp({ db, hosted, ingestToken, mcflyClient }: AppOptions) 
   api.put('/settings', async (req, res) => {
     const { userId } = scopeOf(res);
     const body = req.body as Partial<Settings>;
+    // Checked before anything is written, so a bad list doesn't leave the rest half saved. Either the whole list
+    // (Show all) or one card's change, applied to the stored list as it is now.
+    const change = (req.body as { cardShown?: unknown }).cardShown;
+    const hidden =
+      body.hiddenCards !== undefined
+        ? cleanHiddenCards(body.hiddenCards)
+        : change !== undefined
+          ? withCardShown(readHiddenCards(await getUserSetting(db, userId, 'hidden_cards')), change)
+          : undefined;
+    if (hidden === null) return void res.status(400).json({ error: 'Unknown card, or not a list of cards.' });
     if (typeof body.name === 'string') {
       const name = body.name.trim().slice(0, 40);
       await setUserSetting(db, userId, 'name', name || null);
@@ -211,6 +229,7 @@ export function createApp({ db, hosted, ingestToken, mcflyClient }: AppOptions) 
     // and turning either off withdraws it, so turning them back on doesn't share it again by surprise.
     if (typeof body.familySharing === 'boolean') await setUserSetting(db, userId, 'family_sharing', body.familySharing ? null : 'off');
     if (body.familyNoticeSeen === true) await setUserSetting(db, userId, 'family_notice_seen', '2');
+    if (hidden) await setUserSetting(db, userId, 'hidden_cards', storedHiddenCards(hidden));
     if (body.cycleTracking === false || body.familySharing === false) await setUserSetting(db, userId, 'family_cycle_phase', null);
     else if (typeof body.shareCyclePhase === 'boolean') {
       const now = await readSettings({ db, userId }, hosted);

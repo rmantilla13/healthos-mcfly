@@ -4,11 +4,16 @@ export type Point = { date: string; value: number };
 export type Latest = { date: string; value: number; source: string };
 export type RangeStatus = 'low' | 'normal' | 'high';
 
+/** How far a reading is from the person's usual: within the band, beyond it, or beyond twice it. */
+export type VitalLevel = 'normal' | 'unusual' | 'off';
+
 export type Vital = {
   label: string;
   latest: Latest | null;
   /** Where the latest value sits against the previous 30 days. */
   status: RangeStatus | null;
+  /** How far from usual, on the same band as `status` ('normal' exactly when status is). Missing from older servers. */
+  level?: VitalLevel | null;
 };
 
 export type TimelineEvent = {
@@ -109,6 +114,8 @@ export type Settings = {
   shareCyclePhase: boolean;
   /** The one-time note that the Family board shows your daily status was dismissed. */
   familyNoticeSeen: boolean;
+  /** Cards this person doesn't want on Home, Sleep or Body (ids from shared/cards.ts). Layout only. */
+  hiddenCards: string[];
 };
 
 export type PhotoMeta = {
@@ -184,6 +191,8 @@ export type AdminUser = {
   photo: boolean;
   /** Ask McFly over the last 30 days: how many questions and tokens, never their content. */
   mcfly: { questions30d: number; tokens30d: number };
+  /** Cards hidden on their dashboard (layout only). */
+  hiddenCards: string[];
 };
 
 export type AdminInvite = {
@@ -220,6 +229,30 @@ export type AdminOverview = {
 
 export type McflyStatus = { configured: boolean; limit: number; usedToday: number };
 export type McflyTurn = { role: 'user' | 'assistant'; content: string };
+
+/**
+ * A picture in one of McFly's answers. McFly only chooses what to show; the server reads the numbers from the
+ * person's own data, in their units, so a chart can't carry a made-up value. Dates are YYYY-MM-DD (a week's
+ * Monday, a month's 1st).
+ */
+export type McflyVisual =
+  | {
+      kind: 'trend' | 'bars';
+      title: string;
+      unit: string;
+      resolution: 'day' | 'week' | 'month';
+      points: Point[];
+      /** The average of the daily values (weekly charts too), over `days` days. */
+      mean: number | null;
+      days?: number;
+      /** A daily total whose today isn't over: left out of the average. */
+      partialToday?: boolean;
+      goal?: number;
+    }
+  | { kind: 'compare'; title: string; unit: string; periods: { label: string; from: string; to: string; mean: number | null; days: number; partialToday?: boolean }[] }
+  | { kind: 'stats'; title: string; items: { label: string; value: number | null; unit: string; note: string; from?: string; to?: string }[] }
+  | { kind: 'stages'; title: string; rows: { date: string; values: Record<string, number> }[] }
+  | { kind: 'sports'; title: string; items: { sport: string; count: number; minutes: number }[] };
 
 /** McFly's recap of the last completed Monday–Sunday. Never draws on cycle data. */
 export type Digest = {
@@ -314,6 +347,44 @@ export type SleepTiming = {
     /** How many nights `debt` adds up. */
     debtNights: number;
   };
+};
+
+// ---------- One night (GET /api/sleep/night?date=) ----------
+
+/** A stretch of one sleep stage, as the device recorded it. `asleep`: asleep with no stage (older watches,
+ * phones); `in_bed`: in bed, not asleep yet (or again). */
+export type SleepStage = 'awake' | 'rem' | 'light' | 'deep' | 'asleep' | 'in_bed';
+export type SleepSegment = {
+  /** ISO timestamps with the local offset they were recorded in. */
+  start: string;
+  end: string;
+  stage: SleepStage;
+};
+
+/** The night that ended on `date` (the wake date), for the Sleep page. */
+export type SleepNightDetail = {
+  date: string;
+  today: string;
+  /** The device the night's figures come from. */
+  source: 'apple' | 'whoop' | null;
+  /** First and last moment asleep (Apple), or the sleep record's start and end (WHOOP). */
+  fellAsleep: string | null;
+  wokeUp: string | null;
+  asleepHours: number | null;
+  inBedHours: number | null;
+  /** Hours in each stage, from the same device as the stages chart. */
+  stages: { awake: number; rem: number; light: number; deep: number } | null;
+  /** WHOOP's sleep performance, else asleep ÷ in bed (labelled as efficiency); 0–100. */
+  score: { kind: 'performance' | 'efficiency'; value: number } | null;
+  /** Stage by stage through the night, oldest first. Only when the iPhone app sent them (Apple Watch nights);
+   * WHOOP's API gives totals only. */
+  segments: SleepSegment[];
+  /** Minutes from getting into bed to falling asleep, when the segments include time in bed. */
+  latencyMin: number | null;
+  /** The middle of the longest stretch of deep sleep. */
+  deepPeak: string | null;
+  /** Plain sentences about this night against the person's own recent nights. */
+  insights: { id: string; icon: 'moon' | 'trend-up' | 'trend-down' | 'shield' | 'sun'; text: string }[];
 };
 
 // ---------- Patterns (GET /api/patterns) ----------

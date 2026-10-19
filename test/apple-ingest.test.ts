@@ -89,7 +89,7 @@ test('ingest upserts rows as source apple and replaces a day on re-send', async 
       events: [sleep('s1')],
     });
     assert.equal(res.status, 200);
-    assert.deepEqual(await res.json(), { ok: true, daily: 2, hourly: 0, workouts: 1, events: 1, deleted: 0, cycle: 0, metrics: [...APPLE_METRICS].sort() });
+    assert.deepEqual(await res.json(), { ok: true, daily: 2, hourly: 0, workouts: 1, events: 1, deleted: 0, cycle: 0, sleepStages: 0, metrics: [...APPLE_METRICS].sort() });
     assert.deepEqual(await daily(db, '2026-10-13', 'steps'), [
       { source: 'apple', value: 8000 },
       { source: 'whoop', value: 42 },

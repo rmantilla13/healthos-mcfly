@@ -3,7 +3,7 @@
 import type { DayData, DayMetric, DaySeries } from '../shared/types.ts';
 import { addDays } from './dates.ts';
 import type { Scope } from './db.ts';
-import { pickSteps, requestContext } from './query.ts';
+import { pickSteps, requestContext, sourceList } from './query.ts';
 
 export const DAY_METRICS: DayMetric[] = ['steps', 'active_energy', 'heart_rate'];
 /** The stored hourly metric that says whether a Day metric has data at all. */
@@ -49,22 +49,25 @@ export function typicalHourly(days: Hours[]): Hours {
 
 /** One day of the requested metrics, for the signed-in person only. */
 export async function dayView(scope: Scope, hosted: boolean, requested: DayMetric[], dateParam?: string): Promise<DayData> {
-  const { today } = await requestContext(scope, hosted);
+  const { today, demo } = await requestContext(scope, hosted);
   const date = dateParam && dateParam <= today ? dateParam : today;
   const asked = DAY_METRICS.filter((m) => requested.includes(m));
+  // Demo hours only while demo data is shown. (While it is, a phone's own hours still win the day, as before: someone
+  // whose phone has sent hours but no day yet is still in demo mode.)
+  const sources = demo ? [...sourceList(true), ...sourceList(false)] : sourceList(false);
 
   // Which of them this person has any hourly data for, on any day.
   const have = await scope.db.query<{ m: string; has: boolean }>(
-    'SELECT m, EXISTS (SELECT 1 FROM hourly h WHERE h.user_id = $1 AND h.metric = m) AS has FROM unnest($2::text[]) AS m',
-    [scope.userId, asked.map((m) => BASE[m])],
+    'SELECT m, EXISTS (SELECT 1 FROM hourly h WHERE h.user_id = $1 AND h.metric = m AND h.source = ANY($3)) AS has FROM unnest($2::text[]) AS m',
+    [scope.userId, asked.map((m) => BASE[m]), sources],
   );
   const present = asked.filter((m) => have.find((r) => r.m === BASE[m])?.has);
   if (!present.length) return { date, today, asOf: null, metrics: {} };
 
   const from = addDays(date, -TYPICAL_DAYS);
   const rows = await scope.db.query<{ metric: string; date: string; hour: number; source: string; value: number }>(
-    'SELECT metric, date, hour, source, value FROM hourly WHERE user_id = $1 AND metric = ANY($2) AND date BETWEEN $3 AND $4',
-    [scope.userId, present.flatMap((m) => STORED[m]), from, date],
+    'SELECT metric, date, hour, source, value FROM hourly WHERE user_id = $1 AND metric = ANY($2) AND date BETWEEN $3 AND $4 AND source = ANY($5)',
+    [scope.userId, present.flatMap((m) => STORED[m]), from, date, sources],
   );
 
   // metric -> date -> source -> 24 hours. One source per day: Apple's when there is one.
@@ -99,10 +102,10 @@ export async function dayView(scope: Scope, hosted: boolean, requested: DayMetri
     if (m === 'steps') {
       // The day's steps as everything else shows them (same rule), so the card can't silently disagree.
       const rows = await scope.db.query<{ source: string; value: number }>(
-        "SELECT source, value FROM daily WHERE user_id = $1 AND metric = 'steps' AND date = $2 AND source IN ('apple', 'whoop')",
-        [scope.userId, date],
+        "SELECT source, value FROM daily WHERE user_id = $1 AND metric = 'steps' AND date = $2 AND source = ANY($3)",
+        [scope.userId, date, sources],
       );
-      const total = pickSteps(rows.find((r) => r.source === 'apple'), rows.find((r) => r.source === 'whoop'));
+      const total = pickSteps(rows.find((r) => r.source === 'apple'), rows.find((r) => r.source === 'whoop')) ?? rows.find((r) => r.source === 'demo');
       if (total) series.total = { value: Math.round(Number(total.value)), source: total.source };
     }
     metrics[m] = series;
