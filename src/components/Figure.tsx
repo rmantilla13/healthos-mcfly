@@ -36,7 +36,25 @@ const SILHOUETTE: Record<'forehead' | 'wrist', Callout[]> = {
 /** Wrist and skin temperature come from a watch or band, so they go at the wrist; body temperature (a thermometer) stays on the forehead. */
 const atWrist = (v: Vital) => v.label === 'Wrist temp' || v.label === 'Skin temp';
 
-const STATUS_TEXT = { low: 'Below your range', normal: 'Normal', high: 'Above your range' } as const;
+/**
+ * How a callout is coloured: green within the person's usual, amber beyond it, red well beyond it. A reading older
+ * than the figure's day stays neutral (its date shows instead), so last week's number never alarms today's figure.
+ */
+type Level = 'normal' | 'unusual' | 'off' | 'none';
+function levelOf(v: Vital, asOf: string): Level {
+  if (!v.latest || v.latest.date !== asOf || !v.status) return 'none';
+  // Servers before levels: the status alone says normal or not.
+  return v.level ?? (v.status === 'normal' ? 'normal' : 'unusual');
+}
+
+/** The words with the colour, so it never rests on colour alone. */
+function statusText(v: Vital) {
+  if (!v.status) return v.latest ? 'Building baseline' : 'No data';
+  if (v.status === 'normal') return 'Normal';
+  const up = v.status === 'high';
+  if (v.level === 'off') return up ? 'Well above usual' : 'Well below usual';
+  return up ? 'Above usual' : 'Below usual';
+}
 
 function display(key: Callout['key'], v: Vital, units: ReturnType<typeof useUnits>) {
   if (!v.latest) return { value: '—', unit: '' };
@@ -64,6 +82,7 @@ function CalloutLabel({
   const units = useUnits();
   const d = display(k, v, units);
   const stale = v.latest && v.latest.date !== asOf;
+  const level = levelOf(v, asOf);
   return (
     <div className={`callout callout-${side}`} style={style} ref={innerRef}>
       <div className="callout-label">{k === 'heart' ? 'Heart' : v.label}</div>
@@ -71,7 +90,8 @@ function CalloutLabel({
         {d.value} <span>{d.unit}</span>
       </div>
       <div className="callout-status" title="From your latest night, compared with your own previous 30 days">
-        {v.status ? STATUS_TEXT[v.status] : v.latest ? 'Building baseline' : 'No data'}
+        {level !== 'none' && <i className="callout-level" data-level={level} aria-hidden="true" />}
+        {statusText(v)}
         {stale && v.latest ? ` · ${fmtDate(v.latest.date)}` : ''}
       </div>
     </div>
@@ -83,7 +103,7 @@ const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n
 /**
  * CSS custom properties that drive a callout's animation from its reading, or null when there's nothing to show.
  * Heart beats once per 60/bpm s and breathing cycles once per 60/rpm s; the clamps only catch impossible data,
- * so a bad row can't freeze or strobe the dot. Temperature's colour comes from its status (data-status below).
+ * so a bad row can't freeze or strobe the dot. Every dot's colour, and temperature's glow, come from its level.
  */
 function liveVars(k: Key, v: Vital): CSSProperties | null {
   const value = v.latest?.value;
@@ -95,19 +115,16 @@ function liveVars(k: Key, v: Vital): CSSProperties | null {
 
 /**
  * A callout's dot and halo, animated by its own number (styles.css, "vitals animations"): the heart dot beats with
- * a pulse ring at the resting rate, the throat halo breathes at the respiratory rate, and the forehead glows cool,
- * neutral or warm by where the temperature sits in the person's range. Radii are in the parent SVG's units.
+ * a pulse ring at the resting rate, the throat halo breathes at the respiratory rate, and the temperature glows
+ * in its level's colour. Each dot is green, amber or red by how far it is from the person's usual (levelOf).
+ * Radii are in the parent SVG's units.
  */
-function CalloutMark({ k, v, cx, cy, halo, dot }: { k: Key; v: Vital; cx: number; cy: number; halo: number; dot: number }) {
+function CalloutMark({ k, v, asOf, cx, cy, halo, dot }: { k: Key; v: Vital; asOf: string; cx: number; cy: number; halo: number; dot: number }) {
   // Sanitised so the id is safe inside url(#…) whatever format React's ids take.
   const glowId = `temp-glow-${useId().replace(/[^\w-]/g, '')}`;
   const vars = liveVars(k, v);
   return (
-    <g
-      className={`callout-mark mark-${k}${vars ? ' is-live' : ''}`}
-      style={vars ?? undefined}
-      data-status={k === 'temp' && vars ? (v.status ?? 'none') : undefined}
-    >
+    <g className={`callout-mark mark-${k}${vars ? ' is-live' : ''}`} style={vars ?? undefined} data-level={levelOf(v, asOf)}>
       {k === 'temp' && vars && (
         <>
           <radialGradient id={glowId}>
@@ -277,7 +294,7 @@ function PhotoFigure({ vitals, asOf, photo }: { vitals: Summary['vitals']; asOf:
           return (
             <g key={l.key}>
               <line x1={dx * 1000} y1={dy * 1000 * ratio} x2={ex * 1000} y2={ey * 1000 * ratio} className="callout-line" />
-              <CalloutMark k={l.key} v={vitals[l.key]} cx={dx * 1000} cy={dy * 1000 * ratio} halo={13 * px} dot={5 * px} />
+              <CalloutMark k={l.key} v={vitals[l.key]} asOf={asOf} cx={dx * 1000} cy={dy * 1000 * ratio} halo={13 * px} dot={5 * px} />
             </g>
           );
         })}
@@ -380,7 +397,7 @@ function Silhouette({ vitals, asOf }: { vitals: Summary['vitals']; asOf: string 
         {callouts.map((c) => (
           <g key={c.key}>
             <line x1={c.dot[0]} y1={c.dot[1]} x2={c.anchor[0] + (c.side === 'left' ? 6 : -6)} y2={c.anchor[1] + 26} className="callout-line" />
-            <CalloutMark k={c.key} v={vitals[c.key]} cx={c.dot[0]} cy={c.dot[1]} halo={15} dot={5} />
+            <CalloutMark k={c.key} v={vitals[c.key]} asOf={asOf} cx={c.dot[0]} cy={c.dot[1]} halo={15} dot={5} />
           </g>
         ))}
       </svg>

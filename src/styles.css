@@ -421,7 +421,8 @@ nav {
   stroke-width: 1.5;
 }
 .callout-dot {
-  fill: #f5d76e;
+  /* Green, amber or red by how far the reading is from the person's usual; neutral without a baseline. */
+  fill: var(--level, var(--level-none));
   stroke: #fff;
   stroke-width: 2;
 }
@@ -1814,20 +1815,43 @@ td {
 /* ---------- vitals animations (Home figure callouts) ----------
    Each callout moves at its own number, set on .callout-mark from the live reading (Figure.tsx, CalloutMark):
    the heart dot beats every --beat (60 / bpm s), the throat halo breathes every --breath (60 / rpm s), and the
-   forehead glows cool / neutral / amber by data-status. Only .is-live marks (a reading exists) animate. */
+   temperature glows. Only .is-live marks (a reading exists) animate. Every dot, and the glow, takes its level's
+   colour from data-level: the status colours, green within the person's usual, amber beyond it, red well beyond. */
 :root {
   --vital-pulse: #e0567c;
-  --temp-cool: #4f95ea;
-  --temp-neutral: #f2cf63;
-  --temp-warm: #f08a24;
+  --level-none: #cfccc4;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
     --vital-pulse: #f27798;
-    --temp-cool: #6da7ec;
-    --temp-neutral: #e9c45a;
-    --temp-warm: #f59a3c;
+    --level-none: #77746d;
   }
+}
+.callout-mark[data-level='normal'],
+.callout-level[data-level='normal'] {
+  --level: var(--good);
+}
+.callout-mark[data-level='unusual'],
+.callout-level[data-level='unusual'] {
+  --level: var(--warning);
+}
+.callout-mark[data-level='off'],
+.callout-level[data-level='off'] {
+  --level: var(--critical);
+}
+/* The halo takes a light tint of the level, so the colour reads at a glance even where the dot is small. */
+.callout-mark:is([data-level='normal'], [data-level='unusual'], [data-level='off']) .callout-halo {
+  fill: color-mix(in srgb, var(--level) 16%, transparent);
+  stroke: color-mix(in srgb, var(--level) 50%, var(--halo-ring));
+}
+/* The level's colour beside its words in the label: the words carry it too, so it never rests on colour alone. */
+.callout-level {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: var(--level);
 }
 /* Scale SVG circles about their own centre, not the SVG origin. */
 .callout-mark .callout-dot,
@@ -1907,15 +1931,9 @@ td {
   }
 }
 
-/* Temperature: a slow warmth glow behind the forehead dot, coloured by the person's own range. */
+/* Temperature: a slow glow behind its dot, in the level's colour. */
 .mark-temp {
-  --temp-glow: var(--temp-neutral);
-}
-.mark-temp[data-status='low'] {
-  --temp-glow: var(--temp-cool);
-}
-.mark-temp[data-status='high'] {
-  --temp-glow: var(--temp-warm);
+  --temp-glow: var(--level, var(--level-none));
 }
 .temp-glow-stop {
   stop-color: var(--temp-glow);
@@ -1939,7 +1957,7 @@ td {
   }
 }
 
-/* Reduced motion: hold still. The temperature tint stays (it's colour, not motion); the pulse ring hides. */
+/* Reduced motion: hold still. The level colours stay (they're colour, not motion); the pulse ring hides. */
 @media (prefers-reduced-motion: reduce) {
   .callout-mark * {
     animation: none !important;

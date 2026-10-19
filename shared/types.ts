@@ -4,11 +4,16 @@ export type Point = { date: string; value: number };
 export type Latest = { date: string; value: number; source: string };
 export type RangeStatus = 'low' | 'normal' | 'high';
 
+/** How far a reading is from the person's usual: within the band, beyond it, or beyond twice it. */
+export type VitalLevel = 'normal' | 'unusual' | 'off';
+
 export type Vital = {
   label: string;
   latest: Latest | null;
   /** Where the latest value sits against the previous 30 days. */
   status: RangeStatus | null;
+  /** How far from usual, on the same band as `status` ('normal' exactly when status is). Missing from older servers. */
+  level?: VitalLevel | null;
 };
 
 export type TimelineEvent = {
