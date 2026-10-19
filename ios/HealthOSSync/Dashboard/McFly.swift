@@ -12,23 +12,110 @@ struct McFlyStatus: Decodable {
     var left: Int { max(0, limit - usedToday) }
 }
 
-enum McFlyEvent {
+enum McFlyEvent: Equatable {
     case text(String)
     case tool(String)
+    /// A chart or a few tiles, between the answer's text (McFlyCharts.swift).
+    case visual(McFlyVisual)
     case refusal(String)
     case error(String)
     case done
 }
 
+/// Reads /api/mcfly/chat's server-sent events a line at a time (the server writes `event: x`, `data: {...}`, then a
+/// blank line). Unknown events, and charts of a kind this app doesn't draw, yield nothing: the answer carries on.
+struct McFlySSEParser {
+    private var event = ""
+
+    private struct VisualEnvelope: Decodable { let visual: McFlyVisual }
+
+    mutating func feed(_ line: String) -> McFlyEvent? {
+        if line.isEmpty {
+            event = ""
+            return nil
+        }
+        if line.hasPrefix("event:") {
+            event = line.dropFirst(6).trimmingCharacters(in: .whitespaces)
+            return nil
+        }
+        guard line.hasPrefix("data:") else { return nil }
+        let json = Data(line.dropFirst(5).trimmingCharacters(in: .whitespaces).utf8)
+        if event == "visual" {
+            return (try? JSONDecoder().decode(VisualEnvelope.self, from: json)).map { .visual($0.visual) }
+        }
+        let fields = (try? JSONSerialization.jsonObject(with: json)) as? [String: Any] ?? [:]
+        switch event {
+        case "text": return .text(fields["text"] as? String ?? "")
+        case "tool": return .tool(fields["label"] as? String ?? "your data")
+        case "refusal": return .refusal(fields["error"] as? String ?? "McFly can't answer that.")
+        case "error": return .error(fields["error"] as? String ?? "Something went wrong.")
+        case "done": return .done
+        default: return nil
+        }
+    }
+
+    /// Reads a whole response body, handing over each event until `done`.
+    static func read<Bytes: AsyncSequence>(_ bytes: Bytes, _ handle: (McFlyEvent) -> Void) async throws where Bytes.Element == UInt8 {
+        var lines = McFlySSELineSplitter()
+        var parser = McFlySSEParser()
+        for try await byte in bytes {
+            guard let line = lines.push(byte), let event = parser.feed(line) else { continue }
+            handle(event)
+            if event == .done { return }
+        }
+        if let line = lines.finish(), let event = parser.feed(line) { handle(event) }
+    }
+}
+
+/// Cuts a byte stream into lines at "\n" ("\r\n" or a lone "\r" counts as one break), as server-sent events define
+/// them. Foundation's `AsyncBytes.lines` also breaks at U+0085, U+2028 and U+2029, which JSON.stringify leaves
+/// unescaped inside a data line, so a sentence or chart title holding one was cut in two and lost.
+struct McFlySSELineSplitter {
+    private var line: [UInt8] = []
+    private var afterCR = false
+
+    mutating func push(_ byte: UInt8) -> String? {
+        switch byte {
+        case 0x0A:
+            if afterCR {
+                afterCR = false // the "\n" of a "\r\n": that break was already counted
+                return nil
+            }
+            return take()
+        case 0x0D:
+            afterCR = true
+            return take()
+        default:
+            afterCR = false
+            line.append(byte)
+            return nil
+        }
+    }
+
+    /// The last line, when the stream ends without a break after it.
+    mutating func finish() -> String? { line.isEmpty ? nil : take() }
+
+    private mutating func take() -> String {
+        defer { line.removeAll(keepingCapacity: true) }
+        return String(decoding: line, as: UTF8.self)
+    }
+}
+
+/// One turn of the conversation as the server reads it (McflyTurn in shared/types.ts).
+struct McFlyTurn: Encodable, Equatable {
+    let role: String
+    let content: String
+}
+
 extension APIClient {
     func mcflyStatus() async throws -> McFlyStatus { try await getJSON("/mcfly") }
 
-    /// Streams the answer to the last question (text/event-stream: text, tool, refusal, error, done).
-    func mcflyChat(_ messages: [McFlyMessage]) -> AsyncThrowingStream<McFlyEvent, Error> {
+    /// Streams the answer to the last question (text/event-stream: text, tool, visual, refusal, error, done).
+    func mcflyChat(_ turns: [McFlyTurn]) -> AsyncThrowingStream<McFlyEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    let body = try JSONEncoder().encode(["messages": messages.suffix(40).map { ["role": $0.role.rawValue, "content": $0.content] }])
+                    let body = try JSONEncoder().encode(["messages": Array(turns.suffix(40))])
                     let (bytes, http) = try await stream("/mcfly/chat", body: body)
                     guard (200..<300).contains(http.statusCode) else {
                         var data = Data()
@@ -39,26 +126,7 @@ extension APIClient {
                         default: throw APIError.network(message ?? HTTPURLResponse.localizedString(forStatusCode: http.statusCode))
                         }
                     }
-                    var event = ""
-                    for try await line in bytes.lines {
-                        if line.hasPrefix("event:") {
-                            event = line.dropFirst(6).trimmingCharacters(in: .whitespaces)
-                        } else if line.hasPrefix("data:") {
-                            let json = Data(line.dropFirst(5).trimmingCharacters(in: .whitespaces).utf8)
-                            let fields = (try? JSONSerialization.jsonObject(with: json)) as? [String: Any] ?? [:]
-                            switch event {
-                            case "text": continuation.yield(.text(fields["text"] as? String ?? ""))
-                            case "tool": continuation.yield(.tool(fields["label"] as? String ?? "your data"))
-                            case "refusal": continuation.yield(.refusal(fields["error"] as? String ?? "McFly can't answer that."))
-                            case "error": continuation.yield(.error(fields["error"] as? String ?? "Something went wrong."))
-                            case "done":
-                                continuation.yield(.done)
-                                continuation.finish()
-                                return
-                            default: break
-                            }
-                        }
-                    }
+                    try await McFlySSEParser.read(bytes) { continuation.yield($0) }
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
@@ -71,10 +139,87 @@ extension APIClient {
 
 struct McFlyMessage: Identifiable, Equatable {
     enum Role: String { case user, assistant }
+    /// An answer in the order it arrived: runs of text, and the charts McFly drew between them.
+    enum Part: Equatable {
+        case text(String)
+        case visual(McFlyVisual)
+    }
     let id = UUID()
     var role: Role
+    /// All of the answer's text.
     var content: String
-    var failed = false
+    var parts: [Part] = []
+    /// What went wrong, shown under whatever of the answer had already arrived.
+    var error: String?
+
+    /// A failed answer stays on screen but is left out of the history.
+    var failed: Bool { error != nil }
+    var hasVisual: Bool { parts.contains { if case .visual = $0 { true } else { false } } }
+
+    /// Folds one streamed event into the answer.
+    mutating func apply(_ event: McFlyEvent) {
+        switch event {
+        case .text(let t):
+            content += t
+            if case .text(let run)? = parts.last { parts[parts.count - 1] = .text(run + t) } else { parts.append(.text(t)) }
+        case .visual(let v):
+            parts.append(.visual(v))
+        case .refusal(let e):
+            // A refusal can arrive after some text: the partial answer and its charts go, like the web.
+            content = ""
+            parts = []
+            error = e
+        case .error(let e):
+            fail(e)
+        case .tool, .done:
+            break
+        }
+    }
+
+    /// Something broke partway (an error event, a dropped connection): the words and charts that already arrived
+    /// stay, with the error under them, like the web. The first error is the one kept.
+    mutating func fail(_ message: String) {
+        if error == nil { error = message }
+    }
+
+    /// After the stream ends: an answer with neither words nor charts says so.
+    mutating func finishAnswer() {
+        if error == nil, content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !hasVisual {
+            error = "No answer came back. Try again."
+        }
+    }
+
+    /// What McFly reads back next time: its words, with a one-line note where each chart was (spoken() on the web).
+    var spoken: String {
+        guard !parts.isEmpty else { return content }
+        let joined = parts.map { part -> String in
+            switch part {
+            case .text(let t): t
+            case .visual(let v): "\n\n\(v.note)\n\n"
+            }
+        }.joined()
+        return joined.replacingOccurrences(of: #"\n{3,}"#, with: "\n\n", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// The history the server needs: question and answer pairs that completed, then the new question. A failed
+    /// answer's question is left out with it, since the server wants turns that alternate.
+    static func history(_ messages: [McFlyMessage], question: String) -> [McFlyTurn] {
+        var out: [McFlyTurn] = []
+        var i = 0
+        while i < messages.count {
+            let m = messages[i]
+            if m.role == .user, i + 1 < messages.count, messages[i + 1].role == .assistant, !messages[i + 1].failed {
+                let answer = messages[i + 1].spoken
+                if !answer.isEmpty, !m.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    out += [McFlyTurn(role: Role.user.rawValue, content: m.content), McFlyTurn(role: Role.assistant.rawValue, content: answer)]
+                }
+                i += 2
+            } else {
+                i += 1
+            }
+        }
+        return out + [McFlyTurn(role: Role.user.rawValue, content: question)]
+    }
 }
 
 @MainActor
@@ -98,7 +243,7 @@ final class McFlyChat {
     func ask(_ question: String) async {
         let q = String(question.trimmingCharacters(in: .whitespacesAndNewlines).prefix(4000))
         guard !q.isEmpty, !streaming, let client = APIClient.current() else { return }
-        let history = messages.filter { !$0.failed }
+        let turns = McFlyMessage.history(messages, question: q)
         messages.append(McFlyMessage(role: .user, content: q))
         messages.append(McFlyMessage(role: .assistant, content: ""))
         let index = messages.count - 1
@@ -108,29 +253,56 @@ final class McFlyChat {
             lookingAt = nil
         }
         do {
-            for try await event in client.mcflyChat(history + [McFlyMessage(role: .user, content: q)]) {
+            for try await event in client.mcflyChat(turns) {
                 switch event {
-                case .text(let t):
-                    lookingAt = nil
-                    messages[index].content += t
                 case .tool(let label): lookingAt = label
-                case .refusal(let e), .error(let e):
-                    messages[index].content = e
-                    messages[index].failed = true
-                case .done: break
+                case .text, .visual: lookingAt = nil
+                case .refusal, .error, .done: break
                 }
+                messages[index].apply(event)
             }
-            if messages[index].content.isEmpty {
-                messages[index].content = "No answer came back. Try again."
-                messages[index].failed = true
-            }
+            messages[index].finishAnswer()
         } catch {
-            messages[index].content = error.localizedDescription
-            messages[index].failed = true
+            messages[index].fail(error.localizedDescription)
         }
         await refreshStatus()
     }
 }
+
+/// Whether the thread keeps the newest words in view while an answer streams (the `following` ref in
+/// src/pages/McFly.tsx). Scrolling up to reread, or touching a chart, lets go; scrolling back to within 80pt of
+/// the bottom, or sending a question, takes hold again. The answer growing on its own never changes it, and neither
+/// does the thread's own scroll down to the newest words.
+///
+/// A plain class on purpose: it hears about every frame of scrolling, and nothing on screen depends on it, so
+/// changing it mustn't redraw the thread.
+final class McFlyFollow {
+    static let nearBottom: CGFloat = 80
+
+    private(set) var following = true
+    /// Where the visible thread ends (the top of the composer), in the same space as the content's edges.
+    var viewportBottom: CGFloat = .infinity
+    private var top: CGFloat?
+
+    /// The thread's content moved or changed size; `top` and `bottom` are its edges.
+    func contentMoved(top newTop: CGFloat, bottom: CGFloat) {
+        defer { top = newTop }
+        // Only the top edge moving means someone scrolled; words arriving at the bottom leave it where it is.
+        guard let old = top, abs(newTop - old) > 0.5 else { return }
+        if bottom - viewportBottom < Self.nearBottom {
+            following = true
+        } else if newTop > old {
+            following = false // toward earlier messages
+        }
+    }
+
+    /// A finger is on a chart: it stays put under the finger until the reader scrolls back down or asks again.
+    func chartTouched() { following = false }
+
+    func sent() { following = true }
+}
+
+private let threadSpace = "mcfly-thread"
 
 /// The floating pill at the bottom of Today.
 struct AskMcFlyPill: View {
@@ -154,6 +326,7 @@ struct McFlySheet: View {
     @Bindable var chat: McFlyChat
     @Environment(\.dismiss) private var dismiss
     @State private var draft = ""
+    @State private var follow = McFlyFollow()
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -179,14 +352,25 @@ struct McFlySheet: View {
                         Color.clear.frame(height: 1).id("end")
                     }
                     .padding(16)
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(threadSpace)) } action: { [follow] frame in
+                        follow.contentMoved(top: frame.minY, bottom: frame.maxY)
+                    }
                 }
                 .scrollDismissesKeyboard(.interactively)
-                .onChange(of: chat.messages.last?.content) { _, _ in
+                .environment(\.mcflyChartTouched, { [follow] in follow.chartTouched() })
+                .onChange(of: followKey) { _, _ in
+                    // Only while the reader is at the bottom: an earlier paragraph or chart stays put to be read.
+                    guard follow.following else { return }
                     withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("end", anchor: .bottom) }
                 }
             }
             .background(Palette.page)
-            .safeAreaInset(edge: .bottom) { composer }
+            .safeAreaInset(edge: .bottom) {
+                composer.onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(threadSpace)).minY } action: { [follow] y in
+                    follow.viewportBottom = y
+                }
+            }
+            .coordinateSpace(.named(threadSpace))
             .navigationTitle("Ask McFly")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -228,6 +412,12 @@ struct McFlySheet: View {
         .background(.bar)
     }
 
+    /// Changes whenever something new lands at the bottom of the thread.
+    private var followKey: [String] {
+        guard let m = chat.messages.last else { return [] }
+        return [m.id.uuidString, "\(m.content.count)", "\(m.parts.count)", m.error ?? "", chat.lookingAt ?? ""]
+    }
+
     private var canSend: Bool {
         !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !chat.streaming && (chat.status?.left ?? 1) > 0
     }
@@ -237,6 +427,7 @@ struct McFlySheet: View {
         let q = draft
         draft = ""
         focused = false // the keyboard steps aside while the answer streams
+        follow.sent()
         Task { await chat.ask(q) }
     }
 }
@@ -245,19 +436,48 @@ private struct Bubble: View {
     let message: McFlyMessage
 
     var body: some View {
+        if message.role == .assistant, message.hasVisual {
+            // Charts sit full width between the answer's paragraphs, in the order they arrived; anything that went
+            // wrong afterwards goes under them.
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(Array(message.parts.enumerated()), id: \.offset) { _, part in
+                    switch part {
+                    case .text(let t):
+                        if !t.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { shell(LightMarkdown(text: t)) }
+                    case .visual(let v):
+                        McFlyVisualView(visual: v)
+                    }
+                }
+                if let error = message.error { shell(ErrorLine(text: error)) }
+            }
+        } else {
+            shell(content)
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if message.role == .user {
+            Text(message.content)
+        } else {
+            let words = !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            if words { LightMarkdown(text: message.content) }
+            if let error = message.error {
+                ErrorLine(text: error)
+            } else if !words {
+                ProgressView().controlSize(.small)
+            }
+        }
+    }
+
+    private func shell(_ inner: some View) -> some View {
         HStack {
             if message.role == .user { Spacer(minLength: 40) }
             VStack(alignment: .leading, spacing: 6) {
-                if message.role == .assistant, message.content.isEmpty {
-                    ProgressView().controlSize(.small)
-                } else if message.role == .assistant {
-                    LightMarkdown(text: message.content)
-                } else {
-                    Text(message.content)
-                }
+                inner
             }
             .font(.callout)
-            .foregroundStyle(message.role == .user ? Palette.page : (message.failed ? Palette.critical : Palette.ink))
+            .foregroundStyle(message.role == .user ? Palette.page : Palette.ink)
             .padding(.horizontal, 14).padding(.vertical, 10)
             .background(message.role == .user ? Palette.ink : Palette.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay {
@@ -266,6 +486,19 @@ private struct Bubble: View {
             .textSelection(.enabled)
             if message.role == .assistant { Spacer(minLength: 24) }
         }
+    }
+}
+
+/// What went wrong with an answer, under the part of it that arrived (note-bad on the web).
+private struct ErrorLine: View {
+    let text: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: "exclamationmark.circle").accessibilityHidden(true)
+            Text(text).fixedSize(horizontal: false, vertical: true)
+        }
+        .foregroundStyle(Palette.critical)
     }
 }
 

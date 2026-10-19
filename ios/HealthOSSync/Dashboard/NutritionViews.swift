@@ -198,57 +198,69 @@ private struct NutritionLoader<Content: View>: View {
 private struct NutritionOverview: View {
     let data: NutritionData
     let units: Units
+    @Environment(Dashboard.self) private var dashboard
 
     var body: some View {
         let week = FoodMath.dates(to: data.end, count: 7)
         let latest = data.days.last
+        // Cards hidden in Settings → Cards (shared/cards.ts) are left out, and the rest close up.
+        let layout = Cards.nutritionOverview(mode: data.mode, hidden: dashboard.hiddenCardSet)
         if latest == nil && data.water.isEmpty {
             FoodNothingLoggedCard()
         } else if data.mode == .none {
-            FoodLoggedCard(data: data)
+            if layout.row.contains("nutrition.logged") { FoodLoggedCard(data: data) }
             FoodNoAmountsCard(latest: latest, today: data.today)
+        } else if layout.allHidden {
+            AllCardsHiddenNote(text: "All the cards on this page are hidden.")
         } else {
-            FoodOverviewCards(data: data, week: week, units: units)
-            if let latest {
-                MacroBalanceCard(day: latest, today: data.today, mode: data.mode, caffeine: data.caffeine.first { $0.date == latest.date }?.value)
-            } else {
-                FoodNothingLoggedCard()
+            FoodOverviewCards(data: data, week: week, units: units, ids: layout.row)
+            if layout.pair.contains("nutrition.macros") {
+                if let latest {
+                    MacroBalanceCard(day: latest, today: data.today, mode: data.mode, caffeine: data.caffeine.first { $0.date == latest.date }?.value)
+                } else {
+                    FoodNothingLoggedCard()
+                }
             }
-            FoodInsightsCard(insights: data.insights)
+            if layout.pair.contains("nutrition.insights") { FoodInsightsCard(insights: data.insights) }
         }
     }
 }
 
-/// Energy (only when everything is shown), protein, water and days logged: two to a row.
+/// Energy (only when everything is shown), protein, water and days logged: two to a row, without the hidden ones.
+/// An odd last card takes the whole row, so hiding one leaves no hole.
 private struct FoodOverviewCards: View {
     let data: NutritionData
     let week: [String]
     let units: Units
+    let ids: [String]
 
     var body: some View {
-        let before = FoodMath.dates(to: Day.add(data.end, -7), count: 7)
-        let protein = FoodProteinCard(week: FoodMath.series("protein_g", week, data.days), before: FoodMath.series("protein_g", before, data.days),
-                                  target: data.targets?["protein_g"], today: data.today)
-        let water = FoodWaterCard(week: FoodMath.series(data.water, week), target: data.targets?["water_ml"], today: data.today, units: units)
         Grid(horizontalSpacing: 12, verticalSpacing: 12) {
-            if data.mode == .all {
+            ForEach(Array(Cards.rows(ids, max: 2).enumerated()), id: \.offset) { _, row in
                 GridRow {
-                    FoodEnergyCard(week: FoodMath.series("energy_kcal", week, data.days), target: data.targets?["energy_kcal"], today: data.today)
-                    protein
-                }
-                GridRow {
-                    water
-                    FoodLoggedCard(data: data, compact: true)
-                }
-            } else {
-                GridRow {
-                    protein
-                    water
-                }
-                GridRow {
-                    FoodLoggedCard(data: data).gridCellColumns(2)
+                    ForEach(row, id: \.self) { id in
+                        card(id, wide: row.count == 1).gridCellColumns(row.count == 1 ? 2 : 1)
+                    }
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func card(_ id: String, wide: Bool) -> some View {
+        switch id {
+        case "nutrition.energy":
+            FoodEnergyCard(week: FoodMath.series("energy_kcal", week, data.days), target: data.targets?["energy_kcal"], today: data.today)
+        case "nutrition.protein":
+            let before = FoodMath.dates(to: Day.add(data.end, -7), count: 7)
+            FoodProteinCard(week: FoodMath.series("protein_g", week, data.days), before: FoodMath.series("protein_g", before, data.days),
+                            target: data.targets?["protein_g"], today: data.today)
+        case "nutrition.water":
+            FoodWaterCard(week: FoodMath.series(data.water, week), target: data.targets?["water_ml"], today: data.today, units: units)
+        case "nutrition.logged":
+            FoodLoggedCard(data: data, compact: !wide)
+        default:
+            EmptyView()
         }
     }
 }

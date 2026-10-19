@@ -1074,3 +1074,298 @@ final class PhotoCutoutTests: XCTestCase {
         }
     }
 }
+
+// MARK: - Card hiding (shared/cards.ts, Settings → Cards)
+
+@MainActor
+final class CardHidingTests: XCTestCase {
+    /// A status as the server sends it; no hiddenCards is a server from before card hiding.
+    private func status(hidden: [String]?) throws -> ServerStatus {
+        var settings: [String: Any] = ["name": "Sam"]
+        if let hidden { settings["hiddenCards"] = hidden }
+        return try JSONDecoder().decode(ServerStatus.self, from: JSONSerialization.data(withJSONObject: ["settings": settings]))
+    }
+
+    private func dashboard(hidden: [String]?) throws -> Dashboard {
+        let d = Dashboard()
+        d.apply(status: try status(hidden: hidden))
+        return d
+    }
+
+    private func json(_ change: CardChange) throws -> String {
+        String(decoding: try APIClient.settingsBody(change.body), as: UTF8.self)
+    }
+
+    /// What the server does with a PUT /settings body (server/app.ts): one card's change applied to the stored list,
+    /// or the whole list. `oneCard: false` is a server from before one-card changes, which ignores `cardShown`.
+    private func serve(_ fields: [String: Any], stored: inout [String], oneCard: Bool = true) {
+        if let list = fields["hiddenCards"] as? [String] {
+            stored = list
+        } else if oneCard, let c = fields["cardShown"] as? [String: Any], let id = c["id"] as? String, let shown = c["shown"] as? Bool {
+            stored = Cards.toggled(stored, id: id, shown: shown)
+        }
+    }
+
+    func testRegistryMatchesSharedCards() throws {
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("shared/cards.ts")
+        guard let source = try? String(contentsOf: url, encoding: .utf8) else { throw XCTSkip("shared/cards.ts isn't next to the app") }
+        let ns = source as NSString
+        func groups(_ pattern: String) throws -> [[String?]] {
+            try NSRegularExpression(pattern: pattern).matches(in: source, range: NSRange(location: 0, length: ns.length)).map { m in
+                (1..<m.numberOfRanges).map { m.range(at: $0).location == NSNotFound ? nil : ns.substring(with: m.range(at: $0)) }
+            }
+        }
+        let cards = try groups(#"\{ id: '([^']+)', page: '([^']+)', label: (?:'([^']*)'|"([^"]*)")(, nutrition: true)? \}"#)
+        XCTAssertEqual(cards.count, 29, "every card in CARDS")
+        XCTAssertEqual(cards.map { $0[0]! }, Cards.all.map(\.id), "same ids, same order")
+        for (c, card) in zip(cards, Cards.all) {
+            XCTAssertEqual(c[1], card.page.rawValue, card.id)
+            XCTAssertEqual(c[2] ?? c[3], card.label, card.id)
+            XCTAssertEqual(c[4] != nil, card.nutrition, card.id)
+        }
+        let pages = try groups(#"\{ page: '([^']+)', label: '([^']+)' \}"#)
+        XCTAssertEqual(pages.map { $0[0]! }, CardPage.allCases.map(\.rawValue))
+        XCTAssertEqual(pages.map { $0[1]! }, CardPage.allCases.map(\.label))
+    }
+
+    func testNutritionOverviewClosesUpAroundHiddenCards() {
+        // Everything shown: energy, protein, water, logged as two rows of two, then macros and insights.
+        let all = Cards.nutritionOverview(mode: .all, hidden: [])
+        XCTAssertEqual(Cards.rows(all.row, max: 2), [["nutrition.energy", "nutrition.protein"], ["nutrition.water", "nutrition.logged"]])
+        // Hiding protein leaves three: the last one takes the whole row, no hole.
+        let noProtein = Cards.nutritionOverview(mode: .all, hidden: ["nutrition.protein"])
+        XCTAssertEqual(Cards.rows(noProtein.row, max: 2), [["nutrition.energy", "nutrition.water"], ["nutrition.logged"]])
+        // Calories hidden by the setting: energy never shows, so it doesn't count toward "all hidden".
+        let noEnergy = Cards.nutritionOverview(mode: .noEnergy, hidden: ["nutrition.protein", "nutrition.water", "nutrition.logged", "nutrition.macros", "nutrition.insights"])
+        XCTAssertTrue(noEnergy.allHidden)
+        XCTAssertFalse(Cards.nutritionOverview(mode: .all, hidden: ["nutrition.protein", "nutrition.water", "nutrition.logged", "nutrition.macros", "nutrition.insights"]).allHidden)
+    }
+
+    func testOnlyCardsTheAppShowsAreMapped() {
+        XCTAssertEqual(Cards.ids(in: .today), ["home.readiness", "home.spo2", "home.hrv", "home.sleep", "home.load", "home.activity", "home.timeline", "home.insights"])
+        XCTAssertEqual(Cards.todayGrid.filter { Cards.card($0)?.place == .today }, Cards.todayGrid, "every grid card is a Today card")
+        XCTAssertEqual(Cards.ids(in: .trends(.sleep)), ["sleep.score", "sleep.total", "sleep.stages"])
+        XCTAssertEqual(Cards.ids(in: .trends(.nutrition)),
+                       ["nutrition.energy", "nutrition.protein", "nutrition.water", "nutrition.logged", "nutrition.macros", "nutrition.insights"])
+        // No food card on Today, and nothing of the Body overview in the app.
+        XCTAssertNil(Cards.card("home.food")?.place)
+        XCTAssertTrue(Cards.all.filter { $0.page == .body }.allSatisfy { $0.place == nil })
+        XCTAssertTrue(Cards.ids(in: .trends(.body)).isEmpty)
+        XCTAssertNil(Cards.card("future.card"))
+    }
+
+    func testHiddenCardsLeaveTheRestInOrder() throws {
+        let hidden: Set<String> = ["home.spo2", "home.load", "sleep.total", "future.card"]
+        XCTAssertEqual(Cards.visible(Cards.todayGrid, hidden: hidden), ["home.readiness", "home.hrv", "home.sleep", "home.activity"])
+        XCTAssertEqual(Cards.visible(Cards.todayGrid, hidden: []), Cards.todayGrid)
+        XCTAssertFalse(Cards.allHidden(in: .today, hidden: hidden))
+        XCTAssertTrue(Cards.allHidden(in: .today, hidden: Set(Cards.ids(in: .today))))
+        XCTAssertFalse(Cards.allHidden(in: .trends(.body), hidden: Set(Cards.all.map(\.id))), "nothing to hide there, so no note")
+
+        // The status's list, unknown ids ignored.
+        let d = try dashboard(hidden: ["home.hrv", "future.card"])
+        XCTAssertTrue(d.cardsAvailable)
+        XCTAssertFalse(d.cardShown("home.hrv"))
+        XCTAssertTrue(d.cardShown("home.spo2"))
+        XCTAssertEqual(Cards.visible(Cards.todayGrid, hidden: d.hiddenCardSet), ["home.readiness", "home.spo2", "home.sleep", "home.load", "home.activity"])
+    }
+
+    func testAnOlderServerShowsEveryCard() throws {
+        let d = try dashboard(hidden: nil)
+        XCTAssertFalse(d.cardsAvailable, "no Cards section in Settings")
+        XCTAssertEqual(d.hiddenCards, [])
+        XCTAssertTrue(Cards.all.allSatisfy { d.cardShown($0.id) })
+        XCTAssertFalse(Dashboard().cardsAvailable, "nor before the status has loaded")
+        XCTAssertTrue(try dashboard(hidden: []).cardsAvailable)
+    }
+
+    func testTheGridReflowsWithNoHoles() {
+        XCTAssertEqual(Cards.rows([String](), max: 2), [])
+        XCTAssertEqual(Cards.rows(["a"], max: 2), [["a"]], "one card takes the whole row")
+        XCTAssertEqual(Cards.rows(["a", "b"], max: 2), [["a", "b"]])
+        XCTAssertEqual(Cards.rows(["a", "b", "c"], max: 2), [["a", "b"], ["c"]], "an odd last card spans both columns")
+        XCTAssertEqual(Cards.rows(["a", "b", "c", "d"], max: 2), [["a", "b"], ["c", "d"]])
+        XCTAssertEqual(Cards.rows(["a", "b", "c", "d", "e"], max: 2), [["a", "b"], ["c", "d"], ["e"]])
+        XCTAssertEqual(Cards.rows(Cards.todayGrid, max: 2), [["home.readiness", "home.spo2"], ["home.hrv", "home.sleep"], ["home.load", "home.activity"]])
+        // Blood oxygen hidden: the cards after it move up and Activity spans the last row.
+        XCTAssertEqual(Cards.rows(Cards.visible(Cards.todayGrid, hidden: ["home.spo2"]), max: 2),
+                       [["home.readiness", "home.hrv"], ["home.sleep", "home.load"], ["home.activity"]])
+        // The web's fillColumns: as few rows as fit, as even as they go.
+        XCTAssertEqual(Cards.fillColumns(0, max: 3), 1)
+        XCTAssertEqual(Cards.fillColumns(4, max: 3), 2, "2 × 2, not 3 + 1")
+        XCTAssertEqual(Cards.fillColumns(5, max: 3), 3)
+        XCTAssertEqual(Cards.fillColumns(6, max: 4), 3)
+        XCTAssertEqual(Cards.rows(["a", "b", "c", "d"], max: 3), [["a", "b"], ["c", "d"]])
+    }
+
+    func testTheSettingsBodies() throws {
+        XCTAssertEqual(try json(.card("home.hrv", shown: false)), #"{"cardShown":{"id":"home.hrv","shown":false}}"#)
+        XCTAssertEqual(try json(.card("sleep.stages", shown: true)), #"{"cardShown":{"id":"sleep.stages","shown":true}}"#)
+        XCTAssertEqual(try json(.list(["home.spo2", "home.hrv"])), #"{"hiddenCards":["home.spo2","home.hrv"]}"#)
+        XCTAssertEqual(try json(.list([])), #"{"hiddenCards":[]}"#, "Show all")
+    }
+
+    func testOneCardChangesApplyToTheListAsItIs() {
+        XCTAssertEqual(Cards.toggled(["home.spo2"], id: "home.hrv", shown: false), ["home.spo2", "home.hrv"])
+        XCTAssertEqual(Cards.toggled(["home.spo2", "home.hrv"], id: "home.hrv", shown: false), ["home.spo2", "home.hrv"], "once each")
+        XCTAssertEqual(Cards.toggled(["home.spo2", "future.card"], id: "home.spo2", shown: true), ["future.card"], "unknown ids stay")
+        XCTAssertEqual(CardChange.list(["a"]).applied(to: ["b"]), ["a"])
+    }
+
+    func testTheWholeListGoesOnlyWhenTheServerIgnoredTheChange() {
+        let hide = CardChange.card("home.hrv", shown: false)
+        XCTAssertNil(hide.retry(stored: ["home.spo2", "home.hrv"]), "it took")
+        XCTAssertEqual(hide.retry(stored: ["future.card"]), .list(["future.card", "home.hrv"]), "built on what the server answered")
+        let show = CardChange.card("home.hrv", shown: true)
+        XCTAssertNil(show.retry(stored: []))
+        XCTAssertEqual(show.retry(stored: ["home.hrv", "home.spo2"]), .list(["home.spo2"]))
+        XCTAssertNil(hide.retry(stored: nil))
+        XCTAssertNil(CardChange.list([]).retry(stored: ["home.hrv"]))
+    }
+
+    func testSettingsOffersNutritionCardsOnlyWithNutritionOn() {
+        let off = Cards.pages(nutrition: false)
+        XCTAssertEqual(off.map(\.page), [.home, .sleep, .body])
+        XCTAssertFalse(off.flatMap(\.cards).contains { $0.nutrition })
+        XCTAssertEqual(off.flatMap(\.cards).count, 22)
+        let on = Cards.pages(nutrition: true)
+        XCTAssertEqual(on.map(\.page), [.home, .sleep, .body, .nutrition])
+        XCTAssertEqual(on.flatMap(\.cards).map(\.id), Cards.all.map(\.id))
+        XCTAssertEqual(on.first?.cards.map(\.id).contains("home.food"), true)
+    }
+
+    func testAChangeShowsAtOnceThenFollowsTheServer() async throws {
+        let d = try dashboard(hidden: ["home.spo2"])
+        var stored = ["home.spo2", "sleep.rhr"] // hidden on the web meanwhile
+        var bodies: [String] = []
+        try await d.changeCards(.card("home.hrv", shown: false)) { fields in
+            bodies.append(String(decoding: try APIClient.settingsBody(fields), as: UTF8.self))
+            XCTAssertEqual(d.hiddenCards, ["home.spo2", "home.hrv"], "hidden before the server answers")
+            self.serve(fields, stored: &stored)
+            return try self.status(hidden: stored)
+        }
+        XCTAssertEqual(bodies, [#"{"cardShown":{"id":"home.hrv","shown":false}}"#])
+        XCTAssertNil(d.pendingHiddenCards)
+        XCTAssertEqual(d.hiddenCards, ["home.spo2", "sleep.rhr", "home.hrv"], "the server's list, the web's change kept")
+    }
+
+    func testARefusedChangeGoesBack() async throws {
+        let d = try dashboard(hidden: ["home.spo2"])
+        do {
+            try await d.changeCards(.card("home.hrv", shown: false)) { _ in
+                XCTAssertFalse(d.cardShown("home.hrv"))
+                throw APIError.server(400, "Unknown card, or not a list of cards.")
+            }
+            XCTFail("the error reaches the caller, to say so")
+        } catch APIError.server(400, _) {}
+        XCTAssertNil(d.pendingHiddenCards)
+        XCTAssertEqual(d.hiddenCards, ["home.spo2"])
+        XCTAssertTrue(d.cardShown("home.hrv"))
+    }
+
+    func testAServerFromBeforeOneCardChangesGetsTheWholeList() async throws {
+        let d = try dashboard(hidden: ["home.spo2"])
+        var stored = ["home.spo2", "sleep.rhr"]
+        var bodies: [String] = []
+        try await d.changeCards(.card("home.hrv", shown: false)) { fields in
+            bodies.append(String(decoding: try APIClient.settingsBody(fields), as: UTF8.self))
+            self.serve(fields, stored: &stored, oneCard: false)
+            return try self.status(hidden: stored)
+        }
+        XCTAssertEqual(bodies, [#"{"cardShown":{"id":"home.hrv","shown":false}}"#, #"{"hiddenCards":["home.spo2","sleep.rhr","home.hrv"]}"#])
+        XCTAssertEqual(d.hiddenCards, ["home.spo2", "sleep.rhr", "home.hrv"])
+    }
+
+    func testChangesReachTheServerInTheOrderMade() async throws {
+        let d = try dashboard(hidden: [])
+        var stored: [String] = []
+        var bodies: [String] = []
+        var release: CheckedContinuation<Void, Never>?
+        let send: @MainActor ([String: Any]) async throws -> ServerStatus = { fields in
+            bodies.append(String(decoding: try APIClient.settingsBody(fields), as: UTF8.self))
+            // The first one is slow to arrive.
+            if bodies.count == 1 { await withCheckedContinuation { release = $0 } }
+            self.serve(fields, stored: &stored)
+            return try self.status(hidden: stored)
+        }
+        let hide = Task { try await d.changeCards(.card("home.hrv", shown: false), send: send) }
+        for _ in 0..<1000 where release == nil { await Task.yield() }
+        XCTAssertEqual(d.hiddenCards, ["home.hrv"])
+        let show = Task { try await d.changeCards(.card("home.hrv", shown: true), send: send) }
+        for _ in 0..<1000 where d.hiddenCards != [] { await Task.yield() }
+        XCTAssertTrue(d.cardShown("home.hrv"), "shown again at once")
+        XCTAssertEqual(bodies.count, 1, "the second waits for the first")
+        release?.resume()
+        try await hide.value
+        try await show.value
+        XCTAssertEqual(bodies, [#"{"cardShown":{"id":"home.hrv","shown":false}}"#, #"{"cardShown":{"id":"home.hrv","shown":true}}"#])
+        XCTAssertEqual(stored, [])
+        XCTAssertEqual(d.hiddenCards, [])
+        XCTAssertNil(d.pendingHiddenCards)
+    }
+}
+
+/// The cards review's fixes: an empty Today grid leaves no gap, the Settings row and Show all count the same cards,
+/// and the Nutrition overview's cards per setting (the web's rule, ready for its screen).
+final class CardHidingReviewTests: XCTestCase {
+    private func summary() throws -> Summary {
+        let url = Bundle(for: Self.self).url(forResource: "summary", withExtension: "json")
+            ?? URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/summary.json")
+        return try JSONDecoder().decode(Summary.self, from: XCTUnwrap(try? Data(contentsOf: url), "missing fixture summary.json"))
+    }
+
+    @MainActor private func height<V: View>(_ view: V) -> CGFloat {
+        UIHostingController(rootView: view).sizeThatFits(in: CGSize(width: 375, height: CGFloat.greatestFiniteMagnitude)).height
+    }
+
+    @MainActor func testAGridWithEveryCardHiddenAddsNoGap() throws {
+        let s = try summary()
+        let bar = Color.red.frame(height: 10)
+        let without = height(VStack(spacing: 16) { bar; bar })
+        XCTAssertEqual(without, 36)
+        // The probe sees the bug: an empty stack still gets spacing on both sides, the old grid's 16pt extra.
+        let emptyStack = height(VStack(spacing: 16) { bar; VStack(spacing: 12) { ForEach([String](), id: \.self) { Text($0) } }; bar })
+        XCTAssertEqual(emptyStack, without + 16)
+        // TodayGrid with all six hidden takes no space and no spacing.
+        let grid = height(VStack(spacing: 16) { bar; TodayGrid(summary: s, ids: [], goal: 10_000); bar })
+        XCTAssertEqual(grid, without, "no gap where the grid was")
+        XCTAssertEqual(Cards.visible(Cards.todayGrid, hidden: Set(Cards.todayGrid)), [], "what Today passes then")
+    }
+
+    func testTheRowAndShowAllCountTheSameCards() throws {
+        // Hidden on the web with Nutrition on, then Nutrition turned off; plus a newer server's card.
+        let notListed: Set<String> = ["nutrition.water", "future.card"]
+        XCTAssertEqual(Cards.hiddenOffered(notListed, nutrition: false), [], "All shown, and no Show all with every switch on")
+        XCTAssertEqual(Cards.hiddenOffered(notListed, nutrition: true), ["nutrition.water"])
+        XCTAssertEqual(Cards.hiddenOffered(["sleep.rhr", "future.card", "home.spo2", "nutrition.water"], nutrition: false),
+                       ["home.spo2", "sleep.rhr"], "in the registry's order")
+        XCTAssertEqual(Cards.hiddenOffered([], nutrition: true), [])
+        XCTAssertEqual(Cards.hiddenOffered(Set(Cards.all.map(\.id)), nutrition: true), Cards.all.map(\.id))
+        XCTAssertEqual(Cards.hiddenOffered(Set(Cards.all.map(\.id)), nutrition: false).count, 22)
+    }
+
+    func testNutritionOverviewCardsFollowTheSetting() {
+        let ids = ["nutrition.energy", "nutrition.protein", "nutrition.water", "nutrition.logged", "nutrition.macros", "nutrition.insights"]
+        XCTAssertEqual(Cards.all.filter { $0.page == .nutrition }.map(\.id), ids, "every Nutrition card is on the overview")
+
+        let all = Cards.nutritionOverview(mode: .all, hidden: [])
+        XCTAssertEqual(all, .init(row: Array(ids[0..<4]), pair: ["nutrition.macros", "nutrition.insights"], allHidden: false))
+        XCTAssertEqual(Cards.nutritionOverview(mode: .noEnergy, hidden: []).row, ["nutrition.protein", "nutrition.water", "nutrition.logged"],
+                       "no Energy card while calories are hidden")
+
+        // Everything but Energy hidden: with calories hidden Energy never appears, so the page is all hidden (web 3efedb7).
+        let allButEnergy = Set(ids.dropFirst())
+        XCTAssertEqual(Cards.nutritionOverview(mode: .noEnergy, hidden: allButEnergy), .init(row: [], pair: [], allHidden: true))
+        XCTAssertEqual(Cards.nutritionOverview(mode: .all, hidden: allButEnergy), .init(row: ["nutrition.energy"], pair: [], allHidden: false))
+        XCTAssertTrue(Cards.nutritionOverview(mode: .all, hidden: Set(ids)).allHidden)
+
+        // Hiding one leaves the rest in order, and the pair keeps the one left.
+        XCTAssertEqual(Cards.nutritionOverview(mode: .all, hidden: ["nutrition.water", "nutrition.insights", "future.card"]),
+                       .init(row: ["nutrition.energy", "nutrition.protein", "nutrition.logged"], pair: ["nutrition.macros"], allHidden: false))
+
+        // No amounts: only Days logged can go, and the page keeps its note, so it's never all hidden.
+        XCTAssertEqual(Cards.nutritionOverview(mode: .none, hidden: []), .init(row: ["nutrition.logged"], pair: [], allHidden: false))
+        XCTAssertEqual(Cards.nutritionOverview(mode: .none, hidden: Set(ids)), .init(row: [], pair: [], allHidden: false))
+    }
+}

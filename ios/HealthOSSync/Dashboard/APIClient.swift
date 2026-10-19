@@ -208,13 +208,18 @@ struct APIClient {
         }
     }
 
-    /// Changes settings (PUT /settings), e.g. ["familySharing": false]; the server answers with the new status.
+    /// Changes settings (PUT /settings), e.g. ["familySharing": false] or a CardChange's body; the server answers
+    /// with the new status.
     func updateSettings(_ fields: [String: Any]) async throws -> ServerStatus {
-        let body = try JSONSerialization.data(withJSONObject: fields)
-        let data = try await request("/settings", method: "PUT", body: body)
+        let data = try await request("/settings", method: "PUT", body: try Self.settingsBody(fields))
         // Every server so far answers with the status; read it again if this one didn't.
         if let status = try? JSONDecoder().decode(ServerStatus.self, from: data), status.settings != nil { return status }
         return try await self.status()
+    }
+
+    /// The JSON a PUT /settings sends, keys sorted so the same change always reads the same.
+    static func settingsBody(_ fields: [String: Any]) throws -> Data {
+        try JSONSerialization.data(withJSONObject: fields, options: [.sortedKeys])
     }
 
     /// An opaque version of the signed-in person's data; it changes whenever any of their data changes.

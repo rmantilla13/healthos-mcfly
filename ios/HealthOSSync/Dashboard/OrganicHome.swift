@@ -40,7 +40,7 @@ struct OrganicHeader: View {
 
 // MARK: - Portrait
 
-private enum VitalKey: CaseIterable { case temp, breathing, heart }
+enum VitalKey: Int, CaseIterable { case temp, breathing, heart }
 
 struct OrganicPortrait: View {
     let summary: Summary
@@ -56,13 +56,19 @@ struct OrganicPortrait: View {
     @State private var cells: RevealCells?
     @State private var width: CGFloat = 360
     @State private var liveOpen = false
+    /// The readings' and shapes' real heights (they grow with the text size and when status words wrap), so each
+    /// is placed below the one above it instead of a fixed distance apart.
+    @State private var labelHeights: [VitalKey: CGFloat] = [:]
+    @State private var shapeHeights: [PortraitShape: CGFloat] = [:]
 
     private let figureHeight: CGFloat = 340
     private static var played: Set<String> = []
 
     var body: some View {
+        let scrub = heartScrub
         GeometryReader { geo in
-            let layout = Layout(width: geo.size.width, figureHeight: figureHeight, aspect: aspect)
+            let layout = PortraitLayout(width: geo.size.width, figureHeight: figureHeight, aspect: aspect)
+            let plan = layout.plan(dots: dots, faceCenterX: faceCenterX, labelHeights: labelHeights, shapeHeights: shapeHeights)
             ZStack(alignment: .topLeading) {
                 GlowBlob()
                     .fill(Palette.pageGlow)
@@ -72,17 +78,24 @@ struct OrganicPortrait: View {
                 figure(layout)
                     .frame(width: layout.figure.width, height: layout.figure.height)
                     .position(x: layout.figure.midX, y: layout.figure.midY)
-                callouts(layout)
+                callouts(plan, scrub: scrub)
                     .opacity(revealed || photo == nil ? 1 : 0)
                     .animation(.easeOut(duration: 0.5), value: revealed)
-                shapes(layout)
+                shapes(plan)
             }
         }
-        // The figure is narrower than tall photos would need on small phones; size the area to the real figure.
-        .frame(height: Layout(width: width, figureHeight: figureHeight, aspect: aspect).figure.maxY + 72)
+        // The figure is narrower than tall photos would need on small phones; size the area to the real figure, and
+        // to readings and shapes pushed below it by large text.
+        .frame(height: PortraitLayout(width: width, figureHeight: figureHeight, aspect: aspect)
+            .plan(dots: dots, faceCenterX: faceCenterX, labelHeights: labelHeights, shapeHeights: shapeHeights).height)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         .task(id: "\(photo?.versionKey ?? "none")-\(scheme == .dark)") { await loadPhoto() }
         .sheet(isPresented: $liveOpen) { LiveHeartRateView() }
+    }
+
+    /// While Today's path is moved off live on this same day, the heart shows that hour (web Home.tsx heartScrub).
+    private var heartScrub: HeartScrub? {
+        ScrubbedHeart.shared.value.flatMap { $0.date == summary.date ? $0 : nil }
     }
 
     private var aspect: CGFloat {
@@ -94,8 +107,7 @@ struct OrganicPortrait: View {
         if let d = photo?.dots, let t = d.temp, let b = d.breathing, let h = d.heart, t.count == 2, b.count == 2, h.count == 2 {
             return [.temp: CGPoint(x: t[0], y: t[1]), .breathing: CGPoint(x: b[0], y: b[1]), .heart: CGPoint(x: h[0], y: h[1])]
         }
-        // The silhouette's points.
-        return [.temp: CGPoint(x: 0.5, y: 0.1), .breathing: CGPoint(x: 0.5, y: 0.42), .heart: CGPoint(x: 0.57, y: 0.56)]
+        return PortraitLayout.silhouetteDots
     }
 
     private var faceCenterX: CGFloat {
@@ -106,7 +118,7 @@ struct OrganicPortrait: View {
     // MARK: Figure
 
     @ViewBuilder
-    private func figure(_ layout: Layout) -> some View {
+    private func figure(_ layout: PortraitLayout) -> some View {
         if let photo, let image {
             let elapsed: () -> Double = { revealStart.map { Date().timeIntervalSince($0) } ?? 99 }
             TimelineView(.animation(paused: revealed)) { context in
@@ -167,47 +179,58 @@ struct OrganicPortrait: View {
 
     // MARK: Callouts
 
-    private func reading(_ key: VitalKey) -> (name: String, value: String?, color: Color, a11y: String) {
+    private func reading(_ key: VitalKey, scrub: HeartScrub?) -> CalloutReading {
         let v = summary.vitals
+        let vital: Vital?
+        let name: String, value: String?, spokenName: String
         switch key {
         case .temp:
-            let m = v?.temp?.latest.map { units.temp($0.value) }
-            let label = v?.temp?.label ?? "Temperature"
-            return ("Temp", m.map { $0.text(1) }, tempColor, "\(label) \(m?.text(1) ?? "no reading")")
+            vital = v?.temp
+            let m = vital?.latest.map { units.temp($0.value) }
+            (name, value, spokenName) = ("Temp", m.map { $0.text(1) }, vital?.label ?? "Temperature")
         case .breathing:
-            let s = v?.breathing?.latest.map { "\(Fmt.number($0.value, 1)) rpm" }
-            return ("Breathing", s, Palette.series1, "Breathing rate \(s ?? "no reading")")
+            vital = v?.breathing
+            (name, value, spokenName) = ("Breathing", vital?.latest.map { "\(Fmt.number($0.value, 1)) rpm" }, "Breathing rate")
         case .heart:
-            let s = v?.heart?.latest.map { "\(Fmt.number($0.value)) bpm" }
-            return ("Heart", s, Palette.vitalHeart, "Resting heart rate \(s ?? "no reading")")
+            return Self.heartReading(v?.heart, asOf: summary.date, scrub: scrub)
         }
+        let status = VitalLevel.statusLine(vital, asOf: summary.date)
+        let a11y = "\(spokenName) \(value ?? "no reading")" + (status.map { ", \($0)" } ?? "")
+        return CalloutReading(name: name, value: value, level: VitalLevel.of(vital, asOf: summary.date), status: status, a11y: a11y)
     }
 
-    private var tempColor: Color {
-        switch summary.vitals?.temp?.status {
-        case "high": Palette.serious
-        case "low": Palette.series1
-        default: Palette.vitalTemp
+    /// The heart callout: the resting rate with its level, or, while Today's path is scrubbed, that hour's average
+    /// with its hour as the words and no level (levels are for resting rates; web Figure.tsx CalloutLabel).
+    static func heartReading(_ vital: Vital?, asOf: String, scrub: HeartScrub?) -> CalloutReading {
+        if let scrub {
+            let value = scrub.bpm.map { "\(Fmt.number($0)) bpm" }
+            return CalloutReading(name: "Heart", value: value, level: .neutral, status: scrub.label,
+                                  a11y: value.map { "Heart rate \($0), \(scrub.spoken)" } ?? "Heart rate, \(scrub.spoken)", scrubbed: true)
         }
+        let value = vital?.latest.map { "\(Fmt.number($0.value)) bpm" }
+        let status = VitalLevel.statusLine(vital, asOf: asOf)
+        return CalloutReading(name: "Heart", value: value, level: VitalLevel.of(vital, asOf: asOf), status: status,
+                              a11y: "Resting heart rate \(value ?? "no reading")" + (status.map { ", \($0)" } ?? ""))
     }
 
     @ViewBuilder
-    private func callouts(_ layout: Layout) -> some View {
-        let placed = layout.labels(for: dots, faceCenterX: faceCenterX)
-        let bpm = summary.vitals?.heart?.latest?.value ?? 60
+    private func callouts(_ plan: PortraitLayout.Plan, scrub: HeartScrub?) -> some View {
+        let placed = plan.labels
+        // A scrubbed hour without a reading has nothing to beat at.
+        let bpm: Double? = if let scrub { scrub.bpm } else { summary.vitals?.heart?.latest?.value ?? 60 }
         let rpm = summary.vitals?.breathing?.latest?.value ?? 15
         TimelineView(.animation(paused: reduceMotion)) { context in
             let t = context.date.timeIntervalSinceReferenceDate
             ZStack(alignment: .topLeading) {
                 ForEach(VitalKey.allCases, id: \.self) { key in
                     if let p = placed[key] {
-                        let r = reading(key)
+                        let r = reading(key, scrub: scrub)
                         Path { path in
                             path.move(to: p.dot)
                             path.addQuadCurve(to: p.anchor, control: CGPoint(x: (p.dot.x + p.anchor.x) / 2, y: min(p.dot.y, p.anchor.y) - 14))
                         }
                         .stroke(Palette.ink3, style: StrokeStyle(lineWidth: 1, lineCap: .round))
-                        VitalDot(color: r.color, pulse: reduceMotion ? 0 : Self.pulse(key, t: t, bpm: bpm, rpm: rpm), key: key)
+                        VitalDot(level: r.level, pulse: reduceMotion ? 0 : Self.pulse(key, t: t, bpm: bpm, rpm: rpm), key: key)
                             .position(p.dot)
                         VStack(alignment: p.left ? .trailing : .leading, spacing: 1) {
                             HStack(spacing: 3) {
@@ -216,11 +239,33 @@ struct OrganicPortrait: View {
                                 if key == .heart { Image(systemName: "waveform.path.ecg").font(.caption2).foregroundStyle(Palette.vitalHeart) }
                             }
                             Text(r.value ?? "—").font(.subheadline.weight(.semibold)).monospacedDigit().foregroundStyle(Palette.ink)
+                            // The words with the colour, so it never rests on colour alone.
+                            if let status = r.status {
+                                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                                    if r.level != .neutral {
+                                        Circle().fill(r.level.color).frame(width: 7, height: 7)
+                                    }
+                                    Text(status)
+                                        .font(.caption2).foregroundStyle(Palette.ink3)
+                                        .multilineTextAlignment(p.left ? .trailing : .leading)
+                                        // A scrubbed hour stays on one line, so the label keeps its height as the marker moves.
+                                        .lineLimit(r.scrubbed ? 1 : 2)
+                                        .minimumScaleFactor(r.scrubbed ? 0.5 : 0.85)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
                         }
-                        .frame(width: Layout.labelWidth, alignment: p.left ? .trailing : .leading)
+                        .frame(width: PortraitLayout.labelWidth, alignment: p.left ? .trailing : .leading)
+                        // Beyond this the words no longer fit beside the figure; VoiceOver and the Vitals screen have them in full.
+                        .dynamicTypeSize(...DynamicTypeSize.xxLarge)
+                        // A scrubbed heart keeps the room it had at rest (its one-line hour can be shorter than wrapped
+                        // status words), so nothing below moves while the marker does or springs back.
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { h in
+                            labelHeights[key] = r.scrubbed ? max(labelHeights[key] ?? 0, h) : h
+                        }
                         .contentShape(Rectangle())
                         .onTapGesture { if key == .heart { liveOpen = true } }
-                        .position(p.label)
+                        .position(x: p.frame.midX, y: p.frame.midY)
                         .accessibilityElement(children: .ignore)
                         .accessibilityLabel(r.a11y)
                         .accessibilityAddTraits(key == .heart ? .isButton : [])
@@ -231,10 +276,12 @@ struct OrganicPortrait: View {
         }
     }
 
-    /// 0…1: the heart dot beats every 60/bpm s; the breathing halo swells every 60/rpm s; temperature glows slowly.
-    private static func pulse(_ key: VitalKey, t: Double, bpm: Double, rpm: Double) -> Double {
+    /// 0…1: the heart dot beats every 60/bpm s (still without a bpm); the breathing halo swells every 60/rpm s;
+    /// temperature glows slowly.
+    private static func pulse(_ key: VitalKey, t: Double, bpm: Double?, rpm: Double) -> Double {
         switch key {
         case .heart:
+            guard let bpm else { return 0 }
             let period = 60 / max(30, min(bpm, 200))
             let phase = t.truncatingRemainder(dividingBy: period) / period
             return phase < 0.18 ? sin(phase / 0.18 * .pi) : 0
@@ -249,7 +296,7 @@ struct OrganicPortrait: View {
     // MARK: Data shapes
 
     @ViewBuilder
-    private func shapes(_ layout: Layout) -> some View {
+    private func shapes(_ plan: PortraitLayout.Plan) -> some View {
         let sleep = summary.sleep?.latest
         let steps = summary.activity?.latest
         let hrv = summary.hrv?.latest
@@ -257,26 +304,55 @@ struct OrganicPortrait: View {
                   title: "Slept", value: sleep.map { Fmt.hoursMinutes($0.value) } ?? "—", a11y: "Slept \(sleep.map { Fmt.hoursMinutes($0.value) } ?? "no data")") {
             dashboard.open(.sleep)
         }
-        .position(layout.shapeSlept)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { shapeHeights[.slept] = $0 }
+        .position(x: plan.shapes[.slept]!.midX, y: plan.shapes[.slept]!.midY)
         DataShape(tint: .peach, radii: .init(topLeading: 24, bottomLeading: 34, bottomTrailing: 22, topTrailing: 30),
                   title: "Steps", value: steps.map { Fmt.number($0.value) } ?? "—",
                   progress: steps.map { min(1, $0.value / max(1, stepGoal)) },
                   a11y: "Steps \(steps.map { Fmt.number($0.value) } ?? "no data") of \(Fmt.number(stepGoal)) goal") {
             dashboard.open(.activity)
         }
-        .position(layout.shapeSteps)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { shapeHeights[.steps] = $0 }
+        .position(x: plan.shapes[.steps]!.midX, y: plan.shapes[.steps]!.midY)
         DataShape(tint: .pink, radii: .init(topLeading: 34, bottomLeading: 26, bottomTrailing: 30, topTrailing: 22),
                   title: "HRV", value: hrv.map { "\(Fmt.number($0.value)) ms" } ?? "—",
                   a11y: "Heart rate variability \(hrv.map { "\(Fmt.number($0.value)) milliseconds" } ?? "no data")") {
             dashboard.open(.vitals)
         }
-        .position(layout.shapeHRV)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { shapeHeights[.hrv] = $0 }
+        .position(x: plan.shapes[.hrv]!.midX, y: plan.shapes[.hrv]!.midY)
     }
 }
 
-/// Where the figure, readings and shapes go for a given width.
-private struct Layout {
+/// A reading beside the portrait: its name, value, level and words, and what VoiceOver says.
+struct CalloutReading: Equatable {
+    let name: String
+    let value: String?
+    let level: VitalLevel
+    let status: String?
+    let a11y: String
+    /// The heart while Today's path is scrubbed: that hour's average rather than the resting rate.
+    var scrubbed = false
+}
+
+/// The data shapes floating around the lower half of the portrait.
+enum PortraitShape: CaseIterable { case slept, steps, hrv }
+
+/// Where the figure, readings and shapes go for a given width (web src/components/Figure.tsx placeLabels): each
+/// reading sits beside its dot when there's room, otherwise just below the reading above it on that side, by the
+/// readings' measured heights; the shapes keep clear of the readings, and the area grows to hold everything.
+struct PortraitLayout {
     static let labelWidth: CGFloat = 84
+    /// Between two readings on one side, and between a reading and a shape (web: 10px).
+    static let gap: CGFloat = 8
+    /// A reading before it's been measured: name, value and two lines of status words at the default text size.
+    static let estimatedLabelHeight: CGFloat = 60
+    static let shapeWidth: CGFloat = 116
+    /// A shape before it's been measured (its minimum height).
+    static let estimatedShapeHeight: CGFloat = 60
+    /// The silhouette's points, when there's no photo (fractions of the figure).
+    static let silhouetteDots: [VitalKey: CGPoint] = [.temp: CGPoint(x: 0.5, y: 0.1), .breathing: CGPoint(x: 0.5, y: 0.42), .heart: CGPoint(x: 0.57, y: 0.56)]
+
     let width: CGFloat
     let figure: CGRect
 
@@ -287,45 +363,99 @@ private struct Layout {
         figure = CGRect(x: (width - w) / 2, y: 8, width: w, height: min(h, figureHeight))
     }
 
-    var shapeSlept: CGPoint { CGPoint(x: max(64, figure.minX + 10), y: figure.minY + figure.height * 0.74) }
-    var shapeSteps: CGPoint { CGPoint(x: min(width - 64, figure.maxX - 10), y: figure.minY + figure.height * 0.86) }
-    var shapeHRV: CGPoint { CGPoint(x: width / 2, y: figure.maxY + 34) }
-
     struct Placed {
         let dot: CGPoint
-        let label: CGPoint
+        /// The reading's own box.
+        let frame: CGRect
+        /// Where the leader line from the dot meets it.
         let anchor: CGPoint
         let left: Bool
     }
 
-    /// Readings go left or right of the face, never over it, spaced at least 44 pt apart on each side.
-    func labels(for dots: [VitalKey: CGPoint], faceCenterX: CGFloat) -> [VitalKey: Placed] {
+    struct Plan {
+        let labels: [VitalKey: Placed]
+        let shapes: [PortraitShape: CGRect]
+        /// The whole area's height: the figure with room below it, or further down to the lowest reading or shape.
+        let height: CGFloat
+    }
+
+    func plan(dots: [VitalKey: CGPoint], faceCenterX: CGFloat, labelHeights: [VitalKey: CGFloat], shapeHeights: [PortraitShape: CGFloat]) -> Plan {
+        let labels = labels(for: dots, faceCenterX: faceCenterX, heights: labelHeights)
+        let shapes = shapes(avoiding: labels.values.map(\.frame), heights: shapeHeights)
+        let lowest = (labels.values.map(\.frame.maxY) + shapes.values.map(\.maxY)).max() ?? 0
+        return Plan(labels: labels, shapes: shapes, height: max(figure.maxY + 72, lowest + 8))
+    }
+
+    /// Readings go left or right of the face, never over it. Each is centred on its dot's height when there's room,
+    /// and otherwise starts `gap` below the bottom of the reading above it on the same side (never above the top).
+    func labels(for dots: [VitalKey: CGPoint], faceCenterX: CGFloat, heights: [VitalKey: CGFloat]) -> [VitalKey: Placed] {
         var out: [VitalKey: Placed] = [:]
         let points = dots.mapValues { CGPoint(x: figure.minX + $0.x * figure.width, y: figure.minY + $0.y * figure.height) }
         for left in [true, false] {
-            let side = dots.filter { ($0.value.x < faceCenterX) == left }.sorted { $0.value.y < $1.value.y }
-            var lastY = -CGFloat.infinity
+            let side = dots.filter { ($0.value.x < faceCenterX) == left }
+                .sorted { $0.value.y != $1.value.y ? $0.value.y < $1.value.y : $0.key.rawValue < $1.key.rawValue }
+            var minTop: CGFloat = 0
             for (key, _) in side {
                 let p = points[key]!
-                let y = max(p.y, lastY + 44)
-                lastY = y
-                let cx = left ? Self.labelWidth / 2 + 2 : width - Self.labelWidth / 2 - 2
+                let h = heights[key] ?? Self.estimatedLabelHeight
+                let top = max(p.y - h / 2, minTop)
+                minTop = top + h + Self.gap
+                let frame = CGRect(x: left ? 2 : width - Self.labelWidth - 2, y: top, width: Self.labelWidth, height: h)
                 let ax = left ? Self.labelWidth + 6 : width - Self.labelWidth - 6
-                out[key] = Placed(dot: p, label: CGPoint(x: cx, y: y), anchor: CGPoint(x: ax, y: y), left: left)
+                out[key] = Placed(dot: p, frame: frame, anchor: CGPoint(x: ax, y: frame.midY), left: left)
             }
         }
         return out
     }
+
+    /// Each shape at its own place around the figure, moved down below any reading (or shape placed before it) it
+    /// would touch.
+    func shapes(avoiding labels: [CGRect], heights: [PortraitShape: CGFloat]) -> [PortraitShape: CGRect] {
+        let centres: [(PortraitShape, CGPoint)] = [
+            (.slept, CGPoint(x: max(64, figure.minX + 10), y: figure.minY + figure.height * 0.74)),
+            (.steps, CGPoint(x: min(width - 64, figure.maxX - 10), y: figure.minY + figure.height * 0.86)),
+            (.hrv, CGPoint(x: width / 2, y: figure.maxY + 34)),
+        ]
+        var obstacles = labels
+        var out: [PortraitShape: CGRect] = [:]
+        for (shape, c) in centres {
+            let h = heights[shape] ?? Self.estimatedShapeHeight
+            var r = CGRect(x: c.x - Self.shapeWidth / 2, y: c.y - h / 2, width: Self.shapeWidth, height: h)
+            // Only ever moves down, past one obstacle at a time, so it settles.
+            var moved = true
+            while moved {
+                moved = false
+                for o in obstacles where Self.touches(r, o) {
+                    r.origin.y = o.maxY + Self.gap
+                    moved = true
+                }
+            }
+            out[shape] = r
+            obstacles.append(r)
+        }
+        return out
+    }
+
+    /// Overlapping sideways, and closer than `gap` up and down.
+    static func touches(_ a: CGRect, _ b: CGRect) -> Bool {
+        a.minX < b.maxX && b.minX < a.maxX && a.minY < b.maxY + gap && b.minY < a.maxY + gap
+    }
 }
 
+/// A vital's dot on the portrait, green, amber or red by how far the reading is from the person's usual (neutral
+/// without a level or for an older reading), animated by its own number: the heart beats, breathing swells, and
+/// temperature glows.
 private struct VitalDot: View {
-    let color: Color
+    let level: VitalLevel
     let pulse: Double
     let key: VitalKey
 
     var body: some View {
+        let color = level.color
         ZStack {
             Circle().fill(color.opacity(key == .breathing ? 0.16 + 0.18 * pulse : 0.22))
+                // The halo takes a ring of the level, so the colour reads at a glance even where the dot is small.
+                .overlay(Circle().stroke(color.opacity(level == .neutral ? 0 : 0.5), lineWidth: 1))
                 .frame(width: 22 + (key == .breathing ? 10 * pulse : key == .temp ? 4 * pulse : 0))
             Circle().fill(color)
                 .overlay(Circle().stroke(Palette.surface, lineWidth: 1.5))
@@ -334,6 +464,65 @@ private struct VitalDot: View {
         }
         .frame(width: 44, height: 44)
         .accessibilityHidden(true)
+    }
+}
+
+/// How a vital's dot is coloured and what its words say (src/components/Figure.tsx, levelOf and statusText).
+enum VitalLevel: Equatable {
+    /// Within the person's usual.
+    case normal
+    /// Beyond it.
+    case unusual
+    /// Well beyond it (more than twice the usual band).
+    case off
+    /// No baseline yet, no reading, a reading older than the day shown, or a level this app doesn't know.
+    case neutral
+
+    /// Green within the person's usual, amber beyond it, red well beyond it. A reading from another day than the
+    /// one shown stays neutral (its date shows instead), so last week's number never alarms today's portrait.
+    static func of(_ v: Vital?, asOf: String) -> VitalLevel {
+        guard let v, let latest = v.latest, latest.date == asOf, let status = v.status, ["low", "normal", "high"].contains(status) else {
+            return .neutral
+        }
+        switch v.level {
+        // Servers before levels: the status alone says normal or not.
+        case nil: return status == "normal" ? .normal : .unusual
+        case "normal": return .normal
+        case "unusual": return .unusual
+        case "off": return .off
+        default: return .neutral
+        }
+    }
+
+    /// The words with the colour: "Normal", "Above usual", "Well below usual"…; nil for a status this app doesn't know.
+    static func statusText(_ v: Vital?) -> String? {
+        guard let status = v?.status else { return v?.latest == nil ? "No data" : "Building baseline" }
+        switch status {
+        case "normal": return "Normal"
+        case "high", "low":
+            let up = status == "high"
+            if v?.level == "off" { return up ? "Well above usual" : "Well below usual" }
+            return up ? "Above usual" : "Below usual"
+        default: return nil
+        }
+    }
+
+    /// The status words, with the reading's date when it's from another day than the one shown.
+    static func statusLine(_ v: Vital?, asOf: String) -> String? {
+        let text = statusText(v)
+        guard let latest = v?.latest, latest.date != asOf else { return text }
+        let date = Fmt.day(latest.date)
+        return text.map { "\($0) · \(date)" } ?? date
+    }
+
+    var color: Color {
+        switch self {
+        case .normal: Palette.good
+        case .unusual: Palette.warning
+        case .off: Palette.critical
+        // web --level-none
+        case .neutral: Palette.dynamic(0xCFCCC4, 0x77746D)
+        }
     }
 }
 
@@ -523,54 +712,135 @@ private struct AsciiBand: View {
 
 // MARK: - Today path
 
-/// A dashed path through the day with a pebble per timeline event.
+/// The day's path: a readout of one moment, a 24-hour track to scrub through it (TimelineScrub.swift), and a
+/// dashed path with a pebble per recent event. Today runs from 00:00 to now; a past day runs the whole day.
 struct TodayPath: View {
     let timeline: Summary.Timeline
     @Environment(Dashboard.self) private var dashboard
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The timeline day's hourly readings (GET /api/day), which day the server last answered for, and whether
+    /// asking failed; a failure never reads as "no readings".
+    @State private var load = DayLoad()
+    /// The minute the marker was moved to; nil is live (now, or the end of a past day).
+    @State private var scrub: Int?
 
     var body: some View {
-        let events = Array(timeline.events.sorted { $0.start < $1.start }.suffix(5))
-        VStack(alignment: .leading, spacing: 8) {
-            Text(timeline.date == dashboard.summary?.today ? "Today's path" : "The day's path").font(.headline).foregroundStyle(Palette.ink)
-            if events.isEmpty {
-                Text("Nothing recorded for this day yet.").font(.footnote).foregroundStyle(Palette.ink3)
-            } else {
-                GeometryReader { geo in
-                    let w = geo.size.width
-                    let point: (Int) -> CGPoint = { i in
-                        let x = events.count == 1 ? w / 2 : 36 + (w - 72) * CGFloat(i) / CGFloat(events.count - 1)
-                        return CGPoint(x: x, y: 30 + 14 * sin(x / w * .pi * 2))
+        // The timeline's own day, which can be earlier than the summary's when nothing is on the chosen day.
+        let today = dashboard.summary?.today ?? Day.today()
+        let isToday = timeline.date == today
+        let events = timeline.events.sorted { $0.start < $1.start }
+        let hours = load.hours(for: timeline.date)
+        TimelineView(.everyMinute) { context in
+            let upper = TimelineScrub.scrubMax(isToday: isToday, nowMinute: TimelineScrub.nowMinute(context.date, day: today), asOf: hours?.asOf)
+            let live = scrub == nil
+            let minute = live ? upper : min(scrub ?? upper, upper)
+            let moment = TimelineScrub.moment(day: hours, events: events, date: timeline.date, minute: minute, live: live)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text(isToday ? "Today's path" : "The day's path").font(.headline).foregroundStyle(Palette.ink)
+                    Spacer()
+                    // Back to the resting position; hidden while there.
+                    Button { withAnimation(TimelineScrub.motion(.easeOut(duration: 0.25), reduceMotion: reduceMotion)) { scrub = nil } } label: {
+                        Text(isToday ? "Now" : "End of day")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(Palette.ink)
+                            .padding(.horizontal, 12).padding(.vertical, 5)
+                            .background(Palette.surface2, in: Capsule())
+                            .overlay(Capsule().strokeBorder(Palette.border))
+                            .frame(minHeight: 44)
+                            .contentShape(Rectangle())
                     }
-                    ZStack(alignment: .topLeading) {
-                        Path { p in
-                            p.move(to: CGPoint(x: 8, y: 30 + 14 * sin(8 / w * .pi * 2)))
-                            var x: CGFloat = 8
-                            while x < w - 8 {
-                                x += 4
-                                p.addLine(to: CGPoint(x: x, y: 30 + 14 * sin(x / w * .pi * 2)))
-                            }
+                    .buttonStyle(.plain)
+                    .opacity(live ? 0 : 1)
+                    .disabled(live)
+                    .accessibilityHidden(live)
+                    .accessibilityHint(isToday ? "Moves the timeline marker back to now" : "Moves the timeline marker back to the end of the day")
+                }
+                TimelineScrubber(events: events, date: timeline.date, isToday: isToday, day: hours,
+                                 answered: load.answered(timeline.date), failed: load.failed(timeline.date),
+                                 upper: upper, moment: moment, scrub: $scrub)
+                pebbles(Array(events.suffix(5)), current: Set(moment.events.map(\.id)))
+            }
+            // The portrait's heart follows the marker while it's off live (web Home.tsx onHeart), and again on coming
+            // back to Today with a moment still held.
+            .onAppear { ScrubbedHeart.shared.value = HeartScrub.from(moment, live: live, date: timeline.date) }
+            .onChange(of: HeartScrub.from(moment, live: live, date: timeline.date)) { _, heart in
+                ScrubbedHeart.shared.value = heart
+            }
+        }
+        .task(id: "\(timeline.date)|\(dashboard.generation)") { await fetchDay() }
+        .onChange(of: timeline.date) { scrub = nil }
+        .onDisappear { ScrubbedHeart.shared.value = nil }
+    }
+
+    /// Asks for the timeline day's hours. A 404 (a server without the Day view) is an answer: no hours. A real
+    /// failure (offline, a server error) keeps what's on screen for this day and tries again, less often each time,
+    /// while the card is on screen.
+    private func fetchDay() async {
+        let date = timeline.date
+        var wait = Duration.seconds(15)
+        while !Task.isCancelled {
+            do {
+                let fetched = try await dashboard.day(date: isTodayDate ? nil : date)
+                guard !Task.isCancelled else { return }
+                load.received(fetched, for: date)
+                return
+            } catch {
+                guard !Task.isCancelled else { return }
+                load.failed(for: date)
+            }
+            try? await Task.sleep(for: wait)
+            wait = min(wait * 2, .seconds(300))
+        }
+    }
+
+    private var isTodayDate: Bool { timeline.date == (dashboard.summary?.today ?? Day.today()) }
+
+    @ViewBuilder
+    private func pebbles(_ events: [TimelineEvent], current: Set<String>) -> some View {
+        if events.isEmpty {
+            Text("Nothing recorded for this day yet.").font(.footnote).foregroundStyle(Palette.ink3)
+        } else {
+            GeometryReader { geo in
+                let w = geo.size.width
+                let point: (Int) -> CGPoint = { i in
+                    let x = events.count == 1 ? w / 2 : 36 + (w - 72) * CGFloat(i) / CGFloat(events.count - 1)
+                    return CGPoint(x: x, y: 30 + 14 * sin(x / w * .pi * 2))
+                }
+                ZStack(alignment: .topLeading) {
+                    Path { p in
+                        p.move(to: CGPoint(x: 8, y: 30 + 14 * sin(8 / w * .pi * 2)))
+                        var x: CGFloat = 8
+                        while x < w - 8 {
+                            x += 4
+                            p.addLine(to: CGPoint(x: x, y: 30 + 14 * sin(x / w * .pi * 2)))
                         }
-                        .stroke(Palette.ink3.opacity(0.6), style: StrokeStyle(lineWidth: 1.5, lineCap: .round, dash: [4, 6]))
-                        ForEach(Array(events.enumerated()), id: \.element.id) { i, e in
-                            Button { open(e) } label: {
-                                VStack(spacing: 4) {
-                                    Circle().fill(TimelineCard.color(e.kind))
-                                        .overlay(Circle().stroke(Palette.surface, lineWidth: 2))
-                                        .frame(width: 16, height: 16)
-                                    Text(e.title).font(.caption2.weight(.semibold)).foregroundStyle(Palette.ink).lineLimit(1)
-                                    Text(Fmt.clock(e.start)).font(.caption2).monospacedDigit().foregroundStyle(Palette.ink3)
-                                }
-                                .frame(width: 72, height: 64)
-                                .contentShape(Rectangle())
+                    }
+                    .stroke(Palette.ink3.opacity(0.6), style: StrokeStyle(lineWidth: 1.5, lineCap: .round, dash: [4, 6]))
+                    ForEach(Array(events.enumerated()), id: \.element.id) { i, e in
+                        // The events at the marker stand out.
+                        let now = current.contains(e.id)
+                        Button { open(e) } label: {
+                            VStack(spacing: 4) {
+                                Circle().fill(TimelineCard.color(e.kind))
+                                    .overlay(Circle().stroke(now ? Palette.ink : Palette.surface, lineWidth: 2))
+                                    .frame(width: now ? 20 : 16, height: now ? 20 : 16)
+                                    .frame(width: 20, height: 20)
+                                Text(e.title).font(.caption2.weight(.semibold)).foregroundStyle(Palette.ink).lineLimit(1)
+                                Text(Fmt.clock(e.start)).font(.caption2).monospacedDigit().foregroundStyle(Palette.ink3)
                             }
-                            .buttonStyle(.plain)
-                            .position(x: point(i).x, y: point(i).y + 24)
-                            .accessibilityLabel("\(e.title), \(Fmt.clock(e.start)) to \(Fmt.clock(e.end))")
+                            .frame(width: 72, height: 64)
+                            .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
+                        .position(x: point(i).x, y: point(i).y + 24)
+                        .animation(TimelineScrub.motion(.easeOut(duration: 0.2), reduceMotion: reduceMotion), value: now)
+                        .accessibilityLabel("\(e.title), \(Fmt.clock(e.start)) to \(Fmt.clock(e.end))")
+                        .accessibilityHint("Opens trends")
                     }
                 }
-                .frame(height: 96)
             }
+            .frame(height: 96)
         }
     }
 

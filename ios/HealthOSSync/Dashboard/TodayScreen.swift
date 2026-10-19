@@ -58,8 +58,6 @@ private struct TodayContent: View {
     @State private var day: DayData?
     @State private var cycle: CycleData?
 
-    private let columns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
-
     /// Under a resting heart rate flag, in the luteal or menstrual phase. The summary never mentions the cycle.
     private static let cycleNote = "Temperature and resting heart rate often run a little higher in this part of your cycle."
 
@@ -67,6 +65,9 @@ private struct TodayContent: View {
         let isToday = summary.date == summary.today
         // The phase is about today, so it says nothing about a past day on screen.
         let phase = isToday && dashboard.cycleTrackingOn ? cycle?.phase : nil
+        // Cards hidden in Settings → Cards (here or on the web) leave no gap; the rest move up.
+        let hidden = dashboard.hiddenCardSet
+        let gridIds = Cards.visible(Cards.todayGrid, hidden: hidden)
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 OrganicHeader(summary: summary, name: summary.name ?? dashboard.status?.settings?.name)
@@ -80,19 +81,14 @@ private struct TodayContent: View {
                 }
                 if dashboard.showsFamilyNotice { FamilyNotice() }
                 OrganicPortrait(summary: summary, photo: dashboard.status?.photo, units: dashboard.units, stepGoal: dashboard.stepGoal)
-                if let timeline = summary.timeline { TodayPath(timeline: timeline) }
+                if let timeline = summary.timeline, !hidden.contains("home.timeline") { TodayPath(timeline: timeline) }
                 if let cycle, let phase { CycleCard(cycle: cycle, phase: phase) }
                 if let day, !day.metrics.isEmpty { DayCard(data: day, date: isToday ? nil : summary.date) }
                 if let week = summary.week { WeekCard(week: week, stepGoal: dashboard.stepGoal) }
-                LazyVGrid(columns: columns, spacing: 12) {
-                    ReadinessCard(summary: summary)
-                    Spo2Card(summary: summary)
-                    HrvCard(summary: summary)
-                    SleepCard(summary: summary)
-                    LoadCard(summary: summary)
-                    ActivityCard(summary: summary, goal: dashboard.stepGoal)
-                }
-                InsightsCard(insights: summary.insights ?? [], today: summary.today)
+                // Left out with all six hidden, so no extra gap is left where the grid was.
+                if !gridIds.isEmpty { TodayGrid(summary: summary, ids: gridIds, goal: dashboard.stepGoal) }
+                if !hidden.contains("home.insights") { InsightsCard(insights: summary.insights ?? [], today: summary.today) }
+                if Cards.allHidden(in: .today, hidden: hidden) { AllCardsHiddenNote() }
             }
             .padding(16)
             .opacity(dashboard.loading ? 0.6 : 1)

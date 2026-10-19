@@ -14,6 +14,8 @@ struct SettingsScreen: View {
             Form {
                 ServerSection()
                 if dashboard.phase == .ready { PhotoSection() }
+                // Servers with card hiding name the list (nil from older ones, where every card shows).
+                if dashboard.phase == .ready, dashboard.cardsAvailable { CardsSection() }
                 // Servers with the Family board name the setting; it needs sign-in, so each person has their own account.
                 if dashboard.phase == .ready, dashboard.status?.settings?.familySharing != nil, dashboard.authMode != "open" { FamilySection() }
                 if dashboard.phase == .ready, let mode = dashboard.nutritionMode, mode != .none { NutritionTargetsSection(mode: mode) }
@@ -278,6 +280,106 @@ struct NutritionTargetField: Identifiable {
         NutritionTargetField(key: "protein_g", label: "Protein", unit: "g", range: 10...500),
         NutritionTargetField(key: "water_ml", label: "Water", unit: "mL", range: 250...8_000),
     ]
+}
+
+/// Which cards show, the web's Settings → Cards: one list for the app and the web dashboard.
+private struct CardsSection: View {
+    @Environment(Dashboard.self) private var dashboard
+
+    var body: some View {
+        // Only the cards offered, as the Cards screen's Show all: one hidden while Nutrition was on isn't counted while it's off.
+        let hidden = Cards.hiddenOffered(dashboard.hiddenCardSet, nutrition: dashboard.status?.settings?.nutrition == true).count
+        Section {
+            NavigationLink {
+                CardsScreen()
+            } label: {
+                LabeledContent("Choose cards", value: hidden == 0 ? "All shown" : "\(hidden) hidden")
+            }
+            .accessibilityIdentifier("cards")
+        } header: {
+            Text("Cards")
+        } footer: {
+            Text("Choose the cards you see here and on the web dashboard. Hiding one only changes the page; your data stays.")
+        }
+    }
+}
+
+/// A switch per card, grouped by the web's pages as its Settings groups them (Nutrition's only with it on). Each
+/// switch moves at once and its change goes to the server on its own, after any still on their way; one the server
+/// refuses goes back. Under each card, where this app shows it, or that only the web dashboard hides it.
+struct CardsScreen: View {
+    @Environment(Dashboard.self) private var dashboard
+    @State private var error: String?
+
+    var body: some View {
+        let nutrition = dashboard.status?.settings?.nutrition == true
+        let hidden = dashboard.hiddenCardSet
+        // Show all only when a switch here is off, as the Settings row counts. It still clears the whole list, as on the
+        // web, so it also brings back cards not listed (Nutrition's while it's off, or a newer server's).
+        let offeredHidden = Cards.hiddenOffered(hidden, nutrition: nutrition)
+        Form {
+            Section {
+                Text("Choose the cards you see on Home, Sleep\(nutrition ? ", Body and Nutrition" : " and Body"). Hiding one only changes the page; your data stays, and an unhidden card comes back as it was. The web dashboard follows the same choices.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 4, leading: 4, bottom: 4, trailing: 4))
+                if let error {
+                    Text(error).font(.footnote).foregroundStyle(.red)
+                }
+            }
+            ForEach(Cards.pages(nutrition: nutrition)) { group in
+                Section(group.page.label) {
+                    ForEach(group.cards) { card in
+                        Toggle(isOn: Binding(get: { !hidden.contains(card.id) }, set: { set(card.id, shown: $0) })) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(card.label)
+                                Text(card.place?.label ?? "Changes the web dashboard only")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .accessibilityIdentifier("card-\(card.id)")
+                    }
+                }
+            }
+        }
+        .navigationTitle("Cards")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if !offeredHidden.isEmpty {
+                ToolbarItem(placement: .primaryAction) {
+                    Button("Show all") { showAll() }
+                        .accessibilityHint(hidden.count > offeredHidden.count ? "Shows every card again, including ones not listed here" : "Shows every card again")
+                }
+            }
+        }
+    }
+
+    private func set(_ id: String, shown: Bool) {
+        error = nil
+        Task {
+            do {
+                try await dashboard.setCard(id, shown: shown)
+            } catch is CancellationError {
+            } catch {
+                let name = Cards.card(id)?.label ?? "that card"
+                self.error = "Couldn't \(shown ? "show" : "hide") \(name). \(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func showAll() {
+        error = nil
+        Task {
+            do {
+                try await dashboard.showAllCards()
+            } catch is CancellationError {
+            } catch {
+                self.error = "Couldn't show every card. \(error.localizedDescription)"
+            }
+        }
+    }
 }
 
 /// The Family board: sharing is mutual, and a cycle phase can go on your tile while tracking and sharing are on.

@@ -3,6 +3,42 @@ import SwiftUI
 
 // The six metric cards, the timeline and the insights from src/pages/Home.tsx.
 
+/// The metric cards that show (hidden ones left out), two to a row like the web's fill row: as many full rows as
+/// fit, and an odd last card spans both columns, so hiding a card never leaves a hole.
+struct TodayGrid: View {
+    let summary: Summary
+    /// shared/cards.ts ids in order, hidden ones already removed (Cards.todayGrid).
+    let ids: [String]
+    let goal: Double
+
+    var body: some View {
+        // Every card hidden: nothing at all, not an empty stack, which a parent stack would still space around.
+        if !ids.isEmpty {
+            VStack(spacing: 12) {
+                ForEach(Array(Cards.rows(ids, max: 2).enumerated()), id: \.offset) { _, row in
+                    HStack(alignment: .top, spacing: 12) {
+                        ForEach(row, id: \.self) { card($0) }
+                    }
+                    // Both cards in a row as tall as the taller one.
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder private func card(_ id: String) -> some View {
+        switch id {
+        case "home.readiness": ReadinessCard(summary: summary)
+        case "home.spo2": Spo2Card(summary: summary)
+        case "home.hrv": HrvCard(summary: summary)
+        case "home.sleep": SleepCard(summary: summary)
+        case "home.load": LoadCard(summary: summary)
+        case "home.activity": ActivityCard(summary: summary, goal: goal)
+        default: EmptyView()
+        }
+    }
+}
+
 /// A tappable card that opens the matching Trends section.
 private struct MetricCard<Content: View>: View {
     let title: String
@@ -21,7 +57,7 @@ private struct MetricCard<Content: View>: View {
                 }
                 content
             }
-            .frame(maxWidth: .infinity, minHeight: 196, alignment: .topLeading)
+            .frame(maxWidth: .infinity, minHeight: 196, maxHeight: .infinity, alignment: .topLeading)
             .card(tint)
         }
         .buttonStyle(.plain)

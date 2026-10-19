@@ -457,9 +457,58 @@ final class Dashboard {
 
     func hideFamilyNotice() { familyNoticeDismissed = true }
 
+    // MARK: Cards
+
+    /// The hidden cards while changes are on their way to the server; nil shows the server's list.
+    private(set) var pendingHiddenCards: [String]?
+    /// Card changes sent and not answered yet.
+    private var cardChanges = 0
+    /// The last card change sent. Each waits for the one before, so they reach the server in the order they were made.
+    private var cardQueue: Task<Void, Never>?
+
+    /// The server can hide cards (its status names the list). Older servers can't: every card shows, and Settings
+    /// has no Cards section.
+    var cardsAvailable: Bool { status?.settings?.hiddenCards != nil }
+    /// The cards hidden now (shared/cards.ts ids), changes on their way included.
+    var hiddenCards: [String] { pendingHiddenCards ?? status?.settings?.hiddenCards ?? [] }
+    var hiddenCardSet: Set<String> { Set(hiddenCards) }
+    func cardShown(_ id: String) -> Bool { !hiddenCards.contains(id) }
+
+    /// Shows or hides one card (Settings → Cards). Throws when the server refuses, after the switch went back.
+    func setCard(_ id: String, shown: Bool) async throws { try await changeCards(.card(id, shown: shown)) }
+
+    func showAllCards() async throws { try await changeCards(.list([])) }
+
+    /// Shows a change at once, then sends it after any still on their way (the web's useCardEditor). When the last
+    /// one is answered the screens follow the server's list, so a refused change goes back. `send` is PUT
+    /// /api/settings; tests pass their own.
+    func changeCards(_ change: CardChange, send: (@MainActor ([String: Any]) async throws -> ServerStatus)? = nil) async throws {
+        let send = send ?? { fields in try await self.fetch { try await $0.updateSettings(fields) } }
+        pendingHiddenCards = change.applied(to: hiddenCards)
+        cardChanges += 1
+        defer {
+            cardChanges -= 1
+            if cardChanges == 0 { pendingHiddenCards = nil }
+        }
+        let previous = cardQueue
+        let work = Task { @MainActor in
+            await previous?.value
+            var status = try await send(change.body)
+            // A server from before one-card changes ignored it: the same change again, as the whole list.
+            if let retry = change.retry(stored: status.settings?.hiddenCards) { status = try await send(retry.body) }
+            show(settings: status)
+        }
+        cardQueue = Task { _ = try? await work.value }
+        try await work.value
+    }
+
     /// PUT /api/settings, then shows the status it answers with.
     private func updateSettings(_ fields: [String: Any]) async throws {
-        let status = try await fetch { try await $0.updateSettings(fields) }
+        show(settings: try await fetch { try await $0.updateSettings(fields) })
+    }
+
+    /// Shows the status a settings change answered with, and keeps it with today's summary for the next launch.
+    private func show(settings status: ServerStatus) {
         apply(status: status)
         if date == nil, let summary, let client = APIClient.current() {
             SummaryCache.save(summary: summary, status: status, version: dataVersion, loadedOn: loadedOn, for: client.base)

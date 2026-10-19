@@ -21,6 +21,8 @@ struct Vital: Codable {
     let latest: Latest?
     /// "low" | "normal" | "high": where the latest value sits against the previous 30 days.
     let status: String?
+    /// "normal" | "unusual" | "off": how far from usual, on the same band as `status`. nil from older servers.
+    let level: String?
 }
 
 struct Summary: Codable {
@@ -719,6 +721,8 @@ struct ServerStatus: Codable {
         let nutritionNumbers: String?
         /// Targets they set themselves, if any. Shown as a plain line, never scored. Older servers have none.
         @Lossy var nutritionTargets: NutritionTargets?
+        /// Card ids (shared/cards.ts) this person hid. nil from servers older than card hiding.
+        let hiddenCards: [String]?
     }
 
     struct Apple: Codable {

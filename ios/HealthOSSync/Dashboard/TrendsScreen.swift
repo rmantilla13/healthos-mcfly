@@ -187,13 +187,21 @@ private struct SleepTrends: View {
     var body: some View {
         TrendsLoader(metrics: ["sleep_hours", "sleep_deep", "sleep_light", "sleep_rem", "sleep_awake", "sleep_performance", "sleep_efficiency"], days: days) { t in
             let hours = t["sleep_hours"] ?? []
-            StagesCard(trends: t, days: days, average: hours.average)
+            // The web Sleep overview's cards hidden in Settings → Cards (shared/cards.ts) are left out here too.
+            let hidden = dashboard.hiddenCardSet
+            if !hidden.contains("sleep.stages") { StagesCard(trends: t, days: days, average: hours.average) }
             if let timing { SleepConsistencyCard(timing: timing) }
-            TrendCard(title: "Time asleep", points: hours, format: Fmt.hoursMinutes)
-            if !(t["sleep_performance"]?.isEmpty ?? true) {
-                TrendCard(title: "Sleep performance", points: t["sleep_performance"]!, format: { "\(Fmt.number($0))%" }, note: "WHOOP: sleep vs sleep needed", color: Palette.series3)
-            } else {
-                TrendCard(title: "Sleep efficiency", points: t["sleep_efficiency"] ?? [], format: { "\(Fmt.number($0))%" }, color: Palette.series3)
+            if !hidden.contains("sleep.total") { TrendCard(title: "Time asleep", points: hours, format: Fmt.hoursMinutes) }
+            // The sleep score is WHOOP's performance, else Apple Watch's efficiency (the web's ScoreCard).
+            if !hidden.contains("sleep.score") {
+                if !(t["sleep_performance"]?.isEmpty ?? true) {
+                    TrendCard(title: "Sleep performance", points: t["sleep_performance"]!, format: { "\(Fmt.number($0))%" }, note: "WHOOP: sleep vs sleep needed", color: Palette.series3)
+                } else {
+                    TrendCard(title: "Sleep efficiency", points: t["sleep_efficiency"] ?? [], format: { "\(Fmt.number($0))%" }, color: Palette.series3)
+                }
+            }
+            if Cards.allHidden(in: .trends(.sleep), hidden: hidden) {
+                AllCardsHiddenNote(text: timing == nil ? "All the cards on this page are hidden." : "Your sleep score, total sleep and stages cards are hidden.")
             }
         }
         .task(id: "\(days)|\(dashboard.generation)") {
