@@ -864,7 +864,7 @@ export function statusHint(r: LabResult): string | undefined {
   if (!range) return "The report printed no range, and there's no typical range to use for this marker.";
   if (r.value === null) return 'The result is a word, not a number: compare it with the printed range.';
   if (range.band === null) {
-    return "The printed range has more than one band (by sex or age), so this result isn't placed against any one of them. If your profile has no sex chosen and the bands are for women and men, choosing one may place it.";
+    return "The printed range has more than one band (by sex, age or category), so this result isn't placed against any one of them. If your profile has no sex chosen and the bands are for women and men, choosing one may place it.";
   }
   if (range.low === null && range.high === null) return 'The printed range has no numbers to place this against: compare the result with the range as printed.';
   return `Printed as ${r.valueText}, which could fall on either side of the range.`;

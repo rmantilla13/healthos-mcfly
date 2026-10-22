@@ -182,6 +182,8 @@ test('each status says which range it is against, or why there is none', () => {
   const unpicked = result({ status: null, range: { low: null, high: null, text: 'Male: 13.0-17.0 Female: 12.0-15.0', kind: 'lab', band: null } });
   assert.equal(statusLabel(unpicked), 'Can’t be placed');
   assert.match(statusHint(unpicked)!, /more than one band/);
+  const categories = result({ status: null, value: 115, range: { low: null, high: null, text: 'Optimal <100, Near optimal 100-129', kind: 'lab', band: null } });
+  assert.match(statusHint(categories)!, /more than one band \(by sex, age or category\)/, 'categories are bands too, not a "<" result');
   const noNumbers = result({ status: null, range: { low: null, high: null, text: 'See note', kind: 'lab' } });
   assert.equal(statusLabel(noNumbers), 'Compare with range');
   assert.match(statusHint(noNumbers)!, /no numbers to place this against/);
