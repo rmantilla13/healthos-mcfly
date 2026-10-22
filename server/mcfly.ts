@@ -3,10 +3,12 @@
 // keeps no conversation: the browser sends the visible history (plain text) with each question.
 import Anthropic from '@anthropic-ai/sdk';
 import express, { type Request, type Response } from 'express';
+import { type LabResult, matchBiomarker, normalizeName, statusHint } from '../shared/labs.ts';
 import type { Digest, DigestReply, McflyVisual, NutritionNumbers, Point, Units } from '../shared/types.ts';
 import { platformSettings } from './admin.ts';
 import { currentUser } from './auth.ts';
 import { cycleView } from './cycle/index.ts';
+import { labsView } from './labs.ts';
 import { nutritionView } from './nutrition.ts';
 import { addDays } from './dates.ts';
 import { type Db, type Scope, getUserSetting, setUserSetting } from './db.ts';
@@ -538,7 +540,7 @@ const TOOLS: Tool[] = [
     name: 'get_nutrition',
     when: (ctx) => ctx.nutrition !== null,
     description:
-      "What this person logged in their food app (MyFitnessPal, Cronometer and others, through Apple Health), as daily totals: energy, protein, carbohydrates, fat, fiber, sugar, saturated fat, sodium and alcoholic drinks, as far as their app records them and their setting shows them. One app per day, never a sum of apps. Days with nothing logged are left out: that means nothing was logged, not that nothing was eaten.",
+      "What this person logged, in healthOS itself (app 'healthOS', some of it estimated from a photo or description) or in their food app (MyFitnessPal, Cronometer and others, through Apple Health), as daily totals: energy, protein, carbohydrates, fat, fiber, sugar, saturated fat, sodium and alcoholic drinks, as far as their app records them and their setting shows them. One app per day, never a sum of apps. Days with nothing logged are left out: that means nothing was logged, not that nothing was eaten.",
     input_schema: {
       type: 'object',
       properties: {
@@ -559,6 +561,54 @@ const TOOLS: Tool[] = [
         daysLogged: v.days.length,
         apps: v.apps,
         days: v.days.map((d) => ({ date: d.date, app: d.app, ...(v.numbers !== 'none' && { values: d.values }) })),
+      };
+    },
+  },
+  {
+    name: 'get_lab_results',
+    description:
+      "This person's lab test results (blood work and other lab panels) that they added to healthOS, typed in or read from a report they uploaded and checked. For each marker: the latest result exactly as printed (a \"<\" or \">\" means the true value is beyond that number), its unit, the reference range the lab printed beside it, where the result sits against that range, the collection date, lab and panel, and earlier results of the same marker. Only when a report printed no range is a typical adult range used instead, and it's labelled so. Use it for any question about their labs, blood tests or biomarkers. Describe a result only as below, within or above the lab's range (or the typical range, saying which), never as a diagnosis or as good or bad, and suggest talking a result outside its range over with their clinician. Ranges differ between labs and units, so read each result against the range printed with it.",
+    input_schema: {
+      type: 'object',
+      properties: { marker: { type: 'string', description: 'Only this marker, by name, e.g. "LDL" or "vitamin D". Leave out for all of them.' } },
+      additionalProperties: false,
+    },
+    label: () => 'Looking at your lab results',
+    async run(ctx, input) {
+      const v = await labsView(ctx.scope, ctx.hosted);
+      const asked = typeof input.marker === 'string' ? input.marker.trim().slice(0, 80) : '';
+      const key = asked ? matchBiomarker(asked) : null;
+      const words = normalizeName(asked);
+      const markers = v.markers.filter(
+        (m) => !words || m.key === key || normalizeName(m.name).includes(words) || m.history.some((r) => normalizeName(r.name).includes(words)),
+      );
+      const against = (r: LabResult) => (r.range?.kind === 'typical' ? 'the typical adult range' : "the lab's range");
+      const one = (r: LabResult) => ({
+        collected: r.collected,
+        printedName: r.name,
+        result: r.valueText,
+        unit: r.unit,
+        range: r.range
+          ? {
+              printed: r.range.text,
+              low: r.range.low,
+              high: r.range.high,
+              from: r.range.kind === 'lab' ? 'printed by the lab' : `typical adult range${r.range.note ? ` (${r.range.note})` : ''}, used because the report printed none`,
+              ...(r.range.band && { band: `${r.range.band} range used, from the sex in their profile` }),
+            }
+          : null,
+        // With no status, the reason in the dashboard's own words: bands, a range without numbers, a word, a "<" or ">".
+        position: r.status ? `${r.status} ${against(r)}` : statusHint(r),
+        ...(r.lab && { lab: r.lab }),
+        ...(r.panel && { panel: r.panel }),
+      });
+      return {
+        today: v.today,
+        ...(v.demo && { demo: "These are healthOS's demo results, not this person's own." }),
+        note: 'Results are as printed on their reports. Position is only where a number sits against a range: not a diagnosis.',
+        markersFound: markers.length,
+        ...(asked && !markers.length && { notFound: `No results for "${asked}". They have ${v.markers.length} markers recorded.` }),
+        markers: markers.map((m) => ({ marker: m.name, latest: one(m.latest), earlier: m.history.slice(0, -1).slice(-10).map(one) })),
       };
     },
   },
@@ -717,7 +767,7 @@ function parseHistory(body: unknown): Turn[] | string {
 // ---------- per-person daily limit ----------
 
 /** Count a question against today's limit; null when the limit is reached. Atomic, so parallel requests can't overshoot. */
-async function claimQuestion(db: Db, userId: string, day: string, limit: number): Promise<number | null> {
+export async function claimQuestion(db: Db, userId: string, day: string, limit: number): Promise<number | null> {
   const [row] = await db.query<{ questions: number }>(
     `INSERT INTO mcfly_usage (user_id, day, questions) VALUES ($1, $2, 1)
      ON CONFLICT (user_id, day) DO UPDATE SET questions = mcfly_usage.questions + 1 WHERE mcfly_usage.questions < $3
@@ -727,8 +777,13 @@ async function claimQuestion(db: Db, userId: string, day: string, limit: number)
   return row ? Number(row.questions) : null;
 }
 
+/** Give back a question that never reached Claude (a food estimate whose call failed). */
+export async function refundQuestion(db: Db, userId: string, day: string) {
+  await db.query('UPDATE mcfly_usage SET questions = questions - 1 WHERE user_id = $1 AND day = $2 AND questions > 0', [userId, day]);
+}
+
 /** The limit counts by UTC date, so changing your own time zone can't reset it. */
-const usageDay = () => new Date().toISOString().slice(0, 10);
+export const usageDay = () => new Date().toISOString().slice(0, 10);
 
 async function usedToday(db: Db, userId: string, day: string) {
   const [row] = await db.query<{ questions: number }>('SELECT questions FROM mcfly_usage WHERE user_id = $1 AND day = $2', [userId, day]);
@@ -808,7 +863,7 @@ type DigestResult = { status: number; body: DigestReply | { error: string } };
 
 export type McflyOptions = { hosted: boolean; client?: () => McflyClient | null };
 
-const defaultClient = () => (process.env.ANTHROPIC_API_KEY ? new Anthropic() : null);
+export const defaultClient = () => (process.env.ANTHROPIC_API_KEY ? new Anthropic() : null);
 
 export function mcflyRouter(db: Db, { hosted, client = defaultClient }: McflyOptions) {
   const router = express.Router();

@@ -205,6 +205,44 @@ export const MIGRATIONS: { id: number; name: string; statements: string[] }[] = 
       'CREATE INDEX sleep_stages_user_date ON sleep_stages (user_id, date)',
     ],
   },
+  {
+    id: 9,
+    name: 'Nutrition: a food log kept in healthOS, and a shared cache of food database lookups',
+    statements: [
+      // Each food or drink a person logs here (web or iPhone), apart from `daily` like nutrition_daily. A day's
+      // entries count as one more app ("healthOS") among the Health apps, never added on top of one; see
+      // server/foodlog.ts. per holds one portion's amounts (JSON), so a quantity change scales every nutrient,
+      // the hidden ones too. A draft is McFly's estimate before the person saves it: not counted, kept a day; batch
+      // says which estimate it came from.
+      `CREATE TABLE food_log (
+        user_id TEXT NOT NULL, id TEXT NOT NULL, date TEXT NOT NULL, time TEXT NOT NULL, name TEXT NOT NULL,
+        portion TEXT NOT NULL DEFAULT '', quantity DOUBLE PRECISION NOT NULL DEFAULT 1, per TEXT NOT NULL,
+        method TEXT NOT NULL CHECK (method IN ('quick', 'search', 'barcode', 'estimate')), ref TEXT,
+        origin TEXT NOT NULL CHECK (origin IN ('web', 'iphone')), draft BOOLEAN NOT NULL DEFAULT false, batch TEXT,
+        version INTEGER NOT NULL DEFAULT 1, created_at DOUBLE PRECISION NOT NULL, updated_at DOUBLE PRECISION NOT NULL,
+        PRIMARY KEY (user_id, id))`,
+      'CREATE INDEX food_log_user_date ON food_log (user_id, date)',
+      // Foods found in USDA FoodData Central or Open Food Facts, shared by everyone: product facts, never who
+      // looked them up. Saving an entry by ref reads the amounts from here, so hidden numbers stay on the server.
+      `CREATE TABLE food_cache (ref TEXT PRIMARY KEY, data TEXT NOT NULL, fetched_at DOUBLE PRECISION NOT NULL)`,
+    ],
+  },
+  {
+    id: 10,
+    name: 'Lab tests: results as printed, with the lab\'s own reference range',
+    statements: [
+      // Kept apart from `daily` like `cycle`, so nothing that reads daily (summaries, patterns, the digest, the admin
+      // view, the Family board) can reach them; see server/labs.ts. value is the number when there is one; value_text
+      // is the result as printed ("<0.5", "Negative"). biomarker is a catalog key, so a marker's history joins up.
+      `CREATE TABLE lab_results (
+        user_id TEXT NOT NULL, id TEXT NOT NULL, collected TEXT NOT NULL, biomarker TEXT NOT NULL, name TEXT NOT NULL,
+        value DOUBLE PRECISION, value_text TEXT NOT NULL, unit TEXT NOT NULL DEFAULT '',
+        ref_low DOUBLE PRECISION, ref_high DOUBLE PRECISION, ref_text TEXT NOT NULL DEFAULT '',
+        lab TEXT NOT NULL DEFAULT '', panel TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT 'manual',
+        created_at DOUBLE PRECISION NOT NULL, PRIMARY KEY (user_id, id))`,
+      'CREATE INDEX lab_results_user_marker ON lab_results (user_id, biomarker, collected)',
+    ],
+  },
 ];
 
 async function migrate(db: Db) {

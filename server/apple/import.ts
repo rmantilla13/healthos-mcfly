@@ -24,6 +24,7 @@ import { DAY_ROLLOVER_MS, localDate, localHour, parseAppleDate, toLocalIso, type
 import type { CervicalMucus, Flow, Nutrient, OvulationTest } from '../../shared/types.ts';
 import { type CycleKind, type CycleRow, upsertCycle } from '../cycle/index.ts';
 import { type NutritionRow, upsertNutrition } from '../nutrition.ts';
+import { HEALTHOS_APP } from '../foodlog.ts';
 
 export const SOURCE = 'apple';
 
@@ -333,6 +334,14 @@ export function fromDirectSource(sourceName: string | undefined) {
 }
 
 /**
+ * Food and drink the healthOS iPhone app wrote to Health from its own food log. The log already counts them
+ * (server/foodlog.ts), so reading them back would count them twice.
+ */
+export function fromHealthOSLog(sourceName: string | undefined, type: string | undefined) {
+  return (sourceName ?? '').trim() === HEALTHOS_APP && (type ?? '').startsWith('HKQuantityTypeIdentifierDietary');
+}
+
+/**
  * Except steps. A day's steps keep one device's count, never a sum (see the sums below), so WHOOP's steps in
  * Health compete with the iPhone's and the Watch's instead of adding to them, and their hours follow the
  * device that wins the day. For someone who wears WHOOP more than an Apple Watch, that's usually WHOOP.
@@ -409,6 +418,11 @@ export class AppleAggregator {
     if ((tag.name === 'Record' || tag.name === 'Workout') && fromDirectSource(a.sourceName) && !(tag.name === 'Record' && KEPT_FROM_DIRECT.has(a.type))) {
       this.records += tag.name === 'Record' ? 1 : 0;
       this.skipped++;
+      return;
+    }
+    // Not counted as skipped: that count is WHOOP's copies (see the import CLI).
+    if (tag.name === 'Record' && fromHealthOSLog(a.sourceName, a.type)) {
+      this.records++;
       return;
     }
     if (tag.name === 'Record') this.record(a);

@@ -115,7 +115,7 @@
         </div>
 
         <h1>Privacy Policy</h1>
-      <p class="updated">Last updated October 19, 2026</p>
+      <p class="updated">Last updated October 22, 2026</p>
 
       <p>
         healthOS is a private health dashboard at <strong>health.mcfly.bot</strong>, run by Ricky Mantilla. It is not open to the public:
@@ -146,8 +146,15 @@
           <strong>Cycle tracking</strong>, which is off unless you turn it on: reproductive-health data, described in its own section below.
         </li>
         <li>
-          <strong>Nutrition</strong>, which is off unless you turn it on: daily totals of what you log in a food app, described in its own
+          <strong>Nutrition</strong>, which is off unless you turn it on: what you log in healthOS or in a food app, described in its own
           section below.
+        </li>
+        <li>
+          <strong>Lab results</strong>, if you add them: each result as printed, with the reference range the lab printed, typed in or read
+          from a PDF or photo of a report you import. An imported report is sent to Anthropic to read the results and isn't kept; it counts
+          as an Ask McFly question, and only the rows you check and save are stored. Only you (and McFly, when you ask it) see them: never
+          the Family board, the admin screens, your summaries or the weekly digest. If you choose a sex in your health profile, it picks the
+          typical adult range shown, labelled as such, for a result whose report printed no range.
         </li>
         <li>
           An optional profile photo. It's cut out on your own device (in your browser, or on a Mac), and only the cut-out, a small
@@ -170,8 +177,8 @@
         When you ask McFly a question, healthOS sends your question, the conversation so far, and the parts of your health data McFly reads
         to answer it to <strong>Anthropic</strong>'s API, which generates the reply. McFly can only read your own data, never other members',
         and it can't change
-        anything. Anthropic handles this data under its commercial terms and privacy policy. If you don't use Ask McFly, nothing is sent to
-        Anthropic. McFly can read your cycle tracking data only while you have cycle tracking turned on, and your nutrition only while nutrition
+        anything. Anthropic handles this data under its commercial terms and privacy policy. If you don't use Ask McFly or import a lab report, nothing is
+        sent to Anthropic. McFly can read your cycle tracking data only while you have cycle tracking turned on, and your nutrition only while nutrition
         is on, and only as much of it as you chose to see.
       </p>
 
@@ -224,11 +231,37 @@
           <strong>What it covers</strong>: daily totals of what you log in a food app, such as MyFitnessPal, Cronometer, Lose It!, MacroFactor or
           Yazio, that writes to Apple Health: calories, protein, carbohydrates, fat, fiber, sugar, saturated fat, sodium and alcoholic drinks,
           with the name of the app that logged them. It comes from the healthOS iPhone app or your Apple Health export. healthOS doesn't read
-          single foods or meal photos.
+          those apps' single foods or meal photos.
         </li>
         <li>
-          <strong>What you see</strong>: when you turn it on, you choose everything, everything except calories, or no amounts at all. Whatever
-          you leave out is removed on the server, so it never reaches the page or Ask McFly. The Nutrition page also shows the water and
+          <strong>Logging in healthOS</strong>: you can also log food and drink here, on the web or the iPhone. Each entry keeps its name,
+          portion, time and amounts. A day's entries count as one more app: when another app also logged that day, the page shows one app's
+          totals, as it does for any two apps, so nothing is counted twice.
+          <ul>
+            <li>
+              <strong>Searching and barcodes</strong>: what you type in the search box, or the barcode you scan, is sent from the healthOS server
+              to <strong>USDA FoodData Central</strong> and <strong>Open Food Facts</strong>, without anything that identifies you. healthOS
+              doesn't keep what you searched for. It keeps the foods they return, shared by everyone, so the next lookup needs no network.
+            </li>
+            <li>
+              <strong>Estimates from a photo or a description</strong>: Ask McFly can estimate a meal from a photo or a few words. The photo
+              (shrunk on your device first, which also removes its location) and the words are sent to <strong>Anthropic</strong> for that one
+              estimate, and to no one else. healthOS never stores or logs them. It counts as one McFly question toward the daily limit. The
+              estimate is a rough draft, often a third off on calories, so nothing is saved until you check it and save it. An estimate you
+              don't save or discard is kept for up to a day, counted nowhere, and then deleted.
+            </li>
+            <li>
+              <strong>Apple Health</strong>: the iPhone app can save what you log there to Apple Health, if you allow it, with only the amounts
+              you chose to see (no calories if you hide them, and nothing at all if you see no amounts). healthOS then skips those entries when it
+              reads Apple Health back, so they aren't counted twice. Once in Apple Health, they follow your Health
+              settings, and other apps you allow can read them.
+            </li>
+          </ul>
+        </li>
+        <li>
+          <strong>What you see</strong>: when you turn it on, you choose everything, everything except calories, or no calorie or nutrient
+          amounts at all (what you logged and when still shows, with its portion). Whatever you leave out is removed on the server, so it never
+          reaches the page or Ask McFly. The Nutrition page also shows the water and
           caffeine you already log, and patterns between them and your sleep and heart rate variability, worded as things that tend to go
           together, not causes.
         </li>
@@ -237,8 +270,8 @@
           only as a plain line on your charts, never as a score.
         </li>
         <li>
-          <strong>While it's off</strong>: healthOS doesn't read or keep your food totals. Turning it off hides what's already stored. It
-          doesn't delete it.
+          <strong>While it's off</strong>: healthOS doesn't read or keep your food totals, and you can't log, search or estimate food.
+          Turning it off hides what's already stored. It doesn't delete it.
         </li>
         <li>
           <strong>Who sees it</strong>: only you. It is kept apart from your other health data. It never appears on the Family board, in your
@@ -249,9 +282,10 @@
           question are sent to Anthropic as described above.
         </li>
         <li>
-          <strong>Deleting it</strong>: <strong>Delete all nutrition data</strong> in Settings removes every food total at once, whether nutrition
-          is on or off. Removing your Apple Health data removes it too. With nutrition on, totals still in Apple Health come back with your next
-          import or iPhone sync.
+          <strong>Deleting it</strong>: <strong>Delete all nutrition data</strong> in Settings removes every food total and every entry you
+          logged in healthOS at once, whether nutrition is on or off. You can also delete a single entry. Removing your Apple Health data
+          removes the totals read from it, but not what you logged in healthOS. With nutrition on, totals still in Apple Health come back with
+          your next import or iPhone sync. Entries the iPhone saved to Apple Health stay there until you delete them in the Health app.
         </li>
       </ul>
 
@@ -309,8 +343,9 @@
       <h2>Service providers</h2>
       <p>
         These providers handle data only to run the service: <strong>WHOOP</strong> (a data source), <strong>Vercel</strong> (hosting),
-        <strong>Neon</strong> (database) and <strong>Anthropic</strong> (answers for Ask McFly). Their own privacy policies apply to their
-        services.
+        <strong>Neon</strong> (database) and <strong>Anthropic</strong> (answers for Ask McFly, its food estimates, and reading lab reports
+        you import). With nutrition on, food searches and barcodes go to <strong>USDA FoodData Central</strong> and
+        <strong>Open Food Facts</strong>, without anything that identifies you. Their own privacy policies apply to their services.
       </p>
 
       <h2>Keeping and deleting data</h2>
@@ -318,7 +353,7 @@
         <li>Your data is kept until you remove it or your account is deleted.</li>
         <li>You can remove your Apple Health data from the Integrations page at any time.</li>
         <li>You can delete all your cycle tracking data from Settings or the Cycle page at any time.</li>
-        <li>You can delete all your nutrition data from Settings at any time.</li>
+        <li>You can delete all your nutrition data, including the food you logged in healthOS, from Settings at any time.</li>
         <li>
           Disconnecting WHOOP in healthOS revokes the app's access with WHOOP and deletes the stored tokens. You can also revoke access from
           WHOOP's own account settings.

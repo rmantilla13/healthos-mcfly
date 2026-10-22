@@ -2,9 +2,11 @@ import { type KeyboardEvent, type PointerEvent, type ReactNode, useEffect, useRe
 import type { DayData, Insight, NutritionNumbers, PhotoMeta, Summary, TimelineEvent, WeekSummary } from '../../shared/types.ts';
 import { Gauge, MiniBars, MiniDots, MiniLine, RangeScale } from '../charts/Mini.tsx';
 import { clockOf, DAY_MINUTES, eventSpan, type HeartAt, hourClock, type Moment, momentAt, pressMinute, scrubMax, stepMinute, type TotalAt } from '../charts/scrub.ts';
+import type { MetricKey, MetricRange } from '../../shared/metrics.ts';
 import { AllHiddenNote, CardRow, useAllHidden } from '../components/CardRow.tsx';
 import { Figure, type HeartScrub } from '../components/Figure.tsx';
 import { Icon, type IconName } from '../components/Icon.tsx';
+import { MetricSheetLink } from '../components/MetricSheet.tsx';
 import { NutritionCard } from './Nutrition.tsx';
 import { clock, compact, duration, fmt, fmtDate, hoursMinutes, href, relativeDay, shiftDate, useApi } from '../lib.ts';
 
@@ -218,13 +220,37 @@ function WeekSummaryText({ week, stepGoal }: { week: WeekSummary; stepGoal: numb
 
 // ---------- metric cards ----------
 
-export function CardHead({ title, to }: { title: string; to: string }) {
+/**
+ * A card's title and its arrow. With `metric`, the arrow is a button that opens the metric's detail sheet (which
+ * links on to `to`); without, it's a link to `to`.
+ */
+export function CardHead({
+  title,
+  to,
+  metric,
+  date,
+  section = 'Home',
+  range,
+}: {
+  title: string;
+  to: string;
+  metric?: MetricKey;
+  /** The day the card shows, which the sheet's window ends on. */
+  date?: string;
+  /** Where the card is, for the sheet's breadcrumb. */
+  section?: string;
+  range?: MetricRange;
+}) {
   return (
     <div className="metric-head">
       <span>{title}</span>
-      <a href={to} className="metric-link" aria-label={`Open ${title}`}>
-        <Icon name="arrow-up-right" size={16} />
-      </a>
+      {metric ? (
+        <MetricSheetLink metric={metric} title={title} date={date} section={section} to={to} range={range} />
+      ) : (
+        <a href={to} className="metric-link" aria-label={`Open ${title}`}>
+          <Icon name="arrow-up-right" size={16} />
+        </a>
+      )}
     </div>
   );
 }
@@ -261,7 +287,7 @@ function ReadinessCard({ s }: { s: Summary }) {
     const delta = r.previous !== null ? r.latest.value - r.previous : null;
     return (
       <article className="card metric metric-green">
-        <CardHead title="Cardio fitness" to={href('body')} />
+        <CardHead title="Cardio fitness" to={href('body')} metric="vo2max" date={s.date} />
         <div className="metric-value">
           {fmt(r.latest.value, 1)}
           <small>VO₂ max</small>
@@ -280,7 +306,7 @@ function ReadinessCard({ s }: { s: Summary }) {
   const delta = r.average !== null ? r.latest.value - r.average : null;
   return (
     <article className="card metric metric-green">
-      <CardHead title="Recovery" to={href('vitals')} />
+      <CardHead title="Recovery" to={href('vitals')} metric="recovery" date={s.date} />
       <div className="metric-value">
         {fmt(r.latest.value)}
         <small>%</small>
@@ -326,7 +352,7 @@ function Spo2Card({ s }: { s: Summary }) {
   const l = s.spo2.latest;
   return (
     <article className="card metric metric-peach">
-      <CardHead title="Blood oxygen" to={href('vitals')} />
+      <CardHead title="Blood oxygen" to={href('vitals')} metric={l ? 'spo2' : undefined} date={s.date} />
       {l ? (
         <>
           <div className="metric-value-row">
@@ -356,7 +382,7 @@ function HrvCard({ s }: { s: Summary }) {
   const statusText = { optimal: 'Optimal', normal: 'Normal', low: 'Below baseline' };
   return (
     <article className="card metric">
-      <CardHead title="HRV" to={href('vitals')} />
+      <CardHead title="HRV" to={href('vitals')} metric={l ? 'hrv' : undefined} date={s.date} />
       {l ? (
         <>
           <div className="metric-value">
@@ -383,7 +409,7 @@ function SleepCard({ s }: { s: Summary }) {
   const quality = !l ? '' : l.value >= 7 ? 'Good' : l.value >= 6 ? 'Fair' : 'Short';
   return (
     <article className="card metric">
-      <CardHead title="Sleep" to={href('sleep')} />
+      <CardHead title="Sleep" to={href('sleep')} metric={l ? 'sleep_hours' : undefined} date={s.date} />
       {l ? (
         <>
           <div className="metric-value">
@@ -422,7 +448,7 @@ function LoadCard({ s }: { s: Summary }) {
   const change = l.average ? (v - l.average) / l.average : null;
   return (
     <article className="card metric metric-pink">
-      <CardHead title={strain ? 'Strain' : 'Active energy'} to={href('activity')} />
+      <CardHead title={strain ? 'Strain' : 'Active energy'} to={href('activity')} metric={strain ? 'strain' : 'active_energy'} date={s.date} />
       <div className="metric-value">
         {strain ? fmt(v, 1) : fmt(v)}
         <small>{strain ? 'of 21' : 'kcal'}</small>
@@ -446,7 +472,7 @@ function ActivityCard({ s }: { s: Summary }) {
   const pct = l ? Math.min(1, l.value / s.stepGoal) : 0;
   return (
     <article className="card metric">
-      <CardHead title="Activity" to={href('activity')} />
+      <CardHead title="Activity" to={href('activity')} metric={l ? 'steps' : undefined} date={s.date} />
       {l ? (
         <>
           <div className="metric-value">

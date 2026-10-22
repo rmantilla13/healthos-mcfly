@@ -110,12 +110,19 @@ export function useBackgroundRefresh() {
 /**
  * Fetches JSON and keeps the previous result on screen while a new one loads. Opening a view reuses what
  * was loaded for the same path if the data hasn't changed since; a data change or reload() refetches.
+ * `current` is true once `data` is this path's as it is now (a fresh copy, or the answer to this path's latest
+ * request), and false while it's an older copy kept on screen: for decisions that mustn't be made on stale data.
  */
 export function useApi<T>(path: string | null) {
   const [data, setData] = useState<T | undefined>(() => (path ? (cache.get(path)?.data as T | undefined) : undefined));
   const [error, setError] = useState<Error>();
   const [loading, setLoading] = useState(false);
   const [version, setVersion] = useState(0);
+  // The path whose data is current; null while a request for it is out.
+  const [currentFor, setCurrentFor] = useState<string | null>(() => {
+    const hit = path ? cache.get(path) : undefined;
+    return hit && fresh(hit) ? path : null;
+  });
 
   useEffect(() => {
     const bump = () => setVersion((v) => v + 1);
@@ -129,16 +136,21 @@ export function useApi<T>(path: string | null) {
     if (hit) setData(hit.data as T);
     if (version === 0 && hit && fresh(hit)) {
       setError(undefined);
+      setCurrentFor(path);
+      // A request for the path before may have been cut off before it cleared this.
+      setLoading(false);
       return;
     }
     let alive = true;
     setLoading(true);
+    setCurrentFor(null);
     getJson<T>(path)
       .then((d) => {
         cache.set(path, { data: d, version: dataVersion, at: Date.now(), day: localDay() });
         if (alive) {
           setData(d);
           setError(undefined);
+          setCurrentFor(path);
         }
       })
       .catch((e: Error) => alive && setError(e))
@@ -149,12 +161,12 @@ export function useApi<T>(path: string | null) {
   }, [path, version]);
 
   const reload = useCallback(() => setVersion((v) => v + 1), []);
-  return { data, error, loading, reload };
+  return { data, error, loading, reload, current: path !== null && currentFor === path };
 }
 
 // ---------- routing ----------
 
-const PAGES: Page[] = ['home', 'family', 'vitals', 'sleep', 'activity', 'body', 'nutrition', 'cycle', 'mcfly', 'integrations', 'settings', 'admin'];
+const PAGES: Page[] = ['home', 'family', 'vitals', 'sleep', 'activity', 'body', 'nutrition', 'labs', 'cycle', 'mcfly', 'integrations', 'settings', 'admin'];
 
 function readRoute() {
   const [p, q] = location.hash.replace(/^#\/?/, '').split('?');
@@ -251,9 +263,11 @@ export function shiftDate(date: string, days: number) {
 export const clock = (iso: string) => iso.slice(11, 16);
 export const minutesOfDay = (iso: string) => Number(iso.slice(11, 13)) * 60 + Number(iso.slice(14, 16));
 
+/** "1h 05m" or "45m": whole minutes first, so 59.6 reads 1h 00m, never 60m or 1h 60m. */
 export function duration(minutes: number) {
-  const h = Math.floor(minutes / 60);
-  const m = Math.round(minutes % 60);
+  const t = Math.round(minutes);
+  const h = Math.floor(t / 60);
+  const m = t % 60;
   return h ? `${h}h ${String(m).padStart(2, '0')}m` : `${m}m`;
 }
 
