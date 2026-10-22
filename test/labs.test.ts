@@ -15,8 +15,10 @@ import {
   parseRange,
   parseResultValue,
   rangeCount,
+  rangeDecimalComma,
   rangeLabel,
   resultStatus,
+  specimenOf,
   statusHint,
   statusLabel,
   statusOf,
@@ -102,6 +104,19 @@ test('a result and its range are read with one number grammar, so the status mat
   assert.deepEqual(parseRange('0,450-4,500'), { low: 0.45, high: 4.5, lowOpen: false, highOpen: false });
   assert.deepEqual(parseRange('3,5-5,0'), { low: 3.5, high: 5, lowOpen: false, highOpen: false });
   assert.deepEqual(parseRange('60-90 mL/min/1.73m2'), { low: 60, high: 90, lowOpen: false, highOpen: false }, 'a number in the unit is not a second range');
+  // A result is read in its range's comma style: "2,350" beside "0,270-4,200" is 2.35, not 2350.
+  assert.equal(rangeDecimalComma('0,270 - 4,200'), true);
+  assert.equal(rangeDecimalComma('Male: 13,0-17,0 Female: 12,0-15,0'), true);
+  assert.equal(rangeDecimalComma('150,000-450,000'), false);
+  assert.equal(rangeDecimalComma('Desirable <200, Borderline 200-239'), false, 'a comma between ranges is not in a number');
+  assert.equal(rangeDecimalComma(''), false);
+  assert.equal(parseResultValue('2,350', true).value, 2.35);
+  assert.equal(parseResultValue('2,350').value, 2350, 'thousands when the range says nothing');
+  const eu = (v: string, r: string) => resultStatus(parseResultValue(v, rangeDecimalComma(r)), parseRange(r));
+  assert.equal(eu('2,350', '0,270-4,200'), 'within');
+  assert.equal(eu('1,050', '0,700-1,200'), 'within');
+  assert.equal(eu('4,350', '0,270-4,200'), 'above');
+  assert.equal(eu('250,000', '150,000-450,000'), 'within');
 });
 
 test('a range printed in bands is read for the sex given, never as its first band', () => {
@@ -128,6 +143,10 @@ test('urine and stool results never become a blood marker', () => {
   assert.equal(markerKey('Glucose, Urine'), 'other:urine-glucose', 'the same test, whichever way it was printed');
   assert.equal(markerKey('WBC', 'Microscopic Examination'), 'other:urine-wbc');
   assert.equal(markerKey('RBC', 'UA, Complete'), 'other:urine-rbc');
+  assert.equal(markerKey('Glucose', 'U/A'), 'other:urine-glucose', '"U/A" is a urinalysis too');
+  assert.equal(markerKey('Glucose', 'U.A.'), 'other:urine-glucose');
+  assert.equal(markerKey('Protein', 'POC U/A'), 'other:urine-protein');
+  assert.equal(specimenOf('Glucose', 'U/A'), 'urine');
   assert.equal(markerKey('Occult Blood', 'Stool'), 'other:stool-occult-blood');
   assert.equal(markerKey('Glucose', 'Metabolic'), 'glucose');
   assert.equal(markerKey('Glucose'), 'glucose');
@@ -785,6 +804,36 @@ test('a range printed in bands is read for the sex in the profile, and never as 
 
   const plt = (await carol.labs()).json.markers.find((x: { key: string }) => x.key === 'platelets').latest;
   assert.deepEqual([plt.value, plt.range.low, plt.range.high, plt.status], [250000, 150000, 450000, 'within']);
+});
+
+test("McFly is told why a banded range has no status, and which band was used when one was", async () => {
+  const ask = async () => {
+    requests.length = 0;
+    script = [
+      reply([{ type: 'tool_use', id: 'tl_hgb', name: 'get_lab_results', input: { marker: 'hemoglobin' } }], 'tool_use'),
+      reply([{ type: 'text', text: 'ok' }], 'end_turn'),
+    ];
+    assert.equal((await carol.call('POST', '/api/mcfly/chat', { messages: [{ role: 'user', content: 'My hemoglobin?' }] })).status, 200);
+    return JSON.parse(requests[1].messages.at(-1).content[0].content).markers[0].latest;
+  };
+  const none = await ask();
+  assert.match(none.position, /more than one band/);
+  assert.doesNotMatch(none.position, /no number|either side/, 'not the reason for a "<" result');
+  assert.ok(!('band' in none.range));
+  await carol.call('PUT', '/api/settings', { sex: 'female' });
+  const female = await ask();
+  assert.equal(female.position, "within the lab's range");
+  assert.equal(female.range.band, 'female range used, from the sex in their profile');
+  await carol.call('PUT', '/api/settings', { sex: null });
+});
+
+test('a result printed with a decimal comma is read in its range\'s style, so its status matches the printed numbers', async () => {
+  const r = await carol.add([{ collected: ago(2), name: 'TSH', valueText: '2,350', unit: 'µUI/mL', refText: '0,270 - 4,200', panel: 'Thyroid' }]);
+  assert.equal(r.status, 200, r.text);
+  const [row] = await db.query<{ value: number; ref_low: number; ref_high: number }>('SELECT value, ref_low, ref_high FROM lab_results WHERE user_id = $1 AND id = $2', [carolId, r.json.ids[0]]);
+  assert.deepEqual([row.value, row.ref_low, row.ref_high], [2.35, 0.27, 4.2]);
+  const tsh = (await carol.labs()).json.markers.find((x: { key: string }) => x.key === 'tsh').latest;
+  assert.deepEqual([tsh.value, tsh.status], [2.35, 'within']);
 });
 
 test("a date read from a report that can't be used is flagged, and a urinalysis row isn't matched to a blood marker", async () => {
