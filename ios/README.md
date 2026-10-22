@@ -16,7 +16,11 @@ The app reads the same API as the website (`/api/summary`, `/api/trends`, `/api/
 - **Trends:** Vitals, Sleep (stacked stages), Activity (steps against goal, plus workouts) and Body, over 30 days, 90 days or a year. Drag across a chart to read a single day.
 - **Nutrition** (only while Nutrition is on): the web's Neka layout from `GET /api/nutrition`.
   - **Overview:** Energy (only when calories are shown), Protein with a neutral week-on-week note, Water in glasses, Days logged, a macro balance donut with fiber, sugar, sodium and caffeine, and food insights worded as associations.
-  - **Macros and Hydration:** a bar per logged day over 7, 30 or 90 days. With "No amounts", only the Overview shows, and only which days were logged.
+  - **Macros and Hydration:** a bar per logged day over 7, 30 or 90 days. With "No amounts", only the Overview and the Log show, and only which days were logged.
+  - **Log** (only on servers with the food log, `GET /api/nutrition/log`): the same log as the web's Log tab, one day at a time. Tap an entry to change its name or portions, swipe to delete it. Entries from the web show here and the other way round.
+    - **Add food:** search USDA and Open Food Facts, scan a barcode (or type its number), ask McFly to estimate a photo or a description (only when the server has McFly on; you review its drafts before they're saved), or quick add your own amounts. Quick add types only what your "numbers" setting shows: no Calories with "No calories", no Quick add with "No amounts".
+    - **Photos** are shrunk on the phone to 1,280 px on the long edge and re-encoded, which drops the location and other metadata, and are sent only for that estimate.
+    - **Saved to Apple Health:** see Apple Health sync below.
   - **No judgement:** a day with nothing logged is a gap, never a zero. A target you set (Settings → Nutrition targets) is a plain dashed line. No score, no "remaining", no red or green.
 - **Cycle** (only while cycle tracking is on): this cycle's phase ring and estimates, each fertile day's estimated chance, the temperature curve for any cycle (cover line, ovulation, the rise after it), a five-week calendar, past cycles split before and after ovulation, and patterns from your own cycles. Estimates never mark a day as safe.
 - **Settings:**
@@ -48,12 +52,18 @@ Cards hide or switch to fit your sources, as on the web: no WHOOP means VO₂ ma
   - Older days (the first upload, or the one-time hourly backfill) wait in a saved queue. They go up newest first, four weeks per pass, only while the app is open and not in Low Power Mode. Settings shows how many are left.
 - **Cycle tracking:** menstrual flow, spotting, ovulation tests, cervical mucus, sexual activity, basal body temperature and Health's cycle symptoms (cramps, bloating, headache and the rest; one logged as "not present" is left out). The app reads these only after you turn cycle tracking on in healthOS settings and the server answers that it stores cycle days. Each day sent replaces that day on the server.
 - **Nutrition** (food totals from the apps you log meals in): energy, protein, carbs, fat, fiber, sugar, saturated fat, sodium and alcoholic drinks.
-  - **Off by default.** The app reads, asks Health about and watches these types only while the server's ingest reply says you turned Nutrition on (`nutritionOn`) and lists the nutrients it takes (`nutrients`). Off, it reads none of them, and it never writes food.
+  - **Off by default.** The app reads, asks Health about and watches these types only while the server's ingest reply says you turned Nutrition on (`nutritionOn`) and lists the nutrients it takes (`nutrients`). Off, it reads none of them.
   - **Turning it on:** the sync that hears it asks Health about the food types and then reads their whole history. Turning it off forgets where reading stopped, so turning it on again sends the history again.
   - **Per app, never summed:** each day goes up as each app's own totals, and the server shows one app a day, because apps copy each other's logs through Health. A meal saved as a Food correlation counts once. Each day sent replaces that day.
   - **Deletions:** a food sample deleted in Health re-sends the last month, and a day left with no food goes up as `apps: []`, which clears it. An empty day is never sent otherwise: Health reads as empty when food access is off.
   - **Late writes:** food apps often write late, so the last three days are read again on every sync. Food energy alone wakes the app in the background.
   - **Values the server would refuse stay on the phone:** a total above its cap (a unit mix-up) is left out, so one bad log can't block a sync. Caffeine and water stay daily metrics, as before.
+- **Food logged on this iPhone is written to Health** (`FoodHealth.swift`), so other apps see it. Only saved entries made here are written, never ones from the web or McFly drafts still waiting for review.
+  - **One Food correlation per entry** (water included), plus a separate alcoholic-drinks sample, which a correlation can't hold. Every object carries `HKMetadataKeyFoodType`, `HKMetadataKeySyncIdentifier` `healthos.food.<entry id>` and `HKMetadataKeySyncVersion`, so a changed entry replaces its copy.
+  - **Only the amounts you see:** with "No calories" no energy is written; with "No amounts" nothing is, and copies already written are removed.
+  - **Asked once, when you save your first entry** (after the Add sheet closes), not at launch. From then on every Health request includes the food write types: on iOS 27 a request that leaves them out resets them.
+  - **Reconciled** when Nutrition opens and after each sync, against the last 7 days of the log: changed entries are rewritten, deleted ones (here or on the web) removed. `food-health.json` in Application Support remembers what was written.
+  - **Never counted twice:** reading skips every sample whose sync identifier starts with `healthos.food.`, both for the food totals and for water, because the server already has the log itself.
 - **Sleeping wrist temperature** counts toward the morning the night ends, like sleep, so it lines up with WHOOP's skin temperature for the cycle engine. Builds before this dated it by the evening the night began: the first sync after updating reads its history again once and re-sends every day it moved from or to, and the server drops a wrist reading from any day sent without one.
 - **Syncs in the background:**
   - **HealthKit wakes:** an `HKObserverQuery` per type plus `enableBackgroundDelivery`. Wakes are hourly for heart rate, steps, energy, distance, exercise and breathing, and immediate for everything else.
@@ -97,7 +107,7 @@ To keep data on your Mac, run the server there with `HEALTHOS_LAN=1` as well as 
 
 ## Simulator
 
-Simulator builds have an extra **Add sample Health data** button. It writes two weeks of plausible data into the simulator's Health store, so the whole flow can be tried without a phone. Device builds never ask for write access.
+Simulator builds have an extra **Add sample Health data** button. It writes two weeks of plausible data into the simulator's Health store, so the whole flow can be tried without a phone. Device builds ask for write access only for the food you log in the app. The live barcode scanner needs a real camera, so in the simulator type the barcode's number instead.
 
 **Point the simulator only at a scratch server.** Whatever is in its Health store is uploaded as real Apple Health data. Never use the hosted site. Avoid `localhost:8787` too: with `DATABASE_URL` in `.env.local`, that server writes to the hosted database. Simulator builds start with no server address for this reason. The simulator shares the Mac's network, so a scratch server on the Mac is reachable at localhost:
 
