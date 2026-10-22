@@ -3,10 +3,12 @@
 // keeps no conversation: the browser sends the visible history (plain text) with each question.
 import Anthropic from '@anthropic-ai/sdk';
 import express, { type Request, type Response } from 'express';
+import { type LabResult, matchBiomarker, normalizeName } from '../shared/labs.ts';
 import type { Digest, DigestReply, McflyVisual, NutritionNumbers, Point, Units } from '../shared/types.ts';
 import { platformSettings } from './admin.ts';
 import { currentUser } from './auth.ts';
 import { cycleView } from './cycle/index.ts';
+import { labsView } from './labs.ts';
 import { nutritionView } from './nutrition.ts';
 import { addDays } from './dates.ts';
 import { type Db, type Scope, getUserSetting, setUserSetting } from './db.ts';
@@ -563,6 +565,52 @@ const TOOLS: Tool[] = [
     },
   },
   {
+    name: 'get_lab_results',
+    description:
+      "This person's lab test results (blood work and other lab panels) that they added to healthOS, typed in or read from a report they uploaded and checked. For each marker: the latest result exactly as printed (a \"<\" or \">\" means the true value is beyond that number), its unit, the reference range the lab printed beside it, where the result sits against that range, the collection date, lab and panel, and earlier results of the same marker. Only when a report printed no range is a typical adult range used instead, and it's labelled so. Use it for any question about their labs, blood tests or biomarkers. Describe a result only as below, within or above the lab's range (or the typical range, saying which), never as a diagnosis or as good or bad, and suggest talking a result outside its range over with their clinician. Ranges differ between labs and units, so read each result against the range printed with it.",
+    input_schema: {
+      type: 'object',
+      properties: { marker: { type: 'string', description: 'Only this marker, by name, e.g. "LDL" or "vitamin D". Leave out for all of them.' } },
+      additionalProperties: false,
+    },
+    label: () => 'Looking at your lab results',
+    async run(ctx, input) {
+      const v = await labsView(ctx.scope, ctx.hosted);
+      const asked = typeof input.marker === 'string' ? input.marker.trim().slice(0, 80) : '';
+      const key = asked ? matchBiomarker(asked) : null;
+      const words = normalizeName(asked);
+      const markers = v.markers.filter(
+        (m) => !words || m.key === key || normalizeName(m.name).includes(words) || m.history.some((r) => normalizeName(r.name).includes(words)),
+      );
+      const against = (r: LabResult) => (r.range?.kind === 'typical' ? 'the typical adult range' : "the lab's range");
+      const one = (r: LabResult) => ({
+        collected: r.collected,
+        printedName: r.name,
+        result: r.valueText,
+        unit: r.unit,
+        range: r.range
+          ? {
+              printed: r.range.text,
+              low: r.range.low,
+              high: r.range.high,
+              from: r.range.kind === 'lab' ? 'printed by the lab' : `typical adult range${r.range.note ? ` (${r.range.note})` : ''}, used because the report printed none`,
+            }
+          : null,
+        position: r.status ? `${r.status} ${against(r)}` : r.range ? 'not placed against the range (no number, or a "<"/">" result that could fall either side)' : 'no range to compare with',
+        ...(r.lab && { lab: r.lab }),
+        ...(r.panel && { panel: r.panel }),
+      });
+      return {
+        today: v.today,
+        ...(v.demo && { demo: "These are healthOS's demo results, not this person's own." }),
+        note: 'Results are as printed on their reports. Position is only where a number sits against a range: not a diagnosis.',
+        markersFound: markers.length,
+        ...(asked && !markers.length && { notFound: `No results for "${asked}". They have ${v.markers.length} markers recorded.` }),
+        markers: markers.map((m) => ({ marker: m.name, latest: one(m.latest), earlier: m.history.slice(0, -1).slice(-10).map(one) })),
+      };
+    },
+  },
+  {
     name: 'show_visual',
     visual: true,
     description:
@@ -717,7 +765,7 @@ function parseHistory(body: unknown): Turn[] | string {
 // ---------- per-person daily limit ----------
 
 /** Count a question against today's limit; null when the limit is reached. Atomic, so parallel requests can't overshoot. */
-async function claimQuestion(db: Db, userId: string, day: string, limit: number): Promise<number | null> {
+export async function claimQuestion(db: Db, userId: string, day: string, limit: number): Promise<number | null> {
   const [row] = await db.query<{ questions: number }>(
     `INSERT INTO mcfly_usage (user_id, day, questions) VALUES ($1, $2, 1)
      ON CONFLICT (user_id, day) DO UPDATE SET questions = mcfly_usage.questions + 1 WHERE mcfly_usage.questions < $3
@@ -728,7 +776,7 @@ async function claimQuestion(db: Db, userId: string, day: string, limit: number)
 }
 
 /** The limit counts by UTC date, so changing your own time zone can't reset it. */
-const usageDay = () => new Date().toISOString().slice(0, 10);
+export const usageDay = () => new Date().toISOString().slice(0, 10);
 
 async function usedToday(db: Db, userId: string, day: string) {
   const [row] = await db.query<{ questions: number }>('SELECT questions FROM mcfly_usage WHERE user_id = $1 AND day = $2', [userId, day]);
@@ -808,7 +856,7 @@ type DigestResult = { status: number; body: DigestReply | { error: string } };
 
 export type McflyOptions = { hosted: boolean; client?: () => McflyClient | null };
 
-const defaultClient = () => (process.env.ANTHROPIC_API_KEY ? new Anthropic() : null);
+export const defaultClient = () => (process.env.ANTHROPIC_API_KEY ? new Anthropic() : null);
 
 export function mcflyRouter(db: Db, { hosted, client = defaultClient }: McflyOptions) {
   const router = express.Router();
