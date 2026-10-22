@@ -26,15 +26,16 @@ struct NutritionScreen: View {
                     } else {
                         ProgressView()
                     }
+                } else if dashboard.nutritionOn {
+                    // Each of its tabs scrolls on its own (the Log is a List).
+                    NutritionTrends()
                 } else {
                     ScrollViewReader { proxy in
                     ScrollView {
                         VStack(alignment: .leading, spacing: 14) {
                             Text("From the food app you log in, through Apple Health. Only you can see it.")
                                 .font(.footnote).foregroundStyle(Palette.ink3)
-                            if dashboard.nutritionOn {
-                                NutritionTrends()
-                            } else if dashboard.nutritionAvailable {
+                            if dashboard.nutritionAvailable {
                                 NutritionOptIn { withAnimation { proxy.scrollTo(NutritionOptIn.choicesID, anchor: .bottom) } }
                             } else {
                                 Text("This healthOS server doesn't have Nutrition yet.")

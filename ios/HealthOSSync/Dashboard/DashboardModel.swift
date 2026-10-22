@@ -348,6 +348,12 @@ final class Dashboard {
     /// The server has Nutrition (its status names the setting), so the Nutrition tab can offer to turn it on.
     var nutritionAvailable: Bool { status?.settings?.nutrition != nil }
 
+    /// The server has the food log (GET /nutrition/log): nil until asked, false when it answered 404 (an older server).
+    var foodLogAvailable: Bool?
+
+    /// The person's time zone (settings.timeZone), where a logged entry's date and time are.
+    var timeZone: TimeZone { status?.settings?.timeZone.flatMap(TimeZone.init(identifier:)) ?? .current }
+
     /// Turns Nutrition on with what the person chose to see (the web's opt-in): the server refuses it without a choice.
     /// The phone starts reading food once a sync hears it's on.
     func turnOnNutrition(_ mode: NutritionMode) async throws {
@@ -552,7 +558,7 @@ final class Dashboard {
         if let on = status.settings?.familySharing, let board = familyBoard, board.sharing != on { dropFamilyBoard() }
     }
 
-    private func fetch<T>(_ request: (APIClient) async throws -> T) async throws -> T {
+    func fetch<T>(_ request: (APIClient) async throws -> T) async throws -> T {
         guard let client = APIClient.current() else { throw APIError.network("No server configured.") }
         do {
             return try await request(client)
@@ -580,6 +586,7 @@ final class Dashboard {
         error = nil
         dataVersion = nil
         loadedOn = nil
+        foodLogAvailable = nil
         clearCaches()
         resetFamily()
     }

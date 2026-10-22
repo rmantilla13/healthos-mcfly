@@ -166,10 +166,14 @@ final class NutritionScreenTests: XCTestCase {
         XCTAssertTrue(FoodMath.parts(FoodDay(date: "2026-10-19", app: "X", values: ["energy_kcal": 900], otherApps: [])).isEmpty)
     }
 
-    func testNoAmountsMeansOnlyTheOverview() {
-        XCTAssertEqual(NutritionTab.visible(.none), [.overview])
-        XCTAssertEqual(NutritionTab.visible(.noEnergy), [.overview, .macros, .hydration])
-        XCTAssertEqual(NutritionTab.visible(.all), [.overview, .macros, .hydration])
+    func testNoAmountsMeansOnlyTheOverviewAndTheLog() {
+        // The web's tabs: Overview, Log, Macros, Hydration; with no amounts, Overview and Log.
+        XCTAssertEqual(NutritionTab.visible(.none), [.overview, .log])
+        XCTAssertEqual(NutritionTab.visible(.noEnergy), [.overview, .log, .macros, .hydration])
+        XCTAssertEqual(NutritionTab.visible(.all), [.overview, .log, .macros, .hydration])
+        // A server without the food log (404): no Log tab.
+        XCTAssertEqual(NutritionTab.visible(.all, logging: false), [.overview, .macros, .hydration])
+        XCTAssertEqual(NutritionTab.visible(.none, logging: false), [.overview])
     }
 
     func testTargetRangesAreTheServers() {

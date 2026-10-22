@@ -33,10 +33,12 @@
 	</dict>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>healthOS connects to your WHOOP's Heart Rate Broadcast (or another Bluetooth heart rate sensor) to show your heart rate live while that screen is open.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>healthOS uses the camera to scan food barcodes and to photograph a meal for McFly to estimate. A photo is sent to Anthropic for that estimate only and isn't kept.</string>
 	<key>NSHealthShareUsageDescription</key>
 	<string>healthOS reads your Health data and sends daily summaries to your healthOS dashboard.</string>
 	<key>NSHealthUpdateUsageDescription</key>
-	<string>In the simulator, healthOS can write sample Health data so the sync can be tried end to end.</string>
+	<string>healthOS saves the food and drink you log in healthOS to Apple Health.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>healthOS can send your Health data to a healthOS server on your local network.</string>
 	<key>UIBackgroundModes</key>

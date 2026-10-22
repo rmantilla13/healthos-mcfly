@@ -131,6 +131,8 @@ final class AppModel {
         }
         syncing = false
         progress = ""
+        // Food logged here, kept in step in Health: edits made on the web rewritten, deletions taken out.
+        await dashboard?.reconcileFoodHealth()
     }
 
     /// One Sync for everything: push this phone's Health data, then ask the server to refresh WHOOP and wait

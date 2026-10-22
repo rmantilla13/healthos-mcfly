@@ -36,11 +36,12 @@ struct APIClient {
         let error: String?
     }
 
-    private func request(_ path: String, query: [URLQueryItem] = [], method: String = "GET", body: Data? = nil) async throws -> Data {
+    private func request(_ path: String, query: [URLQueryItem] = [], method: String = "GET", body: Data? = nil, timeout: TimeInterval? = nil) async throws -> Data {
         var components = URLComponents(url: base.appendingPathComponent("api" + path), resolvingAgainstBaseURL: false)!
         if !query.isEmpty { components.queryItems = query }
         var req = URLRequest(url: components.url!)
         req.httpMethod = method
+        if let timeout { req.timeoutInterval = timeout }
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         if method != "GET" {
             req.setValue("1", forHTTPHeaderField: "X-HealthOS") // the server requires it on every write
@@ -186,6 +187,50 @@ struct APIClient {
     }
 
     func patterns() async throws -> Patterns? { try await optional("/patterns") }
+
+    // MARK: Food log (server/foodlog.ts, foods.ts, estimate.ts)
+
+    /// The last `days` days of entries (1 to 31) and McFly's estimate waiting for review; nil from a server without logging.
+    func foodLog(days: Int) async throws -> FoodLog? {
+        try await optional("/nutrition/log", query: [URLQueryItem(name: "days", value: String(days))])
+    }
+
+    private func sendJSON<T: Decodable>(_ method: String, _ path: String, _ body: [String: Any]? = nil, timeout: TimeInterval? = nil) async throws -> T {
+        let data = try await request(path, method: method, body: try JSONSerialization.data(withJSONObject: body ?? [:]), timeout: timeout)
+        return try JSONDecoder().decode(T.self, from: data)
+    }
+
+    func addFood(_ body: [String: Any]) async throws -> FoodEntry { try await sendJSON("POST", "/nutrition/log", body) }
+
+    func changeFood(id: String, _ body: [String: Any]) async throws -> FoodEntry { try await sendJSON("PATCH", "/nutrition/log/\(id)", body) }
+
+    func deleteFood(id: String) async throws {
+        _ = try await request("/nutrition/log/\(id)", method: "DELETE", body: Data("{}".utf8))
+    }
+
+    private struct Saved: Decodable { @LossyArray var entries: [FoodEntry] }
+
+    /// Saves those drafts (they count from now on) and discards the rest.
+    func saveDrafts(ids: [String]) async throws -> [FoodEntry] {
+        let saved: Saved = try await sendJSON("POST", "/nutrition/log/save", ["ids": ids])
+        return saved.entries
+    }
+
+    func discardDrafts() async throws {
+        _ = try await request("/nutrition/log/discard", method: "POST", body: Data("{}".utf8))
+    }
+
+    /// Foods for words, or a typed barcode (8 to 14 digits). Search on submit, not as the person types.
+    func searchFoods(_ query: String) async throws -> FoodSearch { try await sendJSON("POST", "/nutrition/foods/search", ["query": query]) }
+
+    /// Open Food Facts, then USDA's branded foods. No results means not found: offer quick add from the label.
+    func barcode(_ code: String) async throws -> FoodSearch { try await sendJSON("POST", "/nutrition/foods/barcode", ["code": code]) }
+
+    /// McFly's estimate from a photo or words: drafts to review. Counts as one McFly question.
+    func estimateFood(_ body: [String: Any]) async throws -> FoodEstimate {
+        // McFly reads a photo for a while; the usual 30 s would cut it off.
+        try await sendJSON("POST", "/nutrition/estimate", body, timeout: 90)
+    }
 
     /// Food totals by day (GET /nutrition); nil from a server without Nutrition. `insights` adds the food patterns.
     func nutrition(days: Int, insights: Bool = false) async throws -> NutritionData? {

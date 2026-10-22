@@ -8,11 +8,14 @@ import SwiftUI
 // is one the person set, drawn as a plain dashed line. A day with nothing logged is a gap, never a zero.
 
 enum NutritionTab: String, CaseIterable, Identifiable {
-    case overview = "Overview", macros = "Macros", hydration = "Hydration"
+    case overview = "Overview", log = "Log", macros = "Macros", hydration = "Hydration"
     var id: String { rawValue }
 
-    /// With no amounts, there's nothing for Macros and Hydration to show.
-    static func visible(_ mode: NutritionMode) -> [NutritionTab] { mode == .none ? [.overview] : allCases }
+    /// With no amounts, there's nothing for Macros and Hydration to show, but food can still be logged. Log only where
+    /// the server has the food log.
+    static func visible(_ mode: NutritionMode, logging: Bool = true) -> [NutritionTab] {
+        (mode == .none ? [.overview, .log] : allCases).filter { $0 != .log || logging }
+    }
 }
 
 /// The arithmetic behind the cards, apart from the views so tests can check it. Every date comes from the reply's own
@@ -119,38 +122,62 @@ enum FoodMath {
 
 // MARK: - The section
 
-/// The Nutrition tab while it's on: tabs, then the tab's cards. Overview reads the last 14 days; Macros and Hydration a range.
+/// The Nutrition tab while it's on: tabs, then the tab's cards. Overview reads the last 14 days; Macros and Hydration a
+/// range; Log is its own List (swipe to delete needs one), so each tab holds its own scrolling.
 struct NutritionTrends: View {
     @Environment(Dashboard.self) private var dashboard
     @AppStorage("nutritionTab") private var tab = NutritionTab.overview.rawValue
     @AppStorage("nutritionDays") private var days = 30
 
     var body: some View {
-        let tabs = NutritionTab.visible(dashboard.nutritionMode ?? .none)
+        let tabs = NutritionTab.visible(dashboard.nutritionMode ?? .none, logging: dashboard.foodLogAvailable == true)
         let current = tabs.first { $0.rawValue == tab } ?? .overview
+        Group {
+            if current == .log {
+                FoodLogTab { header(tabs) }
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        header(tabs)
+                        if current != .overview {
+                            HStack {
+                                Spacer()
+                                Picker("Range", selection: $days) {
+                                    Text("7 days").tag(7)
+                                    Text("30 days").tag(30)
+                                    Text("90 days").tag(90)
+                                }
+                                .pickerStyle(.menu)
+                            }
+                        }
+                        switch current {
+                        case .overview, .log: NutritionLoader(days: 14, insights: true) { NutritionOverview(data: $0, units: dashboard.units) }
+                        case .macros: NutritionLoader(days: days, insights: false) { NutritionMacros(data: $0) }
+                        case .hydration: NutritionLoader(days: days, insights: false) { NutritionHydration(data: $0, units: dashboard.units) }
+                        }
+                    }
+                    .padding(16)
+                }
+                .refreshable { await dashboard.load() }
+            }
+        }
+        // Whether this server has the food log decides the Log tab; Health catches up with the log on opening.
+        .task(id: "\(dashboard.generation)|\(dashboard.nutritionOn)") {
+            await dashboard.probeFoodLog()
+            await dashboard.reconcileFoodHealth()
+        }
+    }
+
+    private func header(_ tabs: [NutritionTab]) -> some View {
         VStack(alignment: .leading, spacing: 14) {
+            Text("From the food app you log in, through Apple Health, or logged here. Only you can see it.")
+                .font(.footnote).foregroundStyle(Palette.ink3)
             if tabs.count > 1 {
                 Picker("Nutrition", selection: $tab) {
                     ForEach(tabs) { Text($0.rawValue).tag($0.rawValue) }
                 }
                 .pickerStyle(.segmented)
                 .accessibilityIdentifier("nutritionTabs")
-            }
-            if current != .overview {
-                HStack {
-                    Spacer()
-                    Picker("Range", selection: $days) {
-                        Text("7 days").tag(7)
-                        Text("30 days").tag(30)
-                        Text("90 days").tag(90)
-                    }
-                    .pickerStyle(.menu)
-                }
-            }
-            switch current {
-            case .overview: NutritionLoader(days: 14, insights: true) { NutritionOverview(data: $0, units: dashboard.units) }
-            case .macros: NutritionLoader(days: days, insights: false) { NutritionMacros(data: $0) }
-            case .hydration: NutritionLoader(days: days, insights: false) { NutritionHydration(data: $0, units: dashboard.units) }
             }
         }
     }

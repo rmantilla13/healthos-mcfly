@@ -29,7 +29,8 @@ targets:
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         NSHealthShareUsageDescription: healthOS reads your Health data and sends daily summaries to your healthOS dashboard.
-        NSHealthUpdateUsageDescription: In the simulator, healthOS can write sample Health data so the sync can be tried end to end.
+        NSHealthUpdateUsageDescription: healthOS saves the food and drink you log in healthOS to Apple Health.
+        NSCameraUsageDescription: healthOS uses the camera to scan food barcodes and to photograph a meal for McFly to estimate. A photo is sent to Anthropic for that estimate only and isn't kept.
         NSLocalNetworkUsageDescription: healthOS can send your Health data to a healthOS server on your local network.
         NSBluetoothAlwaysUsageDescription: healthOS connects to your WHOOP's Heart Rate Broadcast (or another Bluetooth heart rate sensor) to show your heart rate live while that screen is open.
         NSAppTransportSecurity:

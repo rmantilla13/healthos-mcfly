@@ -146,7 +146,8 @@ enum NutritionFolder {
     }
 
     static func samples(_ list: [HKQuantitySample], as nutrient: Nutrient) -> [FoodSample] {
-        list.map { s in
+        // Entries logged in healthOS and written to Health from this phone: the server already has the log itself.
+        list.filter { !FoodHealth.isOurs($0.metadata) }.map { s in
             FoodSample(id: s.uuid.uuidString, date: s.startStamp.localDate(), app: s.sourceName, nutrient: nutrient.name, value: value(s.quantity, as: nutrient))
         }
     }

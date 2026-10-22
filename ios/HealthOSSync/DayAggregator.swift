@@ -160,7 +160,8 @@ final class DayAggregator {
     }
 
     func add(_ samples: [HKQuantitySample], as q: QuantityMetric) {
-        add(points: samples.map { QuantityPoint(start: $0.startStamp, value: $0.quantity.doubleValue(for: q.unit) * q.scale, source: $0.writtenBy, end: $0.endStamp) }, as: q)
+        // Food and water logged in healthOS and written to Health from here: the server counts the log itself.
+        add(points: samples.filter { !FoodHealth.isOurs($0.metadata) }.map { QuantityPoint(start: $0.startStamp, value: $0.quantity.doubleValue(for: q.unit) * q.scale, source: $0.writtenBy, end: $0.endStamp) }, as: q)
     }
 
     /// The aggregation itself, kept free of HealthKit so tests can set the source.
