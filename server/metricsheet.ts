@@ -471,31 +471,37 @@ async function daySheet(scope: Scope, hosted: boolean, key: MetricKey, asOf: str
       if (v > 0) recorded++;
       if (!busiest || v > busiest.v) busiest = { h, v };
     }
-  // A WHOOP day count clearly over the phone's or Watch's hours is the day's figure (as everywhere); then the hours
-  // are only part of it, so there's no like-for-like comparison with a typical day.
-  const whoop = ser.total?.source === 'whoop' && ser.total.value > run;
-  const value = whoop ? ser.total!.value : through !== null ? run : (ser.total?.value ?? null);
+  // The day's count as the cards show it (steps only; GET /api/day gives it as `total`): when it's ahead of the
+  // hours (WHOOP's count, or the phone's before all its hours have synced), it's the day's figure, as on the Activity
+  // card. The hours are then only part of the day, so there's no like-for-like comparison with a typical day.
+  const ahead = ser.total && (through === null || ser.total.value > run) ? ser.total : null;
+  const whoop = ahead?.source === 'whoop';
+  const value = ahead ? ahead.value : through !== null ? run : null;
   if (value === null) return empty;
   const unit = info.unit;
   const typical = through !== null ? ser.typical[through] : null;
   const byWhen = isToday && through !== null ? `your typical day by ${hourLabel(through + 1)}` : 'your typical day';
-  const change: MetricChange | null = !whoop && through !== null && typical !== null ? { previous: typical, delta: run - typical, pct: typical ? (run - typical) / typical : null, against: byWhen } : null;
+  const change: MetricChange | null = !ahead && through !== null && typical !== null ? { previous: typical, delta: run - typical, pct: typical ? (run - typical) / typical : null, against: byWhen } : null;
   const verb = key === 'steps' ? (isToday ? "You've taken" : 'You took') : isToday ? "You've burned" : 'You burned';
   let text = `${verb} ${withUnit(key, value, unit)}${key === 'active_energy' ? ' of active energy' : ''} ${when}`;
   if (change) {
     const [up, down] = SPECS[key].words ?? ['more', 'less'];
     text += isSteady(key, change.delta, change.previous, unit) ? `, about the same as ${byWhen}` : `, ${withUnit(key, Math.abs(change.delta), unit)} ${change.delta > 0 ? up : down} than ${byWhen}`;
   }
-  if (whoop) text += '; that count is WHOOP\'s, and the hours are from your iPhone or Apple Watch';
-  // The day's count as the cards show it, when the hours don't add up to it yet (as the timeline on Home says).
-  const behind = !whoop && through !== null && ser.total && ser.total.value > run * 1.01 + 1 ? ser.total.value : null;
-  const headNote = whoop
-    ? "WHOOP's count; the hours are from your iPhone or Apple Watch"
-    : through === null
-      ? 'no hourly readings'
-      : behind !== null
-        ? `the hours add up to this; the day's count is ${number(behind, 0)}`
-        : undefined;
+  const hoursSoFar = `${withUnit(key, run, unit)} in the hours ${isToday ? 'synced so far' : 'recorded'}`;
+  if (through === null) text += whoop ? ", WHOOP's count, with no hourly readings" : ', with no hourly readings';
+  else if (whoop) text += `; that count is WHOOP's, and your iPhone or Apple Watch counted ${hoursSoFar}`;
+  else if (ahead) text += `, the day's count; ${hoursSoFar}`;
+  const headNote =
+    through === null
+      ? whoop
+        ? "WHOOP's count; no hourly readings"
+        : 'no hourly readings'
+      : whoop
+        ? `WHOOP's count; ${hoursSoFar}, from your iPhone or Apple Watch`
+        : ahead
+          ? `the day's count; ${hoursSoFar}`
+          : undefined;
   const tiles: MetricFigure[] = [
     { label: isToday ? 'Typical by now' : 'Typical day', value: typical, unit, note: 'median of the last 30 days' },
     { label: 'Busiest hour', value: busiest?.v ?? null, unit, note: busiest ? span(busiest.h) : undefined },

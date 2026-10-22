@@ -392,7 +392,7 @@ function EnergyCard({ day, points, date }: { day: DayData | undefined; points: P
   const daily = points.find((p) => p.date === date);
   return (
     <section className="card metric">
-      <CardHead title="Energy burned" to={bodyHref('strain')} metric={(e && total > 0) || daily ? 'active_energy' : undefined} date={date} section="Body" range="day" />
+      <CardHead title="Energy burned" to={bodyHref('strain')} metric={(e && total > 0) || daily ? 'active_energy' : undefined} date={date} section="Body" range={e && total > 0 ? 'day' : undefined} />
       {e && total > 0 ? (
         <>
           <div className="metric-value">

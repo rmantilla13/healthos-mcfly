@@ -163,8 +163,8 @@ test('setup: an owner and a member, each with their own data', async () => {
   }
   // The latest night's resting heart rate is well above the month before it: the card says "Above your usual".
   rows.push({ date: asOf, metric: 'resting_hr', source: 'whoop', value: 75 });
-  // Today's steps so far: an unfinished day.
-  rows.push({ date: today, metric: 'steps', source: 'apple', value: 1200 });
+  // Today's steps so far: an unfinished day. The anchor day's count is what its hours (below) add up to.
+  rows.push({ date: today, metric: 'steps', source: 'apple', value: 1200 }, { date: asOf, metric: 'steps', source: 'apple', value: 3500 });
   // Recovery on two days only in the previous month: too few to compare with.
   for (const d of [3, 8, 12, 15, 20, 22, 24, 25, 26, 27, 28]) rows.push({ date: ago(d), metric: 'recovery', source: 'whoop', value: 50 + d });
   rows.push({ date: ago(35), metric: 'recovery', source: 'whoop', value: 40 }, { date: ago(40), metric: 'recovery', source: 'whoop', value: 45 });
@@ -270,6 +270,15 @@ test('the Day range is for steps, active energy and heart rate only', async () =
   assert.equal(day.day!.metrics.steps!.hours[8], 1000);
   assert.equal(day.headline.value, 3500, 'the whole day, hour by hour');
   assert.match(day.narrative!, /^You took 3,500 steps yesterday, about the same as your typical day\.$/);
+
+  // The phone's day count ahead of its hours (not all synced): the day's count, as the Activity card shows it, and no
+  // comparison with a typical day the hours can't stand for.
+  await upsertDaily(db, OWNER_ID, [{ date: ago(1), metric: 'steps', source: 'apple', value: 5000 }]);
+  const ahead = await owner.sheet('steps', `range=day&date=${ago(1)}`);
+  assert.equal(ahead.headline.value, 5000);
+  assert.equal(ahead.change, null);
+  assert.equal(ahead.tiles[2].note, '50% reached');
+  assert.match(ahead.narrative!, /^You took 5,000 steps on .+, the day's count; 3,530 steps in the hours recorded\.$/);
 
   const hr = await owner.sheet('heart_rate', `date=${asOf}`);
   assert.equal(hr.range, 'day', 'heart rate opens on its only range');
