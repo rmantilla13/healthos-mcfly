@@ -23,9 +23,11 @@ struct FoodLogTab<Header: View>: View {
 
     var body: some View {
         List {
+            // Where the other tabs put it (16 pt in, as far down), and clear of the section's rounded corner, which
+            // clips a row's content even with a clear background.
             Section { header() }
                 .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets(top: 0, leading: 4, bottom: 4, trailing: 4))
+                .listRowInsets(EdgeInsets(top: 16, leading: 0, bottom: 4, trailing: 0))
                 .listRowSeparator(.hidden)
             if let log {
                 content(log)
@@ -36,6 +38,7 @@ struct FoodLogTab<Header: View>: View {
             }
         }
         .listStyle(.insetGrouped)
+        .contentMargins(.horizontal, 16, for: .scrollContent)
         .scrollContentBackground(.hidden)
         .background(Palette.page)
         .refreshable { await reload() }
