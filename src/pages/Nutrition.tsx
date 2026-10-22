@@ -653,11 +653,11 @@ function NothingYet({ hosted }: { hosted: boolean }) {
     <section className="card nutrition-empty">
       <h2>Nothing logged yet</h2>
       <p className="muted">
-        Log food on the <a href={tabHref('log')}>Log</a> tab: search for it, describe it or snap a photo, or type the amounts.
+        Log food here, on the <a href={tabHref('log')}>Log</a> tab.
       </p>
       <p className="muted">
-        Or keep using a food app: healthOS reads what it writes to Apple Health: MyFitnessPal, Cronometer, Lose It!, MacroFactor and Yazio all can. Turn on its Apple Health connection in
-        that app.
+        Or keep using a food app that writes to Apple Health, such as MyFitnessPal, Cronometer, Lose It!, MacroFactor or Yazio, and turn on its Apple Health connection in that
+        app.
         {hosted ? ' Then open the healthOS iPhone app (1.1, build 16 or later): it asks to read food and sends your log at its next sync.' : ' Then bring it in here:'}
       </p>
       {!hosted && (
