@@ -16,8 +16,11 @@ import { type FoodKey, type NewEntry, draftsOf, foodEntryOf, insertEntries, logg
 import { type McflyClient, claimQuestion, refundQuestion, usageDay } from './mcfly.ts';
 import { NUTRIENT_MAX } from './nutrients.ts';
 
-/** Photos are downscaled on the device first; this is Anthropic's own ceiling per image. */
-export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+/**
+ * Photos are shrunk on the device first (about 300 KB). This ceiling keeps the request under Vercel's 4.5 MB body
+ * limit once base64-encoded, and under Anthropic's 5 MB per image.
+ */
+export const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
 const MAX_DESCRIPTION = 1_000;
 const MAX_ITEMS = 15;
 const MEDIA_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const;

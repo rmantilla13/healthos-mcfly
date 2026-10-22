@@ -90,7 +90,7 @@ export function createApp({ db, hosted, ingestToken, mcflyClient = defaultClient
 
   // A food photo is the same: shrunk on the device, but over the general limit. It goes to Anthropic for McFly's
   // estimate and is never stored or logged (server/estimate.ts).
-  api.post('/nutrition/estimate', requireSession(db), express.json({ limit: '7mb' }), estimateHandler(db, hosted, mcflyClient), nutritionErrors);
+  api.post('/nutrition/estimate', requireSession(db), express.json({ limit: '4400kb' }), estimateHandler(db, hosted, mcflyClient), nutritionErrors);
 
   api.use(express.json());
   api.get('/auth/me', auth.me);
