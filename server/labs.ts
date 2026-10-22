@@ -29,6 +29,7 @@ import {
   parseRange,
   parseResultValue,
   rangeCount,
+  rangeDecimalComma,
   rangeText,
   resultStatus,
   specimenOf,
@@ -82,7 +83,8 @@ export async function insertLabResults(q: Queryable, userId: string, rows: LabRo
 }
 
 /**
- * A clean row from validated input; the number always comes from the result as printed. createdAt orders results
+ * A clean row from validated input; the number always comes from the result as printed, in its range's comma style
+ * ("2,350" beside "0,270-4,200" is 2.35). createdAt orders results
  * collected on the same day: rows from one request get one more millisecond each, so their order is the order sent.
  */
 export function labRow(
@@ -95,7 +97,7 @@ export function labRow(
     collected: input.collected,
     biomarker: input.biomarker,
     name: input.name,
-    value: parseResultValue(input.valueText).value,
+    value: parseResultValue(input.valueText, rangeDecimalComma(input.refText)).value,
     value_text: input.valueText,
     unit: input.unit,
     ref_low: input.refLow,
@@ -200,7 +202,7 @@ function printedBounds(r: LabRow): Bounds | null {
 export function toResult(r: LabRow, sex: Sex): LabResult {
   // A urine or stool result stored under a blood marker's key (before they were kept apart) is read as its own marker.
   const key = !isOther(r.biomarker) && specimenOf(r.name, r.panel) ? markerKey(r.name, r.panel) : r.biomarker;
-  const parsed = parseResultValue(r.value_text);
+  const parsed = parseResultValue(r.value_text, rangeDecimalComma(r.ref_text));
   const printed = printedBounds(r);
   let range: LabRange | null;
   let bounds: Bounds | null = null;

@@ -565,7 +565,8 @@ export function matchBiomarker(name: string): string | null {
 const SPECIMENS: { specimen: string; panel: RegExp; name: RegExp; words: Set<string> }[] = [
   {
     specimen: 'urine',
-    panel: /\b(urine|urinalysis|urinary|ua|microscopic|microscopy|dipstick)\b/,
+    // "U/A" and "U.A." normalise to "u a".
+    panel: /\b(urine|urinalysis|urinary|ua|u a|microscopic|microscopy|dipstick)\b/,
     name: /\b(urine|urinalysis|urinary)\b/,
     words: new Set(['urine', 'urinalysis', 'urinary', 'ua']),
   },
@@ -686,10 +687,13 @@ export function markerUnits(key: string): string[] {
 
 /**
  * One number as labs print it, the same grammar for a result and for its range: "250,000" (thousands), "5,4" (a
- * decimal comma), "-2.0", ".5". A sign straight after a letter is a hyphen ("Adult-13-17"), not a minus.
+ * decimal comma), "-2.0", ".5". A sign straight after a letter is a hyphen ("Adult-13-17"), not a minus. A result is
+ * read in its range's comma style: "2,350" beside "0,270-4,200" is 2.35, not 2350.
  */
 const NUM = String.raw`(?:(?<![A-Za-z\d.,])[-+])?(?:[1-9]\d{0,2}(?:,\d{3})+(?:\.\d+)?|\d+(?:[.,]\d+)?|\.\d+)`;
 const THOUSANDS = /^[-+]?[1-9]\d{0,2}(,\d{3})+(\.\d+)?$/;
+/** A comma that can only be a decimal one ("0,450", "5,4"), not thousands ("4,500"). */
+const isDecimalComma = (raw: string) => raw.includes(',') && !THOUSANDS.test(raw);
 
 /** "250,000" → 250000; "5,4" → 5.4, or with decimalComma, "4,500" → 4.5. */
 function readNumber(raw: string, decimalComma = false): number {
@@ -699,14 +703,17 @@ function readNumber(raw: string, decimalComma = false): number {
 /** Minus signs, dashes and "≤ ≥" as plain characters. */
 const plain = (s: string) => s.replace(/−/g, '-').replace(/≤/g, '<=').replace(/≥/g, '>=');
 
-/** "5.4", "<0.5", "> 90", "1,234", "5,4", "250 H" → a number and its qualifier; "Negative" → no number. */
-export function parseResultValue(text: string): { value: number | null; qualifier: LabQualifier | null } {
+/**
+ * "5.4", "<0.5", "> 90", "1,234", "5,4", "250 H" → a number and its qualifier; "Negative" → no number. With
+ * decimalComma (its range has one: rangeDecimalComma), "2,350" is 2.35.
+ */
+export function parseResultValue(text: string, decimalComma = false): { value: number | null; qualifier: LabQualifier | null } {
   let t = plain(text.trim());
   // A flag printed after the number ("250 H", "3.1 (L)", "7.2*") isn't part of it.
   t = t.replace(/\s*(\(\s*(h|l|hh|ll|high|low|a|abn|abnormal)\s*\)|\b(h|l|hh|ll|high|low|a|abn|abnormal)\b|\*+)\s*$/i, '').trim();
   const m = new RegExp(String.raw`^(<=?|>=?|less than|greater than)?\s*(${NUM})$`, 'i').exec(t);
   if (!m) return { value: null, qualifier: null };
-  const num = readNumber(m[2]);
+  const num = readNumber(m[2], decimalComma);
   if (!Number.isFinite(num)) return { value: null, qualifier: null };
   const q = m[1]?.toLowerCase();
   const qualifier = !q ? null : q.startsWith('<') || q === 'less than' ? '<' : '>';
@@ -722,7 +729,7 @@ function rangesIn(t: string): (Bounds | null)[] {
   return [...t.matchAll(RANGE)].map((m): Bounds | null => {
     if (m[1] !== undefined) {
       // One style per range: if either bound has a decimal comma ("0,450-4,500"), so has the other.
-      const comma = [m[1], m[2]].some((s) => s.includes(',') && !THOUSANDS.test(s));
+      const comma = [m[1], m[2]].some(isDecimalComma);
       const [low, high] = [readNumber(m[1], comma), readNumber(m[2], comma)];
       return Number.isFinite(low) && Number.isFinite(high) && low <= high ? { low, high, lowOpen: false, highOpen: false } : null;
     }
@@ -744,6 +751,11 @@ const SEX_LABEL = /\b(females?|wom[ae]n|males?|m[ae]n)\b|\b([fm])\s*[:=]|\(\s*([
 /** How many ranges the printed text holds: 0 ("Negative"), 1, or more (bands by sex or age, "Optimal <100, Borderline 100-129"). */
 export function rangeCount(text: string) {
   return rangesIn(rangeTextOf(text)).length;
+}
+
+/** Whether a printed range writes its numbers with a decimal comma ("0,270 - 4,200"), so its result is read that way too. */
+export function rangeDecimalComma(text: string) {
+  return [...rangeTextOf(text).matchAll(RANGE)].some((m) => [m[1], m[2], m[4]].some((s) => s !== undefined && isDecimalComma(s)));
 }
 
 /**
@@ -852,7 +864,7 @@ export function statusHint(r: LabResult): string | undefined {
   if (!range) return "The report printed no range, and there's no typical range to use for this marker.";
   if (r.value === null) return 'The result is a word, not a number: compare it with the printed range.';
   if (range.band === null) {
-    return "The printed range has more than one band (by sex or age), so this result isn't placed against any one of them. If your profile has no sex chosen and the bands are for women and men, choosing one may place it.";
+    return "The printed range has more than one band (by sex, age or category), so this result isn't placed against any one of them. If your profile has no sex chosen and the bands are for women and men, choosing one may place it.";
   }
   if (range.low === null && range.high === null) return 'The printed range has no numbers to place this against: compare the result with the range as printed.';
   return `Printed as ${r.valueText}, which could fall on either side of the range.`;

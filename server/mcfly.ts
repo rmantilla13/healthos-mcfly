@@ -3,7 +3,7 @@
 // keeps no conversation: the browser sends the visible history (plain text) with each question.
 import Anthropic from '@anthropic-ai/sdk';
 import express, { type Request, type Response } from 'express';
-import { type LabResult, matchBiomarker, normalizeName } from '../shared/labs.ts';
+import { type LabResult, matchBiomarker, normalizeName, statusHint } from '../shared/labs.ts';
 import type { Digest, DigestReply, McflyVisual, NutritionNumbers, Point, Units } from '../shared/types.ts';
 import { platformSettings } from './admin.ts';
 import { currentUser } from './auth.ts';
@@ -594,9 +594,11 @@ const TOOLS: Tool[] = [
               low: r.range.low,
               high: r.range.high,
               from: r.range.kind === 'lab' ? 'printed by the lab' : `typical adult range${r.range.note ? ` (${r.range.note})` : ''}, used because the report printed none`,
+              ...(r.range.band && { band: `${r.range.band} range used, from the sex in their profile` }),
             }
           : null,
-        position: r.status ? `${r.status} ${against(r)}` : r.range ? 'not placed against the range (no number, or a "<"/">" result that could fall either side)' : 'no range to compare with',
+        // With no status, the reason in the dashboard's own words: bands, a range without numbers, a word, a "<" or ">".
+        position: r.status ? `${r.status} ${against(r)}` : statusHint(r),
         ...(r.lab && { lab: r.lab }),
         ...(r.panel && { panel: r.panel }),
       });
