@@ -83,7 +83,7 @@ struct FoodLogTab<Header: View>: View {
             }
             .listRowBackground(Palette.surface)
             Button { adding = true } label: {
-                Label("Add food", systemImage: "plus")
+                Label("Add food or drink", systemImage: "plus")
                     .font(.subheadline.weight(.semibold))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 4)
@@ -358,6 +358,11 @@ private struct FoodAddSheet: View {
         let current = modes.contains(mode) ? mode : .search
         NavigationStack {
             Form {
+                // The web's order: when, water in one tap, then the other ways in.
+                Section {
+                    DatePicker("\(Fmt.relativeDay(date, today: log.today)) at", selection: $when.time, displayedComponents: .hourAndMinute)
+                }
+                if log.mode != .none { FoodWaterSection(when: when, units: units, onChange: onChange) }
                 Section {
                     Picker("How", selection: $mode) {
                         ForEach(modes) { Text($0.rawValue).tag($0) }
@@ -366,7 +371,6 @@ private struct FoodAddSheet: View {
                     .listRowBackground(Color.clear)
                     .listRowInsets(EdgeInsets())
                     .accessibilityIdentifier("addModes")
-                    DatePicker("\(Fmt.relativeDay(date, today: log.today)) at", selection: $when.time, displayedComponents: .hourAndMinute)
                 }
                 switch current {
                 case .search: FoodSearchSection(when: when, units: units, usda: log.can.usda, quick: modes.contains(.quick), onChange: onChange) { mode = .quick }
@@ -375,13 +379,63 @@ private struct FoodAddSheet: View {
                 case .quick: FoodQuickSection(when: when, mode: log.mode, units: units, onChange: onChange)
                 }
             }
-            .navigationTitle("Add food")
+            .navigationTitle("Add food or drink")
             .navigationBarTitleDisplayMode(.inline)
             .keyboardDismissal()
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.accessibilityIdentifier("addDone") } }
             .navigationDestination(for: FoodPick.self) { pick in
                 FoodPickView(pick: pick, when: when, units: units, onChange: onChange)
             }
+        }
+    }
+}
+
+/// Water in one tap: a glass or a bottle, at the sheet's time. Hidden with "No amounts", like Quick add.
+private struct FoodWaterSection: View {
+    let when: FoodWhen
+    let units: Units
+    let onChange: () async -> Void
+    @Environment(Dashboard.self) private var dashboard
+    @State private var busy = false
+    @State private var added: String?
+    @State private var error: String?
+
+    var body: some View {
+        Section("Water") {
+            HStack(spacing: 10) {
+                ForEach(FoodWater.choices(units)) { w in
+                    // Bordered, so each is its own button rather than the whole row.
+                    Button { add(w) } label: {
+                        Label(w.label, systemImage: "plus").font(.subheadline).frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(busy)
+                    .accessibilityIdentifier("water-\(Int(w.ml.rounded()))")
+                }
+            }
+            if let added { Text(added).font(.footnote) }
+            if let error { Text(error).font(.footnote).foregroundStyle(.red) }
+        }
+        .task(id: added) {
+            guard added != nil else { return }
+            try? await Task.sleep(for: .seconds(4))
+            if !Task.isCancelled { added = nil }
+        }
+    }
+
+    private func add(_ w: FoodWater) {
+        busy = true
+        error = nil
+        added = nil
+        Task {
+            do {
+                _ = try await dashboard.addFood(w.body(date: when.date, time: when.timeText))
+                added = w.added
+                await onChange()
+            } catch {
+                self.error = error.foodMessage
+            }
+            busy = false
         }
     }
 }

@@ -211,10 +211,11 @@ enum FoodBody {
         return cal.date(byAdding: .minute, value: (p.first ?? 12) * 60 + (p.count > 1 ? p[1] : 0), to: base) ?? Date()
     }
 
-    static func quick(id: String = newID(), name: String, values: [String: Double], date: String, time: String) -> [String: Any] {
+    static func quick(id: String = newID(), name: String, portion: String? = nil, values: [String: Double], date: String, time: String) -> [String: Any] {
         var b: [String: Any] = ["id": id, "method": "quick", "origin": "iphone", "values": values, "date": date, "time": time]
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty { b["name"] = trimmed }
+        if let portion { b["portion"] = portion }
         return b
     }
 
@@ -261,6 +262,30 @@ enum FoodBody {
 
     /// POST /log/discard: that estimate only.
     static func discard(batch: String) -> [String: Any] { ["batch": batch] }
+}
+
+/// Water in one tap, as on the web (WATER in src/pages/FoodLog.tsx): a glass or a bottle in the person's units, logged as
+/// a quick entry. Any other amount goes through Quick add.
+struct FoodWater: Identifiable, Equatable {
+    let label: String
+    let portion: String
+    let ml: Double
+    var id: String { label }
+
+    static func choices(_ units: Units) -> [FoodWater] {
+        units == .imperial
+            ? [.init(label: "Glass, 8 fl oz", portion: "1 glass (8 fl oz)", ml: 8 * FoodText.flOzML),
+               .init(label: "Bottle, 16.9 fl oz", portion: "1 bottle (16.9 fl oz)", ml: 500)]
+            : [.init(label: "Glass, 250 mL", portion: "1 glass (250 mL)", ml: 250),
+               .init(label: "Bottle, 500 mL", portion: "1 bottle (500 mL)", ml: 500)]
+    }
+
+    /// "Added a glass (250 mL)."
+    var added: String { "Added \(portion.replacingOccurrences(of: "^1 ", with: "a ", options: .regularExpression))." }
+
+    func body(id: String = FoodBody.newID(), date: String, time: String) -> [String: Any] {
+        FoodBody.quick(id: id, name: "Water", portion: portion, values: ["water_ml": ml], date: date, time: time)
+    }
 }
 
 /// A message written for the person, shown as it is.

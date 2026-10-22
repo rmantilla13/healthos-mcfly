@@ -273,6 +273,28 @@ final class FoodLogTests: XCTestCase {
         XCTAssertEqual(reviewing.draftBatch, "5c1d")
     }
 
+    /// Water in one tap, as on the web: a glass or a bottle in the person's units, posted as a quick entry named Water.
+    func testWaterButtonsMatchTheWeb() {
+        XCTAssertEqual(FoodWater.choices(.metric).map(\.label), ["Glass, 250 mL", "Bottle, 500 mL"])
+        XCTAssertEqual(FoodWater.choices(.metric).map(\.ml), [250, 500])
+        XCTAssertEqual(FoodWater.choices(.imperial).map(\.label), ["Glass, 8 fl oz", "Bottle, 16.9 fl oz"])
+        XCTAssertEqual(FoodWater.choices(.imperial)[0].ml, 8 * 29.5735, accuracy: 0.0001)
+        XCTAssertEqual(FoodWater.choices(.imperial)[1].ml, 500, "a 16.9 fl oz bottle is the 500 mL one")
+        XCTAssertEqual(FoodWater.choices(.metric)[0].added, "Added a glass (250 mL).")
+        XCTAssertEqual(FoodWater.choices(.imperial)[1].added, "Added a bottle (16.9 fl oz).")
+
+        let b = FoodWater.choices(.metric)[1].body(id: "0b9f3c4e-1a2b-4c3d-8e9f-0a1b2c3d4e5f", date: "2026-10-21", time: "12:00")
+        XCTAssertEqual(b["method"] as? String, "quick")
+        XCTAssertEqual(b["name"] as? String, "Water")
+        XCTAssertEqual(b["portion"] as? String, "1 bottle (500 mL)")
+        XCTAssertEqual(b["values"] as? [String: Double], ["water_ml": 500])
+        XCTAssertEqual(b["origin"] as? String, "iphone")
+        XCTAssertEqual(b["date"] as? String, "2026-10-21")
+        XCTAssertEqual(b["time"] as? String, "12:00")
+        XCTAssertEqual(b["id"] as? String, "0b9f3c4e-1a2b-4c3d-8e9f-0a1b2c3d4e5f")
+        XCTAssertNil(FoodBody.quick(name: "Snack", values: ["protein_g": 5], date: "2026-10-21", time: "12:00")["portion"], "quick add sends no portion")
+    }
+
     /// Saving and discarding name the estimate, so a newer one made on another device is left alone.
     func testSaveAndDiscardNameTheirEstimate() {
         let save = FoodBody.save(batch: "5c1d", ids: ["a", "b"])
