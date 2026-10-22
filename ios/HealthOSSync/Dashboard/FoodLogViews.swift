@@ -25,7 +25,7 @@ struct FoodLogTab<Header: View>: View {
         List {
             Section { header() }
                 .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                .listRowInsets(EdgeInsets(top: 0, leading: 4, bottom: 4, trailing: 4))
                 .listRowSeparator(.hidden)
             if let log {
                 content(log)
@@ -40,7 +40,7 @@ struct FoodLogTab<Header: View>: View {
         .background(Palette.page)
         .refreshable { await reload() }
         .task(id: "\(dashboard.generation)|\(dashboard.nutritionMode?.rawValue ?? "off")") { await reload() }
-        .sheet(isPresented: $adding) {
+        .sheet(isPresented: $adding, onDismiss: askHealth) {
             if let log {
                 FoodAddSheet(log: log, date: selectedDay(log), units: dashboard.units, onChange: { await reload() }) { estimateNote in
                     note = estimateNote
@@ -52,11 +52,16 @@ struct FoodLogTab<Header: View>: View {
         .sheet(item: $editing) { entry in
             FoodEditSheet(entry: entry, mode: log?.mode ?? .none, units: dashboard.units) { await reload() }
         }
-        .sheet(isPresented: $reviewing) {
+        .sheet(isPresented: $reviewing, onDismiss: askHealth) {
             if let log, !log.drafts.isEmpty {
                 FoodReviewSheet(drafts: log.drafts, note: note, mode: log.mode, units: dashboard.units) { await reload() }
             }
         }
+    }
+
+    /// Health's write question, held back while a sheet was up.
+    private func askHealth() {
+        Task { await dashboard.askFoodHealthIfPending() }
     }
 
     private func selectedDay(_ log: FoodLog) -> String {
@@ -115,8 +120,11 @@ struct FoodLogTab<Header: View>: View {
             Section {
                 let sum = FoodText.amounts(FoodText.addUp(entries), units: units)
                 if log.mode != .none, !sum.isEmpty {
-                    LabeledContent("Logged here") { Text(sum).font(.footnote).multilineTextAlignment(.trailing) }
-                        .font(.footnote)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Logged here").font(.caption).foregroundStyle(Palette.ink3)
+                        Text(sum).font(.footnote).foregroundStyle(Palette.ink)
+                    }
+                    .accessibilityElement(children: .combine)
                 }
                 if let app = counted?.days.first(where: { $0.date == selected })?.app, app != "healthOS" {
                     Text("This day's totals on the other tabs come from \(app), which logged more. Two apps are never added together, because apps copy each other's food through Apple Health. You can choose which app counts on the web, on the Macros tab.")
@@ -237,10 +245,11 @@ private struct FoodEditSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("Name", text: $name)
+                    TextField("Name", text: $name).accessibilityIdentifier("editName")
                     DatePicker("Time", selection: $time, displayedComponents: .hourAndMinute)
                     LabeledContent("How many\(entry.portion.isEmpty ? "" : " (\(entry.portion))")") {
                         TextField("1", text: $quantity).keyboardType(.decimalPad).multilineTextAlignment(.trailing).frame(maxWidth: 80)
+                            .accessibilityIdentifier("editQuantity")
                     }
                 } footer: {
                     Text([FoodText.detail(entry), FoodText.amounts(entry.values, units: units)].filter { !$0.isEmpty }.joined(separator: "\n"))

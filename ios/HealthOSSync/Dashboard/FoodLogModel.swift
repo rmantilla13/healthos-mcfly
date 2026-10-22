@@ -20,7 +20,7 @@ extension Dashboard {
     @discardableResult
     func addFood(_ body: [String: Any]) async throws -> FoodEntry {
         let entry = try await fetch { try await $0.addFood(body) }
-        await FoodHealthStore.shared.write([entry], zone: timeZone, ask: true)
+        await wroteHere([entry])
         await refreshIfChanged(includeStatus: false)
         return entry
     }
@@ -46,7 +46,7 @@ extension Dashboard {
     /// Saves McFly's reviewed drafts (the rest are discarded); they count, and go to Health, from now on.
     func saveDrafts(ids: [String]) async throws {
         let saved = try await fetch { try await $0.saveDrafts(ids: ids) }
-        await FoodHealthStore.shared.write(saved, zone: timeZone, ask: true)
+        await wroteHere(saved)
         await refreshIfChanged(includeStatus: false)
     }
 
@@ -59,6 +59,23 @@ extension Dashboard {
     func barcode(_ code: String) async throws -> FoodSearch { try await fetch { try await $0.barcode(code) } }
 
     func estimateFood(_ body: [String: Any]) async throws -> FoodEstimate { try await fetch { try await $0.estimateFood(body) } }
+
+    /// Entries just saved here go to Health with what's allowed now. Health hasn't been asked yet: ask once the sheet
+    /// they were added in closes (`askFoodHealthIfPending`), since it can't show its question over a sheet.
+    private func wroteHere(_ entries: [FoodEntry]) async {
+        await FoodHealthStore.shared.write(entries, zone: timeZone)
+        if entries.contains(where: { $0.origin == "iphone" && !FoodHealth.keys($0).isEmpty }), await FoodHealthStore.shared.needsAsking() {
+            foodHealthAskPending = true
+        }
+    }
+
+    /// The question Health couldn't show over the sheet, now it's closed; then everything allowed goes to Health.
+    func askFoodHealthIfPending() async {
+        guard foodHealthAskPending else { return }
+        foodHealthAskPending = false
+        await FoodHealthStore.shared.askIfNeeded()
+        await reconcileFoodHealth(force: true)
+    }
 
     /// Health in line with the last week of the log: edits made on the web rewritten, deletions taken out. On opening
     /// Nutrition and after a sync; at most once a minute unless `force`.

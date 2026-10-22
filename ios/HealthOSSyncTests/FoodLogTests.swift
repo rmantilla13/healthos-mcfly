@@ -97,6 +97,25 @@ final class FoodLogTests: XCTestCase {
         XCTAssertEqual(plan.remove, ["f", "gone"])
     }
 
+    func testAPermissionGainedRewritesButOneLostDoesNot() {
+        let both = entry(["protein_g": 20, "fat_g": 5], id: "both")
+        // Written when fat wasn't allowed: once it is, the entry goes again with its fat.
+        let fatLater = ["both": FoodHealth.Written(version: 1, date: "2026-10-21", keys: ["protein_g"], shown: ["protein_g", "fat_g"])]
+        XCTAssertEqual(FoodHealth.plan(entries: [both], written: fatLater, start: "2026-10-15", end: "2026-10-21").write.map(\.id), ["both"])
+        XCTAssertTrue(FoodHealth.plan(entries: [both], written: fatLater, start: "2026-10-15", end: "2026-10-21") { $0.key != "fat_g" }.write.isEmpty,
+                      "still not allowed: nothing to do, every time")
+        // Written with both, then fat no longer allowed: its copy can't be taken out without that permission, so no churn.
+        let wroteBoth = ["both": FoodHealth.Written(version: 1, date: "2026-10-21", keys: ["protein_g", "fat_g"])]
+        let lost = FoodHealth.plan(entries: [both], written: wroteBoth, start: "2026-10-15", end: "2026-10-21") { $0.key != "fat_g" }
+        XCTAssertTrue(lost.write.isEmpty && lost.remove.isEmpty)
+        // Nothing allowed at all: never recorded, so nothing to write or remove until something is.
+        let none = FoodHealth.plan(entries: [both], written: [:], start: "2026-10-15", end: "2026-10-21") { _ in false }
+        XCTAssertTrue(none.write.isEmpty && none.remove.isEmpty)
+        // A record from before `shown` was kept reads its keys as shown.
+        let old = try? JSONDecoder().decode(FoodHealth.Written.self, from: Data(#"{"version":1,"date":"2026-10-21","keys":["protein_g"]}"#.utf8))
+        XCTAssertEqual(old?.shown, ["protein_g"])
+    }
+
     // MARK: What the phone sends
 
     func testBodiesAreWhatTheServerChecks() throws {

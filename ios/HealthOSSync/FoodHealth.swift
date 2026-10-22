@@ -46,9 +46,10 @@ enum FoodHealth {
     /// What this app asks to write, only when the first entry is saved here. Nothing else is ever written.
     static var shareTypes: Set<HKSampleType> { Set(kinds.map(\.type)) }
 
-    /// The keys of an entry Health takes, sorted: what a copy in Health holds.
-    static func keys(_ e: FoodEntry) -> [String] {
-        kinds.map(\.key).filter { (e.values[$0] ?? 0) > 0 }
+    /// The keys of an entry Health takes, in a fixed order: what a copy in Health holds. `allowed` leaves out the types
+    /// the person won't let this app write.
+    static func keys(_ e: FoodEntry, allowed: (Kind) -> Bool = { _ in true }) -> [String] {
+        kinds.filter { (e.values[$0.key] ?? 0) > 0 && allowed($0) }.map(\.key)
     }
 
     /// The moment an entry was logged: its local date and HH:MM in the person's time zone.
@@ -86,22 +87,43 @@ enum FoodHealth {
     struct Written: Codable, Equatable {
         var version: Int
         var date: String
+        /// The amounts written (the ones the person lets this app write).
         var keys: [String]
+        /// The amounts the entry showed then (its numbers setting), written or not.
+        var shown: [String]
+
+        init(version: Int, date: String, keys: [String], shown: [String]? = nil) {
+            self.version = version
+            self.date = date
+            self.keys = keys
+            self.shown = shown ?? keys
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            version = try c.decode(Int.self, forKey: .version)
+            date = try c.decode(String.self, forKey: .date)
+            keys = try c.decode([String].self, forKey: .keys)
+            shown = try c.decodeIfPresent([String].self, forKey: .shown) ?? keys
+        }
     }
 
-    /// The entries to write (new here, edited anywhere, or shown with different amounts since the setting changed) and
-    /// the ids to remove (deleted anywhere, or now with nothing to write). Only days inside `start`…`end` are judged,
-    /// so an entry older than the window is never taken out of Health just because it wasn't in the reply.
-    static func plan(entries: [FoodEntry], written: [String: Written], start: String, end: String) -> (write: [FoodEntry], remove: [String]) {
+    /// The entries to write (new here, edited anywhere, shown with different amounts since the setting changed, or with
+    /// more types allowed than when written) and the ids to remove (deleted anywhere, or now with nothing to write). Only
+    /// days inside `start`…`end` are judged, so an entry older than the window is never taken out of Health just because
+    /// it wasn't in the reply. A type the person stops allowing doesn't rewrite anything: its copy can't be removed
+    /// without that permission, and rewriting would only churn.
+    static func plan(entries: [FoodEntry], written: [String: Written], start: String, end: String,
+                     allowed: (Kind) -> Bool = { _ in true }) -> (write: [FoodEntry], remove: [String]) {
         let mine = entries.filter { $0.origin == "iphone" }
         var write: [FoodEntry] = []
         var keep = Set<String>()
         for e in mine {
-            let keys = keys(e)
+            let keys = keys(e, allowed: allowed)
             if keys.isEmpty { continue }
             keep.insert(e.id)
-            let w = written[e.id]
-            if w?.version != e.version || w?.keys != keys || w?.date != e.date { write.append(e) }
+            guard let w = written[e.id] else { write.append(e); continue }
+            if w.version != e.version || w.date != e.date || w.shown != FoodHealth.keys(e) || !Set(keys).isSubset(of: w.keys) { write.append(e) }
         }
         let remove = written.filter { id, w in !keep.contains(id) && w.date >= start && w.date <= end }.map(\.key).sorted()
         return (write, remove)
@@ -133,21 +155,32 @@ actor FoodHealthStore {
         try? JSONEncoder().encode(written).write(to: Self.file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
 
-    /// Asks Health for write access to the food types, if it hasn't been asked: called when the person saves an entry
-    /// here, never at launch. A refusal leaves logging as it is.
-    func askIfNeeded() async {
-        guard HKHealthStore.isHealthDataAvailable() else { return }
-        let undecided = FoodHealth.shareTypes.contains { store.authorizationStatus(for: $0) == .notDetermined }
-        guard undecided else { return }
-        try? await store.requestAuthorization(toShare: FoodHealth.shareTypes, read: [])
+    /// Health would ask about writing some food type: HealthKit's own answer, since a type asked about for reading alone
+    /// already reports a write status.
+    func needsAsking() async -> Bool {
+        guard HKHealthStore.isHealthDataAvailable() else { return false }
+        return (try? await store.statusForAuthorizationRequest(toShare: FoodHealth.shareTypes, read: [])) == .shouldRequest
     }
 
-    /// Writes these entries (the ones made here), replacing any earlier copy, in the person's time zone.
-    func write(_ entries: [FoodEntry], zone: TimeZone, ask: Bool = false) async {
+    /// Asks Health for write access to the food types, if it hasn't been asked: after the person saves an entry here,
+    /// once no sheet is up (Health can't show its own over one), never at launch. A refusal leaves logging as it is.
+    func askIfNeeded() async {
+        guard await needsAsking() else { return }
+        do {
+            try await store.requestAuthorization(toShare: FoodHealth.shareTypes, read: [])
+        } catch {
+            print("[healthos] couldn't ask to write food to Health: \(error.localizedDescription)")
+        }
+    }
+
+    private nonisolated func allowed(_ k: FoodHealth.Kind) -> Bool { Health.shared.store.authorizationStatus(for: k.type) == .sharingAuthorized }
+
+    /// Writes these entries (the ones made here), replacing any earlier copy, in the person's time zone, with the
+    /// types the person lets this app write.
+    func write(_ entries: [FoodEntry], zone: TimeZone) async {
         load()
         let mine = entries.filter { $0.origin == "iphone" && !FoodHealth.keys($0).isEmpty }
         guard !mine.isEmpty, HKHealthStore.isHealthDataAvailable() else { return }
-        if ask { await askIfNeeded() }
         let allowed = { (t: HKQuantityType) in self.store.authorizationStatus(for: t) == .sharingAuthorized }
         for e in mine {
             let objects = FoodHealth.objects(for: e, in: zone, allowed: allowed)
@@ -156,7 +189,7 @@ actor FoodHealthStore {
             await deleteAll(FoodHealth.syncID(e.id))
             do {
                 try await store.save(objects)
-                written[e.id] = FoodHealth.Written(version: e.version, date: e.date, keys: FoodHealth.keys(e))
+                written[e.id] = FoodHealth.Written(version: e.version, date: e.date, keys: FoodHealth.keys(e, allowed: self.allowed), shown: FoodHealth.keys(e))
             } catch {
                 print("[healthos] couldn't save food to Health: \(error.localizedDescription)")
             }
@@ -182,9 +215,37 @@ actor FoodHealthStore {
         lastReconcile = Date()
         load()
         guard log.enabled else { return }
-        let plan = FoodHealth.plan(entries: log.entries, written: written, start: log.start, end: log.end)
-        await remove(plan.remove)
+        let plan = FoodHealth.plan(entries: log.entries, written: written, start: log.start, end: log.end, allowed: self.allowed)
+        // Also copies this record doesn't know about (written before a reinstall, say) whose entry is gone, where Health
+        // lets the app read them. An entry that still exists is never an orphan, whatever can be written for it now.
+        let exists = Set((log.entries + log.drafts).map(\.id))
+        let orphans = await idsInHealth(from: log.start, to: log.end, zone: zone).subtracting(exists).subtracting(plan.remove)
+        await remove(plan.remove + orphans.sorted())
         await write(plan.write, zone: zone)
+    }
+
+    /// The entry ids of this app's food objects in Health dated `start`…`end` (local days in `zone`).
+    private func idsInHealth(from start: String, to end: String, zone: TimeZone) async -> Set<String> {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = zone
+        let day = { (s: String) -> Date? in
+            let p = s.split(separator: "-").compactMap { Int($0) }
+            return p.count == 3 ? cal.date(from: DateComponents(year: p[0], month: p[1], day: p[2])) : nil
+        }
+        guard let from = day(start), let last = day(end), let to = cal.date(byAdding: .day, value: 1, to: last) else { return [] }
+        let predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+            HKQuery.predicateForSamples(withStart: from, end: to, options: .strictStartDate),
+            HKQuery.predicateForObjects(withMetadataKey: HKMetadataKeySyncIdentifier),
+            HKQuery.predicateForObjects(from: HKSource.default()),
+        ])
+        var ids = Set<String>()
+        for k in FoodHealth.kinds {
+            let query = HKSampleQueryDescriptor(predicates: [.quantitySample(type: k.type, predicate: predicate)], sortDescriptors: [])
+            for s in (try? await query.result(for: store)) ?? [] {
+                if let sid = s.metadata?[HKMetadataKeySyncIdentifier] as? String, sid.hasPrefix(FoodHealth.prefix) { ids.insert(String(sid.dropFirst(FoodHealth.prefix.count))) }
+            }
+        }
+        return ids
     }
 
     /// Every object with this sync identifier: the correlation, then each type (deleting a correlation keeps its samples).

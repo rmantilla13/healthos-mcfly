@@ -350,6 +350,8 @@ final class Dashboard {
 
     /// The server has the food log (GET /nutrition/log): nil until asked, false when it answered 404 (an older server).
     var foodLogAvailable: Bool?
+    /// An entry was saved here before Health was asked about writing food: ask once the sheet closes.
+    var foodHealthAskPending = false
 
     /// The person's time zone (settings.timeZone), where a logged entry's date and time are.
     var timeZone: TimeZone { status?.settings?.timeZone.flatMap(TimeZone.init(identifier:)) ?? .current }
