@@ -725,15 +725,20 @@ export type Bounds = { low: number | null; high: number | null; lowOpen: boolean
 /** Each range in normalised text: "a-b" pairs and one-sided "<b", ">=a". A pair printed the wrong way round is null. */
 const RANGE = new RegExp(String.raw`(${NUM})\s*-\s*(${NUM})|(<=?|>=?)\s*(${NUM})`, 'g');
 
-function rangesIn(t: string): (Bounds | null)[] {
+/** Whether any number in normalised range text has a decimal comma, so every number in it is read that way. */
+const commaIn = (t: string) => [...t.matchAll(RANGE)].some((m) => [m[1], m[2], m[4]].some((s) => s !== undefined && isDecimalComma(s)));
+
+/**
+ * One style for the whole printed range: if any bound has a decimal comma ("0,450-4,500", or one band of
+ * "M: 1,000-1,300 F: 0,800-1,100"), every bound is read with one, as the result beside it is.
+ */
+function rangesIn(t: string, comma = commaIn(t)): (Bounds | null)[] {
   return [...t.matchAll(RANGE)].map((m): Bounds | null => {
     if (m[1] !== undefined) {
-      // One style per range: if either bound has a decimal comma ("0,450-4,500"), so has the other.
-      const comma = [m[1], m[2]].some(isDecimalComma);
       const [low, high] = [readNumber(m[1], comma), readNumber(m[2], comma)];
       return Number.isFinite(low) && Number.isFinite(high) && low <= high ? { low, high, lowOpen: false, highOpen: false } : null;
     }
-    const v = readNumber(m[4]);
+    const v = readNumber(m[4], comma);
     if (!Number.isFinite(v)) return null;
     return m[3].startsWith('<') ? { low: null, high: v, lowOpen: false, highOpen: m[3] === '<' } : { low: v, high: null, lowOpen: m[3] === '>', highOpen: false };
   });
@@ -755,7 +760,7 @@ export function rangeCount(text: string) {
 
 /** Whether a printed range writes its numbers with a decimal comma ("0,270 - 4,200"), so its result is read that way too. */
 export function rangeDecimalComma(text: string) {
-  return [...rangeTextOf(text).matchAll(RANGE)].some((m) => [m[1], m[2], m[4]].some((s) => s !== undefined && isDecimalComma(s)));
+  return commaIn(rangeTextOf(text));
 }
 
 /**
@@ -769,14 +774,15 @@ export function rangeDecimalComma(text: string) {
  */
 export function parseRange(text: string, sex: Sex = null): Bounds | null {
   const t = rangeTextOf(text);
-  const all = rangesIn(t);
+  const comma = commaIn(t);
+  const all = rangesIn(t, comma);
   if (all.length <= 1) return all[0] ?? null;
   if (sex !== 'female' && sex !== 'male') return null;
   const labels = [...t.matchAll(SEX_LABEL)];
-  if (!labels.length || rangesIn(t.slice(0, labels[0].index)).length) return null;
+  if (!labels.length || rangesIn(t.slice(0, labels[0].index), comma).length) return null;
   const bands = labels.map((l, i) => ({
     sex: /^(f|wom)/i.test(l[1] ?? l[2] ?? l[3]) ? 'female' : 'male',
-    ranges: rangesIn(t.slice(l.index + l[0].length, labels[i + 1]?.index ?? t.length)),
+    ranges: rangesIn(t.slice(l.index + l[0].length, labels[i + 1]?.index ?? t.length), comma),
   }));
   if (bands.some((b) => b.ranges.length !== 1)) return null;
   const mine = bands.filter((b) => b.sex === sex);

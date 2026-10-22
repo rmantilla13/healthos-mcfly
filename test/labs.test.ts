@@ -117,6 +117,13 @@ test('a result and its range are read with one number grammar, so the status mat
   assert.equal(eu('1,050', '0,700-1,200'), 'within');
   assert.equal(eu('4,350', '0,270-4,200'), 'above');
   assert.equal(eu('250,000', '150,000-450,000'), 'within');
+  // In bands, the band picked is read in the same style as the result, though its own bounds look like thousands.
+  const band = (v: string, r: string, sex: 'female' | 'male') => resultStatus(parseResultValue(v, rangeDecimalComma(r)), parseRange(r, sex));
+  assert.equal(band('1,150', 'Male: 1,000-1,300 Female: 0,800-1,100', 'male'), 'within');
+  assert.equal(band('1,250', 'M: <1,200 F: <0,900', 'male'), 'above');
+  assert.equal(band('4,000', 'M: 3,5-5,0 F: 3,000-4,500', 'female'), 'within');
+  assert.deepEqual(parseRange('Male: 1,000-1,300 Female: 0,800-1,100', 'male'), { low: 1, high: 1.3, lowOpen: false, highOpen: false });
+  assert.deepEqual(parseRange('<1,200'), { low: null, high: 1200, lowOpen: false, highOpen: true }, 'one bound shaped like thousands, alone, stays thousands');
 });
 
 test('a range printed in bands is read for the sex given, never as its first band', () => {

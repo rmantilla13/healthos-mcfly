@@ -137,6 +137,8 @@ export function useApi<T>(path: string | null) {
     if (version === 0 && hit && fresh(hit)) {
       setError(undefined);
       setCurrentFor(path);
+      // A request for the path before may have been cut off before it cleared this.
+      setLoading(false);
       return;
     }
     let alive = true;
