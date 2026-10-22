@@ -14,7 +14,7 @@ export const GROUPS: { id: SearchGroup; label: string }[] = [
 /** Who can see what, from GET /api/status (and /api/auth/me for whether sign-in is on). */
 export type SearchAccess = {
   cycleTracking: boolean;
-  /** Nutrition is on. */
+  /** Nutrition is on, so its Log tab exists. */
   nutrition: boolean;
   /** Nutrition is on with amounts (not "No amounts"), so its Macros and Hydration tabs exist. */
   nutritionAmounts: boolean;
@@ -70,6 +70,8 @@ const CATALOGUE: SearchItem[] = [
   { id: 'tab.sleep.stages', group: 'tabs', label: 'Stages', hint: 'Sleep', to: sleep('stages'), keywords: ['sleep stages', 'deep', 'rem', 'light', 'awake'] },
   { id: 'tab.sleep.trends', group: 'tabs', label: 'Trends', hint: 'Sleep', to: sleep('trends'), keywords: ['sleep trends', 'sleep score'] },
   { id: 'tab.sleep.coaching', group: 'tabs', label: 'Coaching', hint: 'Sleep', to: sleep('coaching'), keywords: ['sleep coaching', 'better nights'] },
+  // Log is there on "No amounts" too, so it needs only Nutrition on.
+  { id: 'tab.nutrition.log', group: 'tabs', label: 'Log', hint: 'Nutrition', to: nutrition('log'), keywords: ['log food', 'add food', 'barcode', 'scan', 'photo', 'meal', 'estimate'], needs: 'nutrition' },
   { id: 'tab.nutrition.macros', group: 'tabs', label: 'Macros', hint: 'Nutrition', to: nutrition('macros'), keywords: ['protein', 'carbs', 'fat'], needs: 'amounts' },
   { id: 'tab.nutrition.hydration', group: 'tabs', label: 'Hydration', hint: 'Nutrition', to: nutrition('hydration'), keywords: ['water', 'drinks'], needs: 'amounts' },
 

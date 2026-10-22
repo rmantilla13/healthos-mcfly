@@ -14,14 +14,16 @@ test('the catalogue offers only what this person can open', () => {
     assert.ok(base.includes(id), id);
   // Cycle only with cycle tracking on, Family only with sign-in and sharing, Admin only for admins.
   for (const id of ['page.cycle', 'metric.cycle', 'page.family', 'page.admin']) assert.ok(!base.includes(id), id);
-  // Nutrition's page is always there (it explains itself while off), its tabs and amounts only with amounts on.
-  for (const id of ['tab.nutrition.macros', 'tab.nutrition.hydration', 'metric.protein', 'metric.water', 'metric.food']) assert.ok(!base.includes(id), id);
+  // Nutrition's page is always there (it explains itself while off), its Log tab only with Nutrition on, and its
+  // Macros and Hydration tabs and amounts only with amounts on.
+  for (const id of ['tab.nutrition.log', 'tab.nutrition.macros', 'tab.nutrition.hydration', 'metric.protein', 'metric.water', 'metric.food']) assert.ok(!base.includes(id), id);
   assert.ok(!ids({ ...EVERYONE, nutrition: true, nutritionAmounts: false }).includes('tab.nutrition.macros'));
   assert.ok(ids({ ...EVERYONE, nutrition: true, nutritionAmounts: false }).includes('metric.food'));
+  assert.ok(ids({ ...EVERYONE, nutrition: true, nutritionAmounts: false }).includes('tab.nutrition.log'), 'Log stays on "No amounts"');
   // Amounts without Nutrition on (a stale setting) still shows nothing of it.
   assert.ok(!ids({ ...EVERYONE, nutritionAmounts: true }).includes('metric.water'));
   const all = ids(ALL);
-  for (const id of ['page.cycle', 'page.family', 'page.admin', 'tab.nutrition.macros', 'metric.water']) assert.ok(all.includes(id), id);
+  for (const id of ['page.cycle', 'page.family', 'page.admin', 'tab.nutrition.log', 'tab.nutrition.macros', 'metric.water']) assert.ok(all.includes(id), id);
   assert.equal(new Set(all).size, all.length, 'ids are unique');
 });
 
@@ -87,6 +89,15 @@ test('"hr" finds heart rate, resting heart rate and HRV; "hrv" puts HRV first', 
   assert.equal(flat('cholesterol')[0].id, 'metric.labs');
 });
 
+test('logging food opens Nutrition\'s Log tab, with amounts or without', () => {
+  const noAmounts: SearchAccess = { ...EVERYONE, nutrition: true, nutritionAmounts: false };
+  for (const a of [ALL, noAmounts]) {
+    for (const q of ['log food', 'log', 'add food', 'barcode', 'scan']) assert.equal(flat(q, a)[0].id, 'tab.nutrition.log', q);
+  }
+  // The same address the page's own Log tab uses (tabHref in src/pages/Nutrition.tsx).
+  assert.equal(searchItems(noAmounts).find((it) => it.id === 'tab.nutrition.log')!.to, '#/nutrition?tab=log');
+});
+
 test('results come in sections, best first, at most six each, with "Ask McFly about …" last', () => {
   const sections = rank('body', searchItems(ALL));
   assert.equal(sections[0].group, 'pages');
@@ -118,9 +129,9 @@ test('nothing typed: the pages, then the actions, in the catalogue order', () =>
 });
 
 test('a hidden page never turns up, however it is searched for', () => {
-  for (const q of ['admin', 'cycle', 'period', 'family', 'protein', 'hydration']) {
+  for (const q of ['admin', 'cycle', 'period', 'family', 'protein', 'hydration', 'log food']) {
     const found = flat(q, EVERYONE).map((it) => it.id);
-    for (const id of ['page.admin', 'page.cycle', 'metric.cycle', 'page.family', 'metric.protein', 'tab.nutrition.hydration']) assert.ok(!found.includes(id), `${q} → ${id}`);
+    for (const id of ['page.admin', 'page.cycle', 'metric.cycle', 'page.family', 'metric.protein', 'tab.nutrition.hydration', 'tab.nutrition.log']) assert.ok(!found.includes(id), `${q} → ${id}`);
   }
 });
 
