@@ -4421,6 +4421,10 @@ button.metric-sheet-btn {
   border-radius: 24px;
   box-shadow: var(--msheet-shadow);
 }
+/* The panel takes focus only from a click on its text (tabIndex -1), never from the keyboard: no ring for that. */
+.msheet:focus {
+  outline: none;
+}
 .msheet-head {
   display: flex;
   align-items: center;
@@ -4463,6 +4467,11 @@ button.metric-sheet-btn {
 .msheet-source {
   font-size: 12px;
   color: var(--ink-3);
+}
+/* "Nothing in the last 30 days, so this shows the last 12 months." */
+.msheet-widened {
+  font-size: 13px;
+  color: var(--ink-2);
 }
 .msheet-message {
   padding: 28px 0;

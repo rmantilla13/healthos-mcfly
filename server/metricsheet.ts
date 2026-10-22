@@ -7,12 +7,12 @@
 // - The sentence is put together from those numbers, never by a model, and says nothing a number doesn't.
 // - Only the signed-in person's data, a fixed list of metrics, and nothing here logs a value.
 import express, { type NextFunction, type Request, type Response } from 'express';
-import { type MetricChange, type MetricFigure, type MetricKey, type MetricRange, type MetricSheet, type MetricStatus, METRIC_INFO, RANGE_DAYS, isMetricKey, isMetricRange } from '../shared/metrics.ts';
-import type { DayMetric, Latest, Point, Settings, Summary } from '../shared/types.ts';
+import { type MetricChange, type MetricFigure, type MetricKey, type MetricRange, type MetricSheet, type MetricStatus, METRIC_INFO, RANGE_DAYS, RANGE_WINDOW, isMetricKey, isMetricRange } from '../shared/metrics.ts';
+import type { DayData, DayMetric, Latest, Point, Settings, Summary } from '../shared/types.ts';
 import { currentUser } from './auth.ts';
 import { addDays } from './dates.ts';
 import type { Db, Scope } from './db.ts';
-import { dayView } from './day.ts';
+import { DAY_METRICS, dayView } from './day.ts';
 import { type Ctx, latest, loadDaily, mean, rangeStatus, requestContext, series, summary, valueOn } from './query.ts';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -29,7 +29,9 @@ type Spec = {
   summed?: boolean;
   /** Stored in kg, shown in the person's units. */
   mass?: boolean;
-  /** A change smaller than this (in stored units, or as a fraction of the period before with `steadyPct`) is "about the same". */
+  /** What one day's value is when it isn't a reading (glucose's is the mean of the day's readings), for the figures and the sentence. */
+  perDay?: string;
+  /** A change smaller than this (in stored units, kg for mass, or as a fraction of the period before with `steadyPct`) is "about the same". */
   steady: number;
   steadyPct?: boolean;
   /** Read now and then rather than daily (a weigh-in, a meter), so a period needs fewer days to compare. */
@@ -48,7 +50,7 @@ const SPECS: Record<MetricKey, Spec> = {
   active_energy: { metric: 'active_energy', lead: (v) => `Your active energy averaged ${v} a day`, summed: true, steady: 0.05, steadyPct: true, day: 'active_energy' },
   spo2: { metric: 'spo2', lead: (v) => `Your blood oxygen averaged ${v}`, steady: 0.3 },
   resp_rate: { metric: 'resp_rate', lead: (v) => `Your respiratory rate averaged ${v}`, steady: 0.3 },
-  glucose: { metric: 'glucose', lead: (v) => `Your glucose averaged ${v}`, steady: 2, sparse: true },
+  glucose: { metric: 'glucose', lead: (v) => `Your daily glucose averaged ${v}`, perDay: 'daily average', steady: 2, sparse: true },
   weight: { metric: 'weight', lead: (v) => `Your weight averaged ${v}`, mass: true, steady: 0.2, sparse: true },
   body_fat: { metric: 'body_fat', lead: (v) => `Your body fat averaged ${v}`, steady: 0.3, sparse: true },
   lean_mass: { metric: 'lean_mass', lead: (v) => `Your lean body mass averaged ${v}`, mass: true, steady: 0.2, sparse: true },
@@ -125,15 +127,19 @@ export type SentenceParts = {
 };
 
 const PERIOD: Record<Exclude<MetricRange, 'day'>, [now: string, before: string]> = {
-  week: ['the last 7 days', 'the 7 days before'],
-  month: ['the last 30 days', 'the 30 days before'],
-  year: ['the last 12 months', 'the 12 months before'],
+  week: [RANGE_WINDOW.week, 'the 7 days before'],
+  month: [RANGE_WINDOW.month, 'the 30 days before'],
+  year: [RANGE_WINDOW.year, 'the 12 months before'],
 };
 
-/** Whether a change is too small to call one: under the metric's threshold, or zero once rounded as shown. */
+/**
+ * Whether a change is too small to call one: under the metric's threshold, or zero once rounded as shown. A mass's
+ * threshold is in kg, so a change in pounds is weighed in kg first: the same change is steady in either unit.
+ */
 export function isSteady(key: MetricKey, delta: number, previous: number, unit: string) {
   const s = SPECS[key];
-  const small = s.steadyPct ? previous !== 0 && Math.abs(delta / previous) < s.steady : Math.abs(delta) < s.steady;
+  const stored = s.mass && unit === 'lb' ? delta * KG_PER_LB : delta;
+  const small = s.steadyPct ? previous !== 0 && Math.abs(delta / previous) < s.steady : Math.abs(stored) < s.steady;
   return small || /^0(\.0+)?( |%|m|$)/.test(sizeOf(key, delta, unit));
 }
 
@@ -153,7 +159,8 @@ export function sentence(p: SentenceParts): string {
       ? `, about the same as ${before}`
       : `, ${sizeOf(p.key, p.delta, p.unit)} ${p.delta > 0 ? up : down} than ${before}`;
   }
-  if (p.status) text += `; your latest, ${withUnit(p.key, p.status.latest.value, p.unit)} ${dayName(p.status.latest.date, p.today)}, ${p.status.phrase}`;
+  const latestWord = spec.perDay ? `your latest ${spec.perDay}` : 'your latest';
+  if (p.status) text += `; ${latestWord}, ${withUnit(p.key, p.status.latest.value, p.unit)} ${dayName(p.status.latest.date, p.today)}, ${p.status.phrase}`;
   return `${text}.`;
 }
 
@@ -164,10 +171,14 @@ const USUAL: Record<'low' | 'normal' | 'high', [MetricStatus, string]> = {
   normal: [{ text: 'Within your usual', position: 'within' }, 'is within your usual range'],
   high: [{ text: 'Above your usual', position: 'above' }, 'is above your usual range'],
 };
-/** The summary's HRV status: 'optimal' is any night at or above the person's mean (Body's words, not Home's "Optimal"). */
+/** Above the usual band, for a card that calls anything not below it "Normal" (blood oxygen). */
 const AT_OR_ABOVE: [MetricStatus, string] = [{ text: 'At or above your usual', position: 'at_or_above' }, 'is at or above your usual range'];
+/**
+ * The summary's HRV status. 'optimal' is any night at or above the mean of the 30 days before it (Body's words, not
+ * Home's "Optimal"): it isn't a band, so the sentence says the average, not the range. The other two are band-based.
+ */
 const HRV: Record<'optimal' | 'normal' | 'low', [MetricStatus, string]> = {
-  optimal: AT_OR_ABOVE,
+  optimal: [AT_OR_ABOVE[0], 'is at or above the average of the 30 days before it'],
   normal: USUAL.normal,
   low: USUAL.low,
 };
@@ -321,10 +332,11 @@ export async function metricSheet(scope: Scope, hosted: boolean, key: MetricKey,
 
   const possible = n - (partialToday ? 1 : 0);
   const last = shown.at(-1) ?? null;
+  const per = spec.perDay ? ` ${spec.perDay}` : '';
   const tiles: MetricFigure[] = [
-    { label: spec.summed ? 'Lowest day' : 'Lowest', value: lowest(counted)?.value ?? null, unit, date: lowest(counted)?.date },
-    { label: spec.summed ? 'Highest day' : 'Highest', value: highest(counted)?.value ?? null, unit, date: highest(counted)?.date },
-    { label: 'Latest', value: last?.value ?? null, unit, date: last?.date, ...(partialToday ? { note: 'so far today' } : {}) },
+    { label: spec.summed ? 'Lowest day' : `Lowest${per}`, value: lowest(counted)?.value ?? null, unit, date: lowest(counted)?.date },
+    { label: spec.summed ? 'Highest day' : `Highest${per}`, value: highest(counted)?.value ?? null, unit, date: highest(counted)?.date },
+    { label: `Latest${per}`, value: last?.value ?? null, unit, date: last?.date, ...(partialToday ? { note: 'so far today' } : {}) },
   ];
   const headline: MetricFigure = {
     label: spec.summed ? 'Daily average' : info.duration ? 'Average a night' : 'Average',
@@ -385,8 +397,14 @@ async function rangesOf(scope: Scope, demo: boolean, key: MetricKey): Promise<Me
 async function daySheet(scope: Scope, hosted: boolean, key: MetricKey, asOf: string, settings: Settings, demo: boolean): Promise<MetricSheet> {
   const info = METRIC_INFO[key];
   const dm = SPECS[key].day!;
-  const data = await dayView(scope, hosted, [dm], asOf);
-  const ser = data.metrics[dm];
+  // All three Day metrics, as Body asks GET /api/day for them, so "now" is the cards' hour: the latest synced of any
+  // of them. A metric's own last hour can be earlier (heart rate synced at 2 PM, steps at 11 AM), and comparing at
+  // it would set the sheet's "typical by now" against an earlier hour than the card's. A metric with no hours of its
+  // own that day has no hour at all, as before.
+  const all = await dayView(scope, hosted, DAY_METRICS, asOf);
+  const ser = all.metrics[dm];
+  const own = !!ser && [ser.hours, ser.min, ser.max].some((l) => l?.some((v) => v !== null));
+  const data: DayData = { ...all, asOf: own ? all.asOf : null, metrics: ser ? { [dm]: ser } : {} };
   // The device behind the day's hours: Apple's when there are any (as dayView picks), else demo hours.
   const rows = ser
     ? await scope.db.query<{ source: string }>('SELECT DISTINCT source FROM hourly WHERE user_id = $1 AND metric = $2 AND date = $3 AND source = ANY($4)', [

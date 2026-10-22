@@ -1,10 +1,22 @@
 // A metric's detail sheet, opened from a card's arrow: the metric over a day, week, month or year (GET /api/metric),
 // the window's average, three figures, and one plain sentence the server builds from them. A modal dialog: the page
 // behind it can't be reached or scrolled while it's open, Escape or a click outside closes it, and focus goes back to
-// the button that opened it. The card's own page is one link away ("Open Vitals").
-import { type KeyboardEvent, type MouseEvent, type ReactNode, useCallback, useEffect, useId, useRef, useState } from 'react';
+// the button that opened it. The card's own page is one link away ("Open Vitals"). Opened on a window with nothing in
+// it, it moves to its longest range and says so, since the card may show an older reading.
+import { type MouseEvent, type ReactNode, useCallback, useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { type MetricFigure, type MetricKey, type MetricRange, type MetricSheet as SheetData, METRIC_INFO, RANGE_LABEL, mmolFromMgDl } from '../../shared/metrics.ts';
+import {
+  type MetricFigure,
+  type MetricKey,
+  type MetricRange,
+  type MetricSheet as SheetData,
+  METRIC_INFO,
+  RANGE_LABEL,
+  emptyWindowText,
+  mmolFromMgDl,
+  widenedNote,
+  widerRange,
+} from '../../shared/metrics.ts';
 import type { DayMetric } from '../../shared/types.ts';
 import { BarChart, ChartCard, TrendChart } from '../charts/Charts.tsx';
 import { DayChart } from '../charts/Day.tsx';
@@ -117,8 +129,15 @@ const FOCUSABLE = 'a[href], button:not([disabled]), input, select, textarea, [ta
 function MetricSheet({ metric, date, section, to, range: initial, opener, onClose }: SheetOptions & { metric: MetricKey; opener: HTMLElement | null; onClose: () => void }) {
   const info = METRIC_INFO[metric];
   const [range, setRange] = useState<MetricRange>(initial && info.ranges.includes(initial) ? initial : info.initial);
+  // Set once the person presses a range: from then on the sheet shows the one they chose, empty or not.
+  const [picked, setPicked] = useState(false);
+  // The range it opened on, when it moved to a longer one by itself because that one had nothing in it.
+  const [widened, setWidened] = useState<MetricRange | null>(null);
   const { data, error, loading } = useApi<SheetData>(`/metric/${metric}?range=${range}${date ? `&date=${date}` : ''}`);
   const sheet = data?.key === metric ? data : undefined;
+  // Another range's data stays up while the one asked for loads, except an empty window's, which would flash
+  // "Nothing in the last 30 days" on the way to a range that has something.
+  const shown = sheet && (sheet.range === range || sheet.headline.value !== null) ? sheet : undefined;
   const panel = useRef<HTMLDivElement>(null);
   const title = useRef<HTMLHeadingElement>(null);
   const titleId = useId();
@@ -144,31 +163,52 @@ function MetricSheet({ metric, date, section, to, range: initial, opener, onClos
   }, [opener]);
 
   // A range this person doesn't have (Day, before the phone has sent any hours) falls back to the first one they do.
+  // One with nothing in it, until the person picks a range themselves, moves to the longest: the card it was opened
+  // from may show a reading older than the window (a weigh-in two months ago), which the sheet shouldn't deny.
   useEffect(() => {
-    if (sheet && sheet.range === range && !sheet.ranges.includes(range)) setRange(sheet.ranges[0]);
-  }, [sheet, range]);
+    if (!sheet || sheet.range !== range) return;
+    if (!sheet.ranges.includes(range)) return void setRange(sheet.ranges[0]);
+    const wider = picked ? null : widerRange(sheet);
+    if (wider) {
+      setWidened(range);
+      setRange(wider);
+    }
+  }, [sheet, range, picked]);
 
-  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === 'Escape') {
-      e.stopPropagation();
-      onClose();
-      return;
-    }
-    if (e.key !== 'Tab' || !panel.current) return;
-    // Focus stays inside: Tab from the last control goes to the first, Shift+Tab from the first to the last.
-    const items = [...panel.current.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((el) => el.offsetParent !== null || el === document.activeElement);
-    if (!items.length) return;
-    const first = items[0];
-    const last = items.at(-1)!;
-    const at = document.activeElement;
-    if (e.shiftKey && (at === first || at === title.current || !panel.current.contains(at))) {
-      e.preventDefault();
-      last.focus();
-    } else if (!e.shiftKey && (at === last || !panel.current.contains(at))) {
-      e.preventDefault();
-      first.focus();
-    }
-  };
+  // Keys are heard on the document while the sheet is open, not only on the panel: a click on its text or chart can
+  // leave focus on the page's body, and Escape and Tab must still work then. Keys for something else on top (the
+  // search palette) are left to it.
+  useEffect(() => {
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      const p = panel.current;
+      const target = e.target instanceof Node ? e.target : null;
+      const onPage = !target || target === document || target === document.body || target === document.documentElement;
+      if (!p || e.defaultPrevented || !(onPage || p.contains(target))) return;
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onClose();
+        return;
+      }
+      if (e.key !== 'Tab') return;
+      // Focus stays inside: Tab from the last control goes to the first, Shift+Tab from the first to the last, and
+      // from the panel itself (after a click on its text) or from outside it, to the last or the first.
+      const items = [...p.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((el) => el.offsetParent !== null || el === document.activeElement);
+      if (!items.length) return;
+      const first = items[0];
+      const last = items.at(-1)!;
+      const at = document.activeElement;
+      const off = at === p || !p.contains(at);
+      if (e.shiftKey && (at === first || at === title.current || off)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && (at === last || off)) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
   // A press that starts and ends on the backdrop closes; one that starts inside (selecting text, a drag) doesn't.
   const downOnBackdrop = useRef(false);
   const onBackdropDown = (e: MouseEvent<HTMLDivElement>) => {
@@ -180,10 +220,12 @@ function MetricSheet({ metric, date, section, to, range: initial, opener, onClos
   };
 
   const ranges = sheet?.ranges ?? info.ranges.filter((r) => r !== 'day' || info.ranges.length === 1);
+  const note = widened && !picked && shown?.range === range ? widenedNote(widened, range) : null;
 
   return (
     <div className="msheet-backdrop" onMouseDown={onBackdropDown} onClick={onBackdropClick}>
-      <div ref={panel} className="msheet" role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={sheet?.narrative ? textId : undefined} onKeyDown={onKeyDown}>
+      {/* tabIndex -1: a click on the sheet's text or chart keeps focus in the dialog rather than dropping it to the page. */}
+      <div ref={panel} className="msheet" role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={shown?.narrative ? textId : undefined} tabIndex={-1}>
         <header className="msheet-head">
           <div className="msheet-crumbs">
             <span>{section}</span>
@@ -202,7 +244,16 @@ function MetricSheet({ metric, date, section, to, range: initial, opener, onClos
         {ranges.length > 1 && (
           <div className="filters msheet-ranges" role="group" aria-label="Range">
             {ranges.map((r) => (
-              <button key={r} type="button" className={range === r ? 'on' : ''} aria-pressed={range === r} onClick={() => setRange(r)}>
+              <button
+                key={r}
+                type="button"
+                className={range === r ? 'on' : ''}
+                aria-pressed={range === r}
+                onClick={() => {
+                  setPicked(true);
+                  setRange(r);
+                }}
+              >
                 {RANGE_LABEL[r]}
               </button>
             ))}
@@ -210,10 +261,10 @@ function MetricSheet({ metric, date, section, to, range: initial, opener, onClos
         )}
 
         <div className={`msheet-body${loading ? ' is-refreshing' : ''}`}>
-          {!sheet ? (
+          {!shown ? (
             <p className="msheet-message">{error ? `Couldn't load this: ${error.message}` : 'Loading…'}</p>
           ) : (
-            <SheetBody sheet={sheet} textId={textId} />
+            <SheetBody sheet={shown} textId={textId} note={note} />
           )}
         </div>
 
@@ -229,18 +280,24 @@ function MetricSheet({ metric, date, section, to, range: initial, opener, onClos
   );
 }
 
-function SheetBody({ sheet, textId }: { sheet: SheetData; textId: string }) {
+function SheetBody({ sheet, textId, note }: { sheet: SheetData; textId: string; note: string | null }) {
   const format = formatter(sheet);
   const h = sheet.headline;
   const nothing = h.value === null;
   return (
     <>
+      {/* Why a range the person didn't press is the pressed one. */}
+      {note && (
+        <p className="msheet-widened" role="status">
+          {note}
+        </p>
+      )}
       <p className="msheet-source">{sourceLine(sheet)}</p>
       {nothing ? (
         <p className="msheet-message">
           {sheet.range === 'day' && !sheet.day?.metrics[sheet.key as DayMetric]
             ? 'Hour-by-hour readings come from Apple Watch and iPhone, through the healthOS iPhone app.'
-            : (EMPTY[sheet.key] ?? 'Nothing recorded in this range.')}
+            : (emptyWindowText(sheet) ?? EMPTY[sheet.key] ?? 'Nothing recorded in this range.')}
         </p>
       ) : (
         <>
