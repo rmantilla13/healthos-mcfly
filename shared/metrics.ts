@@ -186,3 +186,30 @@ export function widenedNote(from: MetricRange, to: MetricRange): string | null {
   if (from === 'day' || to === 'day' || from === to) return null;
   return `Nothing in ${RANGE_WINDOW[from]}, so this shows ${RANGE_WINDOW[to]}.`;
 }
+
+/**
+ * Whether the window a sheet opened on is still empty, as the longer range it moved to shows it: no latest reading,
+ * or one from before that window's first day. A reading synced since the move makes the note above untrue.
+ */
+export function stillEmpty(from: MetricRange, sheet: Pick<MetricSheet, 'to' | 'latest'>): boolean {
+  if (!sheet.latest) return true;
+  const days = from === 'day' ? 1 : RANGE_DAYS[from];
+  return Date.parse(`${sheet.latest.date}T00:00:00Z`) < Date.parse(`${sheet.to}T00:00:00Z`) - (days - 1) * 86_400_000;
+}
+
+/**
+ * Whether a sheet has nothing to show for its window: no average, and no unfinished total for today either. Today's
+ * total so far is drawn and given as the latest, though not counted, so a window holding only it isn't called empty.
+ */
+export function nothingToShow(sheet: Pick<MetricSheet, 'headline' | 'partialToday'>): boolean {
+  return sheet.headline.value === null && !sheet.partialToday;
+}
+
+/**
+ * Whether the sheet on hand is shown while `range` is the one asked for. Not one that's about to move to a longer
+ * range by itself, nor, while the range asked for loads, another range's empty one: either would flash "Nothing in
+ * the last 30 days" on the way to a range that has something.
+ */
+export function showSheet(sheet: Pick<MetricSheet, 'range' | 'ranges' | 'headline' | 'points' | 'partialToday'>, range: MetricRange, picked: boolean): boolean {
+  return sheet.range === range ? picked || !widerRange(sheet) : !nothingToShow(sheet);
+}

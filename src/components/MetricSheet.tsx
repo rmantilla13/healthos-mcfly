@@ -14,6 +14,9 @@ import {
   RANGE_LABEL,
   emptyWindowText,
   mmolFromMgDl,
+  nothingToShow,
+  showSheet,
+  stillEmpty,
   widenedNote,
   widerRange,
 } from '../../shared/metrics.ts';
@@ -133,11 +136,11 @@ function MetricSheet({ metric, date, section, to, range: initial, opener, onClos
   const [picked, setPicked] = useState(false);
   // The range it opened on, when it moved to a longer one by itself because that one had nothing in it.
   const [widened, setWidened] = useState<MetricRange | null>(null);
-  const { data, error, loading } = useApi<SheetData>(`/metric/${metric}?range=${range}${date ? `&date=${date}` : ''}`);
+  const { data, error, loading, current } = useApi<SheetData>(`/metric/${metric}?range=${range}${date ? `&date=${date}` : ''}`);
   const sheet = data?.key === metric ? data : undefined;
-  // Another range's data stays up while the one asked for loads, except an empty window's, which would flash
-  // "Nothing in the last 30 days" on the way to a range that has something.
-  const shown = sheet && (sheet.range === range || sheet.headline.value !== null) ? sheet : undefined;
+  // Another range's data stays up while the one asked for loads, except an empty window's; and one about to move to a
+  // longer range isn't shown at all. Either would flash "Nothing in the last 30 days" on the way to a range that has something.
+  const shown = sheet && showSheet(sheet, range, picked) ? sheet : undefined;
   const panel = useRef<HTMLDivElement>(null);
   const title = useRef<HTMLHeadingElement>(null);
   const titleId = useId();
@@ -164,16 +167,17 @@ function MetricSheet({ metric, date, section, to, range: initial, opener, onClos
 
   // A range this person doesn't have (Day, before the phone has sent any hours) falls back to the first one they do.
   // One with nothing in it, until the person picks a range themselves, moves to the longest: the card it was opened
-  // from may show a reading older than the window (a weigh-in two months ago), which the sheet shouldn't deny.
+  // from may show a reading older than the window (a weigh-in two months ago), which the sheet shouldn't deny. Only
+  // on data that's current: an older copy kept from before a sync may be empty where the window now isn't.
   useEffect(() => {
-    if (!sheet || sheet.range !== range) return;
+    if (!sheet || sheet.range !== range || !current) return;
     if (!sheet.ranges.includes(range)) return void setRange(sheet.ranges[0]);
     const wider = picked ? null : widerRange(sheet);
     if (wider) {
       setWidened(range);
       setRange(wider);
     }
-  }, [sheet, range, picked]);
+  }, [sheet, range, picked, current]);
 
   // Keys are heard on the document while the sheet is open, not only on the panel: a click on its text or chart can
   // leave focus on the page's body, and Escape and Tab must still work then. Keys for something else on top (the
@@ -220,7 +224,8 @@ function MetricSheet({ metric, date, section, to, range: initial, opener, onClos
   };
 
   const ranges = sheet?.ranges ?? info.ranges.filter((r) => r !== 'day' || info.ranges.length === 1);
-  const note = widened && !picked && shown?.range === range ? widenedNote(widened, range) : null;
+  // Said only while the range shown bears it out: a reading synced into the first window since the move drops it.
+  const note = widened && !picked && shown?.range === range && stillEmpty(widened, shown) ? widenedNote(widened, range) : null;
 
   return (
     <div className="msheet-backdrop" onMouseDown={onBackdropDown} onClick={onBackdropClick}>
@@ -283,7 +288,8 @@ function MetricSheet({ metric, date, section, to, range: initial, opener, onClos
 function SheetBody({ sheet, textId, note }: { sheet: SheetData; textId: string; note: string | null }) {
   const format = formatter(sheet);
   const h = sheet.headline;
-  const nothing = h.value === null;
+  // A window holding only today's unfinished total isn't empty: its bar and its Latest · so far today are shown.
+  const nothing = nothingToShow(sheet);
   return (
     <>
       {/* Why a range the person didn't press is the pressed one. */}

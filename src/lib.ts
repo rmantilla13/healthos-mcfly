@@ -110,12 +110,19 @@ export function useBackgroundRefresh() {
 /**
  * Fetches JSON and keeps the previous result on screen while a new one loads. Opening a view reuses what
  * was loaded for the same path if the data hasn't changed since; a data change or reload() refetches.
+ * `current` is true once `data` is this path's as it is now (a fresh copy, or the answer to this path's latest
+ * request), and false while it's an older copy kept on screen: for decisions that mustn't be made on stale data.
  */
 export function useApi<T>(path: string | null) {
   const [data, setData] = useState<T | undefined>(() => (path ? (cache.get(path)?.data as T | undefined) : undefined));
   const [error, setError] = useState<Error>();
   const [loading, setLoading] = useState(false);
   const [version, setVersion] = useState(0);
+  // The path whose data is current; null while a request for it is out.
+  const [currentFor, setCurrentFor] = useState<string | null>(() => {
+    const hit = path ? cache.get(path) : undefined;
+    return hit && fresh(hit) ? path : null;
+  });
 
   useEffect(() => {
     const bump = () => setVersion((v) => v + 1);
@@ -129,16 +136,19 @@ export function useApi<T>(path: string | null) {
     if (hit) setData(hit.data as T);
     if (version === 0 && hit && fresh(hit)) {
       setError(undefined);
+      setCurrentFor(path);
       return;
     }
     let alive = true;
     setLoading(true);
+    setCurrentFor(null);
     getJson<T>(path)
       .then((d) => {
         cache.set(path, { data: d, version: dataVersion, at: Date.now(), day: localDay() });
         if (alive) {
           setData(d);
           setError(undefined);
+          setCurrentFor(path);
         }
       })
       .catch((e: Error) => alive && setError(e))
@@ -149,7 +159,7 @@ export function useApi<T>(path: string | null) {
   }, [path, version]);
 
   const reload = useCallback(() => setVersion((v) => v + 1), []);
-  return { data, error, loading, reload };
+  return { data, error, loading, reload, current: path !== null && currentFor === path };
 }
 
 // ---------- routing ----------
