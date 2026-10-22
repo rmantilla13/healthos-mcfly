@@ -138,12 +138,13 @@ export type NewEntry = Omit<Row, 'draft' | 'version' | 'per'> & { per: FoodValue
 
 export async function insertEntries(q: Queryable, userId: string, entries: NewEntry[], draft: boolean) {
   const now = Date.now();
-  for (const e of entries) {
+  // A millisecond apart, so entries made together (an estimate's items) keep their order.
+  for (const [i, e] of entries.entries()) {
     // A retry of the same id (the iPhone resending after a dropped reply) changes nothing.
     await q.query(
       `INSERT INTO food_log (user_id, id, date, time, name, portion, quantity, per, method, ref, origin, draft, version, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 1, $13, $13) ON CONFLICT (user_id, id) DO NOTHING`,
-      [userId, e.id, e.date, e.time, e.name, e.portion, e.quantity, JSON.stringify(e.per), e.method, e.ref, e.origin, draft, now],
+      [userId, e.id, e.date, e.time, e.name, e.portion, e.quantity, JSON.stringify(e.per), e.method, e.ref, e.origin, draft, now + i],
     );
   }
 }

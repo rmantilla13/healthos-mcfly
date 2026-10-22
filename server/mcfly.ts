@@ -538,7 +538,7 @@ const TOOLS: Tool[] = [
     name: 'get_nutrition',
     when: (ctx) => ctx.nutrition !== null,
     description:
-      "What this person logged in their food app (MyFitnessPal, Cronometer and others, through Apple Health), as daily totals: energy, protein, carbohydrates, fat, fiber, sugar, saturated fat, sodium and alcoholic drinks, as far as their app records them and their setting shows them. One app per day, never a sum of apps. Days with nothing logged are left out: that means nothing was logged, not that nothing was eaten.",
+      "What this person logged, in healthOS itself (app 'healthOS', some of it estimated from a photo or description) or in their food app (MyFitnessPal, Cronometer and others, through Apple Health), as daily totals: energy, protein, carbohydrates, fat, fiber, sugar, saturated fat, sodium and alcoholic drinks, as far as their app records them and their setting shows them. One app per day, never a sum of apps. Days with nothing logged are left out: that means nothing was logged, not that nothing was eaten.",
     input_schema: {
       type: 'object',
       properties: {
