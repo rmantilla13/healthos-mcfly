@@ -3215,6 +3215,224 @@ td {
 .choice strong {
   font-weight: 500;
 }
+/* The Log tab (src/pages/FoodLog.tsx): a day's entries beside the card that adds them. */
+.food-log {
+  align-items: start;
+}
+.food-day,
+.food-add {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.food-day-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  text-align: center;
+}
+.food-day-head h2 {
+  margin: 0;
+}
+.food-day-head .btn {
+  padding: 6px 8px;
+}
+.food-entries,
+.food-results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.food-entry,
+.food-result,
+.food-draft {
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.food-entry:first-child,
+.food-result:first-child,
+.food-draft:first-child {
+  border-top: 0;
+}
+.food-entry-main {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+}
+.food-time {
+  padding-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+.food-entry-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.food-entry-text strong,
+.food-result-head strong {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.food-entry-actions {
+  display: flex;
+  gap: 2px;
+}
+.food-entry-actions .btn,
+.food-drop {
+  padding: 4px 8px;
+}
+.food-none {
+  margin: 8px 0;
+}
+.food-sum {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.food-add-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.food-add-head h2 {
+  margin: 0;
+}
+.food-when {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.food-modes {
+  align-self: flex-start;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.food-modes button {
+  padding: 6px 12px;
+  white-space: nowrap;
+}
+.food-search,
+.food-form,
+.food-review,
+.food-pick {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.food-search-form {
+  display: flex;
+  gap: 8px;
+}
+.food-search-form input {
+  flex: 1;
+  min-width: 0;
+}
+.food-log input,
+.food-log select,
+.food-log textarea {
+  font: inherit;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--ink);
+  min-width: 0;
+}
+.food-log textarea {
+  resize: vertical;
+}
+.food-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 10px;
+  align-items: end;
+}
+.food-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.food-fields .food-wide {
+  grid-column: 1 / -1;
+}
+.food-result-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.food-result-head > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.food-result-head .icon {
+  transition: transform 0.15s;
+}
+.food-result.is-open .food-result-head .icon {
+  transform: rotate(90deg);
+}
+.food-result.is-open .food-pick {
+  padding: 10px;
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+.food-result.is-open .food-pick input,
+.food-result.is-open .food-pick select {
+  background: var(--surface);
+}
+.food-photo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.food-photo img {
+  width: 96px;
+  height: 96px;
+  object-fit: cover;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+}
+.food-review > p,
+.food-search > p,
+.food-form > p {
+  margin: 0;
+}
+.food-credit {
+  margin-top: 4px;
+}
+.food-estimate > .btn {
+  align-self: flex-start;
+}
+.food-note {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
 @media (max-width: 560px) {
   .nutrition-card-side {
     align-items: flex-start;
