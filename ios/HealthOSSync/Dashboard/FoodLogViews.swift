@@ -311,7 +311,8 @@ private struct FoodEditSheet: View {
 // MARK: - Adding
 
 enum FoodAddMode: String, CaseIterable, Identifiable {
-    case search = "Search", scan = "Scan", estimate = "Photo or words", quick = "Quick add"
+    // "Estimate" where the web says "Photo or words": four segments leave a phone too little room for it.
+    case search = "Search", scan = "Scan", estimate = "Estimate", quick = "Quick add"
     var id: String { rawValue }
 
     /// No estimate where McFly can't (can.estimate), no quick add where amounts are hidden.
@@ -406,7 +407,7 @@ private struct FoodWaterSection: View {
                 ForEach(FoodWater.choices(units)) { w in
                     // Bordered, so each is its own button rather than the whole row.
                     Button { add(w) } label: {
-                        Label(w.label, systemImage: "plus").font(.subheadline).frame(maxWidth: .infinity)
+                        Text("+ \(w.label)").font(.subheadline).lineLimit(1).minimumScaleFactor(0.8).frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.bordered)
                     .disabled(busy)

@@ -54,8 +54,8 @@ struct CardGroup: Identifiable {
 
 enum Cards {
     /// shared/cards.ts CARDS, in its order (a test checks them against that file). Each card the app shows has its
-    /// place; the rest still change the web dashboard. The Body overview's cards (heart, recovery, strain and
-    /// movement for one day) have no counterpart here.
+    /// place; the rest still change the web dashboard. The Body overview's cards (heart, recovery, strain,
+    /// movement, the latest workout and lab results) have no counterpart here.
     static let all: [DashboardCard] = [
         DashboardCard(id: "home.readiness", page: .home, label: "Recovery or cardio fitness", place: .today),
         DashboardCard(id: "home.spo2", page: .home, label: "Blood oxygen", place: .today),
@@ -80,6 +80,10 @@ enum Cards {
         DashboardCard(id: "body.metrics", page: .body, label: "Body metrics"),
         DashboardCard(id: "body.energy", page: .body, label: "Energy burned"),
         DashboardCard(id: "body.steps", page: .body, label: "Activity level"),
+        DashboardCard(id: "body.workout", page: .body, label: "Latest workout"),
+        DashboardCard(id: "body.glucose", page: .body, label: "Glucose"),
+        DashboardCard(id: "body.composition", page: .body, label: "Body composition"),
+        DashboardCard(id: "body.biomarkers", page: .body, label: "Key biomarkers"),
         DashboardCard(id: "nutrition.energy", page: .nutrition, label: "Energy", nutrition: true, place: .nutrition),
         DashboardCard(id: "nutrition.protein", page: .nutrition, label: "Protein", nutrition: true, place: .nutrition),
         DashboardCard(id: "nutrition.water", page: .nutrition, label: "Water", nutrition: true, place: .nutrition),

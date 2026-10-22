@@ -1127,7 +1127,7 @@ final class CardHidingTests: XCTestCase {
             }
         }
         let cards = try groups(#"\{ id: '([^']+)', page: '([^']+)', label: (?:'([^']*)'|"([^"]*)")(, nutrition: true)? \}"#)
-        XCTAssertEqual(cards.count, 29, "every card in CARDS")
+        XCTAssertEqual(cards.count, 33, "every card in CARDS")
         XCTAssertEqual(cards.map { $0[0]! }, Cards.all.map(\.id), "same ids, same order")
         for (c, card) in zip(cards, Cards.all) {
             XCTAssertEqual(c[1], card.page.rawValue, card.id)
@@ -1238,7 +1238,7 @@ final class CardHidingTests: XCTestCase {
         let off = Cards.pages(nutrition: false)
         XCTAssertEqual(off.map(\.page), [.home, .sleep, .body])
         XCTAssertFalse(off.flatMap(\.cards).contains { $0.nutrition })
-        XCTAssertEqual(off.flatMap(\.cards).count, 22)
+        XCTAssertEqual(off.flatMap(\.cards).count, 26)
         let on = Cards.pages(nutrition: true)
         XCTAssertEqual(on.map(\.page), [.home, .sleep, .body, .nutrition])
         XCTAssertEqual(on.flatMap(\.cards).map(\.id), Cards.all.map(\.id))
@@ -1352,7 +1352,7 @@ final class CardHidingReviewTests: XCTestCase {
                        ["home.spo2", "sleep.rhr"], "in the registry's order")
         XCTAssertEqual(Cards.hiddenOffered([], nutrition: true), [])
         XCTAssertEqual(Cards.hiddenOffered(Set(Cards.all.map(\.id)), nutrition: true), Cards.all.map(\.id))
-        XCTAssertEqual(Cards.hiddenOffered(Set(Cards.all.map(\.id)), nutrition: false).count, 22)
+        XCTAssertEqual(Cards.hiddenOffered(Set(Cards.all.map(\.id)), nutrition: false).count, 26)
     }
 
     func testNutritionOverviewCardsFollowTheSetting() {
