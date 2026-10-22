@@ -15,6 +15,8 @@ import { importAppleHealth } from './apple/import.ts';
 import { ingestRouter } from './apple/ingest.ts';
 import { authRoutes, cronAuthorized, currentUser, publicUser, requireSession, sha256 } from './auth.ts';
 import { cycleRouter } from './cycle/index.ts';
+import { labsRouter } from './labs.ts';
+import { metricRouter } from './metricsheet.ts';
 import { nutritionRouter } from './nutrition.ts';
 import { familyRouter } from './family.ts';
 import { DATA_DIR, type Db, type Scope, bumpDataVersion, deleteSource, getUserSetting, setUserSetting } from './db.ts';
@@ -101,6 +103,8 @@ export function createApp({ db, hosted, ingestToken, mcflyClient }: AppOptions) 
   api.use('/mcfly', mcflyRouter(db, { hosted, client: mcflyClient }));
   api.use('/cycle', cycleRouter(db, hosted));
   api.use('/nutrition', nutritionRouter(db, hosted));
+  api.use('/labs', labsRouter(db, { hosted, client: mcflyClient }));
+  api.use('/metric', metricRouter(db, hosted));
   api.use('/family', familyRouter(db, hosted));
 
   const asOf = (req: Request) => (typeof req.query.date === 'string' && DATE.test(req.query.date) ? req.query.date : undefined);

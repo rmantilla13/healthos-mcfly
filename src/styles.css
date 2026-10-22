@@ -4369,3 +4369,9 @@ nav.tabs {
     transition: none;
   }
 }
+
+/* ---------- Detail sheets, glucose and body composition (src/components/MetricSheet.tsx, components/body) ---------- */
+
+/* ---------- Latest workout and ⌘K search (components/body/WorkoutCard.tsx, components/Search.tsx) ---------- */
+
+/* ---------- Lab tests (src/pages/Labs.tsx, components/body/BiomarkersCard.tsx) ---------- */

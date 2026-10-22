@@ -6,6 +6,10 @@ import { cumulative, drawThrough, extent } from '../charts/day.ts';
 import { Gauge, MiniBars, MiniDots, MiniLine } from '../charts/Mini.tsx';
 import { AreaCurve, Change, HourBars } from '../charts/Neka.tsx';
 import { AllHiddenNote, CardRow, useAllHidden } from '../components/CardRow.tsx';
+import { BiomarkersCard } from '../components/body/BiomarkersCard.tsx';
+import { CompositionCard } from '../components/body/CompositionCard.tsx';
+import { GlucoseCard } from '../components/body/GlucoseCard.tsx';
+import { WorkoutCard } from '../components/body/WorkoutCard.tsx';
 import { Icon, type IconName } from '../components/Icon.tsx';
 import { compact, fmt, fmtDate, shiftDate, temp, useApi, useUnits } from '../lib.ts';
 import { Activity, DAY, DayNav, Metabolism, PageHead, Tabs, Trend, useRange } from './Detail.tsx';
@@ -78,6 +82,16 @@ function Overview({ tabs, date, setDate }: { tabs: ReactNode; date: string | nul
         cards={[
           ['body.energy', <EnergyCard day={day} points={tr.active_energy ?? []} date={s.date} />],
           ['body.steps', <StepsCard day={day} s={s} />],
+        ]}
+      />
+      <CardRow
+        className="cards cards-4"
+        fill={{ wide: 4, mid: 3, small: 2 }}
+        cards={[
+          ['body.workout', <WorkoutCard s={s} date={date} />],
+          ['body.glucose', <GlucoseCard s={s} date={date} />],
+          ['body.composition', <CompositionCard s={s} date={date} />],
+          ['body.biomarkers', <BiomarkersCard s={s} date={date} />],
         ]}
       />
       {allHidden && <AllHiddenNote />}

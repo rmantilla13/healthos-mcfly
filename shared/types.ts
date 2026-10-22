@@ -34,7 +34,7 @@ export type Insight = {
   page: Page;
 };
 
-export type Page = 'home' | 'family' | 'vitals' | 'sleep' | 'activity' | 'body' | 'nutrition' | 'cycle' | 'mcfly' | 'integrations' | 'settings' | 'admin';
+export type Page = 'home' | 'family' | 'vitals' | 'sleep' | 'activity' | 'body' | 'nutrition' | 'labs' | 'cycle' | 'mcfly' | 'integrations' | 'settings' | 'admin';
 
 export type Summary = {
   date: string;

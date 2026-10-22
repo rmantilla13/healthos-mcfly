@@ -205,6 +205,23 @@ export const MIGRATIONS: { id: number; name: string; statements: string[] }[] = 
       'CREATE INDEX sleep_stages_user_date ON sleep_stages (user_id, date)',
     ],
   },
+  {
+    // 9 is nutrition logging (its own branch); ids only need to be unique, and each applies when it appears.
+    id: 10,
+    name: 'Lab tests: results as printed, with the lab\'s own reference range',
+    statements: [
+      // Kept apart from `daily` like `cycle`, so nothing that reads daily (summaries, patterns, the digest, the admin
+      // view, the Family board) can reach them; see server/labs.ts. value is the number when there is one; value_text
+      // is the result as printed ("<0.5", "Negative"). biomarker is a catalog key, so a marker's history joins up.
+      `CREATE TABLE lab_results (
+        user_id TEXT NOT NULL, id TEXT NOT NULL, collected TEXT NOT NULL, biomarker TEXT NOT NULL, name TEXT NOT NULL,
+        value DOUBLE PRECISION, value_text TEXT NOT NULL, unit TEXT NOT NULL DEFAULT '',
+        ref_low DOUBLE PRECISION, ref_high DOUBLE PRECISION, ref_text TEXT NOT NULL DEFAULT '',
+        lab TEXT NOT NULL DEFAULT '', panel TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT 'manual',
+        created_at DOUBLE PRECISION NOT NULL, PRIMARY KEY (user_id, id))`,
+      'CREATE INDEX lab_results_user_marker ON lab_results (user_id, biomarker, collected)',
+    ],
+  },
 ];
 
 async function migrate(db: Db) {
