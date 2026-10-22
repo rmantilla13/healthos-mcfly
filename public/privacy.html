@@ -115,7 +115,7 @@
         </div>
 
         <h1>Privacy Policy</h1>
-      <p class="updated">Last updated October 19, 2026</p>
+      <p class="updated">Last updated October 22, 2026</p>
 
       <p>
         healthOS is a private health dashboard at <strong>health.mcfly.bot</strong>, run by Ricky Mantilla. It is not open to the public:
@@ -150,6 +150,13 @@
           section below.
         </li>
         <li>
+          <strong>Lab results</strong>, if you add them: each result as printed, with the reference range the lab printed, typed in or read
+          from a PDF or photo of a report you import. An imported report is sent to Anthropic to read the results and isn't kept; it counts
+          as an Ask McFly question, and only the rows you check and save are stored. Only you (and McFly, when you ask it) see them: never
+          the Family board, the admin screens, your summaries or the weekly digest. If you choose a sex in your health profile, it picks the
+          typical adult range shown, labelled as such, for a result whose report printed no range.
+        </li>
+        <li>
           An optional profile photo. It's cut out on your own device (in your browser, or on a Mac), and only the cut-out, a small
           avatar and the points where your vitals are shown are uploaded, never the original photo.
         </li>
@@ -170,8 +177,8 @@
         When you ask McFly a question, healthOS sends your question, the conversation so far, and the parts of your health data McFly reads
         to answer it to <strong>Anthropic</strong>'s API, which generates the reply. McFly can only read your own data, never other members',
         and it can't change
-        anything. Anthropic handles this data under its commercial terms and privacy policy. If you don't use Ask McFly, nothing is sent to
-        Anthropic. McFly can read your cycle tracking data only while you have cycle tracking turned on, and your nutrition only while nutrition
+        anything. Anthropic handles this data under its commercial terms and privacy policy. If you don't use Ask McFly or import a lab report, nothing is
+        sent to Anthropic. McFly can read your cycle tracking data only while you have cycle tracking turned on, and your nutrition only while nutrition
         is on, and only as much of it as you chose to see.
       </p>
 
@@ -336,9 +343,9 @@
       <h2>Service providers</h2>
       <p>
         These providers handle data only to run the service: <strong>WHOOP</strong> (a data source), <strong>Vercel</strong> (hosting),
-        <strong>Neon</strong> (database) and <strong>Anthropic</strong> (answers for Ask McFly, and its food estimates). With nutrition on,
-        food searches and barcodes go to <strong>USDA FoodData Central</strong> and <strong>Open Food Facts</strong>, without anything that
-        identifies you. Their own privacy policies apply to their services.
+        <strong>Neon</strong> (database) and <strong>Anthropic</strong> (answers for Ask McFly, its food estimates, and reading lab reports
+        you import). With nutrition on, food searches and barcodes go to <strong>USDA FoodData Central</strong> and
+        <strong>Open Food Facts</strong>, without anything that identifies you. Their own privacy policies apply to their services.
       </p>
 
       <h2>Keeping and deleting data</h2>

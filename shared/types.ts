@@ -34,7 +34,7 @@ export type Insight = {
   page: Page;
 };
 
-export type Page = 'home' | 'family' | 'vitals' | 'sleep' | 'activity' | 'body' | 'nutrition' | 'cycle' | 'mcfly' | 'integrations' | 'settings' | 'admin';
+export type Page = 'home' | 'family' | 'vitals' | 'sleep' | 'activity' | 'body' | 'nutrition' | 'labs' | 'cycle' | 'mcfly' | 'integrations' | 'settings' | 'admin';
 
 export type Summary = {
   date: string;
@@ -104,7 +104,7 @@ export type Settings = {
   units: Units;
   demo: 'auto' | 'on' | 'off';
   timeZone: string | null;
-  /** "Sex for health calculations"; null until chosen. Nothing depends on it except the cycle tracking hint. */
+  /** "Sex for health calculations"; null until chosen. It picks the cycle tracking hint and, for a lab result printed without a range, the sex-specific typical range. */
   sex: Sex | null;
   /** Cycle tracking is on: the Cycle page, GET /api/cycle and McFly's cycle tool. Off by default. */
   cycleTracking: boolean;

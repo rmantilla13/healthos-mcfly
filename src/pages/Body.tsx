@@ -6,7 +6,12 @@ import { cumulative, drawThrough, extent } from '../charts/day.ts';
 import { Gauge, MiniBars, MiniDots, MiniLine } from '../charts/Mini.tsx';
 import { AreaCurve, Change, HourBars } from '../charts/Neka.tsx';
 import { AllHiddenNote, CardRow, useAllHidden } from '../components/CardRow.tsx';
+import { BiomarkersCard } from '../components/body/BiomarkersCard.tsx';
+import { CompositionCard } from '../components/body/CompositionCard.tsx';
+import { GlucoseCard } from '../components/body/GlucoseCard.tsx';
+import { WorkoutCard } from '../components/body/WorkoutCard.tsx';
 import { Icon, type IconName } from '../components/Icon.tsx';
+import { MetricSheetLink } from '../components/MetricSheet.tsx';
 import { compact, fmt, fmtDate, shiftDate, temp, useApi, useUnits } from '../lib.ts';
 import { Activity, DAY, DayNav, Metabolism, PageHead, Tabs, Trend, useRange } from './Detail.tsx';
 import { CardHead, Stale, signed } from './Home.tsx';
@@ -80,6 +85,16 @@ function Overview({ tabs, date, setDate }: { tabs: ReactNode; date: string | nul
           ['body.steps', <StepsCard day={day} s={s} />],
         ]}
       />
+      <CardRow
+        className="cards cards-4"
+        fill={{ wide: 4, mid: 3, small: 2 }}
+        cards={[
+          ['body.workout', <WorkoutCard s={s} date={date} />],
+          ['body.glucose', <GlucoseCard s={s} date={date} />],
+          ['body.composition', <CompositionCard s={s} date={date} />],
+          ['body.biomarkers', <BiomarkersCard s={s} date={date} />],
+        ]}
+      />
       {allHidden && <AllHiddenNote />}
     </div>
   );
@@ -102,9 +117,13 @@ function RestingHrCard({ s, points }: { s: Summary; points: Point[] }) {
     <article className="card metric metric-green">
       <div className="metric-head">
         <span>Resting heart rate</span>
-        <a href={bodyHref('cardiovascular')} className="metric-link" aria-label="Open resting heart rate">
-          <Icon name="arrow-up-right" size={16} />
-        </a>
+        {v.latest ? (
+          <MetricSheetLink metric="resting_hr" title="resting heart rate" date={s.date} section="Body" to={bodyHref('cardiovascular')} />
+        ) : (
+          <a href={bodyHref('cardiovascular')} className="metric-link" aria-label="Open resting heart rate">
+            <Icon name="arrow-up-right" size={16} />
+          </a>
+        )}
       </div>
       {v.latest ? (
         <>
@@ -134,7 +153,7 @@ function HrvCard({ s }: { s: Summary }) {
   const statusText = HRV_STATUS;
   return (
     <article className="card metric metric-blue">
-      <CardHead title="HRV" to={bodyHref('recovery')} />
+      <CardHead title="HRV" to={bodyHref('recovery')} metric={l ? 'hrv' : undefined} date={s.date} section="Body" />
       {l ? (
         <>
           <div className="metric-value">
@@ -173,7 +192,7 @@ function StrainCard({ s }: { s: Summary }) {
   const bandText = strain ? (v < 10 ? 'Light' : v < 14 ? 'Moderate' : v < 18 ? 'High' : 'All out') : v >= (l.average ?? 0) ? 'Above usual' : 'Below usual';
   return (
     <article className="card metric metric-pink">
-      <CardHead title={strain ? 'Strain' : 'Active energy'} to={bodyHref('strain')} />
+      <CardHead title={strain ? 'Strain' : 'Active energy'} to={bodyHref('strain')} metric={strain ? 'strain' : 'active_energy'} date={s.date} section="Body" />
       <div className="metric-value">
         {strain ? fmt(v, 1) : fmt(v)}
         <small>{strain ? '0–21' : 'kcal'}</small>
@@ -200,7 +219,7 @@ function RecoveryCard({ s, points }: { s: Summary; points: Point[] }) {
     const delta = r.previous !== null ? r.latest.value - r.previous : null;
     return (
       <article className="card metric metric-green">
-        <CardHead title="Cardio fitness" to={bodyHref('cardiovascular')} />
+        <CardHead title="Cardio fitness" to={bodyHref('cardiovascular')} metric="vo2max" date={s.date} section="Body" />
         <div className="metric-value">
           {fmt(r.latest.value, 1)}
           <small>VO₂ max, mL/kg·min</small>
@@ -223,7 +242,7 @@ function RecoveryCard({ s, points }: { s: Summary; points: Point[] }) {
   const z = ZONE[r.zone];
   return (
     <article className="card metric metric-green">
-      <CardHead title="Recovery" to={bodyHref('recovery')} />
+      <CardHead title="Recovery" to={bodyHref('recovery')} metric="recovery" date={s.date} section="Body" />
       <div className="metric-value">
         {fmt(r.latest.value)}
         <small>%</small>
@@ -255,7 +274,7 @@ function HeartTodayCard({ day }: { day: DayData | undefined }) {
   const latest = last !== null ? hours[last] : null;
   return (
     <section className="card metric heart-today">
-      <CardHead title={isToday ? 'Heart rate today' : 'Heart rate'} to="#/vitals" />
+      <CardHead title={isToday ? 'Heart rate today' : 'Heart rate'} to="#/vitals" metric={hr && readings.length > 1 ? 'heart_rate' : undefined} date={day?.date} section="Body" />
       {hr && readings.length > 1 ? (
         <>
           <div className="metric-value-row">
@@ -373,7 +392,7 @@ function EnergyCard({ day, points, date }: { day: DayData | undefined; points: P
   const daily = points.find((p) => p.date === date);
   return (
     <section className="card metric">
-      <CardHead title="Energy burned" to={bodyHref('strain')} />
+      <CardHead title="Energy burned" to={bodyHref('strain')} metric={(e && total > 0) || daily ? 'active_energy' : undefined} date={date} section="Body" range={e && total > 0 ? 'day' : undefined} />
       {e && total > 0 ? (
         <>
           <div className="metric-value">
@@ -413,9 +432,13 @@ function StepsCard({ day, s }: { day: DayData | undefined; s: Summary }) {
         <span>Activity level</span>
         <span className="metric-head-tools">
           <Change pct={typical ? ((counted - typical) / typical) * 100 : null} better="up" title={isToday ? 'Against your typical count by this hour' : 'Against your typical day'} />
-          <a href={bodyHref('activity')} className="metric-link" aria-label="Open activity">
-            <Icon name="arrow-up-right" size={16} />
-          </a>
+          {value > 0 ? (
+            <MetricSheetLink metric="steps" title="activity level" date={s.date} section="Body" to={bodyHref('activity')} range="day" />
+          ) : (
+            <a href={bodyHref('activity')} className="metric-link" aria-label="Open activity">
+              <Icon name="arrow-up-right" size={16} />
+            </a>
+          )}
         </span>
       </div>
       {value > 0 ? (

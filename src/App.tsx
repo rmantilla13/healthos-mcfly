@@ -9,7 +9,9 @@ import { Body } from './pages/Body.tsx';
 import { Vitals } from './pages/Detail.tsx';
 import { Home } from './pages/Home.tsx';
 import { Integrations, SettingsPage } from './pages/Integrations.tsx';
+import { Labs } from './pages/Labs.tsx';
 import { McFly } from './pages/McFly.tsx';
+import { CommandPalette, SearchButton } from './components/Search.tsx';
 import { Nutrition } from './pages/Nutrition.tsx';
 import { Sleep } from './pages/Sleep.tsx';
 import { AccountLinkPage, Login } from './pages/Login.tsx';
@@ -19,6 +21,7 @@ const NAV: { page: Page; label: string; icon: IconName }[] = [
   { page: 'vitals', label: 'Vitals', icon: 'vitals' },
   { page: 'body', label: 'Body', icon: 'body' },
   { page: 'sleep', label: 'Sleep', icon: 'sleep' },
+  { page: 'labs', label: 'Lab tests', icon: 'labs' },
   { page: 'mcfly', label: 'Ask McFly', icon: 'spark' },
 ];
 
@@ -139,6 +142,7 @@ function Dashboard({ signedIn }: { signedIn: boolean }) {
             <Logo />
             <span>healthOS</span>
           </a>
+          <SearchButton />
           <nav aria-label="Main">
             {NAV.flatMap((n) =>
               n.page === 'body'
@@ -164,6 +168,7 @@ function Dashboard({ signedIn }: { signedIn: boolean }) {
           </nav>
           {status && <SourceCard status={status} />}
         </aside>
+        <CommandPalette />
 
         <main className="main">
           {page === 'home' && status && noSources(status) && (
@@ -181,6 +186,7 @@ function Dashboard({ signedIn }: { signedIn: boolean }) {
             <Body params={route === 'activity' ? new URLSearchParams('tab=activity') : params} stepGoal={status?.settings.stepGoal ?? 10_000} date={date} setDate={setDate} />
           )}
           {page === 'nutrition' && status && <Nutrition status={status} params={params} refresh={reload} />}
+          {page === 'labs' && status && <Labs status={status} params={params} />}
           {page === 'cycle' && status && <Cycle status={status} />}
           {page === 'mcfly' && status && <McFly key={status.user.id} me={status.user} />}
           {page === 'integrations' && status && <Integrations status={status} params={params} refresh={reload} signedIn={signedIn} />}

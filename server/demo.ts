@@ -17,6 +17,8 @@ import {
   upsertWorkouts,
 } from './db.ts';
 import { addDays, todayLocal, toLocalIso, type Stamp } from './dates.ts';
+import { parseResultValue } from '../shared/labs.ts';
+import { type LabRow, insertLabResults } from './labs.ts';
 
 export const SOURCE = 'demo';
 const DAYS = 400;
@@ -179,7 +181,58 @@ export async function seedDemo(db: Db, userId = OWNER_ID) {
     await upsertWorkouts(q, userId, workouts);
     await upsertHourly(q, userId, hourly);
     await replaceSleepStages(q, userId, SOURCE, nights);
+    await insertLabResults(q, userId, demoLabs(today));
   });
+}
+
+/**
+ * Two blood draws about six months apart, so the Lab tests page has a latest result, a change and a range to show.
+ * Fixed values, not the random stream: reseeding never moves them. One result has no printed range (the typical
+ * one shows instead, labelled), one is printed as "<0.3", and vitamin D moves from below the range to within it.
+ */
+function demoLabs(today: string): LabRow[] {
+  const draws: [days: number, values: Record<string, string>][] = [
+    [-190, { total_cholesterol: '212', ldl: '134', hdl: '52', triglycerides: '131', hba1c: '5.4', glucose: '94', vitamin_d: '22', ferritin: '88', tsh: '2.1', hs_crp: '1.4', magnesium: '2.0' }],
+    [-21, { total_cholesterol: '196', ldl: '118', hdl: '55', triglycerides: '112', hba1c: '5.3', glucose: '89', vitamin_d: '38', ferritin: '92', tsh: '1.9', hs_crp: '<0.3', magnesium: '2.1' }],
+  ];
+  const MARKERS: Record<string, { name: string; unit: string; ref: string; panel: string }> = {
+    total_cholesterol: { name: 'Cholesterol, Total', unit: 'mg/dL', ref: '100-199', panel: 'Lipid panel' },
+    ldl: { name: 'LDL Chol Calc (NIH)', unit: 'mg/dL', ref: '0-99', panel: 'Lipid panel' },
+    hdl: { name: 'HDL Cholesterol', unit: 'mg/dL', ref: '>39', panel: 'Lipid panel' },
+    triglycerides: { name: 'Triglycerides', unit: 'mg/dL', ref: '0-149', panel: 'Lipid panel' },
+    hba1c: { name: 'Hemoglobin A1c', unit: '%', ref: '4.8-5.6', panel: 'Metabolic' },
+    glucose: { name: 'Glucose', unit: 'mg/dL', ref: '70-99', panel: 'Metabolic' },
+    vitamin_d: { name: 'Vitamin D, 25-Hydroxy', unit: 'ng/mL', ref: '30.0-100.0', panel: 'Vitamins and iron' },
+    ferritin: { name: 'Ferritin', unit: 'ng/mL', ref: '30-400', panel: 'Vitamins and iron' },
+    magnesium: { name: 'Magnesium', unit: 'mg/dL', ref: '', panel: 'Vitamins and iron' },
+    tsh: { name: 'TSH', unit: 'uIU/mL', ref: '0.450-4.500', panel: 'Thyroid' },
+    hs_crp: { name: 'hs-CRP', unit: 'mg/L', ref: '0.00-3.00', panel: 'Inflammation' },
+  };
+  const out: LabRow[] = [];
+  for (const [days, values] of draws) {
+    const collected = addDays(today, days);
+    for (const [key, valueText] of Object.entries(values)) {
+      const m = MARKERS[key];
+      const [low, high] = m.ref.startsWith('>') ? [Number(m.ref.slice(1)), null] : m.ref ? m.ref.split('-').map(Number) : [null, null];
+      out.push({
+        id: `demo-lab-${collected}-${key}`,
+        collected,
+        biomarker: key,
+        name: m.name,
+        value: parseResultValue(valueText).value,
+        value_text: valueText,
+        unit: m.unit,
+        ref_low: low,
+        ref_high: high,
+        ref_text: m.ref,
+        lab: 'Demo Lab',
+        panel: m.panel,
+        source: SOURCE,
+        created_at: Date.parse(`${collected}T09:00:00Z`),
+      });
+    }
+  }
+  return out;
 }
 
 /**

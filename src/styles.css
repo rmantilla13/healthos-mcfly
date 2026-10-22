@@ -4587,3 +4587,1218 @@ nav.tabs {
     transition: none;
   }
 }
+
+/* ---------- Detail sheets, glucose and body composition (src/components/MetricSheet.tsx, components/body) ---------- */
+/* The sheet's own colours: the dimmed page behind it and its status pill. */
+:root {
+  --msheet-backdrop: rgba(20, 20, 18, 0.34);
+  --msheet-shadow: 0 24px 60px -18px rgba(20, 20, 18, 0.32);
+  --msheet-status-bg: var(--surface-2);
+  --grad-glucose: radial-gradient(120% 90% at 100% 0%, #d6f1e6 0%, #e9f7f1 45%, #f9fcfb 100%);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --msheet-backdrop: rgba(0, 0, 0, 0.62);
+    --msheet-shadow: 0 24px 60px -18px rgba(0, 0, 0, 0.8);
+    --msheet-status-bg: var(--surface-hover);
+    --grad-glucose: radial-gradient(120% 90% at 100% 0%, #173a2e 0%, #1a2623 50%, #1a1a19 100%);
+  }
+}
+
+/* A card's arrow when it opens a sheet: a button that looks like the link it replaced. */
+button.metric-sheet-btn {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.msheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+  background: var(--msheet-backdrop);
+  overscroll-behavior: contain;
+}
+.msheet {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: min(720px, 100%);
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 18px 20px 20px;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  box-shadow: var(--msheet-shadow);
+}
+/* The panel takes focus only from a click on its text (tabIndex -1), never from the keyboard: no ring for that. */
+.msheet:focus {
+  outline: none;
+}
+.msheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.msheet-crumbs {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--ink-3);
+}
+.msheet-crumbs h2 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.msheet-crumbs h2:focus {
+  outline: none;
+}
+.msheet-crumbs h2:focus-visible {
+  outline: 2px solid var(--series-1);
+  outline-offset: 2px;
+}
+.msheet-close {
+  flex: none;
+}
+.msheet-ranges {
+  align-self: flex-start;
+}
+.msheet-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+.msheet-source {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+/* "Nothing in the last 30 days, so this shows the last 12 months." */
+.msheet-widened {
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.msheet-message {
+  padding: 28px 0;
+  color: var(--ink-2);
+}
+.msheet-figure {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.msheet-figure-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.msheet-figure-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+.msheet-big {
+  font-size: 40px;
+  line-height: 1;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+.msheet-big small {
+  font-size: 15px;
+  letter-spacing: 0;
+  font-weight: 400;
+  color: var(--ink-2);
+}
+.msheet-alt,
+.msheet-note {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.msheet-alt {
+  color: var(--ink-2);
+}
+.msheet-status {
+  background: var(--msheet-status-bg);
+  color: var(--ink);
+  white-space: nowrap;
+}
+.msheet-chart.card {
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+}
+.msheet-tiles {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.msheet-tiles li {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--surface-2);
+}
+.msheet-tile-label {
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.msheet-tiles b {
+  font-size: 17px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.msheet-tiles small {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.msheet-insight {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  line-height: 1.45;
+}
+.msheet-insight .insight-icon {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  background: var(--surface);
+}
+.msheet-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-start;
+  font-weight: 600;
+  padding: 4px 0;
+}
+.msheet-open:hover {
+  text-decoration: underline;
+}
+
+/* Phones: the sheet takes the whole screen. */
+@media (max-width: 560px) {
+  .msheet-backdrop {
+    padding: 0;
+    place-items: stretch;
+  }
+  .msheet {
+    width: 100%;
+    height: 100%;
+    max-height: none;
+    border-radius: 0;
+    border: 0;
+    padding: max(16px, env(safe-area-inset-top)) 16px max(20px, env(safe-area-inset-bottom));
+  }
+  .msheet-tiles {
+    gap: 6px;
+  }
+  .msheet-tiles li {
+    padding: 8px 9px;
+  }
+  .msheet-tiles b {
+    font-size: 15px;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .msheet-backdrop {
+    animation: msheet-fade 0.16s ease-out;
+  }
+  .msheet {
+    animation: msheet-rise 0.2s ease-out;
+  }
+}
+@keyframes msheet-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes msheet-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+
+/* Glucose: the daily average in mg/dL, with mmol/L under it. */
+.metric-glucose {
+  background: var(--grad-glucose);
+}
+.glucose-alt {
+  font-size: 12px;
+  color: var(--ink-2);
+  margin-top: -2px;
+}
+
+/* Body composition: the main reading, then the others as rows that open their own sheets. */
+.composition-rows {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.composition-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 14px;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  margin: 0 -6px;
+  width: calc(100% + 12px);
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  color: var(--ink);
+}
+.composition-row:hover {
+  background: var(--chip);
+}
+.composition-label {
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.composition-value {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-variant-numeric: tabular-nums;
+}
+.composition-value b {
+  font-weight: 600;
+}
+.composition-value small {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.composition-row .icon {
+  color: var(--ink-3);
+}
+
+/* ---------- Latest workout and ⌘K search (components/body/WorkoutCard.tsx, components/Search.tsx) ---------- */
+
+/* Two new colours, the palette's backdrop and shadow, as tokens for light and dark. */
+:root {
+  --palette-backdrop: rgba(20, 20, 18, 0.28);
+  --palette-shadow: 0 2px 6px rgba(20, 20, 18, 0.06), 0 28px 64px -16px rgba(20, 20, 18, 0.3);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --palette-backdrop: rgba(0, 0, 0, 0.6);
+    --palette-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04), 0 28px 64px -16px rgba(0, 0, 0, 0.8);
+  }
+}
+
+/* the latest-workout card */
+.workout-card {
+  gap: 8px;
+}
+.workout-sport {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+  min-width: 0;
+}
+.workout-sport .insight-icon {
+  flex: none;
+  width: 32px;
+  height: 32px;
+}
+.workout-sport > span:last-child {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.workout-sport b {
+  font-size: 15px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.workout-sport small {
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.workout-card .metric-value {
+  margin-top: 2px;
+}
+.workout-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+  margin: 2px 0 0;
+}
+.workout-stats div {
+  min-width: 0;
+}
+.workout-stats dt {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.workout-stats dd {
+  margin: 1px 0 0;
+  font-size: 14px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.workout-bars {
+  margin: 6px 0 0;
+}
+.workout-bars figcaption {
+  font-size: 12px;
+  color: var(--ink-2);
+  margin-bottom: 2px;
+}
+.workout-bar-value {
+  font-size: 10px;
+  fill: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.workout-bar-value.is-latest {
+  fill: var(--ink);
+  font-weight: 600;
+}
+.workout-recovery {
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.workout-recovery h3 {
+  font-size: 13px;
+  font-weight: 600;
+}
+.workout-recovery-note {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.workout-recovery ul {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.workout-recovery label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 13px;
+  cursor: pointer;
+}
+.workout-recovery input {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 1px 0 0;
+  accent-color: var(--ink);
+  cursor: pointer;
+}
+.workout-recovery label span {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.workout-recovery label small {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+/* Ticked: the box shows it; the text steps back a little too. */
+.workout-recovery input:checked + span {
+  color: var(--ink-2);
+}
+.workout-card .metric-foot {
+  padding-top: 4px;
+}
+
+/* the Search button, among the sidebar's items */
+.search-button {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.search-button kbd,
+.palette kbd {
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.4;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface-2);
+  color: var(--ink-3);
+}
+.search-button kbd {
+  margin-left: auto;
+}
+@media (max-width: 820px) {
+  .search-button {
+    width: auto;
+    flex: none;
+  }
+  .search-button kbd {
+    display: none;
+  }
+}
+
+/* the ⌘K palette: a dialog over a dimmed page, a full-width sheet from the top on a phone */
+html:has(.palette[open]) {
+  overflow: hidden;
+}
+.palette {
+  width: min(640px, calc(100% - 32px));
+  max-width: none;
+  max-height: none;
+  margin: 12vh auto auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  overflow: visible;
+}
+.palette::backdrop {
+  background: var(--palette-backdrop);
+}
+.palette-panel {
+  display: flex;
+  flex-direction: column;
+  max-height: min(560px, 76dvh);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: var(--palette-shadow);
+  overflow: hidden;
+}
+.palette-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--ink-3);
+}
+/* The field shows focus as a line under it, in the focus colour. */
+.palette-field:focus-within {
+  box-shadow: inset 0 -2px 0 var(--series-1);
+}
+.palette-field input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  padding: 4px 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px; /* 16px keeps iOS from zooming in */
+}
+.palette-field input::placeholder {
+  color: var(--ink-3);
+}
+.palette-field input:focus-visible {
+  outline: none;
+}
+.palette-close {
+  flex: none;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: 12px;
+  cursor: pointer;
+}
+.palette-close:hover {
+  background: var(--surface-hover);
+}
+.palette-close-word {
+  display: none;
+}
+@media (pointer: coarse) {
+  .palette-close-key {
+    display: none;
+  }
+  .palette-close-word {
+    display: inline;
+  }
+}
+.palette-list {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px 6px 8px;
+}
+.palette-group-label {
+  padding: 10px 10px 4px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-3);
+}
+.palette-option {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+/* The active result: a filled row and a bar at its start, so it doesn't rest on colour alone. */
+.palette-option.is-active {
+  background: var(--surface-hover);
+  box-shadow: inset 3px 0 0 var(--series-1);
+}
+.palette-option-icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+.palette-option-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.palette-option-hint {
+  font-size: 12px;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+.palette-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.palette-foot kbd {
+  margin-right: 3px;
+}
+@media (pointer: coarse) {
+  .palette-foot {
+    display: none;
+  }
+}
+@media (max-width: 560px) {
+  .palette {
+    width: 100%;
+    margin: 0 auto auto;
+  }
+  .palette-panel {
+    max-height: 100dvh;
+    border-width: 0 0 1px;
+    border-radius: 0 0 18px 18px;
+  }
+  .palette-option-hint {
+    max-width: 40vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .palette[open] .palette-panel {
+    animation: palette-in 0.14s ease-out;
+  }
+  .palette[open]::backdrop {
+    animation: palette-fade 0.14s ease-out;
+  }
+}
+@keyframes palette-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.99);
+  }
+}
+@keyframes palette-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+/* ---------- Lab tests (src/pages/Labs.tsx, components/body/BiomarkersCard.tsx) ---------- */
+:root {
+  /* The shaded range on a result's bar, the result's mark, and the status chips. Words always say the status. */
+  --lab-band: #cdebc4;
+  --lab-dot: #0b0b0b;
+  --lab-out: #c4521f;
+  --lab-within-bg: #dff3d8;
+  --lab-within-ink: #1f6b1f;
+  --lab-out-bg: #ffe4d4;
+  --lab-out-ink: #9a3f17;
+  --lab-none-bg: #efefec;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --lab-band: #2a5426;
+    --lab-dot: #f0efec;
+    --lab-out: #f08a5d;
+    --lab-within-bg: #1d3a1b;
+    --lab-within-ink: #8fdc85;
+    --lab-out-bg: #432617;
+    --lab-out-ink: #f4a97f;
+    --lab-none-bg: #262625;
+  }
+}
+
+/* The bar: a track, the range shaded, the result as a dot (hollow when printed with < or >). */
+.lab-bar {
+  position: relative;
+  display: block;
+  width: 100%;
+  max-width: 170px;
+  height: 10px;
+}
+.lab-bar-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 4px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--axis);
+}
+.lab-bar-band {
+  position: absolute;
+  top: 2px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--lab-band);
+}
+.lab-bar-dot {
+  position: absolute;
+  top: 0;
+  width: 10px;
+  height: 10px;
+  margin-left: -5px;
+  border-radius: 50%;
+  background: var(--lab-dot);
+  box-shadow: 0 0 0 2px var(--surface);
+}
+.lab-bar-dot.is-out {
+  background: var(--lab-out);
+}
+.lab-bar-dot.is-bound {
+  background: var(--surface);
+  border: 2px solid var(--lab-dot);
+}
+.lab-bar-dot.is-out.is-bound {
+  border-color: var(--lab-out);
+}
+.lab-bar-compact {
+  max-width: none;
+}
+
+.lab-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  background: var(--lab-none-bg);
+  color: var(--ink-2);
+}
+.lab-status.is-within {
+  background: var(--lab-within-bg);
+  color: var(--lab-within-ink);
+}
+.lab-status.is-below,
+.lab-status.is-above {
+  background: var(--lab-out-bg);
+  color: var(--lab-out-ink);
+}
+.lab-arrow path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* "Why?" beside a status that needs a word of explanation; the reason opens as text under it. */
+.lab-status-wrap {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  max-width: 100%;
+}
+.lab-why {
+  min-height: 24px;
+  padding: 2px 4px;
+  border: 0;
+  background: none;
+  color: var(--ink-2);
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.lab-why[aria-expanded='true'] {
+  color: var(--ink);
+}
+.lab-hint {
+  flex-basis: 100%;
+  max-width: 280px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--ink-2);
+  text-align: left;
+  white-space: normal;
+}
+.lab-hint[hidden] {
+  display: none;
+}
+
+/* The page */
+.labs .page-head-tools .btn-row {
+  justify-content: flex-end;
+}
+/* The open form's button: a bar under its label, not only a change of colour. */
+.labs .page-head-tools .btn[aria-pressed='true'] {
+  box-shadow: inset 0 -3px 0 currentColor;
+}
+/* The notice after a save: kept in place while empty (so the change is announced) without taking a gap. */
+.labs-notice:empty {
+  position: absolute;
+}
+.labs-notice .note-good:focus,
+.labs-form h2:focus,
+.labs-import h2:focus {
+  outline: none;
+}
+.labs-notice .note-good:focus-visible,
+.labs-form h2:focus-visible,
+.labs-import h2:focus-visible {
+  outline: 2px solid var(--series-1);
+  outline-offset: 2px;
+}
+.labs-card-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 14px;
+}
+.labs-demo {
+  background: var(--tone-blue-bg);
+  color: var(--tone-blue-ink);
+}
+.labs-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: 680px;
+  line-height: 1.5;
+}
+.labs-empty-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--tone-blue-bg);
+  color: var(--tone-blue-ink);
+}
+.labs-group + .labs-group {
+  margin-top: 20px;
+}
+.labs-group-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.labs-group-title .muted {
+  font-weight: 400;
+}
+.labs-table th,
+.labs-table td,
+.labs-history td {
+  white-space: normal;
+  vertical-align: middle;
+}
+/* The same columns in every panel's table, so they line up down the page. */
+.labs-table {
+  table-layout: fixed;
+}
+.labs-table thead th:nth-child(1) {
+  width: 31%;
+}
+.labs-table thead th:nth-child(2) {
+  width: 17%;
+}
+.labs-table thead th:nth-child(3) {
+  width: 30%;
+}
+.labs-table thead th:nth-child(4) {
+  width: 22%;
+}
+.labs-table tbody th {
+  position: static;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+  background: none;
+}
+.labs-result {
+  font-variant-numeric: tabular-nums;
+}
+.labs-range .lab-bar {
+  margin-bottom: 4px;
+}
+.labs-marker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 0;
+  border: 0;
+  background: none;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+.labs-marker svg {
+  color: var(--ink-3);
+  transition: transform 0.15s;
+}
+.labs-marker[aria-expanded='true'] svg {
+  transform: rotate(90deg);
+}
+.labs-marker:hover span {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.labs-table tr.is-open > * {
+  border-bottom-color: transparent;
+}
+.labs-detail-row > td {
+  padding: 4px 0 14px;
+}
+.labs-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 14px;
+  background: var(--surface-2);
+}
+.labs-detail .chart {
+  min-width: 0;
+}
+.labs-history th {
+  background: var(--surface-2);
+}
+.labs-history td {
+  vertical-align: top;
+}
+.labs-printed {
+  display: block;
+}
+.labs-delete-cell {
+  text-align: right;
+}
+.labs-delete {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+.labs-day {
+  border-top: 1px solid var(--grid);
+  padding: 10px 0;
+}
+.labs-day summary {
+  cursor: pointer;
+  padding: 2px 0;
+}
+.labs-day-panel {
+  margin-top: 12px;
+}
+
+/* Adding results and checking what was read */
+.labs-form,
+.labs-import {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.labs-form .card-title-row,
+.labs-import .card-title-row {
+  margin-bottom: 0;
+}
+.labs-fieldset {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.labs-fieldset + .labs-fieldset {
+  padding-top: 14px;
+  border-top: 1px solid var(--grid);
+}
+.labs-legend {
+  padding: 0;
+  margin-bottom: 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.labs-shared {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 220px));
+  gap: 12px;
+}
+.labs-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+.labs-field input {
+  width: 100%;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 400;
+}
+.labs-field small {
+  font-weight: 400;
+}
+.labs-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-self: stretch;
+}
+.labs-row {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.3fr) minmax(0, 1.3fr) auto;
+  gap: 8px;
+  align-items: start;
+}
+.labs-remove {
+  margin-top: 20px;
+  padding: 8px 10px;
+}
+.labs-import-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--ink-2);
+  line-height: 1.45;
+}
+.labs-review-intro {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.labs-review-note {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  color: var(--tone-yellow-ink);
+}
+.labs-progress:empty {
+  display: none;
+}
+
+/* The Body overview's card */
+.labs-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin: 8px 0 4px;
+  padding: 0;
+  list-style: none;
+}
+.labs-card-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 10px;
+  row-gap: 3px;
+  font-size: 12px;
+}
+.labs-card-name {
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.labs-card-value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+.labs-card-value small {
+  font-weight: 400;
+  color: var(--ink-2);
+}
+.labs-card-status {
+  font-size: 11px;
+  color: var(--ink-2);
+  text-align: right;
+  white-space: nowrap;
+}
+.labs-card-status.is-below,
+.labs-card-status.is-above {
+  font-weight: 600;
+  color: var(--lab-out-ink);
+}
+.labs-card-all {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* Wide screens: each row's field names once, on the first row. */
+@media (min-width: 761px) {
+  .labs-row + .labs-row .labs-field > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .labs-row + .labs-row .labs-remove {
+    margin-top: 0;
+  }
+}
+@media (max-width: 760px) {
+  /* 16px or more, so iOS doesn't zoom in on each field. */
+  .labs-field input {
+    font-size: 16px;
+  }
+  .labs-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+  }
+  .labs-field-name,
+  .labs-field-range {
+    grid-column: 1 / -1;
+  }
+  .labs-remove {
+    align-self: end;
+    justify-self: start;
+    margin-top: 0;
+  }
+  .labs-shared {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-self: stretch;
+  }
+}
+/* Phones: each result is a small block instead of a four-column row. */
+@media (max-width: 560px) {
+  .labs-table thead,
+  .labs-history thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+  .labs-table,
+  .labs-table tbody,
+  .labs-history,
+  .labs-history tbody {
+    display: block;
+  }
+  .labs-table tr,
+  .labs-history tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: 10px;
+    row-gap: 6px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--grid);
+  }
+  .labs-table th,
+  .labs-table td,
+  .labs-history td {
+    display: block;
+    padding: 0;
+    border: 0;
+  }
+  .labs-table .labs-result,
+  .labs-table .labs-status-cell {
+    text-align: right;
+  }
+  .labs-table tr.labs-detail-row {
+    display: block;
+    padding: 0 0 12px;
+  }
+  .labs-detail {
+    padding: 10px;
+  }
+  .labs-history .labs-delete-cell {
+    grid-column: 1 / -1;
+    text-align: left;
+  }
+  /* An open reason takes the whole width under the result, rather than squeezing the range beside it. */
+  .labs-table td:has(.lab-hint:not([hidden])),
+  .labs-history td:has(.lab-hint:not([hidden])) {
+    grid-column: 1 / -1;
+    text-align: left;
+  }
+  .lab-hint {
+    max-width: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .labs-marker svg {
+    transition: none;
+  }
+}
