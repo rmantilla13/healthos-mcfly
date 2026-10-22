@@ -15,12 +15,14 @@ import { importAppleHealth } from './apple/import.ts';
 import { ingestRouter } from './apple/ingest.ts';
 import { authRoutes, cronAuthorized, currentUser, publicUser, requireSession, sha256 } from './auth.ts';
 import { cycleRouter } from './cycle/index.ts';
-import { nutritionRouter } from './nutrition.ts';
+import { estimateHandler } from './estimate.ts';
+import type { FetchFn } from './foods.ts';
+import { nutritionErrors, nutritionRouter } from './nutrition.ts';
 import { familyRouter } from './family.ts';
 import { DATA_DIR, type Db, type Scope, bumpDataVersion, deleteSource, getUserSetting, setUserSetting } from './db.ts';
 import { patterns, sleepTiming } from './insights.ts';
 import { sleepNight } from './sleepnight.ts';
-import { type McflyClient, mcflyRouter } from './mcfly.ts';
+import { type McflyClient, defaultClient, mcflyRouter } from './mcfly.ts';
 import { PHOTO_ASSETS, parsePhotoUpload, photoAsset, photoMeta, processPhoto, removePhoto, storePhotoAssets } from './photo.ts';
 import { NUMBERS, TARGET_RANGE, readSettings, requestContext, summary, trends, workouts } from './query.ts';
 import * as whoop from './whoop.ts';
@@ -37,9 +39,11 @@ export type AppOptions = {
   ingestToken?: string;
   /** Ask McFly's Claude client (tests pass a fake). Defaults to one from ANTHROPIC_API_KEY. */
   mcflyClient?: () => McflyClient | null;
+  /** The food databases' fetch (tests pass a fake, so no test calls USDA or Open Food Facts). */
+  foodFetch?: FetchFn;
 };
 
-export function createApp({ db, hosted, ingestToken, mcflyClient }: AppOptions) {
+export function createApp({ db, hosted, ingestToken, mcflyClient = defaultClient, foodFetch }: AppOptions) {
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', hosted);
@@ -84,6 +88,10 @@ export function createApp({ db, hosted, ingestToken, mcflyClient }: AppOptions) 
     res.json({ ok: true });
   });
 
+  // A food photo is the same: shrunk on the device, but over the general limit. It goes to Anthropic for McFly's
+  // estimate and is never stored or logged (server/estimate.ts).
+  api.post('/nutrition/estimate', requireSession(db), express.json({ limit: '7mb' }), estimateHandler(db, hosted, mcflyClient), nutritionErrors);
+
   api.use(express.json());
   api.get('/auth/me', auth.me);
   api.post('/auth/login', auth.login);
@@ -100,7 +108,7 @@ export function createApp({ db, hosted, ingestToken, mcflyClient }: AppOptions) 
   api.use('/admin', adminRouter(db));
   api.use('/mcfly', mcflyRouter(db, { hosted, client: mcflyClient }));
   api.use('/cycle', cycleRouter(db, hosted));
-  api.use('/nutrition', nutritionRouter(db, hosted));
+  api.use('/nutrition', nutritionRouter(db, hosted, { fetchFn: foodFetch, client: mcflyClient }));
   api.use('/family', familyRouter(db, hosted));
 
   const asOf = (req: Request) => (typeof req.query.date === 'string' && DATE.test(req.query.date) ? req.query.date : undefined);

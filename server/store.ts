@@ -205,6 +205,27 @@ export const MIGRATIONS: { id: number; name: string; statements: string[] }[] = 
       'CREATE INDEX sleep_stages_user_date ON sleep_stages (user_id, date)',
     ],
   },
+  {
+    id: 9,
+    name: 'Nutrition: a food log kept in healthOS, and a shared cache of food database lookups',
+    statements: [
+      // Each food or drink a person logs here (web or iPhone), apart from `daily` like nutrition_daily. A day's
+      // entries count as one more app ("healthOS") among the Health apps, never added on top of one; see
+      // server/foodlog.ts. per holds one portion's amounts (JSON), so a quantity change scales every nutrient,
+      // the hidden ones too. A draft is McFly's estimate before the person saves it: not counted, kept a day.
+      `CREATE TABLE food_log (
+        user_id TEXT NOT NULL, id TEXT NOT NULL, date TEXT NOT NULL, time TEXT NOT NULL, name TEXT NOT NULL,
+        portion TEXT NOT NULL DEFAULT '', quantity DOUBLE PRECISION NOT NULL DEFAULT 1, per TEXT NOT NULL,
+        method TEXT NOT NULL CHECK (method IN ('quick', 'search', 'barcode', 'estimate')), ref TEXT,
+        origin TEXT NOT NULL CHECK (origin IN ('web', 'iphone')), draft BOOLEAN NOT NULL DEFAULT false,
+        version INTEGER NOT NULL DEFAULT 1, created_at DOUBLE PRECISION NOT NULL, updated_at DOUBLE PRECISION NOT NULL,
+        PRIMARY KEY (user_id, id))`,
+      'CREATE INDEX food_log_user_date ON food_log (user_id, date)',
+      // Foods found in USDA FoodData Central or Open Food Facts, shared by everyone: product facts, never who
+      // looked them up. Saving an entry by ref reads the amounts from here, so hidden numbers stay on the server.
+      `CREATE TABLE food_cache (ref TEXT PRIMARY KEY, data TEXT NOT NULL, fetched_at DOUBLE PRECISION NOT NULL)`,
+    ],
+  },
 ];
 
 async function migrate(db: Db) {

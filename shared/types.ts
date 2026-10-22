@@ -694,3 +694,65 @@ export type NutritionData = {
   /** Food patterns over the last 180 days (caffeine and sleep, drinks and next-morning HRV), only when asked for. Empty in 'none'. */
   insights: Pattern[];
 };
+
+// ---------- the food log (entries made in healthOS) ----------
+
+/** How an entry was made: typed numbers, a database search, a barcode, or McFly's estimate from a photo or words. */
+export type FoodMethod = 'quick' | 'search' | 'barcode' | 'estimate';
+
+/** An entry's amounts: the day's nutrients plus water (mL), which joins the Hydration totals instead. */
+export type FoodValues = Partial<Record<Nutrient | 'water_ml', number>>;
+
+/** One food or drink logged in healthOS, on the web or the iPhone. */
+export type FoodEntry = {
+  id: string;
+  date: string;
+  /** Local time, HH:MM. */
+  time: string;
+  name: string;
+  /** What one portion is ("1 cup (245 g)"); quantity is how many. */
+  portion: string;
+  quantity: number;
+  /** The whole entry (one portion × quantity), as the person's setting allows: never energy in 'no_energy', empty in 'none'. */
+  values: FoodValues;
+  method: FoodMethod;
+  /** 'fdc:<id>' or 'off:<barcode>' when it came from a food database. */
+  ref: string | null;
+  /** Bumped on every edit, so the iPhone knows when its copy in Apple Health is out of date. */
+  version: number;
+  /** Where it was made; the iPhone writes the ones made there to Apple Health. */
+  origin: 'web' | 'iphone';
+};
+
+/** GET /api/nutrition/log: the person's entries over the last few days, and an estimate waiting for review. */
+export type FoodLog = {
+  enabled: boolean;
+  numbers: NutritionNumbers | null;
+  today: string;
+  start: string;
+  end: string;
+  /** Saved entries, oldest first. */
+  entries: FoodEntry[];
+  /** McFly's latest estimate, not counted until saved. Kept for a day, then dropped. */
+  drafts: FoodEntry[];
+  /** What this server can do: McFly estimates (needs Claude and a daily limit above 0) and USDA search (needs its key). */
+  can: { estimate: boolean; usda: boolean };
+};
+
+/** One portion of a database food, with its amounts for one of it, as the person's setting allows. */
+export type FoodPortion = { label: string; values: FoodValues };
+
+/** A database food from a search or a barcode. Save it with its ref and the index of the portion chosen. */
+export type FoodResult = {
+  ref: string;
+  name: string;
+  brand: string | null;
+  source: 'usda' | 'off';
+  portions: FoodPortion[];
+};
+
+/** POST /api/nutrition/foods/search and /barcode. notes say which database couldn't be reached, if any. */
+export type FoodSearch = { results: FoodResult[]; notes: string[] };
+
+/** POST /api/nutrition/estimate: draft entries to review, and McFly's note on what it assumed. */
+export type FoodEstimate = { drafts: FoodEntry[]; note: string };

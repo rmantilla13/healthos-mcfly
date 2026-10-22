@@ -717,7 +717,7 @@ function parseHistory(body: unknown): Turn[] | string {
 // ---------- per-person daily limit ----------
 
 /** Count a question against today's limit; null when the limit is reached. Atomic, so parallel requests can't overshoot. */
-async function claimQuestion(db: Db, userId: string, day: string, limit: number): Promise<number | null> {
+export async function claimQuestion(db: Db, userId: string, day: string, limit: number): Promise<number | null> {
   const [row] = await db.query<{ questions: number }>(
     `INSERT INTO mcfly_usage (user_id, day, questions) VALUES ($1, $2, 1)
      ON CONFLICT (user_id, day) DO UPDATE SET questions = mcfly_usage.questions + 1 WHERE mcfly_usage.questions < $3
@@ -727,8 +727,13 @@ async function claimQuestion(db: Db, userId: string, day: string, limit: number)
   return row ? Number(row.questions) : null;
 }
 
+/** Give back a question that never reached Claude (a food estimate whose call failed). */
+export async function refundQuestion(db: Db, userId: string, day: string) {
+  await db.query('UPDATE mcfly_usage SET questions = questions - 1 WHERE user_id = $1 AND day = $2 AND questions > 0', [userId, day]);
+}
+
 /** The limit counts by UTC date, so changing your own time zone can't reset it. */
-const usageDay = () => new Date().toISOString().slice(0, 10);
+export const usageDay = () => new Date().toISOString().slice(0, 10);
 
 async function usedToday(db: Db, userId: string, day: string) {
   const [row] = await db.query<{ questions: number }>('SELECT questions FROM mcfly_usage WHERE user_id = $1 AND day = $2', [userId, day]);
@@ -808,7 +813,7 @@ type DigestResult = { status: number; body: DigestReply | { error: string } };
 
 export type McflyOptions = { hosted: boolean; client?: () => McflyClient | null };
 
-const defaultClient = () => (process.env.ANTHROPIC_API_KEY ? new Anthropic() : null);
+export const defaultClient = () => (process.env.ANTHROPIC_API_KEY ? new Anthropic() : null);
 
 export function mcflyRouter(db: Db, { hosted, client = defaultClient }: McflyOptions) {
   const router = express.Router();
