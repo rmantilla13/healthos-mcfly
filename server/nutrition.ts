@@ -9,33 +9,22 @@
 // - Nothing here logs values, and no URL carries a date or an amount.
 import express, { type NextFunction, type Request, type Response } from 'express';
 import type { Nutrient, NutritionData, NutritionDay, NutritionDayIn, NutritionNumbers } from '../shared/types.ts';
-import { currentUser } from './auth.ts';
+import { HttpError, currentUser } from './auth.ts';
+import { estimateAvailable } from './estimate.ts';
 import { addDays } from './dates.ts';
 import { type Db, type Queryable, type Scope, bumpDataVersion } from './db.ts';
 import { foodPatterns } from './insights.ts';
+import type { McflyClient } from './mcfly.ts';
+import { NUTRIENTS, NUTRIENT_MAX, isNutrient, shown } from './nutrients.ts';
+import { HEALTHOS_APP, deleteFoodLog, foodLogRouter, loggedTotals, loggingContext, shownValues } from './foodlog.ts';
+import { type FetchFn, foodsRouter } from './foods.ts';
 import { requestContext, trends } from './query.ts';
 import { insertMany } from './store.ts';
-
-/** In the order they're shown. Daily totals: energy in kcal, masses in g except sodium (mg), alcohol in drinks. */
-export const NUTRIENTS: readonly Nutrient[] = ['energy_kcal', 'protein_g', 'carbs_g', 'fat_g', 'fiber_g', 'sugar_g', 'sat_fat_g', 'sodium_mg', 'alcohol_drinks'];
-
-/** Above any real day's total: a bigger number is a unit mix-up, not a meal. */
-const MAX: Record<Nutrient, number> = {
-  energy_kcal: 30_000,
-  protein_g: 2_000,
-  carbs_g: 3_000,
-  fat_g: 2_000,
-  fiber_g: 500,
-  sugar_g: 2_000,
-  sat_fat_g: 1_000,
-  sodium_mg: 50_000,
-  alcohol_drinks: 100,
-};
 
 /** One stored total: a day, a nutrient, where it came from ('apple'), and the app that logged it in Health. */
 export type NutritionRow = { date: string; nutrient: Nutrient; source: string; app: string; value: number };
 
-export const isNutrient = (v: unknown): v is Nutrient => typeof v === 'string' && (NUTRIENTS as readonly string[]).includes(v);
+export { NUTRIENTS, NUTRIENT_MAX, isNutrient, shown };
 
 // ---------- storage ----------
 
@@ -60,7 +49,8 @@ export async function replaceNutritionDays(q: Queryable, userId: string, source:
   await upsertNutrition(
     q,
     userId,
-    days.flatMap((d) => d.apps.flatMap((a) => Object.entries(a.values).map(([nutrient, value]) => ({ date: d.date, nutrient: nutrient as Nutrient, source, app: a.app, value: value! })))),
+    // healthOS's own entries coming back from Health are already in the food log.
+    days.flatMap((d) => d.apps.filter((a) => a.app !== HEALTHOS_APP).flatMap((a) => Object.entries(a.values).map(([nutrient, value]) => ({ date: d.date, nutrient: nutrient as Nutrient, source, app: a.app, value: value! })))),
   );
 }
 
@@ -90,7 +80,7 @@ export function parseNutritionDay(raw: unknown, path: string, fail: Fail): Nutri
     const values: Partial<Record<Nutrient, number>> = {};
     for (const [key, v] of Object.entries(a.values)) {
       if (!isNutrient(key)) fail(`${p}.values`, `unknown nutrient; expected ${NUTRIENTS.join(', ')}`);
-      if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > MAX[key]) fail(`${p}.values.${key}`, `expected a number from 0 to ${MAX[key]}`);
+      if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > NUTRIENT_MAX[key]) fail(`${p}.values.${key}`, `expected a number from 0 to ${NUTRIENT_MAX[key]}`);
       values[key] = v;
     }
     return { app: a.app.trim(), values };
@@ -99,18 +89,6 @@ export function parseNutritionDay(raw: unknown, path: string, fail: Fail): Nutri
 }
 
 // ---------- reading ----------
-
-/** What a person sees of one day's values: the setting decides, here, before anything leaves the server. */
-export function shown(values: Partial<Record<Nutrient, number>>, numbers: NutritionNumbers): Partial<Record<Nutrient, number>> {
-  if (numbers === 'none') return {};
-  const out: Partial<Record<Nutrient, number>> = {};
-  for (const n of NUTRIENTS) {
-    if (numbers === 'no_energy' && n === 'energy_kcal') continue;
-    const v = values[n];
-    if (v !== undefined) out[n] = Math.round(v * 10) / 10;
-  }
-  return out;
-}
 
 /**
  * One app per day, never a sum: apps copy each other's logs through Health (Lose It! and MacroFactor read others'
@@ -154,15 +132,37 @@ const empty = (today: string): NutritionData => ({
   insights: [],
 });
 
+/**
+ * The days' candidates, one per app: the Health apps' totals, and healthOS's own log as one more. Health rows
+ * under healthOS's name are its own entries coming back from Apple Health (the iPhone writes them there), so
+ * they go: the log itself is the copy that counts. Also returns the log's water by day, for Hydration.
+ */
+async function candidatesBetween(scope: Scope, start: string, end: string) {
+  const [rows, logged] = await Promise.all([
+    scope.db.query<NutritionRow>(
+      'SELECT date, nutrient, source, app, value FROM nutrition_daily WHERE user_id = $1 AND date BETWEEN $2 AND $3 ORDER BY date',
+      [scope.userId, start, end],
+    ),
+    loggedTotals(scope, start, end),
+  ]);
+  const candidates: Pick<NutritionRow, 'date' | 'nutrient' | 'app' | 'value'>[] = rows.filter((r) => isNutrient(r.nutrient) && r.app !== HEALTHOS_APP);
+  const water = new Map<string, number>();
+  for (const [date, day] of logged) {
+    for (const [nutrient, value] of Object.entries(day.values) as [Nutrient, number][]) candidates.push({ date, nutrient, app: HEALTHOS_APP, value });
+    if (day.water > 0) water.set(date, day.water);
+  }
+  return { candidates, water };
+}
+
 async function pickedBetween(scope: Scope, preferred: string | null, start: string, end: string) {
-  const rows = await scope.db.query<NutritionRow>(
-    'SELECT date, nutrient, source, app, value FROM nutrition_daily WHERE user_id = $1 AND date BETWEEN $2 AND $3 ORDER BY date',
-    [scope.userId, start, end],
-  );
-  return pickDays(
-    rows.filter((r) => isNutrient(r.nutrient)),
-    preferred,
-  );
+  return pickDays((await candidatesBetween(scope, start, end)).candidates, preferred);
+}
+
+/** A day's water: the Health apps' (summed, as people log water in small separate apps) plus healthOS's log. */
+function withLoggedWater(points: { date: string; value: number }[], logged: Map<string, number>) {
+  const byDate = new Map(points.map((p) => [p.date, p.value]));
+  for (const [date, ml] of logged) byDate.set(date, (byDate.get(date) ?? 0) + ml);
+  return [...byDate].sort(([a], [b]) => a.localeCompare(b)).map(([date, value]) => ({ date, value: Math.round(value) }));
 }
 
 /**
@@ -178,14 +178,15 @@ export async function nutritionView(scope: Scope, hosted: boolean, opts: { days?
   const days = opts.days ?? 30;
   const start = addDays(end, -(days - 1));
   const amounts = numbers !== 'none';
-  const [picked, hydration, insights] = await Promise.all([
-    pickedBetween(scope, settings.nutritionApp, start, end),
+  const [{ candidates, water }, hydration, insights] = await Promise.all([
+    candidatesBetween(scope, start, end),
     amounts ? trends(scope, hosted, ['water_ml', 'caffeine_mg'], days, end) : null,
     // The texts quote amounts ("200+ mg", "2 or more drinks"), so not in 'none'.
     amounts && opts.insights
       ? foodPatterns(scope, hosted, async (from, to) => new Map((await pickedBetween(scope, settings.nutritionApp, from, to)).map((d) => [d.date, d.values.alcohol_drinks ?? 0])))
       : [],
   ]);
+  const picked = pickDays(candidates, settings.nutritionApp);
   const t = settings.nutritionTargets;
   const targets: NutritionData['targets'] = {};
   if (amounts) {
@@ -206,14 +207,31 @@ export async function nutritionView(scope: Scope, hosted: boolean, opts: { days?
     app: settings.nutritionApp,
     days: shownDays,
     targets,
-    hydration: { water: hydration?.water_ml ?? [], caffeine: hydration?.caffeine_mg ?? [] },
+    hydration: { water: hydration ? withLoggedWater(hydration.water_ml ?? [], water) : [], caffeine: hydration?.caffeine_mg ?? [] },
     insights,
   };
 }
 
 // ---------- the router ----------
 
-export function nutritionRouter(db: Db, hosted: boolean) {
+/** Nutrition's errors: messages written for the person (HttpError) as they are, anything else without detail. */
+export function nutritionErrors(err: Error & { status?: number; type?: string }, _req: Request, res: Response, _next: NextFunction) {
+  if (err instanceof HttpError) return void res.status(err.status).json({ error: err.message });
+  if (err.type === 'entity.too.large') return void res.status(413).json({ error: 'That photo is too large. Try a smaller one.' });
+  if (err.status && err.status >= 400 && err.status < 500) return void res.status(err.status).json({ error: 'Bad request' });
+  // The kind of failure only: a database error's text can quote the values it was given.
+  console.error('nutrition:', err.name);
+  res.status(500).json({ error: 'Something went wrong' });
+}
+
+export type NutritionDeps = {
+  /** Food database calls (tests pass a fake). */
+  fetchFn?: FetchFn;
+  /** Claude, for McFly's food estimates (tests pass a fake). */
+  client: () => McflyClient | null;
+};
+
+export function nutritionRouter(db: Db, hosted: boolean, { fetchFn = fetch, client }: NutritionDeps) {
   const router = express.Router();
   const scopeOf = (res: Response): Scope => ({ db, userId: currentUser(res).id });
 
@@ -222,20 +240,24 @@ export function nutritionRouter(db: Db, hosted: boolean) {
     res.json(await nutritionView(scopeOf(res), hosted, { days, insights: req.query.insights === '1' }));
   });
 
-  /** Everything nutrition-related this person stored, from every source. Works whether nutrition is on or off. */
+  router.use('/log', foodLogRouter(db, hosted, { estimateAvailable: () => estimateAvailable(db, client) }));
+  router.use(
+    '/foods',
+    foodsRouter(db, { fetchFn, shownValues, numbersOf: async (res) => (await loggingContext(db, hosted, res)).numbers }),
+  );
+
+  /** Everything nutrition-related this person stored, from every source, their food log too. Works whether nutrition is on or off. */
   router.post('/delete', async (_req, res) => {
     const { userId } = scopeOf(res);
-    const deleted = await db.query('DELETE FROM nutrition_daily WHERE user_id = $1 RETURNING 1', [userId]);
+    const deleted = await db.tx(async (q) => {
+      const totals = await q.query('DELETE FROM nutrition_daily WHERE user_id = $1 RETURNING 1', [userId]);
+      return totals.length + (await deleteFoodLog(q, userId));
+    });
     await bumpDataVersion(db, userId);
-    res.json({ deleted: deleted.length });
+    res.json({ deleted });
   });
 
-  router.use((err: Error & { status?: number }, _req: Request, res: Response, _next: NextFunction) => {
-    if (err.status && err.status >= 400 && err.status < 500) return void res.status(err.status).json({ error: 'Bad request' });
-    // The kind of failure only: a database error's text can quote the values it was given.
-    console.error('nutrition:', err.name);
-    res.status(500).json({ error: 'Something went wrong' });
-  });
+  router.use(nutritionErrors);
 
   return router;
 }

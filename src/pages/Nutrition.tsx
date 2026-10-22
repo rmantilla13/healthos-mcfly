@@ -1,5 +1,5 @@
-// The Nutrition page, its Home card and its Settings card: what a person logs in a food app, read through Apple
-// Health, laid out like the Neka reference (tabs, a row of four cards, macro balance beside insights). The server
+// The Nutrition page, its Home card and its Settings card: what a person logs in healthOS (the Log tab, FoodLog.tsx)
+// or in a food app, read through Apple Health, laid out like the Neka reference (tabs, a row of four cards, macro balance beside insights). The server
 // has already removed every number the person chose not to see (server/nutrition.ts). This page adds no judgement
 // on top: no score, no "remaining" or "on track", nothing over or under, no red or green. A target is one the
 // person set, drawn as a plain line. A day with nothing logged is a gap, never a zero.
@@ -11,6 +11,7 @@ import { Donut } from '../charts/Donut.tsx';
 import { AllHiddenNote, CardRow } from '../components/CardRow.tsx';
 import { Icon, type IconName } from '../components/Icon.tsx';
 import { PageHead, RANGES, Tabs } from './Detail.tsx';
+import { FoodLogTab } from './FoodLog.tsx';
 import { fmt, fmtDate, href, notifyDataChanged, relativeDay, sendJson, shiftDate, useApi, useCardShown, useCardsKnown } from '../lib.ts';
 
 const NUTRIENT: Record<Nutrient, { name: string; unit: string }> = {
@@ -37,14 +38,15 @@ const amount = (n: Nutrient, v: number) => `${fmt(v)} ${n === 'alcohol_drinks' ?
 const CHOICES: { value: NutritionNumbers; title: string; text: string }[] = [
   { value: 'all', title: 'Everything', text: 'Calories, protein, carbs, fat, fiber, sugar, sodium and drinks.' },
   { value: 'no_energy', title: 'Everything except calories', text: 'The same, with no calories anywhere, Ask McFly included.' },
-  { value: 'none', title: 'No amounts', text: 'Only which days you logged. No numbers at all.' },
+  { value: 'none', title: 'No amounts', text: 'No calories or nutrient amounts: only what you logged, and when.' },
 ];
 
 // ---------- the page ----------
 
-type Tab = 'overview' | 'macros' | 'hydration';
+type Tab = 'overview' | 'log' | 'macros' | 'hydration';
 const TABS: { id: Tab; label: string }[] = [
   { id: 'overview', label: 'Overview' },
+  { id: 'log', label: 'Log' },
   { id: 'macros', label: 'Macros' },
   { id: 'hydration', label: 'Hydration' },
 ];
@@ -66,20 +68,21 @@ export function Nutrition({ status, params, refresh }: { status: Status; params:
 
   if (!nutrition || !numbers) return <NutritionIntro refresh={refresh} />;
   // With no amounts, there's nothing for the Macros and Hydration tabs to show.
-  const tabs = numbers === 'none' ? TABS.slice(0, 1) : TABS;
+  const tabs = numbers === 'none' ? TABS.slice(0, 2) : TABS;
   const current = tabs.find((t) => t.id === params.get('tab'))?.id ?? 'overview';
-  const ranged = current !== 'overview';
+  const ranged = current === 'macros' || current === 'hydration';
   return (
     <div className="page page-wide nutrition-page">
       <PageHead
         title="Nutrition"
-        sub="From the food app you log in, through Apple Health. Only you can see it."
-        tabs={tabs.length > 1 ? <Tabs tabs={tabs} current={current} hrefOf={tabHref} label="Nutrition" center /> : undefined}
+        sub="What you log here or in your food app. Only you can see it."
+        tabs={<Tabs tabs={tabs} current={current} hrefOf={tabHref} label="Nutrition" center />}
         days={ranged ? days : undefined}
         setDays={ranged ? setDays : undefined}
         ranges={RANGES.filter((r) => r.days <= 90)}
       />
       {current === 'overview' && <Overview status={status} />}
+      {current === 'log' && <FoodLogTab status={status} />}
       {current === 'macros' && <Macros days={days} hosted={status.hosted} numbers={numbers} />}
       {current === 'hydration' && <Hydration days={days} units={status.settings.units} numbers={numbers} />}
     </div>
@@ -127,8 +130,11 @@ function NutritionIntro({ refresh }: { refresh: () => void }) {
                 <Icon name="nutrition" size={16} />
               </span>
               <div>
-                <strong>Your food app's daily totals</strong>
-                <span className="muted small">Calories, protein, carbs, fat, fiber, sugar and sodium from MyFitnessPal, Cronometer, Lose It!, MacroFactor or Yazio, through Apple Health.</span>
+                <strong>What you log, here or in your food app</strong>
+                <span className="muted small">
+                  Search for a food, scan or type a barcode, describe it or snap a photo for McFly to estimate, or type the amounts. Or read the daily totals from MyFitnessPal,
+                  Cronometer, Lose It!, MacroFactor or Yazio, through Apple Health.
+                </span>
               </div>
             </li>
             <li>
@@ -169,7 +175,7 @@ function NutritionIntro({ refresh }: { refresh: () => void }) {
               </span>
               <div>
                 <strong>You choose how much you see</strong>
-                <span className="muted small">Everything, everything except calories, or no amounts at all. Ask McFly sees only that much.</span>
+                <span className="muted small">Everything, everything except calories, or no calorie or nutrient amounts at all. Ask McFly sees only that much.</span>
               </div>
             </li>
             <li>
@@ -269,7 +275,7 @@ function Overview({ status }: { status: Status }) {
               <section className="card">
                 <h2>{latest ? relativeDay(latest.date, data.today) : 'Nothing logged lately'}</h2>
                 <p className="muted">
-                  {latest ? `You logged food in ${latest.app}.` : ''} You chose to see no amounts, so this page shows only the days you logged. Change it in{' '}
+                  {latest ? `You logged food ${latest.app === 'healthOS' ? 'here' : `in ${latest.app}`}.` : ''} You chose to see no amounts, so this shows only the days you logged, and the Log tab what you logged. Change it in{' '}
                   <a href={href('settings')}>Settings</a>.
                 </p>
               </section>,
@@ -647,8 +653,11 @@ function NothingYet({ hosted }: { hosted: boolean }) {
     <section className="card nutrition-empty">
       <h2>Nothing logged yet</h2>
       <p className="muted">
-        healthOS reads what your food app writes to Apple Health: MyFitnessPal, Cronometer, Lose It!, MacroFactor and Yazio all can. Turn on its Apple Health connection in
-        that app.
+        Log food here, on the <a href={tabHref('log')}>Log</a> tab.
+      </p>
+      <p className="muted">
+        Or keep using a food app that writes to Apple Health, such as MyFitnessPal, Cronometer, Lose It!, MacroFactor or Yazio, and turn on its Apple Health connection in that
+        app.
         {hosted ? ' Then open the healthOS iPhone app (1.1, build 16 or later): it asks to read food and sends your log at its next sync.' : ' Then bring it in here:'}
       </p>
       {!hosted && (
@@ -802,8 +811,8 @@ export function NutritionSettings({ status, refresh }: { status: Status; refresh
           <div>
             <h2>Nutrition</h2>
             <p className="muted small">
-              Reads what you log in a food app (MyFitnessPal, Cronometer, Lose It!, MacroFactor, Yazio) from Apple Health, as daily totals. Only you can see it: never your
-              family, never the admin screens. Ask McFly can read it while this is on, only as much as you choose to see. healthOS never suggests a target.
+              Log food here, or read what you log in a food app (MyFitnessPal, Cronometer, Lose It!, MacroFactor, Yazio) from Apple Health as daily totals. Only you can see
+              it: never your family, never the admin screens. Ask McFly can read it while this is on, only as much as you choose to see. healthOS never suggests a target.
             </p>
           </div>
           <button
@@ -888,7 +897,7 @@ function TargetInputs({ status, save, busy }: { status: Status; save: (patch: Pa
 function DeleteNutritionData() {
   const [done, setDone] = useState<number | null>(null);
   async function remove() {
-    if (!confirm('Delete all your nutrition data? This removes every food total healthOS stores for you. It can’t be undone.')) return;
+    if (!confirm('Delete all your nutrition data? This removes every food total healthOS stores for you and everything you logged here. It can’t be undone.')) return;
     const r = await sendJson<{ deleted: number }>('POST', '/nutrition/delete');
     setDone(r.deleted);
     notifyDataChanged();
@@ -898,8 +907,8 @@ function DeleteNutritionData() {
       <div>
         <h2>Delete nutrition data</h2>
         <p className="muted small">
-          Removes every food total healthOS stores for you, whether nutrition is on or off. With nutrition on, your next import or iPhone sync brings back what's still in Apple
-          Health.
+          Removes every food total healthOS stores for you and everything you logged here, whether nutrition is on or off. With nutrition on, your next import or iPhone sync
+          brings back what's still in Apple Health.
         </p>
       </div>
       <div className="btn-row">

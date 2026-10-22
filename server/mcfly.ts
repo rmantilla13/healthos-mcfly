@@ -540,7 +540,7 @@ const TOOLS: Tool[] = [
     name: 'get_nutrition',
     when: (ctx) => ctx.nutrition !== null,
     description:
-      "What this person logged in their food app (MyFitnessPal, Cronometer and others, through Apple Health), as daily totals: energy, protein, carbohydrates, fat, fiber, sugar, saturated fat, sodium and alcoholic drinks, as far as their app records them and their setting shows them. One app per day, never a sum of apps. Days with nothing logged are left out: that means nothing was logged, not that nothing was eaten.",
+      "What this person logged, in healthOS itself (app 'healthOS', some of it estimated from a photo or description) or in their food app (MyFitnessPal, Cronometer and others, through Apple Health), as daily totals: energy, protein, carbohydrates, fat, fiber, sugar, saturated fat, sodium and alcoholic drinks, as far as their app records them and their setting shows them. One app per day, never a sum of apps. Days with nothing logged are left out: that means nothing was logged, not that nothing was eaten.",
     input_schema: {
       type: 'object',
       properties: {
@@ -773,6 +773,11 @@ export async function claimQuestion(db: Db, userId: string, day: string, limit: 
     [userId, day, limit],
   );
   return row ? Number(row.questions) : null;
+}
+
+/** Give back a question that never reached Claude (a food estimate whose call failed). */
+export async function refundQuestion(db: Db, userId: string, day: string) {
+  await db.query('UPDATE mcfly_usage SET questions = questions - 1 WHERE user_id = $1 AND day = $2 AND questions > 0', [userId, day]);
 }
 
 /** The limit counts by UTC date, so changing your own time zone can't reset it. */

@@ -17,12 +17,15 @@ import { authRoutes, cronAuthorized, currentUser, publicUser, requireSession, sh
 import { cycleRouter } from './cycle/index.ts';
 import { labsRouter } from './labs.ts';
 import { metricRouter } from './metricsheet.ts';
-import { nutritionRouter } from './nutrition.ts';
+import { estimateHandler } from './estimate.ts';
+import { dropExpiredDrafts } from './foodlog.ts';
+import { type FetchFn, pruneFoodCache } from './foods.ts';
+import { nutritionErrors, nutritionRouter } from './nutrition.ts';
 import { familyRouter } from './family.ts';
 import { DATA_DIR, type Db, type Scope, bumpDataVersion, deleteSource, getUserSetting, setUserSetting } from './db.ts';
 import { patterns, sleepTiming } from './insights.ts';
 import { sleepNight } from './sleepnight.ts';
-import { type McflyClient, mcflyRouter } from './mcfly.ts';
+import { type McflyClient, defaultClient, mcflyRouter } from './mcfly.ts';
 import { PHOTO_ASSETS, parsePhotoUpload, photoAsset, photoMeta, processPhoto, removePhoto, storePhotoAssets } from './photo.ts';
 import { NUMBERS, TARGET_RANGE, readSettings, requestContext, summary, trends, workouts } from './query.ts';
 import * as whoop from './whoop.ts';
@@ -39,9 +42,11 @@ export type AppOptions = {
   ingestToken?: string;
   /** Ask McFly's Claude client (tests pass a fake). Defaults to one from ANTHROPIC_API_KEY. */
   mcflyClient?: () => McflyClient | null;
+  /** The food databases' fetch (tests pass a fake, so no test calls USDA or Open Food Facts). */
+  foodFetch?: FetchFn;
 };
 
-export function createApp({ db, hosted, ingestToken, mcflyClient }: AppOptions) {
+export function createApp({ db, hosted, ingestToken, mcflyClient = defaultClient, foodFetch }: AppOptions) {
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', hosted);
@@ -73,6 +78,9 @@ export function createApp({ db, hosted, ingestToken, mcflyClient }: AppOptions) 
   api.use(ingestRouter(db, ingestToken));
   api.get('/cron/whoop', async (req, res) => {
     if (!cronAuthorized(req)) return void res.status(401).json({ error: 'Unauthorized' });
+    // Hourly housekeeping for nutrition: McFly's unsaved estimates go after a day (as privacy.html says), and foods
+    // nobody looked up in 90 days leave the shared cache. Counts only, never what they were.
+    await Promise.all([dropExpiredDrafts(db), pruneFoodCache(db)]).catch((err: Error) => console.error('cron nutrition:', err.name));
     if (!whoop.isConfigured()) return void res.json({ skipped: 'WHOOP not configured' });
     res.json(await whoop.syncAllWhoop(db));
   });
@@ -85,6 +93,10 @@ export function createApp({ db, hosted, ingestToken, mcflyClient }: AppOptions) 
     await storePhotoAssets({ db, userId: currentUser(res).id }, upload);
     res.json({ ok: true });
   });
+
+  // A food photo is the same: shrunk on the device, but over the general limit. It goes to Anthropic for McFly's
+  // estimate and is never stored or logged (server/estimate.ts).
+  api.post('/nutrition/estimate', requireSession(db), express.json({ limit: '4400kb' }), estimateHandler(db, hosted, mcflyClient), nutritionErrors);
 
   api.use(express.json());
   api.get('/auth/me', auth.me);
@@ -102,7 +114,7 @@ export function createApp({ db, hosted, ingestToken, mcflyClient }: AppOptions) 
   api.use('/admin', adminRouter(db));
   api.use('/mcfly', mcflyRouter(db, { hosted, client: mcflyClient }));
   api.use('/cycle', cycleRouter(db, hosted));
-  api.use('/nutrition', nutritionRouter(db, hosted));
+  api.use('/nutrition', nutritionRouter(db, hosted, { fetchFn: foodFetch, client: mcflyClient }));
   api.use('/labs', labsRouter(db, { hosted, client: mcflyClient }));
   api.use('/metric', metricRouter(db, hosted));
   api.use('/family', familyRouter(db, hosted));
