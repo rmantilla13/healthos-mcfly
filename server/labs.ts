@@ -198,6 +198,8 @@ function printedBounds(r: LabRow): Bounds | null {
 }
 
 export function toResult(r: LabRow, sex: Sex): LabResult {
+  // A urine or stool result stored under a blood marker's key (before they were kept apart) is read as its own marker.
+  const key = !isOther(r.biomarker) && specimenOf(r.name, r.panel) ? markerKey(r.name, r.panel) : r.biomarker;
   const parsed = parseResultValue(r.value_text);
   const printed = printedBounds(r);
   let range: LabRange | null;
@@ -216,13 +218,13 @@ export function toResult(r: LabRow, sex: Sex): LabResult {
     range = { low: null, high: null, text: r.ref_text, kind: 'lab' };
   } else {
     // Only when the report printed no range at all.
-    range = typicalRange(r.biomarker, r.unit, sex);
+    range = typicalRange(key, r.unit, sex);
     bounds = range && { low: range.low, high: range.high, lowOpen: false, highOpen: false };
   }
   return {
     id: r.id,
     collected: r.collected,
-    biomarker: r.biomarker,
+    biomarker: key,
     name: r.name,
     valueText: r.value_text,
     value: parsed.value,

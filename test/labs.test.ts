@@ -736,6 +736,31 @@ test('a urinalysis beside a blood panel stays apart from the blood markers, and 
   const moved = await carol.call('PATCH', `/api/labs/${m('glucose').latest.id}`, { panel: 'Urinalysis' });
   assert.equal(moved.status, 200);
   assert.equal(moved.json.result.biomarker, 'other:urine-glucose');
+
+  // A urinalysis row stored under blood glucose before they were kept apart is read as the urine marker.
+  await insertLabResults(db, carolId, [
+    {
+      id: 'legacy-urine-glucose',
+      collected: ago(1),
+      biomarker: 'glucose',
+      name: 'Glucose',
+      value: null,
+      value_text: 'Trace',
+      unit: '',
+      ref_low: null,
+      ref_high: null,
+      ref_text: 'Negative',
+      lab: '',
+      panel: 'Urinalysis',
+      source: 'manual',
+      created_at: Date.now(),
+    },
+  ]);
+  const after = (await carol.labs()).json.markers;
+  const byKey = (key: string) => after.find((x: { key: string }) => x.key === key);
+  assert.ok(!byKey('glucose').history.some((h: { id: string }) => h.id === 'legacy-urine-glucose'));
+  assert.equal(byKey('glucose').latest.valueText, '90');
+  assert.equal(byKey('other:urine-glucose').latest.id, 'legacy-urine-glucose');
 });
 
 test('a range printed in bands is read for the sex in the profile, and never as its first band', async () => {
