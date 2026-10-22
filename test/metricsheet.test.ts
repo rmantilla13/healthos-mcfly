@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { AddressInfo } from 'node:net';
 import type { MetricSheet } from '../shared/metrics.ts';
-import { aboutBefore, emptyWindowText, mmolFromMgDl, widenedNote, widerRange } from '../shared/metrics.ts';
+import { aboutBefore, emptyWindowText, mmolFromMgDl, nothingToShow, showSheet, stillEmpty, widenedNote, widerRange } from '../shared/metrics.ts';
 import type { DayData, Point, Summary } from '../shared/types.ts';
 import { createApp } from '../server/app.ts';
 import { hashPassword } from '../server/auth.ts';
@@ -100,6 +100,42 @@ test('an empty window moves to the longest range once, and says so; a Day or the
   assert.equal(emptyWindowText({ range: 'day', ranges: ['day', ...ranges], points }), null);
   assert.equal(widenedNote('month', 'year'), 'Nothing in the last 30 days, so this shows the last 12 months.');
   assert.equal(widenedNote('day', 'week'), null);
+});
+
+test('the note that a sheet moved holds only while the longer range bears it out', () => {
+  // A month ending Oct 22 starts on Sep 23.
+  const year = (date: string | null) => ({ to: '2026-10-22', latest: date ? { date, value: 72 } : null });
+  assert.equal(stillEmpty('month', year('2026-08-01')), true, 'the latest is two months old');
+  assert.equal(stillEmpty('month', year(null)), true, 'nothing at all');
+  assert.equal(stillEmpty('month', year('2026-09-22')), true, 'the day before the month');
+  assert.equal(stillEmpty('month', year('2026-09-23')), false, "the month's first day");
+  assert.equal(stillEmpty('month', year('2026-10-22')), false, 'a weigh-in synced today');
+  assert.equal(stillEmpty('week', year('2026-10-15')), true);
+  assert.equal(stillEmpty('week', year('2026-10-16')), false);
+});
+
+test("a window holding only today's unfinished total isn't empty, on any range", () => {
+  const none = { value: null, label: 'Daily average', unit: 'steps' };
+  assert.equal(nothingToShow({ headline: none, partialToday: false }), true);
+  assert.equal(nothingToShow({ headline: none, partialToday: true }), false, "today's bar and its Latest · so far today");
+  assert.equal(nothingToShow({ headline: { ...none, value: 8000 }, partialToday: false }), false);
+});
+
+test('a sheet about to move to a longer range, or an empty one of another range, is never on screen', () => {
+  const ranges = ['week', 'month', 'year'] as MetricSheet['ranges'];
+  const none = { value: null, label: 'Average', unit: 'kg' };
+  const empty = { range: 'month' as const, ranges, headline: none, points: [] as Point[], partialToday: false };
+  const full = { ...empty, headline: { ...none, value: 72 }, points: [{ date: '2026-10-22', value: 72 }] };
+  assert.equal(showSheet(empty, 'month', false), false, "it would say \"Nothing in the last 30 days\" for a moment, then move");
+  assert.equal(showSheet(empty, 'month', true), true, 'a range the person pressed is shown, empty or not');
+  assert.equal(showSheet({ ...empty, range: 'year' }, 'year', false), true, 'the longest says why it is empty');
+  assert.equal(showSheet(full, 'month', false), true);
+  // While another range loads: the last one stays up, unless it's empty.
+  assert.equal(showSheet(full, 'year', false), true);
+  assert.equal(showSheet(empty, 'year', true), false);
+  const todayOnly = { ...empty, range: 'week' as const, points: [{ date: '2026-10-22', value: 1200 }], partialToday: true };
+  assert.equal(showSheet(todayOnly, 'week', false), true);
+  assert.equal(showSheet(todayOnly, 'month', true), true);
 });
 
 test('a year is drawn as weekly averages, each dated its Monday', () => {
@@ -378,6 +414,12 @@ test('a reading older than the window: the month is empty, the longest range has
   assert.equal(year.headline.value, 42.5);
   assert.deepEqual(year.latest, { date: ago(50), value: 42.5 });
   assert.equal(widerRange(year), null);
+  assert.equal(stillEmpty('month', year), true, '"Nothing in the last 30 days" is true');
+  // A new estimate syncs while the sheet is open on Year: the month isn't empty any more, and the note goes.
+  await upsertDaily(db, OWNER_ID, [{ date: asOf, metric: 'vo2max', source: 'apple', value: 43.1 }]);
+  const after = await owner.sheet('vo2max', `range=year&date=${asOf}`);
+  assert.deepEqual(after.latest, { date: asOf, value: 43.1 });
+  assert.equal(stillEmpty('month', after), false);
 });
 
 test('unknown metrics, ranges and dates are refused without repeating them', async () => {
@@ -429,4 +471,24 @@ test("mass is in the person's units; glucose stays in mg/dL with its own usual r
   );
   assert.match(glucose.narrative!, /^Your daily glucose averaged \d+ mg\/dL over the last 30 days/);
   assert.match(glucose.narrative!, /; your latest daily average, 95 mg\/dL yesterday, is within your usual range\.$/);
+});
+
+// Last, since the Day test above has the owner without active energy today.
+test("a window holding only today's total so far shows it, and doesn't move or say it's empty", async () => {
+  // A first day of active energy: the card shows today's 320 kcal so far.
+  await upsertDaily(db, OWNER_ID, [{ date: today, metric: 'active_energy', source: 'apple', value: 320 }]);
+  const week = await owner.sheet('active_energy', `range=week&date=${today}`);
+  assert.equal(week.headline.value, null, "today isn't counted until it's over");
+  assert.equal(week.partialToday, true);
+  assert.deepEqual(week.points, [{ date: today, value: 320 }]);
+  assert.deepEqual([week.tiles[2].value, week.tiles[2].note], [320, 'so far today']);
+  assert.equal(nothingToShow(week), false);
+  assert.equal(widerRange(week), null, "the card's reading is in the window: nothing to move for");
+  assert.equal(showSheet(week, 'week', false), true);
+  // A year's weeks leave today out, so nothing is drawn; the figures still give today's total.
+  const year = await owner.sheet('active_energy', `range=year&date=${today}`);
+  assert.deepEqual(year.points, []);
+  assert.equal(year.partialToday, true);
+  assert.equal(nothingToShow(year), false);
+  assert.deepEqual([year.tiles[2].value, year.tiles[2].note], [320, 'so far today']);
 });
