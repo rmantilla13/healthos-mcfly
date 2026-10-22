@@ -265,7 +265,7 @@ export function foodLogRouter(db: Db, hosted: boolean, deps: FoodLogDeps) {
   });
 
   /**
-   * One new entry. A database food is saved by its ref and the index of the portion chosen, and the amounts come
+   * One new entry. A database food is saved by its ref and the index of the portion chosen (portionIndex), and the amounts come
    * from the server's copy, so a person who hides some numbers never receives them. Quick add sends the amounts.
    */
   router.post('/', async (req, res) => {
@@ -292,7 +292,7 @@ export function foodLogRouter(db: Db, hosted: boolean, deps: FoodLogDeps) {
       if (typeof b.ref !== 'string') throw bad('Choose a food.');
       const food: Food | null = await cachedFood(db, b.ref);
       if (!food) throw bad('That food is no longer available. Search for it again.');
-      const index = b.portion ?? 0;
+      const index = b.portionIndex ?? 0;
       if (typeof index !== 'number' || !Number.isInteger(index) || index < 0 || index >= food.portions.length) throw bad('Choose a portion.');
       ref = food.ref;
       name = textFrom(b.name, 'name', 100, false) || food.name.slice(0, 100);

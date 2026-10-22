@@ -742,7 +742,7 @@ export type FoodLog = {
 /** One portion of a database food, with its amounts for one of it, as the person's setting allows. */
 export type FoodPortion = { label: string; values: FoodValues };
 
-/** A database food from a search or a barcode. Save it with its ref and the index of the portion chosen. */
+/** A database food from a search or a barcode. Save it with its ref and the index of the portion chosen (portionIndex). */
 export type FoodResult = {
   ref: string;
   name: string;

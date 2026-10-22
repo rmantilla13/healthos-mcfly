@@ -406,7 +406,7 @@ function ResultRow({
     setBusy(true);
     setError(null);
     try {
-      await sendJson('POST', '/nutrition/log', { method, ref: food.ref, portion, quantity: q, ...when });
+      await sendJson('POST', '/nutrition/log', { method, ref: food.ref, portionIndex: portion, quantity: q, ...when });
       notifyDataChanged();
       onAdded(food.name);
     } catch (err) {

@@ -379,11 +379,11 @@ test('search: both databases from the server, the words in a body, the USDA key 
 });
 
 test('saving a database food by its ref and portion: the server works out the amounts', async () => {
-  const res = await owner.post('/api/nutrition/log', { method: 'search', ref: 'fdc:2705441', portion: 1, quantity: 0.5, time: '12:00' });
+  const res = await owner.post('/api/nutrition/log', { method: 'search', ref: 'fdc:2705441', portionIndex: 1, quantity: 0.5, time: '12:00' });
   assert.equal(res.status, 201);
   assert.deepEqual([res.json.name, res.json.portion, res.json.quantity, res.json.ref], ['Yogurt, Greek, with oats', '1 cup (245 g)', 0.5, 'fdc:2705441']);
   assert.equal(res.json.values.energy_kcal, 182.5);
-  assert.equal((await owner.post('/api/nutrition/log', { method: 'search', ref: 'fdc:2705441', portion: 9 })).status, 400);
+  assert.equal((await owner.post('/api/nutrition/log', { method: 'search', ref: 'fdc:2705441', portionIndex: 9 })).status, 400);
 });
 
 test('barcodes: Open Food Facts first, then USDA branded foods; a found code is remembered; a code typed in search works too', async () => {
@@ -451,7 +451,7 @@ test('no amounts: names and portions only, quick add and typed amounts refused, 
   assert.ok(search.results.every((r) => r.portions.every((p) => Object.keys(p.values).length === 0)));
   assert.match((await owner.post('/api/nutrition/log', { method: 'quick', values: { water_ml: 250 } })).json.error, /Quick add needs amounts/);
   assert.equal((await owner.patch(`/api/nutrition/log/${quickId}`, { values: { protein_g: 1 } })).status, 400);
-  const saved = await owner.post('/api/nutrition/log', { method: 'barcode', ref: 'off:3017620422003', portion: 0 });
+  const saved = await owner.post('/api/nutrition/log', { method: 'barcode', ref: 'off:3017620422003', portionIndex: 0 });
   assert.deepEqual([saved.status, saved.json.values], [201, {}]);
   assert.ok(!(await owner.get('/api/nutrition/log')).text.includes('energy_kcal'));
   await owner.put('/api/settings', { nutritionNumbers: 'all' });
