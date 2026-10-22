@@ -4371,6 +4371,311 @@ nav.tabs {
 }
 
 /* ---------- Detail sheets, glucose and body composition (src/components/MetricSheet.tsx, components/body) ---------- */
+/* The sheet's own colours: the dimmed page behind it and its status pill. */
+:root {
+  --msheet-backdrop: rgba(20, 20, 18, 0.34);
+  --msheet-shadow: 0 24px 60px -18px rgba(20, 20, 18, 0.32);
+  --msheet-status-bg: var(--surface-2);
+  --grad-glucose: radial-gradient(120% 90% at 100% 0%, #d6f1e6 0%, #e9f7f1 45%, #f9fcfb 100%);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --msheet-backdrop: rgba(0, 0, 0, 0.62);
+    --msheet-shadow: 0 24px 60px -18px rgba(0, 0, 0, 0.8);
+    --msheet-status-bg: var(--surface-hover);
+    --grad-glucose: radial-gradient(120% 90% at 100% 0%, #173a2e 0%, #1a2623 50%, #1a1a19 100%);
+  }
+}
+
+/* A card's arrow when it opens a sheet: a button that looks like the link it replaced. */
+button.metric-sheet-btn {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.msheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+  background: var(--msheet-backdrop);
+  overscroll-behavior: contain;
+}
+.msheet {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: min(720px, 100%);
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 18px 20px 20px;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  box-shadow: var(--msheet-shadow);
+}
+.msheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.msheet-crumbs {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--ink-3);
+}
+.msheet-crumbs h2 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.msheet-crumbs h2:focus {
+  outline: none;
+}
+.msheet-crumbs h2:focus-visible {
+  outline: 2px solid var(--series-1);
+  outline-offset: 2px;
+}
+.msheet-close {
+  flex: none;
+}
+.msheet-ranges {
+  align-self: flex-start;
+}
+.msheet-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+.msheet-source {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.msheet-message {
+  padding: 28px 0;
+  color: var(--ink-2);
+}
+.msheet-figure {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.msheet-figure-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.msheet-figure-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+.msheet-big {
+  font-size: 40px;
+  line-height: 1;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+.msheet-big small {
+  font-size: 15px;
+  letter-spacing: 0;
+  font-weight: 400;
+  color: var(--ink-2);
+}
+.msheet-alt,
+.msheet-note {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.msheet-alt {
+  color: var(--ink-2);
+}
+.msheet-status {
+  background: var(--msheet-status-bg);
+  color: var(--ink);
+  white-space: nowrap;
+}
+.msheet-chart.card {
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+}
+.msheet-tiles {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.msheet-tiles li {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--surface-2);
+}
+.msheet-tile-label {
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.msheet-tiles b {
+  font-size: 17px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.msheet-tiles small {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.msheet-insight {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  line-height: 1.45;
+}
+.msheet-insight .insight-icon {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  background: var(--surface);
+}
+.msheet-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-start;
+  font-weight: 600;
+  padding: 4px 0;
+}
+.msheet-open:hover {
+  text-decoration: underline;
+}
+
+/* Phones: the sheet takes the whole screen. */
+@media (max-width: 560px) {
+  .msheet-backdrop {
+    padding: 0;
+    place-items: stretch;
+  }
+  .msheet {
+    width: 100%;
+    height: 100%;
+    max-height: none;
+    border-radius: 0;
+    border: 0;
+    padding: max(16px, env(safe-area-inset-top)) 16px max(20px, env(safe-area-inset-bottom));
+  }
+  .msheet-tiles {
+    gap: 6px;
+  }
+  .msheet-tiles li {
+    padding: 8px 9px;
+  }
+  .msheet-tiles b {
+    font-size: 15px;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .msheet-backdrop {
+    animation: msheet-fade 0.16s ease-out;
+  }
+  .msheet {
+    animation: msheet-rise 0.2s ease-out;
+  }
+}
+@keyframes msheet-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes msheet-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+
+/* Glucose: the daily average in mg/dL, with mmol/L under it. */
+.metric-glucose {
+  background: var(--grad-glucose);
+}
+.glucose-alt {
+  font-size: 12px;
+  color: var(--ink-2);
+  margin-top: -2px;
+}
+
+/* Body composition: the main reading, then the others as rows that open their own sheets. */
+.composition-rows {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.composition-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 14px;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  margin: 0 -6px;
+  width: calc(100% + 12px);
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  color: var(--ink);
+}
+.composition-row:hover {
+  background: var(--chip);
+}
+.composition-label {
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.composition-value {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-variant-numeric: tabular-nums;
+}
+.composition-value b {
+  font-weight: 600;
+}
+.composition-value small {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.composition-row .icon {
+  color: var(--ink-3);
+}
 
 /* ---------- Latest workout and ⌘K search (components/body/WorkoutCard.tsx, components/Search.tsx) ---------- */
 
