@@ -14,7 +14,18 @@ export type LabQualifier = '<' | '>';
  * The range a result is read against. 'lab' is the reference range printed on the report. 'typical' is used only
  * when the report printed none: a typical adult range from the catalog, always labelled as such.
  */
-export type LabRange = { low: number | null; high: number | null; text: string; kind: 'lab' | 'typical'; note?: string };
+export type LabRange = {
+  low: number | null;
+  high: number | null;
+  text: string;
+  kind: 'lab' | 'typical';
+  note?: string;
+  /**
+   * Set only when the printed range holds more than one band ("Male: 13.0-17.0 Female: 12.0-15.0"): the band
+   * low and high come from, picked by the sex in the profile, or null when none could be picked (and both are null).
+   */
+  band?: 'female' | 'male' | null;
+};
 
 /** One stored result, as printed, with where it sits against its own range. */
 export type LabResult = {
@@ -85,8 +96,11 @@ export type LabInput = {
   biomarker?: string;
 };
 
-/** A row Claude read from a report: a draft for the person to check. collected is null when the report showed no date. */
-export type LabDraft = Omit<LabInput, 'collected' | 'refLow' | 'refHigh' | 'biomarker'> & { collected: string | null; biomarker: string | null };
+/**
+ * A row Claude read from a report: a draft for the person to check. collected is null when the report showed no
+ * date, or when the date read couldn't be used (not a real date, in the future, before 1900): then dateDropped is set.
+ */
+export type LabDraft = Omit<LabInput, 'collected' | 'refLow' | 'refHigh' | 'biomarker'> & { collected: string | null; biomarker: string | null; dateDropped?: true };
 
 export type LabExtract = { rows: LabDraft[]; note: string | null; usedToday: number; limit: number };
 
@@ -544,15 +558,53 @@ export function matchBiomarker(name: string): string | null {
   return BY_NAME.get(n) ?? BY_LOOSE.get(loose(n)) ?? null;
 }
 
-/** The key a result is stored under: the catalog's, or 'other:<slug>' so a marker the catalog doesn't know still joins up. */
-export function markerKey(name: string): string {
-  return matchBiomarker(name) ?? `other:${normalizeName(name).replace(/ /g, '-').slice(0, 60) || 'unnamed'}`;
+/**
+ * The sample a result is from when it isn't blood, read from its panel ("Urinalysis", "Microscopic exam") or its
+ * name ("Glucose, Urine"). The catalog's markers are all blood tests, so these never become one of them.
+ */
+const SPECIMENS: { specimen: string; panel: RegExp; name: RegExp; words: Set<string> }[] = [
+  {
+    specimen: 'urine',
+    panel: /\b(urine|urinalysis|urinary|ua|microscopic|microscopy|dipstick)\b/,
+    name: /\b(urine|urinalysis|urinary)\b/,
+    words: new Set(['urine', 'urinalysis', 'urinary', 'ua']),
+  },
+  { specimen: 'stool', panel: /\b(stool|fecal|faecal|feces|faeces)\b/, name: /\b(stool|fecal|faecal|feces|faeces)\b/, words: new Set(['stool', 'fecal', 'faecal', 'feces', 'faeces']) },
+];
+
+export function specimenOf(name: string, panel = ''): string | null {
+  const [n, p] = [normalizeName(name), normalizeName(panel)];
+  return SPECIMENS.find((s) => s.panel.test(p) || s.name.test(n))?.specimen ?? null;
+}
+
+const slug = (norm: string) => norm.replace(/ /g, '-').slice(0, 60) || 'unnamed';
+
+/**
+ * The key a result is stored under: the catalog's, or 'other:<slug>' so a marker the catalog doesn't know still
+ * joins up. A result from urine or stool is 'other:<specimen>-<name>' whatever its name: a urinalysis "Glucose"
+ * must never join blood glucose, and "Glucose" on a urinalysis joins "Glucose, Urine" from another lab.
+ */
+export function markerKey(name: string, panel = ''): string {
+  const specimen = specimenOf(name, panel);
+  if (specimen) {
+    const words = SPECIMENS.find((s) => s.specimen === specimen)!.words;
+    const rest = normalizeName(name)
+      .split(' ')
+      .filter((w) => w && !words.has(w))
+      .join(' ');
+    return `other:${specimen}-${slug(rest)}`;
+  }
+  return matchBiomarker(name) ?? `other:${slug(normalizeName(name))}`;
 }
 
 export const isOther = (key: string) => key.startsWith('other:');
 
+/** The marker's name: the catalog's, or the printed one, with the sample when it isn't blood ("Glucose (urine)"). */
 export function markerName(key: string, printed: string) {
-  return BY_KEY.get(key)?.name ?? printed;
+  const def = BY_KEY.get(key);
+  if (def) return def.name;
+  const specimen = SPECIMENS.find((s) => key.startsWith(`other:${s.specimen}-`));
+  return specimen && !specimen.name.test(normalizeName(printed)) ? `${printed} (${specimen.specimen})` : printed;
 }
 
 export function markerGroup(key: string) {
@@ -632,15 +684,29 @@ export function markerUnits(key: string): string[] {
 
 // ---------- values and ranges ----------
 
+/**
+ * One number as labs print it, the same grammar for a result and for its range: "250,000" (thousands), "5,4" (a
+ * decimal comma), "-2.0", ".5". A sign straight after a letter is a hyphen ("Adult-13-17"), not a minus.
+ */
+const NUM = String.raw`(?:(?<![A-Za-z\d.,])[-+])?(?:[1-9]\d{0,2}(?:,\d{3})+(?:\.\d+)?|\d+(?:[.,]\d+)?|\.\d+)`;
+const THOUSANDS = /^[-+]?[1-9]\d{0,2}(,\d{3})+(\.\d+)?$/;
+
+/** "250,000" → 250000; "5,4" → 5.4, or with decimalComma, "4,500" → 4.5. */
+function readNumber(raw: string, decimalComma = false): number {
+  return !decimalComma && THOUSANDS.test(raw) ? Number(raw.replace(/,/g, '')) : Number(raw.replace(',', '.'));
+}
+
+/** Minus signs, dashes and "≤ ≥" as plain characters. */
+const plain = (s: string) => s.replace(/−/g, '-').replace(/≤/g, '<=').replace(/≥/g, '>=');
+
 /** "5.4", "<0.5", "> 90", "1,234", "5,4", "250 H" → a number and its qualifier; "Negative" → no number. */
 export function parseResultValue(text: string): { value: number | null; qualifier: LabQualifier | null } {
-  let t = text.trim().replace(/≤/g, '<=').replace(/≥/g, '>=');
+  let t = plain(text.trim());
   // A flag printed after the number ("250 H", "3.1 (L)", "7.2*") isn't part of it.
   t = t.replace(/\s*(\(\s*(h|l|hh|ll|high|low|a|abn|abnormal)\s*\)|\b(h|l|hh|ll|high|low|a|abn|abnormal)\b|\*+)\s*$/i, '').trim();
-  const m = /^(<=?|>=?|less than|greater than)?\s*([-+]?[1-9]\d{0,2}(?:,\d{3})+(?:\.\d+)?|[-+]?\d+(?:[.,]\d+)?|[-+]?\.\d+)$/i.exec(t);
+  const m = new RegExp(String.raw`^(<=?|>=?|less than|greater than)?\s*(${NUM})$`, 'i').exec(t);
   if (!m) return { value: null, qualifier: null };
-  const raw = m[2];
-  const num = /^[-+]?[1-9]\d{0,2}(,\d{3})+(\.\d+)?$/.test(raw) ? Number(raw.replace(/,/g, '')) : Number(raw.replace(',', '.'));
+  const num = readNumber(m[2]);
   if (!Number.isFinite(num)) return { value: null, qualifier: null };
   const q = m[1]?.toLowerCase();
   const qualifier = !q ? null : q.startsWith('<') || q === 'less than' ? '<' : '>';
@@ -649,30 +715,60 @@ export function parseResultValue(text: string): { value: number | null; qualifie
 
 export type Bounds = { low: number | null; high: number | null; lowOpen: boolean; highOpen: boolean };
 
-/**
- * The numbers in a printed reference range: "3.5-5.0", "3.5 – 5.0 mmol/L", "<200", "> OR = 40", "Desirable: <100".
- * "<200" is open (200 itself is outside); "<=200" isn't. Null when it holds no range ("Negative", "See note").
- */
-export function parseRange(text: string): Bounds | null {
-  const t = text
+/** Each range in normalised text: "a-b" pairs and one-sided "<b", ">=a". A pair printed the wrong way round is null. */
+const RANGE = new RegExp(String.raw`(${NUM})\s*-\s*(${NUM})|(<=?|>=?)\s*(${NUM})`, 'g');
+
+function rangesIn(t: string): (Bounds | null)[] {
+  return [...t.matchAll(RANGE)].map((m): Bounds | null => {
+    if (m[1] !== undefined) {
+      // One style per range: if either bound has a decimal comma ("0,450-4,500"), so has the other.
+      const comma = [m[1], m[2]].some((s) => s.includes(',') && !THOUSANDS.test(s));
+      const [low, high] = [readNumber(m[1], comma), readNumber(m[2], comma)];
+      return Number.isFinite(low) && Number.isFinite(high) && low <= high ? { low, high, lowOpen: false, highOpen: false } : null;
+    }
+    const v = readNumber(m[4]);
+    if (!Number.isFinite(v)) return null;
+    return m[3].startsWith('<') ? { low: null, high: v, lowOpen: false, highOpen: m[3] === '<' } : { low: v, high: null, lowOpen: m[3] === '>', highOpen: false };
+  });
+}
+
+const rangeTextOf = (text: string) =>
+  plain(text)
     .replace(/[–—]/g, '-')
-    .replace(/≤/g, '<=')
-    .replace(/≥/g, '>=')
     .replace(/([<>])\s*or\s*=/gi, '$1=')
     .replace(/\bto\b/gi, '-');
-  const num = String.raw`(\d+(?:[.,]\d+)?|\.\d+)`;
-  const two = new RegExp(String.raw`${num}\s*-\s*${num}`).exec(t);
-  const one = new RegExp(String.raw`(<=?|>=?)\s*${num}`).exec(t);
-  const n = (s: string) => Number(s.replace(',', '.'));
-  if (two && (!one || two.index <= one.index)) {
-    const [low, high] = [n(two[1]), n(two[2])];
-    return low <= high ? { low, high, lowOpen: false, highOpen: false } : null;
-  }
-  if (one) {
-    const v = n(one[2]);
-    return one[1].startsWith('<') ? { low: null, high: v, lowOpen: false, highOpen: one[1] === '<' } : { low: v, high: null, lowOpen: one[1] === '>', highOpen: false };
-  }
-  return null;
+
+/** A band's label: "Male", "Women", "M:", "(F)". */
+const SEX_LABEL = /\b(females?|wom[ae]n|males?|m[ae]n)\b|\b([fm])\s*[:=]|\(\s*([fm])\s*\)/gi;
+
+/** How many ranges the printed text holds: 0 ("Negative"), 1, or more (bands by sex or age, "Optimal <100, Borderline 100-129"). */
+export function rangeCount(text: string) {
+  return rangesIn(rangeTextOf(text)).length;
+}
+
+/**
+ * The numbers in a printed reference range: "3.5-5.0", "3.5 – 5.0 mmol/L", "<200", "> OR = 40", "Desirable: <100",
+ * "150,000-450,000", "-2.0-2.0". "<200" is open (200 itself is outside); "<=200" isn't. Null when it holds no range
+ * ("Negative", "See note").
+ *
+ * Text with more than one range is never read as its first one. Bands labelled by sex, each label before its one
+ * range ("Male: 13.0-17.0 Female: 12.0-15.0"), give the band for the sex passed in; anything else (no sex chosen,
+ * age bands, categories, a label after its range) is null, so the range shows as printed with no status.
+ */
+export function parseRange(text: string, sex: Sex = null): Bounds | null {
+  const t = rangeTextOf(text);
+  const all = rangesIn(t);
+  if (all.length <= 1) return all[0] ?? null;
+  if (sex !== 'female' && sex !== 'male') return null;
+  const labels = [...t.matchAll(SEX_LABEL)];
+  if (!labels.length || rangesIn(t.slice(0, labels[0].index)).length) return null;
+  const bands = labels.map((l, i) => ({
+    sex: /^(f|wom)/i.test(l[1] ?? l[2] ?? l[3]) ? 'female' : 'male',
+    ranges: rangesIn(t.slice(l.index + l[0].length, labels[i + 1]?.index ?? t.length)),
+  }));
+  if (bands.some((b) => b.ranges.length !== 1)) return null;
+  const mine = bands.filter((b) => b.sex === sex);
+  return mine.length === 1 ? mine[0].ranges[0] : null;
 }
 
 /**
@@ -731,3 +827,85 @@ export function rangeText(low: number | null, high: number | null) {
 }
 
 export const STATUS_WORDS: Record<LabStatus, string> = { below: 'Below range', within: 'Within range', above: 'Above range' };
+
+// ---------- words for the dashboard ----------
+
+/** The status in words. A typical range says so, so it's never mistaken for the lab's own. */
+export function statusLabel(r: LabResult): string {
+  if (r.status) {
+    const where = { below: 'Below', within: 'Within', above: 'Above' }[r.status];
+    return `${where} ${r.range?.kind === 'typical' ? 'typical range' : 'range'}`;
+  }
+  if (!r.range) return 'No range printed';
+  if (r.value === null) return 'Compare with range';
+  // A printed range with no numbers in it ("See note"), not several bands.
+  if (r.range.low === null && r.range.high === null && r.range.band === undefined) return 'Compare with range';
+  return 'Can’t be placed';
+}
+
+/** Why there's no status, or which range a status is against when it isn't simply the printed one. */
+export function statusHint(r: LabResult): string | undefined {
+  const range = r.range;
+  if (r.status && range?.kind === 'typical') return `The report printed no range, so this uses a typical adult range${range.note ? ` (${range.note})` : ''}.`;
+  if (r.status && range?.band) return `The report printed more than one range. This uses the one for ${range.band === 'female' ? 'women' : 'men'}, from the sex in your profile.`;
+  if (r.status) return undefined;
+  if (!range) return "The report printed no range, and there's no typical range to use for this marker.";
+  if (r.value === null) return 'The result is a word, not a number: compare it with the printed range.';
+  if (range.band === null) {
+    return "The printed range has more than one band (by sex or age), so this result isn't placed against any one of them. If the bands are for women and men, choosing a sex in your profile picks one.";
+  }
+  if (range.low === null && range.high === null) return 'The printed range has no numbers to place this against: compare the result with the range as printed.';
+  return `Printed as ${r.valueText}, which could fall on either side of the range.`;
+}
+
+/** The range text as printed, with a note when it's the typical one or one band of several. */
+export function rangeLabel(r: LabResult) {
+  if (!r.range) return '—';
+  if (r.range.kind === 'typical') return `${r.range.text} (typical adult${r.range.note ? `, ${r.range.note}` : ''})`;
+  return r.range.band ? `${r.range.text} (${r.range.band} range used)` : r.range.text;
+}
+
+/**
+ * Why some of a marker's results aren't on its chart, one sentence per reason, counted from the results themselves:
+ * printed with "<" or ">", printed as a word, or in a unit that can't be converted to the latest one's.
+ */
+export function undrawnReasons(m: Pick<LabMarker, 'history' | 'points' | 'latest'>): string[] {
+  const drawn = new Set(m.points.map((p) => p.id));
+  const rest = m.history.filter((h) => !drawn.has(h.id));
+  const words = rest.filter((h) => h.value === null).length;
+  const bounded = rest.filter((h) => h.value !== null && h.qualifier).length;
+  const units = rest.length - words - bounded;
+  const are = (n: number) => (n === 1 ? 'One result is' : `${n} results are`);
+  const notDrawn = (n: number) => (n === 1 ? "it isn't drawn" : "they aren't drawn");
+  const out: string[] = [];
+  if (bounded) out.push(`${are(bounded)} printed with < or >, so ${bounded === 1 ? 'it has' : 'they have'} no exact value to draw.`);
+  if (words) out.push(`${are(words)} ${words === 1 ? 'a word, not a number' : 'words, not numbers'}, so ${notDrawn(words)}.`);
+  if (units) out.push(`${are(units)} in a unit that can't be put on the same scale as the latest result${m.latest.unit ? ` (${m.latest.unit})` : ''}, so ${notDrawn(units)}.`);
+  return out;
+}
+
+/**
+ * Rows read from a report as collections to check: one per date and lab (a lab left blank joins the date's only
+ * named lab). Rows without a date are kept apart from rows whose date read couldn't be used, so each says why.
+ */
+export function draftGroups(rows: LabDraft[]): { collected: string; lab: string; dateDropped: boolean; rows: LabDraft[] }[] {
+  const byDate = new Map<string, LabDraft[]>();
+  for (const r of rows) {
+    const k = r.collected ?? (r.dateDropped ? '\u0000dropped' : '');
+    byDate.set(k, [...(byDate.get(k) ?? []), r]);
+  }
+  const out: ReturnType<typeof draftGroups> = [];
+  for (const rs of byDate.values()) {
+    const labs = [...new Set(rs.map((r) => r.lab ?? '').filter(Boolean))];
+    const base = { collected: rs[0].collected ?? '', dateDropped: rs[0].collected === null && Boolean(rs[0].dateDropped) };
+    if (labs.length <= 1) {
+      out.push({ ...base, lab: labs[0] ?? '', rows: rs });
+      continue;
+    }
+    for (const lab of [...labs, '']) {
+      const mine = rs.filter((r) => (r.lab ?? '') === lab);
+      if (mine.length) out.push({ ...base, lab, rows: mine });
+    }
+  }
+  return out;
+}

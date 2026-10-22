@@ -51,7 +51,7 @@ export async function prepareReport(file: File): Promise<Blob> {
   } catch {
     throw new Error(
       /heic|heif/.test(type)
-        ? "This browser can't open HEIC photos. Try Safari, or share the photo as a JPEG (on iPhone: Settings, Camera, Formats, Most Compatible)."
+        ? "This browser can't open HEIC photos. Choose a screenshot of the photo instead, export the photo as a JPEG first, or try Safari."
         : "Couldn't open that image. Try a screenshot of the report instead.",
     );
   }

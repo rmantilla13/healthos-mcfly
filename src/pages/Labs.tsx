@@ -1,8 +1,23 @@
 // Lab tests: blood panels and other lab results, each against the reference range printed by the lab. Results are
 // typed in as printed, or read from a report by Claude and checked by the person before anything is saved. A status
 // only says where a number sits against a range; nothing here is a diagnosis.
-import { type FormEvent, Fragment, type ReactNode, useMemo, useRef, useState } from 'react';
-import { BIOMARKERS, type LabDraft, type LabExtract, type LabMarker, type LabResult, type LabsData, markerUnits, matchBiomarker, unitKey } from '../../shared/labs.ts';
+import { Fragment, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  BIOMARKERS,
+  type LabDraft,
+  type LabExtract,
+  type LabMarker,
+  type LabResult,
+  type LabsData,
+  biomarker,
+  draftGroups,
+  isOther,
+  markerKey,
+  markerUnits,
+  specimenOf,
+  undrawnReasons,
+  unitKey,
+} from '../../shared/labs.ts';
 import type { Status } from '../../shared/types.ts';
 import { TrendChart } from '../charts/Charts.tsx';
 import { Icon } from '../components/Icon.tsx';
@@ -15,29 +30,59 @@ const longDate = (d: string) => fmtDate(d, { month: 'short', day: 'numeric', yea
 
 type Mode = 'add' | 'import' | null;
 
+/** What closing the open form would lose: rows typed in, rows read from a report, or a read still going. */
+type Pending = 'none' | 'typed' | 'draft' | 'reading';
+const DISCARD: Record<'typed' | 'draft', string> = {
+  typed: 'Discard the results you’ve typed? They haven’t been saved.',
+  draft: 'Discard the results read from your report? They haven’t been saved, and reading the report again counts as another Ask McFly question.',
+};
+
 export function Labs({ status: _status, params: _params }: { status: Status; params: URLSearchParams }) {
   const { data, error, loading } = useApi<LabsData>('/labs');
   const [mode, setMode] = useState<Mode>(null);
+  const [pending, setPending] = useState<Pending>('none');
   const [open, setOpen] = useState<string | null>(null);
   const [notice, setNotice] = useState('');
   const today = data?.today ?? new Date().toLocaleDateString('en-CA');
+  const addButton = useRef<HTMLButtonElement>(null);
+  const importButton = useRef<HTMLButtonElement>(null);
+  const noticeRef = useRef<HTMLParagraphElement>(null);
+  const focusNotice = useRef(false);
 
+  // After a save, focus goes to the notice saying what was added, once the form it came from has gone.
+  useEffect(() => {
+    if (focusNotice.current && notice) noticeRef.current?.focus();
+    focusNotice.current = false;
+  }, [notice]);
+
+  /** Open a form, switch to the other one or close it: never losing typed rows, a draft or a read without asking. */
   const start = (m: Mode) => {
+    if (pending === 'reading') return;
+    if ((pending === 'typed' || pending === 'draft') && !confirm(DISCARD[pending])) return;
     setNotice('');
+    setPending('none');
     setMode(m);
   };
-  const saved = (n: number) => {
+  const cancel = () => {
+    const from = mode;
+    setPending('none');
     setMode(null);
+    (from === 'import' ? importButton : addButton).current?.focus();
+  };
+  const saved = (n: number) => {
+    setPending('none');
+    setMode(null);
+    focusNotice.current = true;
     setNotice(`Added ${n} ${n === 1 ? 'result' : 'results'}.`);
     notifyDataChanged();
   };
 
   const tools = (
     <div className="btn-row">
-      <button className="btn btn-primary" aria-pressed={mode === 'add'} onClick={() => start(mode === 'add' ? null : 'add')}>
+      <button ref={addButton} className="btn btn-primary" aria-pressed={mode === 'add'} disabled={pending === 'reading'} onClick={() => start(mode === 'add' ? null : 'add')}>
         Add results
       </button>
-      <button className="btn" aria-pressed={mode === 'import'} onClick={() => start(mode === 'import' ? null : 'import')}>
+      <button ref={importButton} className="btn" aria-pressed={mode === 'import'} disabled={pending === 'reading'} onClick={() => start(mode === 'import' ? null : 'import')}>
         <Icon name="upload" size={15} />
         Import a report
       </button>
@@ -47,23 +92,27 @@ export function Labs({ status: _status, params: _params }: { status: Status; par
   return (
     <div className={`page page-wide labs ${loading ? 'is-refreshing' : ''}`}>
       <PageHead title="Lab tests" sub="Blood tests and other lab results, each against the reference range printed by the lab." tools={tools} />
-      {notice && (
-        <p className="note-good" role="status">
-          <Icon name="check" size={15} /> {notice}
-        </p>
-      )}
+      {/* Always there, so the change of text is announced. */}
+      <div className="labs-notice" role="status">
+        {notice && (
+          <p className="note-good" tabIndex={-1} ref={noticeRef}>
+            <Icon name="check" size={15} /> {notice}
+          </p>
+        )}
+      </div>
       {mode === 'add' && (
         <ResultsForm
           title="Add results"
           intro={<p className="muted small">Type each result as it's printed on your report, with the reference range printed beside it. Leave a row empty to skip it.</p>}
-          initial={[{ id: 1, collected: today, lab: '', rows: [blankRow(1), blankRow(2), blankRow(3)] }]}
+          initial={[{ id: 1, collected: today, lab: '', dateDropped: false, rows: [blankRow(1), blankRow(2), blankRow(3)] }]}
           source="manual"
           today={today}
           onSaved={saved}
-          onCancel={() => setMode(null)}
+          onCancel={cancel}
+          onPending={setPending}
         />
       )}
-      {mode === 'import' && <ImportReport today={today} onSaved={saved} onCancel={() => setMode(null)} />}
+      {mode === 'import' && <ImportReport today={today} onSaved={saved} onCancel={cancel} onPending={setPending} />}
       {error && !data ? (
         <div className="page-message">Couldn't load your lab results: {error.message}</div>
       ) : !data ? (
@@ -213,7 +262,8 @@ function MarkerDetail({ m }: { m: LabMarker }) {
   const word = r?.kind === 'typical' ? 'Typical' : 'Range';
   const refLines = r ? [...(r.low !== null ? [{ value: r.low, label: `${word} from ${labNumber(r.low)}` }] : []), ...(r.high !== null ? [{ value: r.high, label: `${word} to ${labNumber(r.high)}` }] : [])] : [];
   const converted = [...new Set(m.history.filter((h) => h.value !== null && unitKey(h.unit) !== unitKey(unit) && m.points.some((p) => p.id === h.id)).map((h) => h.unit))];
-  const bounded = m.history.filter((h) => h.qualifier).length;
+  // Why any result isn't drawn: the reason that applies to each, never a guess at units.
+  const reasons = undrawnReasons(m);
 
   async function remove(res: LabResult) {
     if (!confirm(`Delete the ${m.name} result from ${longDate(res.collected)} (${res.valueText}${res.unit ? ` ${res.unit}` : ''})? It can't be undone.`)) return;
@@ -243,14 +293,13 @@ function MarkerDetail({ m }: { m: LabMarker }) {
           <p className="muted small">
             {unit ? `In ${unit}` : 'As printed'}
             {converted.length ? `; results in ${converted.join(', ')} converted.` : '.'}
-            {r && ` Lines mark the latest result's ${r.kind === 'typical' ? 'typical adult range' : 'printed range'}; earlier labs may have printed others.`}
-            {bounded > 0 && ` Results printed with < or > are listed below but not drawn.`}
-            {m.otherUnits > 0 && ` ${m.otherUnits === 1 ? 'One result is' : `${m.otherUnits} results are`} in a unit that can't be converted, so ${m.otherUnits === 1 ? "it's" : "they're"} listed but not drawn.`}
+            {refLines.length > 0 && ` Lines mark the latest result's ${r?.kind === 'typical' ? 'typical adult range' : 'printed range'}; earlier labs may have printed others.`}
+            {reasons.length > 0 && ` ${reasons.join(' ')} Every result is listed below.`}
           </p>
         </>
       ) : (
         <p className="muted small">
-          {m.history.length === 1 ? 'One result so far. A chart appears once there are two that can be compared.' : 'These results are not in one unit that can be compared, so they are listed rather than drawn.'}
+          {m.history.length === 1 ? 'One result so far. A chart appears once there are two that can be compared.' : `A chart needs two results that can be drawn on one scale. ${reasons.join(' ')} Every result is listed below.`}
         </p>
       )}
       <table className="labs-history">
@@ -370,7 +419,8 @@ function ByDate({ data }: { data: LabsData }) {
 // ---------- adding results ----------
 
 type Row = { id: number; name: string; valueText: string; unit: string; refText: string; panel: string };
-type Group = { id: number; collected: string; lab: string; rows: Row[] };
+/** One collection's rows. dateDropped: a date was read from the report but couldn't be used, so it's left to fill in. */
+type Group = { id: number; collected: string; lab: string; dateDropped: boolean; rows: Row[] };
 
 const blankRow = (id: number): Row => ({ id, name: '', valueText: '', unit: '', refText: '', panel: '' });
 const isBlank = (r: Row) => !r.name.trim() && !r.valueText.trim() && !r.unit.trim() && !r.refText.trim();
@@ -378,7 +428,10 @@ const isBlank = (r: Row) => !r.name.trim() && !r.valueText.trim() && !r.unit.tri
 /** The server names a field by its index ("results[3].unit: …"); this says which row the person filled in. */
 const FIELD: Record<string, string> = { collected: 'the date', name: 'the marker', valueText: 'the result', unit: 'the unit', refText: 'the range', lab: 'the lab', panel: 'the panel', refLow: 'the range', refHigh: 'the range' };
 
-/** One form for typing results in and for checking what was read from a report. */
+/**
+ * One form for typing results in and for checking what was read from a report. Only the Save button saves:
+ * Enter (or Go on a phone keyboard) in a field never sends rows that haven't been checked.
+ */
 function ResultsForm({
   title,
   intro,
@@ -387,6 +440,7 @@ function ResultsForm({
   today,
   onSaved,
   onCancel,
+  onPending,
 }: {
   title: string;
   intro: ReactNode;
@@ -395,12 +449,19 @@ function ResultsForm({
   today: string;
   onSaved: (n: number) => void;
   onCancel: () => void;
+  /** Told whether any row has been typed in, so the page asks before throwing them away. */
+  onPending?: (p: Pending) => void;
 }) {
   const [groups, setGroups] = useState(initial);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const nextId = useRef(1000);
+  const heading = useRef<HTMLHeadingElement>(null);
   const filled = groups.reduce((a, g) => a + g.rows.filter((r) => !isBlank(r)).length, 0);
+
+  // Focus moves to the form as it opens, so it isn't left on a button that has gone.
+  useEffect(() => heading.current?.focus(), []);
+  useEffect(() => onPending?.(filled > 0 ? 'typed' : 'none'), [filled, onPending]);
 
   const setGroup = (gid: number, patch: Partial<Group>) => setGroups((gs) => gs.map((g) => (g.id === gid ? { ...g, ...patch } : g)));
   const setRow = (gid: number, rid: number, patch: Partial<Row>) =>
@@ -408,14 +469,15 @@ function ResultsForm({
   const addRow = (gid: number) => setGroups((gs) => gs.map((g) => (g.id === gid ? { ...g, rows: [...g.rows, blankRow(nextId.current++)] } : g)));
   const removeRow = (gid: number, rid: number) => setGroups((gs) => gs.map((g) => (g.id === gid ? { ...g, rows: g.rows.filter((r) => r.id !== rid) } : g)));
 
-  async function save(e: FormEvent) {
-    e.preventDefault();
+  async function save() {
     setErr('');
     const sent: { label: string; row: Record<string, string> }[] = [];
     for (const g of groups) {
       const rows = g.rows.filter((r) => !isBlank(r));
       if (!rows.length) continue;
-      const on = groups.length > 1 ? ` for ${g.collected ? longDate(g.collected) : 'the undated results'}` : '';
+      // Two collections on one day are from different labs: say which.
+      const sameDay = g.lab && groups.filter((o) => o.collected === g.collected).length > 1 ? ` from ${g.lab}` : '';
+      const on = groups.length > 1 ? ` for ${g.collected ? longDate(g.collected) : 'the undated results'}${sameDay}` : '';
       if (!g.collected) return setErr(`Add the date the sample was collected${on}.`);
       if (g.collected > today) return setErr("The collection date can't be in the future.");
       for (const r of rows) {
@@ -441,9 +503,11 @@ function ResultsForm({
   }
 
   return (
-    <form className="card labs-form" onSubmit={save} aria-labelledby="labs-form-title" noValidate>
+    <form className="card labs-form" onSubmit={(e) => e.preventDefault()} aria-labelledby="labs-form-title" noValidate>
       <div className="card-title-row">
-        <h2 id="labs-form-title">{title}</h2>
+        <h2 id="labs-form-title" tabIndex={-1} ref={heading}>
+          {title}
+        </h2>
         <button type="button" className="btn btn-quiet" onClick={onCancel}>
           Cancel
         </button>
@@ -459,7 +523,8 @@ function ResultsForm({
           <legend className={groups.length > 1 ? 'labs-legend' : 'sr-only'}>{groups.length > 1 ? `Collection ${gi + 1} of ${groups.length}` : 'Results'}</legend>
           {source === 'report' && !g.collected && (
             <p className="small labs-review-note">
-              <Icon name="alert" size={14} /> The report didn't show when these were collected. Add the date before saving.
+              <Icon name="alert" size={14} />{' '}
+              {g.dateDropped ? "The date read from the report doesn't look right. Check it and add it." : "The report didn't show when these were collected. Add the date before saving."}
             </p>
           )}
           <div className="labs-shared">
@@ -488,7 +553,7 @@ function ResultsForm({
         </p>
       )}
       <div className="btn-row">
-        <button type="submit" className="btn btn-primary" disabled={busy || !filled}>
+        <button type="button" className="btn btn-primary" disabled={busy || !filled} onClick={save}>
           {busy ? 'Saving…' : filled ? `Save ${filled} ${filled === 1 ? 'result' : 'results'}` : 'Save'}
         </button>
         <button type="button" className="btn btn-quiet" onClick={onCancel} disabled={busy}>
@@ -500,17 +565,22 @@ function ResultsForm({
 }
 
 function RowFields({ row, n, gid, set, remove }: { row: Row; n: number; gid: number; set: (p: Partial<Row>) => void; remove: () => void }) {
-  const key = row.name.trim() ? matchBiomarker(row.name) : null;
+  // Matched as the server will store it: a row on a urine or stool panel is never a blood marker.
+  const found = row.name.trim() ? markerKey(row.name, row.panel) : null;
+  const key = found && !isOther(found) ? found : null;
+  const specimen = found && !key ? specimenOf(row.name, row.panel) : null;
   const units = key ? markerUnits(key) : [];
   const unitList = `labs-units-${gid}-${row.id}`;
-  const matched = key ? BIOMARKERS.find((b) => b.key === key)!.name : null;
+  const matched = key ? biomarker(key)!.name : null;
   return (
     <div className="labs-row" role="group" aria-label={`Row ${n}`}>
       <label className="labs-field labs-field-name">
         <span>Marker</span>
         <input list="labs-marker-names" value={row.name} maxLength={120} placeholder="e.g. Vitamin D" onChange={(e) => set({ name: e.target.value })} />
         {row.name.trim() && (
-          <small className="muted">{matched ? (matched === row.name.trim() ? 'In the catalog' : `Read as ${matched}`) : 'Kept as printed'}</small>
+          <small className="muted">
+            {matched ? (matched === row.name.trim() ? 'In the catalog' : `Read as ${matched}`) : specimen ? `Kept as printed, as a ${specimen} result` : 'Kept as printed'}
+          </small>
         )}
       </label>
       <label className="labs-field labs-field-value">
@@ -545,25 +615,33 @@ function RowFields({ row, n, gid, set, remove }: { row: Row; n: number; gid: num
 
 // ---------- importing a report ----------
 
-/** The draft rows as form groups: one per collection date, a missing date left for the person to fill in. */
+/** The draft rows as form groups: one per collection date and lab, a missing date left for the person to fill in. */
 function groupsFromDrafts(rows: LabDraft[]): Group[] {
-  const by = new Map<string, LabDraft[]>();
-  for (const r of rows) by.set(r.collected ?? '', [...(by.get(r.collected ?? '') ?? []), r]);
   let id = 1;
-  return [...by].map(([collected, rs]) => ({
+  return draftGroups(rows).map((g) => ({
     id: id++,
-    collected,
-    lab: rs.find((r) => r.lab)?.lab ?? '',
-    rows: rs.map((r) => ({ id: id++, name: r.name, valueText: r.valueText, unit: r.unit ?? '', refText: r.refText ?? '', panel: r.panel ?? '' })),
+    collected: g.collected,
+    lab: g.lab,
+    dateDropped: g.dateDropped,
+    rows: g.rows.map((r) => ({ id: id++, name: r.name, valueText: r.valueText, unit: r.unit ?? '', refText: r.refText ?? '', panel: r.panel ?? '' })),
   }));
 }
 
-function ImportReport({ today, onSaved, onCancel }: { today: string; onSaved: (n: number) => void; onCancel: () => void }) {
+function ImportReport({ today, onSaved, onCancel, onPending }: { today: string; onSaved: (n: number) => void; onCancel: () => void; onPending: (p: Pending) => void }) {
   const mcfly = useApi<{ configured: boolean; limit: number; usedToday: number }>('/mcfly');
   const [phase, setPhase] = useState<'choose' | 'preparing' | 'reading'>('choose');
   const [err, setErr] = useState('');
   const [read, setRead] = useState<LabExtract | null>(null);
   const input = useRef<HTMLInputElement>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const choose = useRef<HTMLButtonElement>(null);
+  // A read in progress has already used a question, and a draft hasn't been saved: the page asks before losing either.
+  useEffect(() => onPending(phase !== 'choose' ? 'reading' : read ? 'draft' : 'none'), [phase, read, onPending]);
+  useEffect(() => heading.current?.focus(), []);
+  // A file that couldn't be read: back to the button, to try another.
+  useEffect(() => {
+    if (err) choose.current?.focus();
+  }, [err]);
   const configured = mcfly.data?.configured ?? true;
   /** McFly turned off by an admin (a limit of 0), which isn't the same as having used today's questions. */
   const off = mcfly.data !== undefined && !(mcfly.data.limit > 0);
@@ -617,7 +695,9 @@ function ImportReport({ today, onSaved, onCancel }: { today: string; onSaved: (n
   return (
     <section className="card labs-import" aria-labelledby="labs-import-title">
       <div className="card-title-row">
-        <h2 id="labs-import-title">Import a report</h2>
+        <h2 id="labs-import-title" tabIndex={-1} ref={heading}>
+          Import a report
+        </h2>
         <button className="btn btn-quiet" onClick={onCancel} disabled={busy}>
           Cancel
         </button>
@@ -638,7 +718,7 @@ function ImportReport({ today, onSaved, onCancel }: { today: string; onSaved: (n
         off && <p className="note-bad">Reading reports uses Ask McFly, which is turned off right now. You can still type results in.</p>
       )}
       <div className="btn-row">
-        <button className="btn btn-primary" disabled={busy || !configured || off || left === 0} onClick={() => input.current?.click()}>
+        <button ref={choose} className="btn btn-primary" disabled={busy || !configured || off || left === 0} onClick={() => input.current?.click()}>
           <Icon name="upload" size={15} />
           Choose a file
         </button>

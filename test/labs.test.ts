@@ -4,7 +4,25 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { AddressInfo } from 'node:net';
-import { convert, matchBiomarker, markerKey, parseRange, parseResultValue, resultStatus, statusOf, typicalRange } from '../shared/labs.ts';
+import {
+  type LabDraft,
+  type LabResult,
+  convert,
+  draftGroups,
+  markerKey,
+  markerName,
+  matchBiomarker,
+  parseRange,
+  parseResultValue,
+  rangeCount,
+  rangeLabel,
+  resultStatus,
+  statusHint,
+  statusLabel,
+  statusOf,
+  typicalRange,
+  undrawnReasons,
+} from '../shared/labs.ts';
 import { createApp } from '../server/app.ts';
 import { hashPassword } from '../server/auth.ts';
 import { addDays, todayLocal } from '../server/dates.ts';
@@ -12,6 +30,7 @@ import { OWNER_ID } from '../server/db.ts';
 import { insertLabResults } from '../server/labs.ts';
 import type { McflyClient } from '../server/mcfly.ts';
 import { openStore } from '../server/store.ts';
+import { prepareReport } from '../src/labsUpload.ts';
 
 process.env.SESSION_SECRET = 'labs-test-secret-'.padEnd(64, 'x');
 const OWNER_PASSWORD = 'owner password 123';
@@ -63,6 +82,152 @@ test('status is position against a range, with "<" and ">" placed only when they
   assert.equal(s('>90', '>59'), 'within');
   assert.equal(s('>12', '1-10'), 'above');
   assert.equal(s('Negative', 'Negative'), null);
+});
+
+test('a result and its range are read with one number grammar, so the status matches the printed numbers', () => {
+  const s = (v: string, r: string) => resultStatus(parseResultValue(v), parseRange(r));
+  // Thousands: platelets printed per µL.
+  assert.deepEqual(parseRange('150,000-450,000'), { low: 150000, high: 450000, lowOpen: false, highOpen: false });
+  assert.equal(parseResultValue('250,000').value, 250000);
+  assert.equal(s('250,000', '150,000-450,000'), 'within');
+  assert.equal(s('500,000', '150,000-450,000'), 'above');
+  // A minus sign on the first bound (base excess), plain or typographic.
+  assert.deepEqual(parseRange('-2.0-2.0'), { low: -2, high: 2, lowOpen: false, highOpen: false });
+  assert.deepEqual(parseRange('−2.0 to +2.0'), { low: -2, high: 2, lowOpen: false, highOpen: false });
+  assert.equal(parseResultValue('−1.5').value, -1.5);
+  assert.equal(s('-1.5', '-2.0-2.0'), 'within');
+  assert.equal(s('-3', '-2.0-2.0'), 'below');
+  // A hyphen after a word isn't a minus; decimal commas stay decimal across the whole range.
+  assert.deepEqual(parseRange('Adult-13-17'), { low: 13, high: 17, lowOpen: false, highOpen: false });
+  assert.deepEqual(parseRange('0,450-4,500'), { low: 0.45, high: 4.5, lowOpen: false, highOpen: false });
+  assert.deepEqual(parseRange('3,5-5,0'), { low: 3.5, high: 5, lowOpen: false, highOpen: false });
+  assert.deepEqual(parseRange('60-90 mL/min/1.73m2'), { low: 60, high: 90, lowOpen: false, highOpen: false }, 'a number in the unit is not a second range');
+});
+
+test('a range printed in bands is read for the sex given, never as its first band', () => {
+  const hgb = 'Male: 13.0-17.0 Female: 12.0-15.0';
+  assert.equal(rangeCount(hgb), 2);
+  assert.equal(parseRange(hgb), null, 'no sex: no band, rather than the first');
+  assert.equal(parseRange(hgb, 'unspecified'), null);
+  assert.deepEqual(parseRange(hgb, 'female'), { low: 12, high: 15, lowOpen: false, highOpen: false });
+  assert.deepEqual(parseRange(hgb, 'male'), { low: 13, high: 17, lowOpen: false, highOpen: false });
+  assert.equal(resultStatus(parseResultValue('12.5'), parseRange(hgb, 'female')), 'within');
+  assert.deepEqual(parseRange('M: <1.2 F: <1.0', 'female'), { low: null, high: 1, lowOpen: false, highOpen: true });
+  assert.deepEqual(parseRange('(M) 13-17 (F) 12-15', 'female'), { low: 12, high: 15, lowOpen: false, highOpen: false });
+  // Anything that isn't one labelled band per sex shows as printed, with no status.
+  assert.equal(parseRange('13.0-17.0 (male) 12.0-15.0 (female)', 'female'), null, 'labels after their ranges');
+  assert.equal(parseRange('Female 18-49: 10-20 Male: 5-6', 'female'), null, 'age bands');
+  assert.equal(parseRange('Desirable <200 Borderline 200-239'), null, 'categories');
+  assert.equal(parseRange('Desirable <200 Borderline 200-239', 'female'), null);
+  // One labelled band is the lab's range for this person.
+  assert.deepEqual(parseRange('Female: 12.0-15.0', 'male'), { low: 12, high: 15, lowOpen: false, highOpen: false });
+});
+
+test('urine and stool results never become a blood marker', () => {
+  assert.equal(markerKey('Glucose', 'Urinalysis'), 'other:urine-glucose');
+  assert.equal(markerKey('Glucose, Urine'), 'other:urine-glucose', 'the same test, whichever way it was printed');
+  assert.equal(markerKey('WBC', 'Microscopic Examination'), 'other:urine-wbc');
+  assert.equal(markerKey('RBC', 'UA, Complete'), 'other:urine-rbc');
+  assert.equal(markerKey('Occult Blood', 'Stool'), 'other:stool-occult-blood');
+  assert.equal(markerKey('Glucose', 'Metabolic'), 'glucose');
+  assert.equal(markerKey('Glucose'), 'glucose');
+  assert.equal(markerName('other:urine-glucose', 'Glucose'), 'Glucose (urine)', 'told apart from blood glucose');
+  assert.equal(markerName('other:urine-glucose', 'Glucose, Urine'), 'Glucose, Urine');
+});
+
+const result = (o: Partial<LabResult>): LabResult => ({
+  id: 'r',
+  collected: '2026-01-01',
+  biomarker: 'x',
+  name: 'X',
+  valueText: '5',
+  value: 5,
+  qualifier: null,
+  unit: 'mg/dL',
+  range: { low: 1, high: 10, text: '1-10', kind: 'lab' },
+  status: 'within',
+  lab: '',
+  panel: '',
+  source: 'manual',
+  ...o,
+});
+
+test('each status says which range it is against, or why there is none', () => {
+  const plain = result({});
+  assert.deepEqual([statusLabel(plain), statusHint(plain)], ['Within range', undefined]);
+  const typical = result({ range: { low: 1.6, high: 2.3, text: '1.6–2.3', kind: 'typical' } });
+  assert.match(statusHint(typical)!, /typical adult range/);
+  const picked = result({ range: { low: 12, high: 15, text: 'Male: 13.0-17.0 Female: 12.0-15.0', kind: 'lab', band: 'female' } });
+  assert.equal(rangeLabel(picked), 'Male: 13.0-17.0 Female: 12.0-15.0 (female range used)');
+  assert.match(statusHint(picked)!, /the one for women, from the sex in your profile/);
+  const unpicked = result({ status: null, range: { low: null, high: null, text: 'Male: 13.0-17.0 Female: 12.0-15.0', kind: 'lab', band: null } });
+  assert.equal(statusLabel(unpicked), 'Can’t be placed');
+  assert.match(statusHint(unpicked)!, /more than one band/);
+  const noNumbers = result({ status: null, range: { low: null, high: null, text: 'See note', kind: 'lab' } });
+  assert.equal(statusLabel(noNumbers), 'Compare with range');
+  assert.match(statusHint(noNumbers)!, /no numbers to place this against/);
+  assert.doesNotMatch(statusHint(noNumbers)!, /either side/);
+  const word = result({ status: null, value: null, valueText: 'Negative', range: { low: null, high: null, text: 'Negative', kind: 'lab' } });
+  assert.match(statusHint(word)!, /a word, not a number/);
+  const bound = result({ status: null, value: 2, valueText: '<2', qualifier: '<', range: { low: 1, high: 3, text: '1-3', kind: 'lab' } });
+  assert.match(statusHint(bound)!, /Printed as <2, which could fall on either side/);
+  const none = result({ status: null, range: null });
+  assert.equal(statusLabel(none), 'No range printed');
+});
+
+test("a marker's chart says the reason each result isn't drawn, not always the unit", () => {
+  // The demo's hs-CRP: 1.4, then "<0.3". Only one exact value, and the reason is the "<", not a unit.
+  const crp = [result({ id: 'a', valueText: '1.4', value: 1.4 }), result({ id: 'b', valueText: '<0.3', value: 0.3, qualifier: '<' })];
+  const reasons = undrawnReasons({ history: crp, latest: crp[1], points: [{ id: 'a', date: '2026-01-01', value: 1.4 }] });
+  assert.deepEqual(reasons, ['One result is printed with < or >, so it has no exact value to draw.']);
+  const mixed = [
+    result({ id: 'a', value: 40, unit: 'mg/dL' }),
+    result({ id: 'b', value: null, valueText: 'Negative', unit: '' }),
+    result({ id: 'c', value: 90, unit: 'nmol/L' }),
+    result({ id: 'd', value: 60, unit: 'nmol/L' }),
+  ];
+  const r2 = undrawnReasons({ history: mixed, latest: mixed[3], points: [{ id: 'c', date: 'x', value: 90 }, { id: 'd', date: 'x', value: 60 }] });
+  assert.equal(r2.length, 2);
+  assert.match(r2[0], /^One result is a word, not a number/);
+  assert.match(r2[1], /^One result is in a unit that can't be put on the same scale as the latest result \(nmol\/L\)/);
+  assert.doesNotMatch(r2.join(' '), /< or >/);
+});
+
+test('rows read from a report are checked one collection per date and lab, with an unusable date kept apart', () => {
+  const row = (o: Partial<LabDraft>): LabDraft => ({ collected: '2026-03-01', name: 'Glucose', valueText: '90', unit: 'mg/dL', refText: '70-99', lab: 'Quest', panel: '', biomarker: 'glucose', ...o });
+  const groups = draftGroups([
+    row({}),
+    row({ name: 'TSH', lab: '' }),
+    row({ name: 'HbA1c', lab: 'LabCorp' }),
+    row({ collected: '2026-02-01', lab: '' }),
+    row({ collected: null, lab: '' }),
+    row({ collected: null, lab: '', dateDropped: true }),
+  ]);
+  assert.deepEqual(
+    groups.map((g) => [g.collected, g.lab, g.dateDropped, g.rows.map((r) => r.name).join(',')]),
+    [
+      ['2026-03-01', 'Quest', false, 'Glucose'],
+      ['2026-03-01', 'LabCorp', false, 'HbA1c'],
+      ['2026-03-01', '', false, 'TSH'],
+      ['2026-02-01', '', false, 'Glucose'],
+      ['', '', false, 'Glucose'],
+      ['', '', true, 'Glucose'],
+    ],
+  );
+  // One named lab on a day: a row with the lab left blank joins it.
+  assert.deepEqual(
+    draftGroups([row({}), row({ name: 'TSH', lab: '' })]).map((g) => [g.lab, g.rows.length]),
+    [['Quest', 2]],
+  );
+});
+
+test("a HEIC photo this browser can't open gets advice that works for the photo in hand", async () => {
+  await assert.rejects(prepareReport(new File([new Uint8Array(2_000_000)], 'IMG_0001.HEIC', { type: 'image/heic' })), (e: Error) => {
+    assert.match(e.message, /screenshot of the photo/);
+    assert.match(e.message, /JPEG/);
+    assert.doesNotMatch(e.message, /Settings|Most Compatible/, "a camera setting changes new photos, not this one");
+    return true;
+  });
 });
 
 test('units convert only with an explicit factor', () => {
@@ -519,4 +684,97 @@ test("over the daily limit it's refused, and with the limit at 0 it's off", asyn
   await owner.call('PUT', '/api/admin/settings', { mcfly_daily_limit: 0 });
   assert.equal((await bob.extract('application/pdf', pdf(2000))).status, 403);
   await owner.call('PUT', '/api/admin/settings', { mcfly_daily_limit: 50 });
+});
+
+// ---------- urine panels, banded ranges and unusable dates (a fresh member, so the tests above aren't touched) ----------
+
+const carol = new Client();
+let carolId = '';
+
+test('setup: another invited member', async () => {
+  const inv = await owner.call('POST', '/api/admin/invites', {});
+  const token = inv.json.url.split('/').at(-1);
+  assert.equal((await carol.call('POST', '/api/auth/invite', { token, email: 'carol@example.com', name: 'Carol', password: 'carol password 123' })).status, 200);
+  carolId = (await carol.call('GET', '/api/auth/me')).json.user.id;
+});
+
+test('a urinalysis beside a blood panel stays apart from the blood markers, and one request keeps its order', async () => {
+  const r = await carol.add([
+    { collected: ago(4), name: 'Glucose', valueText: '94', unit: 'mg/dL', refText: '70-99', panel: 'Metabolic' },
+    { collected: ago(4), name: 'Glucose', valueText: 'Negative', refText: 'Negative', panel: 'Urinalysis' },
+    { collected: ago(4), name: 'WBC', valueText: '6.1', unit: 'x10E3/uL', refText: '3.4-10.8', panel: 'CBC' },
+    { collected: ago(4), name: 'WBC', valueText: '0-5', unit: '/hpf', refText: '0-5', panel: 'Microscopic Examination' },
+    { collected: ago(3), name: 'Glucose', valueText: '90', unit: 'mg/dL', refText: '70-99', panel: 'Metabolic' },
+    { collected: ago(3), name: 'Glucose', valueText: '91', unit: 'mg/dL', refText: '70-99', panel: 'Metabolic' },
+  ]);
+  assert.equal(r.status, 200, r.text);
+  // Rows from one request are stored one millisecond apart, in the order sent: a same-day tie is never a coin toss.
+  const stored = await db.query<{ id: string; created_at: number }>('SELECT id, created_at FROM lab_results WHERE user_id = $1', [carolId]);
+  const at = r.json.ids.map((id: string) => Number(stored.find((s) => s.id === id)!.created_at));
+  assert.ok(
+    at.every((t: number, i: number) => i === 0 || t > at[i - 1]),
+    'created_at rises with the row index',
+  );
+  const data = (await carol.labs()).json;
+  const m = (key: string) => data.markers.find((x: { key: string }) => x.key === key);
+  assert.deepEqual(
+    m('glucose').history.map((h: { valueText: string }) => h.valueText),
+    ['94', '90', '91'],
+    'only blood glucose, the later same-day row last',
+  );
+  assert.equal(m('glucose').latest.valueText, '91');
+  assert.equal(m('glucose').points.length, 3);
+  assert.equal(m('glucose').otherUnits, 0);
+  assert.deepEqual([m('other:urine-glucose').name, m('other:urine-glucose').latest.valueText], ['Glucose (urine)', 'Negative']);
+  assert.deepEqual([m('wbc').latest.valueText, m('wbc').history.length], ['6.1', 1]);
+  assert.equal(m('other:urine-wbc').latest.unit, '/hpf');
+
+  // A catalog key can't be forced onto a urine result, and moving a result onto a urine panel matches it again.
+  const forced = await carol.add([{ collected: ago(4), name: 'Glucose', valueText: '1+', panel: 'Urinalysis', biomarker: 'glucose' }]);
+  assert.equal(forced.status, 400);
+  assert.match(forced.json.error, /results\[0\]\.biomarker: the catalog's markers are blood tests/);
+  const moved = await carol.call('PATCH', `/api/labs/${m('glucose').latest.id}`, { panel: 'Urinalysis' });
+  assert.equal(moved.status, 200);
+  assert.equal(moved.json.result.biomarker, 'other:urine-glucose');
+});
+
+test('a range printed in bands is read for the sex in the profile, and never as its first band', async () => {
+  const r = await carol.add([
+    { collected: ago(2), name: 'Hemoglobin', valueText: '12.5', unit: 'g/dL', refText: 'Male: 13.0-17.0 Female: 12.0-15.0', panel: 'CBC' },
+    { collected: ago(2), name: 'Platelets', valueText: '250,000', unit: '/uL', refText: '150,000-450,000', panel: 'CBC' },
+  ]);
+  assert.equal(r.status, 200, r.text);
+  const [row] = await db.query<{ ref_low: number | null; ref_high: number | null }>('SELECT ref_low, ref_high FROM lab_results WHERE user_id = $1 AND id = $2', [carolId, r.json.ids[0]]);
+  assert.deepEqual([row.ref_low, row.ref_high], [null, null], 'no band is stored: it is picked each time it is read');
+  const hgb = async () => (await carol.labs()).json.markers.find((x: { key: string }) => x.key === 'hemoglobin').latest;
+
+  const none = await hgb();
+  assert.deepEqual([none.status, none.range], [null, { low: null, high: null, text: 'Male: 13.0-17.0 Female: 12.0-15.0', kind: 'lab', band: null }]);
+  await carol.call('PUT', '/api/settings', { sex: 'female' });
+  const female = await hgb();
+  assert.deepEqual([female.status, female.range.low, female.range.high, female.range.band], ['within', 12, 15, 'female']);
+  await carol.call('PUT', '/api/settings', { sex: 'male' });
+  const male = await hgb();
+  assert.deepEqual([male.status, male.range.band], ['below', 'male']);
+  await carol.call('PUT', '/api/settings', { sex: null });
+
+  const plt = (await carol.labs()).json.markers.find((x: { key: string }) => x.key === 'platelets').latest;
+  assert.deepEqual([plt.value, plt.range.low, plt.range.high, plt.status], [250000, 150000, 450000, 'within']);
+});
+
+test("a date read from a report that can't be used is flagged, and a urinalysis row isn't matched to a blood marker", async () => {
+  script = [
+    extracted([
+      { ...ROW, collected: '2026-02-30' },
+      { ...ROW, name: 'TSH', collected: null },
+      { ...ROW, panel: 'Urinalysis', value_text: 'Negative', unit: '', ref_text: 'Negative', ref_low: null, ref_high: null },
+    ]),
+  ];
+  const r = await carol.extract('application/pdf', pdf(2000));
+  assert.equal(r.status, 200, r.text);
+  assert.deepEqual([r.json.rows[0].collected, r.json.rows[0].dateDropped], [null, true], 'a date was read, but it is not a real one');
+  assert.deepEqual([r.json.rows[1].collected, 'dateDropped' in r.json.rows[1]], [null, false], 'the report showed no date');
+  assert.equal(r.json.rows[2].biomarker, null, 'a urinalysis glucose is not blood glucose');
+  assert.equal(r.json.rows[2].collected, ago(2));
+  assert.ok(!('dateDropped' in r.json.rows[2]));
 });

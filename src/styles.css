@@ -5126,10 +5126,63 @@ html:has(.palette[open]) {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+/* "Why?" beside a status that needs a word of explanation; the reason opens as text under it. */
+.lab-status-wrap {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  max-width: 100%;
+}
+.lab-why {
+  min-height: 24px;
+  padding: 2px 4px;
+  border: 0;
+  background: none;
+  color: var(--ink-2);
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.lab-why[aria-expanded='true'] {
+  color: var(--ink);
+}
+.lab-hint {
+  flex-basis: 100%;
+  max-width: 280px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--ink-2);
+  text-align: left;
+  white-space: normal;
+}
+.lab-hint[hidden] {
+  display: none;
+}
 
 /* The page */
 .labs .page-head-tools .btn-row {
   justify-content: flex-end;
+}
+/* The open form's button: a bar under its label, not only a change of colour. */
+.labs .page-head-tools .btn[aria-pressed='true'] {
+  box-shadow: inset 0 -3px 0 currentColor;
+}
+/* The notice after a save: kept in place while empty (so the change is announced) without taking a gap. */
+.labs-notice:empty {
+  position: absolute;
+}
+.labs-notice .note-good:focus,
+.labs-form h2:focus,
+.labs-import h2:focus {
+  outline: none;
+}
+.labs-notice .note-good:focus-visible,
+.labs-form h2:focus-visible,
+.labs-import h2:focus-visible {
+  outline: 2px solid var(--series-1);
+  outline-offset: 2px;
 }
 .labs-card-head {
   display: flex;
@@ -5435,6 +5488,10 @@ html:has(.palette[open]) {
   }
 }
 @media (max-width: 760px) {
+  /* 16px or more, so iOS doesn't zoom in on each field. */
+  .labs-field input {
+    font-size: 16px;
+  }
   .labs-row {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     padding: 12px;
@@ -5502,6 +5559,15 @@ html:has(.palette[open]) {
   .labs-history .labs-delete-cell {
     grid-column: 1 / -1;
     text-align: left;
+  }
+  /* An open reason takes the whole width under the result, rather than squeezing the range beside it. */
+  .labs-table td:has(.lab-hint:not([hidden])),
+  .labs-history td:has(.lab-hint:not([hidden])) {
+    grid-column: 1 / -1;
+    text-align: left;
+  }
+  .lab-hint {
+    max-width: none;
   }
 }
 @media (prefers-reduced-motion: reduce) {
