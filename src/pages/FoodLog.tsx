@@ -276,7 +276,7 @@ function AddFood({ log, date, numbers, units }: { log: FoodLog; date: string; nu
   return (
     <section className="card food-add">
       <header className="food-add-head">
-        <h2>Add food</h2>
+        <h2>Add food or drink</h2>
         {!log.drafts.length && (
           <label className="food-when">
             <span className="muted small">{relativeDay(date, log.today)} at</span>
@@ -288,6 +288,7 @@ function AddFood({ log, date, numbers, units }: { log: FoodLog; date: string; nu
         <EstimateReview key={log.drafts.map((d) => d.id).join()} drafts={log.drafts} batch={log.draftBatch ?? ''} note={note} units={units} numbers={numbers} />
       ) : (
         <>
+          {numbers !== 'none' && <WaterButtons when={when} units={units} />}
           {modes.length > 1 && (
             <div className="seg food-modes" role="tablist" aria-label="How to add">
               {modes.map((m) => (
@@ -308,6 +309,60 @@ function AddFood({ log, date, numbers, units }: { log: FoodLog; date: string; nu
 
 /** The date and time to log at, worked out when the person adds. */
 type When = () => { date: string; time: string };
+
+/** Water in one tap: a glass or a bottle, in the person's units. Any other amount goes through Quick add. */
+const WATER: Record<Units, { label: string; portion: string; ml: number }[]> = {
+  metric: [
+    { label: 'Glass, 250 mL', portion: '1 glass (250 mL)', ml: 250 },
+    { label: 'Bottle, 500 mL', portion: '1 bottle (500 mL)', ml: 500 },
+  ],
+  imperial: [
+    { label: 'Glass, 8 fl oz', portion: '1 glass (8 fl oz)', ml: 8 * FL_OZ_ML },
+    { label: 'Bottle, 16.9 fl oz', portion: '1 bottle (16.9 fl oz)', ml: 500 },
+  ],
+};
+
+function WaterButtons({ when, units }: { when: When; units: Units }) {
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!done) return;
+    const t = setTimeout(() => setDone(null), 4000);
+    return () => clearTimeout(t);
+  }, [done]);
+  async function add(w: (typeof WATER)[Units][number]) {
+    setBusy(true);
+    setError(null);
+    try {
+      await sendJson('POST', '/nutrition/log', { method: 'quick', name: 'Water', portion: w.portion, values: { water_ml: w.ml }, ...when() });
+      setDone(`Added ${w.portion.replace(/^1 /, 'a ')}.`);
+      notifyDataChanged();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="food-water">
+      <span className="muted small">Water</span>
+      <div className="btn-row">
+        {WATER[units].map((w) => (
+          <button key={w.label} type="button" className="chip-btn" disabled={busy} onClick={() => add(w)}>
+            + {w.label}
+          </button>
+        ))}
+      </div>
+      {done && (
+        <span className="small food-added" role="status">
+          {done}
+        </span>
+      )}
+      {error && <span className="note-bad small">{error}</span>}
+    </div>
+  );
+}
 
 function SearchFood({ when, units, usda }: { when: When; units: Units; usda: boolean }) {
   const [query, setQuery] = useState('');

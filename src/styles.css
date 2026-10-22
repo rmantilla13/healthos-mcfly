@@ -3424,6 +3424,14 @@ td {
 .food-credit {
   margin-top: 4px;
 }
+.food-water {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
 .food-estimate > .btn {
   align-self: flex-start;
 }
