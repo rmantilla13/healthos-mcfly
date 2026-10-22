@@ -540,11 +540,11 @@ test('drafts go after a day: on the next visit, on the hourly cron, even with Nu
 test("McFly's note and names never carry a number the person hides", async () => {
   const leaky = JSON.stringify({
     items: [{ name: 'Pasta (about 650 kcal)', portion: '1 plate (300 g), ~25 g protein', energy_kcal: 650, protein_g: 25, carbs_g: 80, fat_g: 24, fiber_g: null, sugar_g: null, sat_fat_g: null, sodium_mg: null, alcohol_drinks: 0, water_ml: null }],
-    note: 'Assumed a tablespoon of olive oil, about 120 kcal. That adds 14 g of fat. The plate looked about half full.',
+    note: 'Assumed a tablespoon of olive oil, about 120 kcal. That adds 14 g of fat. The sauce is roughly 250kcal, or 1050kJ. The plate looked about half full.',
   });
   answers = [{ text: leaky }];
   const all = (await owner.post('/api/nutrition/estimate', { description: 'pasta' })).json;
-  assert.equal(all.note, 'Assumed a tablespoon of olive oil, about 120 kcal. That adds 14 g of fat. The plate looked about half full.', 'everything, for someone who sees everything');
+  assert.equal(all.note, 'Assumed a tablespoon of olive oil, about 120 kcal. That adds 14 g of fat. The sauce is roughly 250kcal, or 1050kJ. The plate looked about half full.', 'everything, for someone who sees everything');
   assert.deepEqual([all.drafts[0].name, all.drafts[0].portion], ['Pasta', '1 plate (300 g)'], 'amounts never in a name or portion');
   assert.match(claude.at(-1).system, /never put calories or other nutrient amounts/);
 
@@ -553,14 +553,14 @@ test("McFly's note and names never carry a number the person hides", async () =>
   const noEnergy = await owner.post('/api/nutrition/estimate', { description: 'pasta' });
   assert.equal(noEnergy.json.note, 'That adds 14 g of fat. The plate looked about half full.');
   assert.match(claude.at(-1).system, /chose not to see calories/);
-  assert.ok(!/kcal|calor/i.test(noEnergy.text));
+  assert.ok(!/kcal|calor|kj/i.test(noEnergy.text), 'not even written without a space');
 
   await owner.put('/api/settings', { nutritionNumbers: 'none' });
   answers = [{ text: leaky }];
   const none = await owner.post('/api/nutrition/estimate', { description: 'pasta' });
   assert.equal(none.json.note, 'The plate looked about half full.');
   assert.deepEqual(none.json.drafts[0].values, {});
-  assert.ok(!/kcal|calor|\d+ g of fat/i.test(none.text));
+  assert.ok(!/kcal|calor|kj|\d+ g of fat/i.test(none.text));
   await owner.post('/api/nutrition/log/discard', { batch: none.json.batch });
   await owner.put('/api/settings', { nutritionNumbers: 'all' });
 });

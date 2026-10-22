@@ -38,7 +38,7 @@ const amount = (n: Nutrient, v: number) => `${fmt(v)} ${n === 'alcohol_drinks' ?
 const CHOICES: { value: NutritionNumbers; title: string; text: string }[] = [
   { value: 'all', title: 'Everything', text: 'Calories, protein, carbs, fat, fiber, sugar, sodium and drinks.' },
   { value: 'no_energy', title: 'Everything except calories', text: 'The same, with no calories anywhere, Ask McFly included.' },
-  { value: 'none', title: 'No amounts', text: 'Only which days you logged. No numbers at all.' },
+  { value: 'none', title: 'No amounts', text: 'No calories or nutrient amounts: only what you logged, and when.' },
 ];
 
 // ---------- the page ----------
@@ -175,7 +175,7 @@ function NutritionIntro({ refresh }: { refresh: () => void }) {
               </span>
               <div>
                 <strong>You choose how much you see</strong>
-                <span className="muted small">Everything, everything except calories, or no amounts at all. Ask McFly sees only that much.</span>
+                <span className="muted small">Everything, everything except calories, or no calorie or nutrient amounts at all. Ask McFly sees only that much.</span>
               </div>
             </li>
             <li>
@@ -275,7 +275,7 @@ function Overview({ status }: { status: Status }) {
               <section className="card">
                 <h2>{latest ? relativeDay(latest.date, data.today) : 'Nothing logged lately'}</h2>
                 <p className="muted">
-                  {latest ? `You logged food ${latest.app === 'healthOS' ? 'here' : `in ${latest.app}`}.` : ''} You chose to see no amounts, so this page shows only the days you logged. Change it in{' '}
+                  {latest ? `You logged food ${latest.app === 'healthOS' ? 'here' : `in ${latest.app}`}.` : ''} You chose to see no amounts, so this shows only the days you logged, and the Log tab what you logged. Change it in{' '}
                   <a href={href('settings')}>Settings</a>.
                 </p>
               </section>,

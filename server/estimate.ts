@@ -81,9 +81,10 @@ const SETTING: Record<NutritionNumbers, string> = {
 };
 
 // What a note or a name must not carry for someone who hides those numbers. A sentence that names energy is dropped
-// for 'no_energy'; for 'none', so is any sentence that names a nutrient next to a number.
-const ENERGY_WORDS = /\b(k?cals?|kilocalories?|calories?|kilojoules?|kj|energy)\b/i;
-const NUTRIENT_WORDS = /\b(protein|carbs?|carbohydrates?|fats?|fib(?:er|re)|sugars?|sodium|salt|alcohol)\b/i;
+// for 'no_energy'; for 'none', so is any sentence that names a nutrient next to a number. Not \b at the start: there's
+// no word boundary between a digit and a letter, and "650kcal" must match too.
+const ENERGY_WORDS = /(?<![a-z])(k?cals?|kilocalories?|calories?|kilojoules?|kj|energy)\b/i;
+const NUTRIENT_WORDS = /(?<![a-z])(protein|carbs?|carbohydrates?|fats?|fib(?:er|re)|sugars?|sodium|salt|alcohol)\b/i;
 /** Amount mentions such as "about 650 kcal" or "25 g protein", taken out of names and portions for everyone. */
 const UNITS = String.raw`(?:k?cals?|kilocalories?|calories?|kj|kilojoules?)\b|(?:g|mg|grams?|milligrams?)\s+(?:of\s+)?(?:protein|carbs?|carbohydrates?|fats?|fib(?:er|re)|sugars?|sodium|salt)\b`;
 const BRACKETED_AMOUNT = new RegExp(String.raw`\([^()]*\d[^()]*?(?:${UNITS})[^()]*\)`, 'gi');
