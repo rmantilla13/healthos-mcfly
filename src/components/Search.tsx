@@ -15,11 +15,21 @@ export const openSearch = () => window.dispatchEvent(new Event(OPEN_EVENT));
 
 const isMac = () => typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent);
 
-/** A sidebar item that opens the palette. On a phone's top bar its label hides, as the other items' do. */
+/**
+ * A sidebar item that opens the palette. On a phone's top bar its label hides, as the other items' do, so the
+ * button carries its name itself.
+ */
 export function SearchButton() {
   const mac = useMemo(isMac, []);
   return (
-    <button type="button" className="nav-item search-button" onClick={openSearch} aria-haspopup="dialog" aria-keyshortcuts={mac ? 'Meta+K' : 'Control+K'}>
+    <button
+      type="button"
+      className="nav-item search-button"
+      onClick={openSearch}
+      aria-label="Search"
+      aria-haspopup="dialog"
+      aria-keyshortcuts={mac ? 'Meta+K' : 'Control+K'}
+    >
       <Icon name="search" />
       <span>Search</span>
       <kbd aria-hidden="true">{mac ? '⌘K' : 'Ctrl K'}</kbd>

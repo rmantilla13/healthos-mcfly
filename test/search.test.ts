@@ -132,6 +132,15 @@ test('the shortcut is ⌘K on a Mac and Ctrl+K elsewhere, never while composing 
   assert.ok(!isPaletteShortcut(key({ metaKey: true }), false));
   assert.ok(isPaletteShortcut(key({ key: 'K', metaKey: true }), true), 'caps lock');
   assert.ok(isPaletteShortcut(key({ key: 'л', code: 'KeyK', ctrlKey: true }), false), 'another keyboard layout');
+  assert.ok(isPaletteShortcut(key({ key: 'κ', code: 'KeyK', metaKey: true }), true), 'Greek');
+  // Dvorak and Colemak put T and E where QWERTY has K: those shortcuts stay theirs, and their own K opens search.
+  assert.ok(!isPaletteShortcut(key({ key: 't', code: 'KeyK', ctrlKey: true }), false), 'Dvorak Ctrl+T');
+  assert.ok(!isPaletteShortcut(key({ key: 'e', code: 'KeyK', metaKey: true }), true), 'Colemak ⌘E');
+  assert.ok(isPaletteShortcut(key({ key: 'k', code: 'KeyV', ctrlKey: true }), false), 'Dvorak K');
+  assert.ok(isPaletteShortcut(key({ key: 'k', code: 'KeyN', metaKey: true }), true), 'Colemak K');
+  // An autofill keydown carries no key at all: no shortcut, and no error.
+  assert.ok(!isPaletteShortcut(key({ key: undefined, ctrlKey: true }), false), 'no key');
+  assert.ok(!isPaletteShortcut({ metaKey: false, ctrlKey: false, altKey: false, shiftKey: false }, true), 'no key or code');
   assert.ok(!isPaletteShortcut(key({ metaKey: true, shiftKey: true }), true));
   assert.ok(!isPaletteShortcut(key({ metaKey: true, altKey: true }), true));
   assert.ok(!isPaletteShortcut(key({ metaKey: true, repeat: true }), true));

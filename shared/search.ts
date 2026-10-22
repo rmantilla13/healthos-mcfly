@@ -225,12 +225,18 @@ export function rank(query: string, items: SearchItem[], perGroup = 6): SearchSe
 
 // ---------- the shortcut ----------
 
-export type KeyLike = { key: string; code?: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean; isComposing?: boolean; repeat?: boolean };
+/** `key` can be missing: a browser's autofill sends a keydown without one. */
+export type KeyLike = { key?: string; code?: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean; isComposing?: boolean; repeat?: boolean };
 
-/** ⌘K on a Mac (or iPad), Ctrl+K elsewhere; not while composing text or holding the key down. */
+/**
+ * ⌘K on a Mac (or iPad), Ctrl+K elsewhere; not while composing text or holding the key down. The K is the letter
+ * typed. Only when the key gives no Latin letter (a Cyrillic or Greek layout) does the key in QWERTY's K position
+ * count, so on Dvorak or Colemak that key (T or E there) keeps its own shortcut.
+ */
 export function isPaletteShortcut(e: KeyLike, mac: boolean) {
   if (e.isComposing || e.repeat || e.altKey || e.shiftKey) return false;
-  if (e.key.toLowerCase() !== 'k' && e.code !== 'KeyK') return false;
+  const k = typeof e.key === 'string' ? e.key.toLowerCase() : '';
+  if (k !== 'k' && !(e.code === 'KeyK' && !/^\p{Script=Latin}$/u.test(k))) return false;
   return mac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
 }
 

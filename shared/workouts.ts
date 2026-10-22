@@ -129,6 +129,21 @@ export type Suggestion = { id: SuggestionId; text: string; why: string };
 const HIGH_STRAIN = 14;
 const ALL_OUT_STRAIN = 18;
 
+/**
+ * How long after a session the suggestions stay up: an evening one's through the next morning, a morning one's
+ * through that night (they talk about the next hour, tonight and the next day).
+ */
+export const SUGGESTION_HOURS = 18;
+
+/**
+ * The session ended within SUGGESTION_HOURS of `now`, by the real clock rather than the page's date: an older one
+ * (on a past day, or the latest of a quiet week) gets no suggestions. None for one without a readable end.
+ */
+export function suggestionsApply(w: Pick<Workout, 'end'>, now: number) {
+  const end = Date.parse(w.end);
+  return Number.isFinite(end) && end <= now && now - end <= SUGGESTION_HOURS * 3_600_000;
+}
+
 /** Ended at 20:00 or later, or past midnight: the same "late workout" the insights use. */
 export function endsLate(w: Pick<Workout, 'end' | 'date'>) {
   return w.end.slice(0, 10) > w.date || Number(w.end.slice(11, 13)) >= 20;

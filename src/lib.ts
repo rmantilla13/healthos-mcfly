@@ -251,9 +251,11 @@ export function shiftDate(date: string, days: number) {
 export const clock = (iso: string) => iso.slice(11, 16);
 export const minutesOfDay = (iso: string) => Number(iso.slice(11, 13)) * 60 + Number(iso.slice(14, 16));
 
+/** "1h 05m" or "45m": whole minutes first, so 59.6 reads 1h 00m, never 60m or 1h 60m. */
 export function duration(minutes: number) {
-  const h = Math.floor(minutes / 60);
-  const m = Math.round(minutes % 60);
+  const t = Math.round(minutes);
+  const h = Math.floor(t / 60);
+  const m = t % 60;
   return h ? `${h}h ${String(m).padStart(2, '0')}m` : `${m}m`;
 }
 
