@@ -16,7 +16,8 @@ import { ingestRouter } from './apple/ingest.ts';
 import { authRoutes, cronAuthorized, currentUser, publicUser, requireSession, sha256 } from './auth.ts';
 import { cycleRouter } from './cycle/index.ts';
 import { estimateHandler } from './estimate.ts';
-import type { FetchFn } from './foods.ts';
+import { dropExpiredDrafts } from './foodlog.ts';
+import { type FetchFn, pruneFoodCache } from './foods.ts';
 import { nutritionErrors, nutritionRouter } from './nutrition.ts';
 import { familyRouter } from './family.ts';
 import { DATA_DIR, type Db, type Scope, bumpDataVersion, deleteSource, getUserSetting, setUserSetting } from './db.ts';
@@ -75,6 +76,9 @@ export function createApp({ db, hosted, ingestToken, mcflyClient = defaultClient
   api.use(ingestRouter(db, ingestToken));
   api.get('/cron/whoop', async (req, res) => {
     if (!cronAuthorized(req)) return void res.status(401).json({ error: 'Unauthorized' });
+    // Hourly housekeeping for nutrition: McFly's unsaved estimates go after a day (as privacy.html says), and foods
+    // nobody looked up in 90 days leave the shared cache. Counts only, never what they were.
+    await Promise.all([dropExpiredDrafts(db), pruneFoodCache(db)]).catch((err: Error) => console.error('cron nutrition:', err.name));
     if (!whoop.isConfigured()) return void res.json({ skipped: 'WHOOP not configured' });
     res.json(await whoop.syncAllWhoop(db));
   });

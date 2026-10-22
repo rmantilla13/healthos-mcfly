@@ -4,7 +4,7 @@
 // person chose not to see, and saves a database food from its own copy, so this page never needs them. Same tone as
 // the rest of Nutrition: no score, no "remaining", no colour for more or less.
 import { type FormEvent, useEffect, useRef, useState } from 'react';
-import type { FoodEntry, FoodLog, FoodResult, FoodSearch, FoodValues, NutritionData, NutritionNumbers, Settings, Status } from '../../shared/types.ts';
+import type { FoodEntry, FoodEstimate, FoodLog, FoodResult, FoodSearch, FoodValues, NutritionData, NutritionNumbers, Settings, Status } from '../../shared/types.ts';
 import { Icon } from '../components/Icon.tsx';
 import { fmt, fmtDate, notifyDataChanged, relativeDay, sendJson, shiftDate, useApi } from '../lib.ts';
 
@@ -113,8 +113,8 @@ export function FoodLogTab({ status }: { status: Status }) {
         )}
         {counted && entries.length > 0 && counted.app !== 'healthOS' && (
           <p className="muted small">
-            This day's totals on the other tabs come from {counted.app}, which logged more. Two apps are never added together, because apps copy each other's food through
-            Apple Health. You can choose which app counts on the Macros tab.
+            This day's totals on the other tabs come from {counted.app}. When two apps log the same day, one app's totals count and the other's aren't added in, because
+            apps copy each other's food through Apple Health. You can choose which app counts on the Macros tab.
           </p>
         )}
       </section>
@@ -260,12 +260,19 @@ function AddFood({ log, date, numbers, units }: { log: FoodLog; date: string; nu
   ];
   const [mode, setMode] = useState<Mode>('search');
   const current = modes.some((m) => m.id === mode) ? mode : 'search';
-  const [time, setTime] = useState(nowTime);
+  // A time the person picked, or null for the default: now on today (worked out when they add, so a tab left open
+  // since breakfast doesn't log lunch at breakfast time), midday on a past day.
+  const [picked, setPicked] = useState<string | null>(null);
+  const [, tick] = useState(0);
+  useEffect(() => setPicked(null), [date]);
+  useEffect(() => {
+    const t = setInterval(() => tick((n) => n + 1), 30_000);
+    return () => clearInterval(t);
+  }, []);
+  const defaultTime = () => (date === log.today ? nowTime() : '12:00');
+  const when = () => ({ date, time: picked ?? defaultTime() });
   // McFly's note on what it assumed, kept while its estimate is reviewed (it isn't stored with the drafts).
   const [note, setNote] = useState('');
-  // A past day defaults to midday; today, to now.
-  useEffect(() => setTime(date === log.today ? nowTime() : '12:00'), [date, log.today]);
-  const when = { date, time };
   return (
     <section className="card food-add">
       <header className="food-add-head">
@@ -273,12 +280,12 @@ function AddFood({ log, date, numbers, units }: { log: FoodLog; date: string; nu
         {!log.drafts.length && (
           <label className="food-when">
             <span className="muted small">{relativeDay(date, log.today)} at</span>
-            <input type="time" value={time} onChange={(e) => setTime(e.target.value)} aria-label="Time" />
+            <input type="time" value={picked ?? defaultTime()} onChange={(e) => setPicked(e.target.value || null)} aria-label="Time" />
           </label>
         )}
       </header>
       {log.drafts.length > 0 ? (
-        <EstimateReview key={log.drafts.map((d) => d.id).join()} drafts={log.drafts} note={note} units={units} numbers={numbers} />
+        <EstimateReview key={log.drafts.map((d) => d.id).join()} drafts={log.drafts} batch={log.draftBatch ?? ''} note={note} units={units} numbers={numbers} />
       ) : (
         <>
           {modes.length > 1 && (
@@ -299,24 +306,26 @@ function AddFood({ log, date, numbers, units }: { log: FoodLog; date: string; nu
   );
 }
 
-type When = { date: string; time: string };
+/** The date and time to log at, worked out when the person adds. */
+type When = () => { date: string; time: string };
 
 function SearchFood({ when, units, usda }: { when: When; units: Units; usda: boolean }) {
   const [query, setQuery] = useState('');
-  const [found, setFound] = useState<FoodSearch | null>(null);
+  const [found, setFound] = useState<(FoodSearch & { barcode: boolean }) | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [added, setAdded] = useState<string | null>(null);
-  const barcode = /^[\d\s-]{8,}$/.test(query.trim());
   async function search(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
     setError(null);
     setAdded(null);
+    // Digits are looked up as a barcode (the server decides the same way).
+    const barcode = /^[\d\s-]{8,}$/.test(query.trim());
     try {
       const r = await sendJson<FoodSearch>('POST', '/nutrition/foods/search', { query });
-      setFound(r);
+      setFound({ ...r, barcode });
       setOpen(r.results.length === 1 ? r.results[0].ref : null);
     } catch (err) {
       setError((err as Error).message);
@@ -350,7 +359,7 @@ function SearchFood({ when, units, usda }: { when: When; units: Units; usda: boo
             </p>
           ))}
           {found.results.length === 0 ? (
-            <p className="muted">{barcode ? 'That barcode isn’t in USDA FoodData Central or Open Food Facts. Quick add from the label instead.' : 'Nothing found. Try fewer or other words.'}</p>
+            <p className="muted">{found.barcode ? 'That barcode isn’t in USDA FoodData Central or Open Food Facts. Quick add from the label instead.' : 'Nothing found. Try fewer or other words.'}</p>
           ) : (
             <ul className="food-results">
               {found.results.map((r) => (
@@ -361,7 +370,7 @@ function SearchFood({ when, units, usda }: { when: When; units: Units; usda: boo
                   onToggle={() => setOpen(open === r.ref ? null : r.ref)}
                   when={when}
                   units={units}
-                  method={barcode ? 'barcode' : 'search'}
+                  method={found.barcode ? 'barcode' : 'search'}
                   onAdded={(name) => {
                     setAdded(name);
                     setOpen(null);
@@ -406,7 +415,7 @@ function ResultRow({
     setBusy(true);
     setError(null);
     try {
-      await sendJson('POST', '/nutrition/log', { method, ref: food.ref, portionIndex: portion, quantity: q, ...when });
+      await sendJson('POST', '/nutrition/log', { method, ref: food.ref, portionIndex: portion, quantity: q, ...when() });
       notifyDataChanged();
       onAdded(food.name);
     } catch (err) {
@@ -494,10 +503,10 @@ function EstimateFood({ when, onNote }: { when: When; onNote: (note: string) => 
     setError(null);
     setNote(null);
     try {
-      const r = await sendJson<{ drafts: FoodEntry[]; note: string }>('POST', '/nutrition/estimate', {
+      const r = await sendJson<FoodEstimate>('POST', '/nutrition/estimate', {
         description,
         image: photo ? { mediaType: 'image/jpeg', data: photo.data } : null,
-        ...when,
+        ...when(),
       });
       if (!r.drafts.length) setNote(r.note || "McFly didn't find food or drink to estimate.");
       else {
@@ -549,7 +558,7 @@ function EstimateFood({ when, onNote }: { when: When; onNote: (note: string) => 
 }
 
 /** McFly's draft: rename, change how many, or drop items, then save what's left. Nothing counts until then. */
-function EstimateReview({ drafts, note, units, numbers }: { drafts: FoodEntry[]; note: string; units: Units; numbers: NutritionNumbers }) {
+function EstimateReview({ drafts, batch, note, units, numbers }: { drafts: FoodEntry[]; batch: string; note: string; units: Units; numbers: NutritionNumbers }) {
   const [kept, setKept] = useState(() => drafts.map((d) => ({ id: d.id, name: d.name, quantity: String(d.quantity) })));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -567,7 +576,7 @@ function EstimateReview({ drafts, note, units, numbers }: { drafts: FoodEntry[];
         if (q !== d.quantity) patch.quantity = q;
         if (Object.keys(patch).length) await sendJson('PATCH', `/nutrition/log/${k.id}`, patch);
       }
-      await sendJson('POST', '/nutrition/log/save', { ids: kept.map((k) => k.id) });
+      await sendJson('POST', '/nutrition/log/save', { batch, ids: kept.map((k) => k.id) });
       notifyDataChanged();
     } catch (err) {
       setError((err as Error).message);
@@ -578,7 +587,7 @@ function EstimateReview({ drafts, note, units, numbers }: { drafts: FoodEntry[];
   async function discard() {
     setBusy(true);
     try {
-      await sendJson('POST', '/nutrition/log/discard');
+      await sendJson('POST', '/nutrition/log/discard', { batch });
       notifyDataChanged();
     } catch (err) {
       setError((err as Error).message);
@@ -653,7 +662,7 @@ function QuickAdd({ when, numbers, units }: { when: When; numbers: NutritionNumb
     setBusy(true);
     setError(null);
     try {
-      const entry = await sendJson<FoodEntry>('POST', '/nutrition/log', { method: 'quick', name, values, ...when });
+      const entry = await sendJson<FoodEntry>('POST', '/nutrition/log', { method: 'quick', name, values, ...when() });
       setAdded(entry.name);
       setName('');
       setTyped({});

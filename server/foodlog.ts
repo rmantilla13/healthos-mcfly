@@ -18,7 +18,7 @@ export const HEALTHOS_APP = 'healthOS';
 
 export type FoodKey = Nutrient | 'water_ml';
 export const FOOD_KEYS: readonly FoodKey[] = [...NUTRIENTS, 'water_ml'];
-/** One entry can't exceed a whole day's ceiling. */
+/** One entry (a portion times how many) can't exceed a whole day's ceiling. */
 const KEY_MAX: Record<FoodKey, number> = { ...NUTRIENT_MAX, water_ml: 10_000 };
 const isFoodKey = (v: string): v is FoodKey => (FOOD_KEYS as readonly string[]).includes(v);
 
@@ -42,10 +42,12 @@ type Row = {
   ref: string | null;
   origin: 'web' | 'iphone';
   draft: boolean;
+  /** Which estimate a draft came from: saving or discarding one estimate never touches a newer one. */
+  batch: string | null;
   version: number;
 };
 
-const COLUMNS = 'id, date, time, name, portion, quantity, per, method, ref, origin, draft, version';
+const COLUMNS = 'id, date, time, name, portion, quantity, per, method, ref, origin, draft, batch, version';
 
 // ---------- amounts ----------
 
@@ -116,17 +118,30 @@ export async function loggedTotals(scope: Scope, start: string, end: string) {
 
 // ---------- reading and writing ----------
 
+const draftCutoff = () => Date.now() - DRAFT_TTL_MS;
+
 /** Unsaved estimates older than a day go: nobody confirmed them. */
 async function dropStaleDrafts(q: Queryable, userId: string) {
-  await q.query('DELETE FROM food_log WHERE user_id = $1 AND draft AND created_at < $2', [userId, Date.now() - DRAFT_TTL_MS]);
+  await q.query('DELETE FROM food_log WHERE user_id = $1 AND draft AND created_at < $2', [userId, draftCutoff()]);
+}
+
+/** Everyone's expired drafts (the hourly cron), so a day is the limit even for someone who never comes back. */
+export async function dropExpiredDrafts(q: Queryable) {
+  return (await q.query('DELETE FROM food_log WHERE draft AND created_at < $1 RETURNING 1', [draftCutoff()])).length;
 }
 
 async function entriesBetween(q: Queryable, userId: string, start: string, end: string) {
   return q.query<Row>(`SELECT ${COLUMNS} FROM food_log WHERE user_id = $1 AND NOT draft AND date BETWEEN $2 AND $3 ORDER BY date, time, created_at`, [userId, start, end]);
 }
 
+/** The latest estimate's drafts (two made at once can both land; the newer one is the one shown). */
 async function draftsOf(q: Queryable, userId: string) {
-  return q.query<Row>(`SELECT ${COLUMNS} FROM food_log WHERE user_id = $1 AND draft ORDER BY created_at, id`, [userId]);
+  return q.query<Row>(
+    `SELECT ${COLUMNS} FROM food_log WHERE user_id = $1 AND draft
+       AND batch = (SELECT batch FROM food_log WHERE user_id = $1 AND draft ORDER BY created_at DESC LIMIT 1)
+     ORDER BY created_at, id`,
+    [userId],
+  );
 }
 
 async function entryById(q: Queryable, userId: string, id: string) {
@@ -134,7 +149,7 @@ async function entryById(q: Queryable, userId: string, id: string) {
   return row ?? null;
 }
 
-export type NewEntry = Omit<Row, 'draft' | 'version' | 'per'> & { per: FoodValues };
+export type NewEntry = Omit<Row, 'draft' | 'version' | 'per' | 'batch'> & { per: FoodValues; batch?: string };
 
 export async function insertEntries(q: Queryable, userId: string, entries: NewEntry[], draft: boolean) {
   const now = Date.now();
@@ -142,9 +157,9 @@ export async function insertEntries(q: Queryable, userId: string, entries: NewEn
   for (const [i, e] of entries.entries()) {
     // A retry of the same id (the iPhone resending after a dropped reply) changes nothing.
     await q.query(
-      `INSERT INTO food_log (user_id, id, date, time, name, portion, quantity, per, method, ref, origin, draft, version, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 1, $13, $13) ON CONFLICT (user_id, id) DO NOTHING`,
-      [userId, e.id, e.date, e.time, e.name, e.portion, e.quantity, JSON.stringify(e.per), e.method, e.ref, e.origin, draft, now + i],
+      `INSERT INTO food_log (user_id, id, date, time, name, portion, quantity, per, method, ref, origin, draft, batch, version, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 1, $14, $14) ON CONFLICT (user_id, id) DO NOTHING`,
+      [userId, e.id, e.date, e.time, e.name, e.portion, e.quantity, JSON.stringify(e.per), e.method, e.ref, e.origin, draft, e.batch ?? null, now + i],
     );
   }
 }
@@ -221,6 +236,13 @@ export function valuesFrom(v: unknown, numbers: NutritionNumbers): FoodValues {
   return out;
 }
 
+/** A portion's amounts times how many, each within a day's ceiling: 30,000 kcal × 50 is a typo, not a meal. */
+function checkScaled(per: FoodValues, quantity: number) {
+  for (const [k, v] of Object.entries(per) as [FoodKey, number][]) {
+    if (v * quantity > KEY_MAX[k]) throw bad("That's more than anyone eats in a day. Check the amounts and how many.");
+  }
+}
+
 // ---------- the routes ----------
 
 export type FoodLogDeps = { estimateAvailable: () => Promise<boolean> };
@@ -231,6 +253,7 @@ export async function loggingContext(db: Db, hosted: boolean, res: Response) {
   const rc = await requestContext(scope, hosted);
   const numbers = rc.settings.nutritionNumbers;
   if (!rc.settings.nutrition || !numbers) throw new HttpError(409, 'Turn on Nutrition to log food.');
+  await dropStaleDrafts(db, scope.userId);
   return { scope, numbers, today: rc.today, now: nowIn(rc.settings.timeZone), timeZone: rc.settings.timeZone };
 }
 
@@ -245,11 +268,11 @@ export function foodLogRouter(db: Db, hosted: boolean, deps: FoodLogDeps) {
     const days = Math.min(Math.max(Math.round(Number(req.query.days)) || 7, 1), 31);
     const start = addDays(rc.today, -(days - 1));
     const can = { estimate: await deps.estimateAvailable(), usda: Boolean(process.env.FDC_API_KEY) };
+    await dropStaleDrafts(db, scope.userId);
     if (!rc.settings.nutrition || !numbers) {
-      const off: FoodLog = { enabled: false, numbers: null, today: rc.today, start, end: rc.today, entries: [], drafts: [], can };
+      const off: FoodLog = { enabled: false, numbers: null, today: rc.today, start, end: rc.today, entries: [], drafts: [], draftBatch: null, can };
       return void res.json(off);
     }
-    await dropStaleDrafts(db, scope.userId);
     const [entries, drafts] = await Promise.all([entriesBetween(db, scope.userId, start, rc.today), draftsOf(db, scope.userId)]);
     const body: FoodLog = {
       enabled: true,
@@ -259,6 +282,7 @@ export function foodLogRouter(db: Db, hosted: boolean, deps: FoodLogDeps) {
       end: rc.today,
       entries: entries.map((r) => toEntry(r, numbers)),
       drafts: drafts.map((r) => toEntry(r, numbers)),
+      draftBatch: drafts[0]?.batch ?? null,
       can,
     };
     res.json(body);
@@ -299,6 +323,7 @@ export function foodLogRouter(db: Db, hosted: boolean, deps: FoodLogDeps) {
       portion = food.portions[index].label;
       per = portionValues(food, index);
     }
+    checkScaled(per, quantity);
     await insertEntries(db, scope.userId, [{ id, date, time, name, portion, quantity, per, method, ref, origin }], false);
     await bumpDataVersion(db, scope.userId);
     const row = await entryById(db, scope.userId, id);
@@ -327,43 +352,52 @@ export function foodLogRouter(db: Db, hosted: boolean, deps: FoodLogDeps) {
         else per[k] = typed[k]! / quantity;
       }
     }
+    checkScaled(per, quantity);
     await db.query(
       `UPDATE food_log SET date = $3, time = $4, name = $5, portion = $6, quantity = $7, per = $8, version = version + 1, updated_at = $9
        WHERE user_id = $1 AND id = $2`,
       [scope.userId, row.id, when.date, when.time, name, portion, quantity, JSON.stringify(per), Date.now()],
     );
-    if (!row.draft) await bumpDataVersion(db, scope.userId);
+    // Drafts too: another tab or the iPhone showing the same estimate refreshes.
+    await bumpDataVersion(db, scope.userId);
     res.json(toEntry((await entryById(db, scope.userId, row.id))!, numbers));
   });
 
   router.delete('/:id', async (req, res) => {
     const { scope } = await loggingContext(db, hosted, res);
-    const gone = await db.query<{ draft: boolean }>('DELETE FROM food_log WHERE user_id = $1 AND id = $2 RETURNING draft', [scope.userId, String(req.params.id)]);
-    if (gone.some((r) => !r.draft)) await bumpDataVersion(db, scope.userId);
+    const gone = await db.query('DELETE FROM food_log WHERE user_id = $1 AND id = $2 RETURNING 1', [scope.userId, String(req.params.id)]);
+    if (gone.length) await bumpDataVersion(db, scope.userId);
     res.json({ deleted: gone.length });
   });
 
-  /** Save drafts (McFly's estimate, as reviewed): from now on they count. Drafts not named are discarded. */
+  /**
+   * Save one estimate's drafts, as reviewed: from now on they count. Its drafts not named are discarded. Only that
+   * estimate (batch): a newer one made meanwhile, on another device, is left alone. A draft past its day can't be saved.
+   */
   router.post('/save', async (req, res) => {
     const { scope, numbers } = await loggingContext(db, hosted, res);
-    const ids = (req.body as { ids?: unknown } | undefined)?.ids;
-    if (!Array.isArray(ids) || ids.length > 50 || ids.some((i) => typeof i !== 'string')) throw bad('Choose what to save.');
+    const { ids, batch } = (req.body ?? {}) as { ids?: unknown; batch?: unknown };
+    if (typeof batch !== 'string' || !Array.isArray(ids) || ids.length > 50 || ids.some((i) => typeof i !== 'string')) throw bad('Choose what to save.');
     const saved = await db.tx(async (q) => {
       const rows = await q.query<Row>(
-        `UPDATE food_log SET draft = false, updated_at = $3 WHERE user_id = $1 AND draft AND id = ANY($2) RETURNING ${COLUMNS}`,
-        [scope.userId, ids, Date.now()],
+        `UPDATE food_log SET draft = false, updated_at = $4 WHERE user_id = $1 AND draft AND batch = $2 AND id = ANY($3) AND created_at >= $5
+         RETURNING ${COLUMNS}`,
+        [scope.userId, batch, ids, Date.now(), draftCutoff()],
       );
-      await q.query('DELETE FROM food_log WHERE user_id = $1 AND draft', [scope.userId]);
+      await q.query('DELETE FROM food_log WHERE user_id = $1 AND draft AND batch = $2', [scope.userId, batch]);
       return rows;
     });
-    if (saved.length) await bumpDataVersion(db, scope.userId);
+    await bumpDataVersion(db, scope.userId);
     res.json({ entries: saved.map((r) => toEntry(r, numbers)) });
   });
 
-  /** Throw the estimate away. */
-  router.post('/discard', async (_req, res) => {
+  /** Throw one estimate away. */
+  router.post('/discard', async (req, res) => {
     const { scope } = await loggingContext(db, hosted, res);
-    const gone = await db.query('DELETE FROM food_log WHERE user_id = $1 AND draft RETURNING 1', [scope.userId]);
+    const batch = (req.body as { batch?: unknown } | undefined)?.batch;
+    if (typeof batch !== 'string') throw bad('Choose which estimate to discard.');
+    const gone = await db.query('DELETE FROM food_log WHERE user_id = $1 AND draft AND batch = $2 RETURNING 1', [scope.userId, batch]);
+    await bumpDataVersion(db, scope.userId);
     res.json({ deleted: gone.length });
   });
 

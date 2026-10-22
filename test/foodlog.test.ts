@@ -495,7 +495,8 @@ test('an estimate: one McFly question, the photo and words to Claude only, draft
   // Reviewed: the wine is changed, the pasta saved, the rest discarded.
   const edited = await owner.patch(`/api/nutrition/log/${drafts[0].id}`, { quantity: 0.5 });
   assert.equal(edited.json.values.energy_kcal, 310);
-  const saved = await owner.post('/api/nutrition/log/save', { ids: [drafts[0].id] });
+  assert.equal((await logOf(owner)).draftBatch, res.json.batch);
+  const saved = await owner.post('/api/nutrition/log/save', { batch: res.json.batch, ids: [drafts[0].id] });
   assert.deepEqual(saved.json.entries.map((e: FoodEntry) => e.name), ['Pasta with pesto']);
   const log = await logOf(owner);
   assert.equal(log.drafts.length, 0);
@@ -503,18 +504,75 @@ test('an estimate: one McFly question, the photo and words to Claude only, draft
   assert.equal((await todayIn(owner))!.values.energy_kcal, 912.5);
 });
 
-test('a new estimate replaces an unsaved one; discard throws it away; stale drafts go after a day', async () => {
+test('a new estimate replaces an unsaved one; save and discard touch only their own estimate', async () => {
   answers = [{ text: ESTIMATE }, { text: ESTIMATE }];
-  await owner.post('/api/nutrition/estimate', { description: 'pasta' });
-  await owner.post('/api/nutrition/estimate', { description: 'pasta again' });
+  const first = (await owner.post('/api/nutrition/estimate', { description: 'pasta' })).json;
+  const second = (await owner.post('/api/nutrition/estimate', { description: 'pasta again' })).json;
+  assert.notEqual(first.batch, second.batch);
+  assert.deepEqual((await logOf(owner)).drafts.map((d) => d.id), second.drafts.map((d: FoodEntry) => d.id));
+  // A tab still showing the first estimate saves or discards nothing of the second.
+  assert.deepEqual((await owner.post('/api/nutrition/log/save', { batch: first.batch, ids: first.drafts.map((d: FoodEntry) => d.id) })).json.entries, []);
+  assert.equal((await owner.post('/api/nutrition/log/discard', { batch: first.batch })).json.deleted, 0);
   assert.equal((await logOf(owner)).drafts.length, 2);
-  assert.equal((await owner.post('/api/nutrition/log/discard')).json.deleted, 2);
+  assert.equal((await owner.post('/api/nutrition/log/discard', { batch: second.batch })).json.deleted, 2);
+  assert.equal((await owner.post('/api/nutrition/log/discard', {})).status, 400);
+});
 
+test('drafts go after a day: on the next visit, on the hourly cron, even with Nutrition off, and a day-old one can no longer be saved', async () => {
+  answers = [{ text: ESTIMATE }];
+  const old = (await owner.post('/api/nutrition/estimate', { description: 'pasta' })).json;
+  await db.query('UPDATE food_log SET created_at = created_at - 25 * 3600000 WHERE draft');
+  assert.deepEqual((await owner.post('/api/nutrition/log/save', { batch: old.batch, ids: old.drafts.map((d: FoodEntry) => d.id) })).json.entries, []);
+  assert.equal((await db.query('SELECT 1 FROM food_log WHERE draft')).length, 0);
+
+  // Someone who never comes back: the cron takes them.
   answers = [{ text: ESTIMATE }];
   await owner.post('/api/nutrition/estimate', { description: 'pasta' });
+  await owner.put('/api/settings', { nutrition: false });
   await db.query('UPDATE food_log SET created_at = created_at - 25 * 3600000 WHERE draft');
-  assert.equal((await logOf(owner)).drafts.length, 0);
+  process.env.CRON_SECRET = 'cron-test-secret';
+  const cron = await owner.call('GET', '/api/cron/whoop', undefined, { Authorization: 'Bearer cron-test-secret' });
+  assert.equal(cron.status, 200);
   assert.equal((await db.query('SELECT 1 FROM food_log WHERE draft')).length, 0);
+  await owner.put('/api/settings', { nutrition: true, nutritionNumbers: 'all' });
+});
+
+test("McFly's note and names never carry a number the person hides", async () => {
+  const leaky = JSON.stringify({
+    items: [{ name: 'Pasta (about 650 kcal)', portion: '1 plate (300 g), ~25 g protein', energy_kcal: 650, protein_g: 25, carbs_g: 80, fat_g: 24, fiber_g: null, sugar_g: null, sat_fat_g: null, sodium_mg: null, alcohol_drinks: 0, water_ml: null }],
+    note: 'Assumed a tablespoon of olive oil, about 120 kcal. That adds 14 g of fat. The plate looked about half full.',
+  });
+  answers = [{ text: leaky }];
+  const all = (await owner.post('/api/nutrition/estimate', { description: 'pasta' })).json;
+  assert.equal(all.note, 'Assumed a tablespoon of olive oil, about 120 kcal. That adds 14 g of fat. The plate looked about half full.', 'everything, for someone who sees everything');
+  assert.deepEqual([all.drafts[0].name, all.drafts[0].portion], ['Pasta', '1 plate (300 g)'], 'amounts never in a name or portion');
+  assert.match(claude.at(-1).system, /never put calories or other nutrient amounts/);
+
+  await owner.put('/api/settings', { nutritionNumbers: 'no_energy' });
+  answers = [{ text: leaky }];
+  const noEnergy = await owner.post('/api/nutrition/estimate', { description: 'pasta' });
+  assert.equal(noEnergy.json.note, 'That adds 14 g of fat. The plate looked about half full.');
+  assert.match(claude.at(-1).system, /chose not to see calories/);
+  assert.ok(!/kcal|calor/i.test(noEnergy.text));
+
+  await owner.put('/api/settings', { nutritionNumbers: 'none' });
+  answers = [{ text: leaky }];
+  const none = await owner.post('/api/nutrition/estimate', { description: 'pasta' });
+  assert.equal(none.json.note, 'The plate looked about half full.');
+  assert.deepEqual(none.json.drafts[0].values, {});
+  assert.ok(!/kcal|calor|\d+ g of fat/i.test(none.text));
+  await owner.post('/api/nutrition/log/discard', { batch: none.json.batch });
+  await owner.put('/api/settings', { nutritionNumbers: 'all' });
+});
+
+test('an entry can never add up to more than a day: a portion times how many is checked', async () => {
+  const res = await owner.post('/api/nutrition/log', { method: 'quick', values: { energy_kcal: 30_000 }, quantity: 50 });
+  assert.equal(res.status, 400);
+  assert.match(res.json.error, /more than anyone eats in a day/);
+  // A quantity change alone scales the stored amounts: 1,000 kcal × 40 is checked too.
+  const big = await owner.post('/api/nutrition/log', { method: 'quick', values: { energy_kcal: 1000 } });
+  assert.equal((await owner.patch(`/api/nutrition/log/${big.json.id}`, { quantity: 40 })).status, 400);
+  await owner.del(`/api/nutrition/log/${big.json.id}`);
 });
 
 test("an estimate that fails gives the question back; a refusal or nothing found says so; the limit is McFly's", async () => {
@@ -526,6 +584,9 @@ test("an estimate that fails gives the question back; a refusal or nothing found
 
   answers = [{ text: '', stop_reason: 'refusal' }];
   assert.equal((await owner.post('/api/nutrition/estimate', { description: 'soup' })).status, 422);
+  answers = [{ text: '{"items": [', stop_reason: 'max_tokens' }];
+  assert.equal((await owner.post('/api/nutrition/estimate', { description: 'soup' })).status, 502);
+  assert.equal(await usage(), before, 'a refusal or a cut-off answer is given back too');
   answers = [{ text: JSON.stringify({ items: [], note: '' }) }];
   const nothing = await owner.post('/api/nutrition/estimate', { image: { mediaType: 'image/png', data: png.toString('base64') } });
   assert.deepEqual([nothing.json.drafts, nothing.json.note], [[], "McFly didn't find food or drink to estimate."]);
@@ -553,7 +614,7 @@ test("someone else's entries can't be read, changed, deleted or saved", async ()
   assert.deepEqual((await logOf(bob)).entries, []);
   assert.equal((await bob.patch(`/api/nutrition/log/${quickId}`, { name: 'Mine now' })).status, 404);
   assert.equal((await bob.del(`/api/nutrition/log/${quickId}`)).json.deleted, 0);
-  assert.equal((await bob.post('/api/nutrition/log/save', { ids: [quickId] })).json.entries.length, 0);
+  assert.equal((await bob.post('/api/nutrition/log/save', { batch: 'x', ids: [quickId] })).json.entries.length, 0);
   assert.equal((await todayIn(bob)), undefined);
   assert.ok((await logOf(owner)).entries.some((e) => e.id === quickId && e.name === 'Toast and eggs'));
 });

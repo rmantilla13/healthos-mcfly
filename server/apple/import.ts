@@ -420,9 +420,9 @@ export class AppleAggregator {
       this.skipped++;
       return;
     }
+    // Not counted as skipped: that count is WHOOP's copies (see the import CLI).
     if (tag.name === 'Record' && fromHealthOSLog(a.sourceName, a.type)) {
       this.records++;
-      this.skipped++;
       return;
     }
     if (tag.name === 'Record') this.record(a);

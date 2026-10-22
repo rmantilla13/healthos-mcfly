@@ -735,6 +735,8 @@ export type FoodLog = {
   entries: FoodEntry[];
   /** McFly's latest estimate, not counted until saved. Kept for a day, then dropped. */
   drafts: FoodEntry[];
+  /** Which estimate the drafts are: send it with /log/save or /log/discard. Null when there are none. */
+  draftBatch: string | null;
   /** What this server can do: McFly estimates (needs Claude and a daily limit above 0) and USDA search (needs its key). */
   can: { estimate: boolean; usda: boolean };
 };
@@ -755,4 +757,4 @@ export type FoodResult = {
 export type FoodSearch = { results: FoodResult[]; notes: string[] };
 
 /** POST /api/nutrition/estimate: draft entries to review, and McFly's note on what it assumed. */
-export type FoodEstimate = { drafts: FoodEntry[]; note: string };
+export type FoodEstimate = { drafts: FoodEntry[]; batch: string; note: string };

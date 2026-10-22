@@ -4,6 +4,7 @@
 // words or the barcode and the server's address, never who asked. Searches and barcodes arrive in a POST body,
 // never a URL, and are never logged or stored; only the foods found are kept, in food_cache, shared by everyone.
 // Open Food Facts allows few calls a minute per address, so a slow or refused call just leaves its results out.
+import { createHash } from 'node:crypto';
 import express, { type Request, type Response } from 'express';
 import type { FoodResult, FoodSearch, FoodValues, Nutrient, NutritionNumbers } from '../shared/types.ts';
 import { HttpError, currentUser } from './auth.ts';
@@ -285,8 +286,20 @@ function allowLookup(userId: string) {
   return true;
 }
 
-/** Recent searches' results, in this server process only: never stored, so nothing keeps what anyone searched for. */
+/**
+ * Recent searches' results, in this server process only and never stored. Keyed by a hash of the words, so the words
+ * themselves aren't kept. (A food someone looked up comes back faster for everyone: that's the shared cache's point,
+ * and it says nothing about who.)
+ */
 const searches = new Map<string, { at: number; refs: string[] }>();
+const searchKey = (query: string) => createHash('sha256').update(query.toLowerCase()).digest('hex');
+/** Foods not looked up again for this long go from the shared cache; saved entries keep their own amounts. */
+const CACHE_TTL_MS = 90 * 24 * 3600_000;
+
+/** The hourly cron's tidy-up: foods nobody has looked up in 90 days, and barcodes that pointed to them. */
+export async function pruneFoodCache(q: Queryable) {
+  return (await q.query('DELETE FROM food_cache WHERE fetched_at < $1 RETURNING 1', [Date.now() - CACHE_TTL_MS])).length;
+}
 const SEARCH_TTL_MS = 6 * 3600_000;
 
 export type FoodsDeps = {
@@ -308,7 +321,7 @@ export function foodsRouter(db: Db, deps: FoodsDeps) {
   });
 
   async function search(query: string): Promise<{ foods: Food[]; notes: string[] }> {
-    const key = query.toLowerCase();
+    const key = searchKey(query);
     const hit = searches.get(key);
     if (hit && Date.now() - hit.at < SEARCH_TTL_MS) {
       const foods = (await Promise.all(hit.refs.map((r) => cachedFood(db, r)))).filter((f): f is Food => f !== null);
