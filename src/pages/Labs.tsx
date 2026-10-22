@@ -565,7 +565,9 @@ function ImportReport({ today, onSaved, onCancel }: { today: string; onSaved: (n
   const [read, setRead] = useState<LabExtract | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const configured = mcfly.data?.configured ?? true;
-  const left = mcfly.data ? Math.max(0, mcfly.data.limit - mcfly.data.usedToday) : null;
+  /** McFly turned off by an admin (a limit of 0), which isn't the same as having used today's questions. */
+  const off = mcfly.data !== undefined && !(mcfly.data.limit > 0);
+  const left = mcfly.data && !off ? Math.max(0, mcfly.data.limit - mcfly.data.usedToday) : null;
   const busy = phase !== 'choose';
 
   async function pick(file: File) {
@@ -630,9 +632,13 @@ function ImportReport({ today, onSaved, onCancel }: { today: string; onSaved: (n
         </li>
         <li>You check every row before anything is saved.</li>
       </ul>
-      {!configured && <p className="note-bad">Reading reports isn't set up on this server yet. You can still type results in.</p>}
+      {!configured ? (
+        <p className="note-bad">Reading reports isn't set up on this server yet. You can still type results in.</p>
+      ) : (
+        off && <p className="note-bad">Reading reports uses Ask McFly, which is turned off right now. You can still type results in.</p>
+      )}
       <div className="btn-row">
-        <button className="btn btn-primary" disabled={busy || !configured || left === 0} onClick={() => input.current?.click()}>
+        <button className="btn btn-primary" disabled={busy || !configured || off || left === 0} onClick={() => input.current?.click()}>
           <Icon name="upload" size={15} />
           Choose a file
         </button>
