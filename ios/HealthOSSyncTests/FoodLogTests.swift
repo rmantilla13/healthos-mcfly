@@ -24,6 +24,25 @@ final class FoodLogTests: XCTestCase {
         XCTAssertFalse(FoodHealth.isOurs([HKMetadataKeyFoodType: "healthos.food.x"]))
         XCTAssertFalse(FoodHealth.isOurs(nil))
         XCTAssertEqual(FoodHealth.syncID("0B9F3C4E-1A2B"), "healthos.food.0b9f3c4e-1a2b")
+        // Our own key alone is enough, whatever the sync identifier.
+        XCTAssertTrue(FoodHealth.isOurs(["HealthOSFoodLogEntry": "0b9f3c4e"]))
+        XCTAssertTrue(FoodHealth.isOurs([FoodHealth.entryKey: "0b9f3c4e", HKMetadataKeySyncIdentifier: "something-else"]))
+    }
+
+    /// Water, caffeine and the food types leave ours out in the query itself; steps and the rest are read as before.
+    func testDietaryQueriesLeaveOurKeyOut() {
+        let p = FoodHealth.notOurs
+        XCTAssertEqual(p.compoundPredicateType, .not)
+        XCTAssertEqual(p.subpredicates.count, 1)
+        XCTAssertTrue("\(p)".contains("HealthOSFoodLogEntry"), "\(p)")
+        XCTAssertTrue(FoodHealth.isDietary(HKQuantityType(.dietaryWater)))
+        XCTAssertTrue(FoodHealth.isDietary(HKQuantityType(.dietaryCaffeine)))
+        XCTAssertTrue(FoodHealth.isDietary(HKQuantityType(.dietaryEnergyConsumed)))
+        XCTAssertTrue(FoodHealth.isDietary(HKQuantityType(.numberOfAlcoholicBeverages)))
+        XCTAssertFalse(FoodHealth.isDietary(HKQuantityType(.stepCount)))
+        XCTAssertFalse(FoodHealth.isDietary(HKQuantityType(.heartRate)))
+        // Every daily metric the phone sends that we also write is covered.
+        for q in HealthTypes.quantities where FoodHealth.shareTypes.contains(q.type) { XCTAssertTrue(FoodHealth.isDietary(q.type), q.metric) }
     }
 
     // MARK: What goes to Health
@@ -50,6 +69,7 @@ final class FoodLogTests: XCTestCase {
             XCTAssertEqual(object.metadata?[HKMetadataKeySyncVersion] as? Int, 3)
             XCTAssertEqual(object.metadata?[HKMetadataKeyFoodType] as? String, "Lunch")
             XCTAssertEqual(object.metadata?[HKMetadataKeyTimeZone] as? String, "America/Chicago")
+            XCTAssertEqual(object.metadata?["HealthOSFoodLogEntry"] as? String, "0b9f3c4e-1a2b-4c3d-8e9f-0a1b2c3d4e5f")
             XCTAssertTrue(FoodHealth.isOurs(object.metadata))
         }
         XCTAssertEqual(Stamp(food.startDate, timeZone: chicago).localIso, "2026-10-21T13:05:00-05:00")
@@ -229,9 +249,10 @@ final class FoodLogTests: XCTestCase {
         {"enabled":true,"numbers":"no_energy","today":"2026-10-21","start":"2026-10-08","end":"2026-10-21",
          "entries":[{"id":"a","date":"2026-10-21","time":"08:00","name":"Yogurt","portion":"1 cup (245 g)","quantity":1,"values":{"protein_g":9},"method":"barcode","ref":"off:1","version":1,"origin":"web"},
                     {"id":"bad","date":"2026-10-21"}],
-         "drafts":[],"can":{"estimate":false,"usda":false}}
+         "drafts":[],"draftBatch":null,"can":{"estimate":false,"usda":false}}
         """#.utf8))
         XCTAssertEqual(log.mode, .noEnergy)
+        XCTAssertNil(log.draftBatch)
         XCTAssertEqual(log.entries.map(\.id), ["a"], "an entry the app can't read is left out, not the whole log")
         XCTAssertFalse(log.can.estimate)
         XCTAssertEqual(FoodAddMode.available(log), [.search, .scan, .quick], "no estimate without McFly")
@@ -244,9 +265,20 @@ final class FoodLogTests: XCTestCase {
         """#.utf8))
         XCTAssertEqual(search.results.first?.portions.map(\.label), ["15 g", "100 g"])
         XCTAssertEqual(search.notes.count, 1)
-        let estimate = try JSONDecoder().decode(FoodEstimate.self, from: Data(#"{"drafts":[],"note":"No food in the photo."}"#.utf8))
+        let estimate = try JSONDecoder().decode(FoodEstimate.self, from: Data(#"{"drafts":[],"batch":"5c1d","note":"No food in the photo."}"#.utf8))
         XCTAssertTrue(estimate.drafts.isEmpty)
+        XCTAssertEqual(estimate.batch, "5c1d")
         XCTAssertEqual(estimate.note, "No food in the photo.")
+        let reviewing = try JSONDecoder().decode(FoodLog.self, from: Data(#"{"enabled":true,"numbers":"all","today":"2026-10-21","start":"2026-10-08","end":"2026-10-21","entries":[],"drafts":[],"draftBatch":"5c1d","can":{"estimate":true,"usda":false}}"#.utf8))
+        XCTAssertEqual(reviewing.draftBatch, "5c1d")
+    }
+
+    /// Saving and discarding name the estimate, so a newer one made on another device is left alone.
+    func testSaveAndDiscardNameTheirEstimate() {
+        let save = FoodBody.save(batch: "5c1d", ids: ["a", "b"])
+        XCTAssertEqual(save["batch"] as? String, "5c1d")
+        XCTAssertEqual(save["ids"] as? [String], ["a", "b"])
+        XCTAssertEqual(FoodBody.discard(batch: "5c1d") as? [String: String], ["batch": "5c1d"])
     }
 
     func testTheServersWordsAreShownAsTheyAre() {

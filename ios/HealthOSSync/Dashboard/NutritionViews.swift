@@ -236,7 +236,7 @@ private struct NutritionOverview: View {
             FoodNothingLoggedCard()
         } else if data.mode == .none {
             if layout.row.contains("nutrition.logged") { FoodLoggedCard(data: data) }
-            FoodNoAmountsCard(latest: latest, today: data.today)
+            FoodNoAmountsCard(latest: latest, today: data.today, logging: dashboard.foodLogAvailable == true)
         } else if layout.allHidden {
             AllCardsHiddenNote(text: "All the cards on this page are hidden.")
         } else {
@@ -438,12 +438,14 @@ private struct FoodLoggedCard: View {
 private struct FoodNoAmountsCard: View {
     let latest: FoodDay?
     let today: String
+    /// The Log tab is there (a server with the food log), showing what was logged.
+    let logging: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(latest.map { Fmt.relativeDay($0.date, today: today) } ?? "Nothing logged lately").font(.headline).foregroundStyle(Palette.ink)
-            Text((latest.map { "You logged food in \($0.app). " } ?? "")
-                + "You chose to see no amounts, so this shows only the days you logged. Change it on the web, in Settings.")
+            Text((latest.map { "You logged food \($0.app == "healthOS" ? "here" : "in \($0.app)"). " } ?? "")
+                + "You chose to see no amounts, so this shows only the days you logged\(logging ? ", and the Log tab what you logged" : ""). Change it on the web, in Settings.")
                 .font(.footnote).foregroundStyle(Palette.ink2)
                 .fixedSize(horizontal: false, vertical: true)
         }

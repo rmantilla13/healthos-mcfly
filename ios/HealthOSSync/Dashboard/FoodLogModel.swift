@@ -44,14 +44,14 @@ extension Dashboard {
     }
 
     /// Saves McFly's reviewed drafts (the rest are discarded); they count, and go to Health, from now on.
-    func saveDrafts(ids: [String]) async throws {
-        let saved = try await fetch { try await $0.saveDrafts(ids: ids) }
+    func saveDrafts(batch: String, ids: [String]) async throws {
+        let saved = try await fetch { try await $0.saveDrafts(batch: batch, ids: ids) }
         await wroteHere(saved)
         await refreshIfChanged(includeStatus: false)
     }
 
-    func discardDrafts() async throws {
-        try await fetch { try await $0.discardDrafts() }
+    func discardDrafts(batch: String) async throws {
+        try await fetch { try await $0.discardDrafts(batch: batch) }
     }
 
     func searchFoods(_ query: String) async throws -> FoodSearch { try await fetch { try await $0.searchFoods(query) } }

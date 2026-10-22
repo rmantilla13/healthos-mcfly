@@ -5,22 +5,31 @@ import HealthKit
 ///
 /// - Written: entries made here (origin "iphone"), once saved, never drafts. One food correlation of the dietary samples
 ///   (water included) at the entry's local date and time, and alcohol as its own sample, which a correlation can't hold.
-///   Every object carries the entry's sync identifier ("healthos.food.<id>"), its version and its name.
+///   Every object carries the entry's sync identifier ("healthos.food.<id>"), its version, its name, and the entry's id
+///   under `entryKey`, which a query can leave out.
 /// - Only the amounts the phone was sent: no calories in "no_energy", nothing at all in "none". The person chose not to
 ///   see those numbers, and Health would show them.
-/// - Never read back: the sync skips every sample with that sync identifier (`isOurs`), food and water alike; the
-///   server counts the log itself.
+/// - Never read back: dietary queries leave out `entryKey` (`notOurs`), and the sync skips every sample marked as
+///   ours (`isOurs`), food and water alike; the server counts the log itself.
 /// - HealthKit replaces a sample of the same type and sync identifier, but leaves a type the new version no longer has,
 ///   and deleting the correlation leaves its samples. So a rewrite first deletes everything with the entry's identifier.
 enum FoodHealth {
     static let prefix = "healthos.food."
 
+    /// Our own metadata key (the entry's id), the same on the web's side of the brief. Unlike the sync identifier, which
+    /// other apps set too, its mere presence marks a sample as ours, so a query can leave it out.
+    static let entryKey = "HealthOSFoodLogEntry"
+
     static func syncID(_ entryID: String) -> String { prefix + entryID.lowercased() }
 
-    /// One of ours: skipped wherever Health is read, so a logged meal or glass of water never counts twice.
+    /// One of ours: skipped wherever Health is read, so a logged meal or glass of water never counts twice. The sync
+    /// identifier counts too: a deleted object keeps only that and its version.
     static func isOurs(_ metadata: [String: Any]?) -> Bool {
-        (metadata?[HKMetadataKeySyncIdentifier] as? String)?.hasPrefix(prefix) == true
+        metadata?[entryKey] != nil || (metadata?[HKMetadataKeySyncIdentifier] as? String)?.hasPrefix(prefix) == true
     }
+
+    /// Everything but ours, for the dietary types: ANDed into their queries, so a total can't take ours in.
+    static let notOurs = NSCompoundPredicate(notPredicateWithSubpredicate: HKQuery.predicateForObjects(withMetadataKey: entryKey))
 
     /// An entry's amount and the Health type it goes to.
     struct Kind {
@@ -45,6 +54,11 @@ enum FoodHealth {
 
     /// What this app asks to write, only when the first entry is saved here. Nothing else is ever written.
     static var shareTypes: Set<HKSampleType> { Set(kinds.map(\.type)) }
+
+    /// The types whose queries leave ours out (`notOurs`): the ones written here, and caffeine, a daily total like water.
+    static func isDietary(_ type: HKSampleType) -> Bool {
+        type == HKQuantityType(.dietaryCaffeine) || kinds.contains { $0.type == type }
+    }
 
     /// The keys of an entry Health takes, in a fixed order: what a copy in Health holds. `allowed` leaves out the types
     /// the person won't let this app write.
@@ -71,6 +85,7 @@ enum FoodHealth {
             HKMetadataKeySyncIdentifier: syncID(e.id),
             HKMetadataKeySyncVersion: e.version,
             HKMetadataKeyTimeZone: zone.identifier,
+            entryKey: e.id.lowercased(),
         ]
         var food = Set<HKSample>()
         var alone: [HKObject] = []

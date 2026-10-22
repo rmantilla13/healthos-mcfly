@@ -54,7 +54,7 @@ struct FoodLogTab<Header: View>: View {
         }
         .sheet(isPresented: $reviewing, onDismiss: askHealth) {
             if let log, !log.drafts.isEmpty {
-                FoodReviewSheet(drafts: log.drafts, note: note, mode: log.mode, units: dashboard.units) { await reload() }
+                FoodReviewSheet(drafts: log.drafts, batch: log.draftBatch ?? "", note: note, mode: log.mode, units: dashboard.units) { await reload() }
             }
         }
     }
@@ -812,6 +812,7 @@ private struct FoodQuickSection: View {
 /// McFly's draft: rename, change how many, or leave items out, then save what's left. Nothing counts until then.
 private struct FoodReviewSheet: View {
     let drafts: [FoodEntry]
+    let batch: String
     let note: String
     let mode: NutritionMode
     let units: Units
@@ -828,8 +829,9 @@ private struct FoodReviewSheet: View {
         var quantity: String
     }
 
-    init(drafts: [FoodEntry], note: String, mode: NutritionMode, units: Units, onDone: @escaping () async -> Void) {
+    init(drafts: [FoodEntry], batch: String, note: String, mode: NutritionMode, units: Units, onDone: @escaping () async -> Void) {
         self.drafts = drafts
+        self.batch = batch
         self.note = note
         self.mode = mode
         self.units = units
@@ -892,7 +894,7 @@ private struct FoodReviewSheet: View {
                     if q != d.quantity { patch["quantity"] = q }
                     if !patch.isEmpty { try await dashboard.changeFood(d, patch, draft: true) }
                 }
-                try await dashboard.saveDrafts(ids: kept.map(\.id))
+                try await dashboard.saveDrafts(batch: batch, ids: kept.map(\.id))
                 await onDone()
                 dismiss()
             } catch {
@@ -906,7 +908,7 @@ private struct FoodReviewSheet: View {
         busy = true
         Task {
             do {
-                try await dashboard.discardDrafts()
+                try await dashboard.discardDrafts(batch: batch)
                 await onDone()
                 dismiss()
             } catch {

@@ -42,6 +42,8 @@ struct FoodLog: Codable {
     let end: String
     @LossyArray var entries: [FoodEntry]
     @LossyArray var drafts: [FoodEntry]
+    /// The estimate those drafts came from: saving or discarding names it, so a newer one (another device) is left alone.
+    let draftBatch: String?
     let can: Can
 
     var mode: NutritionMode { NutritionMode(rawValue: numbers ?? "") ?? .none }
@@ -72,6 +74,7 @@ struct FoodSearch: Codable {
 /// POST /api/nutrition/estimate: drafts to review, and McFly's note on what it assumed (not stored).
 struct FoodEstimate: Codable {
     @LossyArray var drafts: [FoodEntry]
+    let batch: String?
     let note: String?
 }
 
@@ -252,6 +255,12 @@ enum FoodBody {
         if let jpeg { b["image"] = ["mediaType": "image/jpeg", "data": jpeg.base64EncodedString()] }
         return b
     }
+
+    /// POST /log/save: those drafts of that estimate count from now on; its others are discarded.
+    static func save(batch: String, ids: [String]) -> [String: Any] { ["batch": batch, "ids": ids] }
+
+    /// POST /log/discard: that estimate only.
+    static func discard(batch: String) -> [String: Any] { ["batch": batch] }
 }
 
 /// A message written for the person, shown as it is.

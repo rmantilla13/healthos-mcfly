@@ -210,14 +210,14 @@ struct APIClient {
 
     private struct Saved: Decodable { @LossyArray var entries: [FoodEntry] }
 
-    /// Saves those drafts (they count from now on) and discards the rest.
-    func saveDrafts(ids: [String]) async throws -> [FoodEntry] {
-        let saved: Saved = try await sendJSON("POST", "/nutrition/log/save", ["ids": ids])
+    /// Saves those drafts of that estimate (they count from now on) and discards its others.
+    func saveDrafts(batch: String, ids: [String]) async throws -> [FoodEntry] {
+        let saved: Saved = try await sendJSON("POST", "/nutrition/log/save", FoodBody.save(batch: batch, ids: ids))
         return saved.entries
     }
 
-    func discardDrafts() async throws {
-        _ = try await request("/nutrition/log/discard", method: "POST", body: Data("{}".utf8))
+    func discardDrafts(batch: String) async throws {
+        _ = try await request("/nutrition/log/discard", method: "POST", body: try JSONSerialization.data(withJSONObject: FoodBody.discard(batch: batch)))
     }
 
     /// Foods for words, or a typed barcode (8 to 14 digits). Search on submit, not as the person types.

@@ -103,7 +103,7 @@ final class NutritionScreenTests: XCTestCase {
         XCTAssertEqual(NutritionChoice.all.map(\.text), [
             "Calories, protein, carbs, fat, fiber, sugar, sodium and drinks.",
             "The same, with no calories anywhere, Ask McFly included.",
-            "Only which days you logged. No numbers at all.",
+            "No calories or nutrient amounts: only what you logged, and when.",
         ])
     }
 

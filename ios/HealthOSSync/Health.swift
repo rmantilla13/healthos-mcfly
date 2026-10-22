@@ -45,9 +45,11 @@ final class Health: @unchecked Sendable {
             guard let page = try await Self.unlessUndetermined({ try await query.result(for: store) }) else { return Changes(anchor: anchor) }
             // WHOOP's copies never change a day's result (the aggregation skips them), so they don't make it dirty.
             let metric = type == HKQuantityType(.stepCount) ? "steps" : ""
-            for sample in page.addedSamples where sample.writtenBy.counts(metric) { out.dates.formUnion(Self.days(of: sample)) }
+            // Nor does the food logged here (`FoodHealth.isOurs`, skipped when a day is read): rewriting or removing it
+            // must not re-send, or clear, a month of food. A deleted object keeps its sync identifier for this.
+            for sample in page.addedSamples where sample.writtenBy.counts(metric) && !FoodHealth.isOurs(sample.metadata) { out.dates.formUnion(Self.days(of: sample)) }
             out.samples += page.addedSamples.count
-            if !page.deletedObjects.isEmpty { out.sawDeletions = true }
+            if page.deletedObjects.contains(where: { !FoodHealth.isOurs($0.metadata) }) { out.sawDeletions = true }
             if type == HealthTypes.workout || type == HealthTypes.mindful {
                 out.deletedIDs += page.deletedObjects.map { "hk-" + $0.uuid.uuidString.lowercased() }
             }
@@ -94,9 +96,11 @@ final class Health: @unchecked Sendable {
         let from = Day.midnightUTC(days.first!).addingTimeInterval(-2 * 86_400)
         let to = Day.midnightUTC(days.last!).addingTimeInterval(3 * 86_400)
         let window = HKQuery.predicateForSamples(withStart: from, end: to, options: [])
+        // Food and water logged here and written to Health: left out of the query itself, as well as when adding up.
+        let notOurs = NSCompoundPredicate(andPredicateWithSubpredicates: [window, FoodHealth.notOurs])
         let agg = DayAggregator(dates: Set(days))
         for q in HealthTypes.quantities {
-            agg.add(try await samples(.quantitySample(type: q.type, predicate: window)), as: q)
+            agg.add(try await samples(.quantitySample(type: q.type, predicate: FoodHealth.isDietary(q.type) ? notOurs : window)), as: q)
         }
         agg.add(sleep: try await samples(.categorySample(type: HealthTypes.sleep, predicate: window)))
         agg.add(mindful: try await samples(.categorySample(type: HealthTypes.mindful, predicate: window)))
@@ -119,7 +123,7 @@ final class Health: @unchecked Sendable {
             // a meal twice.
             var samples: [FoodSample] = []
             for n in food {
-                samples += NutritionFolder.samples(try await self.samples(.quantitySample(type: n.type, predicate: window)), as: n)
+                samples += NutritionFolder.samples(try await self.samples(.quantitySample(type: n.type, predicate: notOurs)), as: n)
             }
             let days = NutritionFolder.fold(samples, dates: Set(days), clearing: clearFood)
             payload.nutrition = days.isEmpty ? nil : days

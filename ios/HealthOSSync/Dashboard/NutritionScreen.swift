@@ -67,7 +67,7 @@ struct NutritionChoice: Identifiable {
     static let all = [
         NutritionChoice(mode: .all, title: "Everything", text: "Calories, protein, carbs, fat, fiber, sugar, sodium and drinks."),
         NutritionChoice(mode: .noEnergy, title: "Everything except calories", text: "The same, with no calories anywhere, Ask McFly included."),
-        NutritionChoice(mode: .none, title: "No amounts", text: "Only which days you logged. No numbers at all."),
+        NutritionChoice(mode: .none, title: "No amounts", text: "No calories or nutrient amounts: only what you logged, and when."),
     ]
 }
 
