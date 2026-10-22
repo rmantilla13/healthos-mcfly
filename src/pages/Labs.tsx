@@ -457,6 +457,11 @@ function ResultsForm({
       {groups.map((g, gi) => (
         <fieldset key={g.id} className="labs-fieldset">
           <legend className={groups.length > 1 ? 'labs-legend' : 'sr-only'}>{groups.length > 1 ? `Collection ${gi + 1} of ${groups.length}` : 'Results'}</legend>
+          {source === 'report' && !g.collected && (
+            <p className="small labs-review-note">
+              <Icon name="alert" size={14} /> The report didn't show when these were collected. Add the date before saving.
+            </p>
+          )}
           <div className="labs-shared">
             <label className="labs-field">
               <span>Collected on</span>
