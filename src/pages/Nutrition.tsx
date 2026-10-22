@@ -132,7 +132,7 @@ function NutritionIntro({ refresh }: { refresh: () => void }) {
               <div>
                 <strong>What you log, here or in your food app</strong>
                 <span className="muted small">
-                  Search for a food, scan or type a barcode, describe it or snap a photo for McFly to estimate, or type the amounts. Or read the daily totals from MyFitnessPal,
+                  Search for a food or type a barcode (or scan one on iPhone), describe it or snap a photo for McFly to estimate, or type the amounts. Or read the daily totals from MyFitnessPal,
                   Cronometer, Lose It!, MacroFactor or Yazio, through Apple Health.
                 </span>
               </div>

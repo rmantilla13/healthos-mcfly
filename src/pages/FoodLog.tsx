@@ -359,7 +359,11 @@ function SearchFood({ when, units, usda }: { when: When; units: Units; usda: boo
             </p>
           ))}
           {found.results.length === 0 ? (
-            <p className="muted">{found.barcode ? 'That barcode isn’t in USDA FoodData Central or Open Food Facts. Quick add from the label instead.' : 'Nothing found. Try fewer or other words.'}</p>
+            <p className="muted">
+              {found.barcode
+                ? `That barcode isn’t in ${usda ? 'USDA FoodData Central or ' : ''}Open Food Facts. Quick add from the label instead.`
+                : 'Nothing found. Try fewer or other words.'}
+            </p>
           ) : (
             <ul className="food-results">
               {found.results.map((r) => (
