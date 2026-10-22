@@ -1,33 +1,16 @@
 // A lab result against its range: a small bar with the range shaded and the result marked, and the status in words.
 // The words carry the meaning; colour and the bar only repeat it. Shared by the Lab tests page and the Body card.
-import type { LabResult } from '../../shared/labs.ts';
+import { useId, useState } from 'react';
+import { type LabResult, rangeLabel, statusHint, statusLabel } from '../../shared/labs.ts';
 import { Icon } from './Icon.tsx';
+
+export { rangeLabel, statusLabel };
 
 /** Up to three significant figures, without trailing zeros: 4.5, 0.45, 1245. */
 export function labNumber(v: number) {
   const abs = Math.abs(v);
   const digits = abs >= 100 ? 0 : abs >= 10 ? 1 : abs >= 1 ? 2 : 3;
   return v.toLocaleString(undefined, { maximumFractionDigits: digits });
-}
-
-/** The status in words. A typical range says so, so it's never mistaken for the lab's own. */
-export function statusLabel(r: LabResult): string {
-  if (r.status) {
-    const where = { below: 'Below', within: 'Within', above: 'Above' }[r.status];
-    return `${where} ${r.range?.kind === 'typical' ? 'typical range' : 'range'}`;
-  }
-  if (!r.range) return 'No range printed';
-  if (r.value === null) return 'Compare with range';
-  return 'Can’t be placed';
-}
-
-/** Why there's no status, for a tooltip and screen readers. */
-function statusHint(r: LabResult): string | undefined {
-  if (r.status && r.range?.kind === 'typical') return `The report printed no range, so this uses a typical adult range${r.range.note ? ` (${r.range.note})` : ''}.`;
-  if (r.status) return undefined;
-  if (!r.range) return "The report printed no range, and there's no typical range to use for this marker.";
-  if (r.value === null) return 'The result is a word, not a number: compare it with the printed range.';
-  return `Printed as ${r.valueText}, which could fall on either side of the range.`;
 }
 
 function Arrow({ up }: { up: boolean }) {
@@ -38,20 +21,34 @@ function Arrow({ up }: { up: boolean }) {
   );
 }
 
+/**
+ * The status chip, and when there's more to say (no status, or a typical range or one band of several), a "Why?"
+ * button that shows the reason as text beside it: reachable by keyboard and touch, not only a hover tooltip.
+ */
 export function LabStatusChip({ result }: { result: LabResult }) {
   const s = result.status;
-  return (
-    <span className={`lab-status is-${s ?? 'none'}`} title={statusHint(result)}>
+  const label = statusLabel(result);
+  const hint = statusHint(result);
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  const chip = (
+    <span className={`lab-status is-${s ?? 'none'}`}>
       {s === 'within' ? <Icon name="check" size={12} strokeWidth={2} /> : s ? <Arrow up={s === 'above'} /> : null}
-      {statusLabel(result)}
+      {label}
     </span>
   );
-}
-
-/** The range text as printed, and a note when it's the typical one. */
-export function rangeLabel(r: LabResult) {
-  if (!r.range) return '—';
-  return r.range.kind === 'typical' ? `${r.range.text} (typical adult${r.range.note ? `, ${r.range.note}` : ''})` : r.range.text;
+  if (!hint) return chip;
+  return (
+    <span className="lab-status-wrap">
+      {chip}
+      <button type="button" className="lab-why" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}>
+        Why?<span className="sr-only"> ({label})</span>
+      </button>
+      <span id={id} className="lab-hint" hidden={!open}>
+        {hint}
+      </span>
+    </span>
+  );
 }
 
 /**

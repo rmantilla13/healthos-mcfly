@@ -28,8 +28,10 @@ import {
   markerOrder,
   parseRange,
   parseResultValue,
+  rangeCount,
   rangeText,
   resultStatus,
+  specimenOf,
   typicalRange,
 } from '../shared/labs.ts';
 import { platformSettings } from './admin.ts';
@@ -79,8 +81,15 @@ export async function insertLabResults(q: Queryable, userId: string, rows: LabRo
   );
 }
 
-/** A clean row from validated input; the number always comes from the result as printed. */
-export function labRow(input: Required<Omit<LabInput, 'biomarker' | 'refLow' | 'refHigh'>> & { biomarker: string; refLow: number | null; refHigh: number | null }, source: string): LabRow {
+/**
+ * A clean row from validated input; the number always comes from the result as printed. createdAt orders results
+ * collected on the same day: rows from one request get one more millisecond each, so their order is the order sent.
+ */
+export function labRow(
+  input: Required<Omit<LabInput, 'biomarker' | 'refLow' | 'refHigh'>> & { biomarker: string; refLow: number | null; refHigh: number | null },
+  source: string,
+  createdAt = Date.now(),
+): LabRow {
   return {
     id: randomUUID(),
     collected: input.collected,
@@ -95,7 +104,7 @@ export function labRow(input: Required<Omit<LabInput, 'biomarker' | 'refLow' | '
     lab: input.lab,
     panel: input.panel,
     source,
-    created_at: Date.now(),
+    created_at: createdAt,
   };
 }
 
@@ -149,17 +158,21 @@ export function parseLabInput(raw: unknown, path: string, today: string): CleanI
   const refText = text(r.refText, `${path}.refText`, 80, false);
   let refLow = bound(r.refLow, `${path}.refLow`);
   let refHigh = bound(r.refHigh, `${path}.refHigh`);
-  // The numbers come from the printed range unless they were given.
+  // The numbers come from the printed range unless they were given. A range printed in bands ("Male: 13.0-17.0
+  // Female: 12.0-15.0") gives none here: the band is picked from the profile's sex each time it's read.
   if (refLow === null && refHigh === null && refText) {
     const b = parseRange(refText);
     if (b) [refLow, refHigh] = [b.low, b.high];
   }
   if (refLow !== null && refHigh !== null && refLow > refHigh) fail(`${path}.refLow`, 'must not be above refHigh');
+  const panel = text(r.panel, `${path}.panel`, 80, false);
   let key: string;
   if (r.biomarker !== undefined && r.biomarker !== null && r.biomarker !== '') {
     if (typeof r.biomarker !== 'string' || !biomarker(r.biomarker)) return fail(`${path}.biomarker`, 'expected a marker from the catalog');
+    // The catalog's markers are blood tests: a urinalysis "Glucose" is never blood glucose.
+    if (specimenOf(name, panel)) return fail(`${path}.biomarker`, "the catalog's markers are blood tests, not for a urine or stool result");
     key = r.biomarker;
-  } else key = markerKey(name);
+  } else key = markerKey(name, panel);
   return {
     collected,
     name,
@@ -169,7 +182,7 @@ export function parseLabInput(raw: unknown, path: string, today: string): CleanI
     refLow,
     refHigh,
     lab: text(r.lab, `${path}.lab`, 80, false),
-    panel: text(r.panel, `${path}.panel`, 80, false),
+    panel,
     biomarker: key,
   };
 }
@@ -185,11 +198,19 @@ function printedBounds(r: LabRow): Bounds | null {
 }
 
 export function toResult(r: LabRow, sex: Sex): LabResult {
+  // A urine or stool result stored under a blood marker's key (before they were kept apart) is read as its own marker.
+  const key = !isOther(r.biomarker) && specimenOf(r.name, r.panel) ? markerKey(r.name, r.panel) : r.biomarker;
   const parsed = parseResultValue(r.value_text);
   const printed = printedBounds(r);
   let range: LabRange | null;
   let bounds: Bounds | null = null;
-  if (printed) {
+  if (r.ref_text && rangeCount(r.ref_text) > 1) {
+    // A range printed in bands: the one for the profile's sex when the bands are by sex, read from the text each
+    // time so a change of sex follows. Otherwise none: never the first band. Shown as printed either way.
+    bounds = parseRange(r.ref_text, sex);
+    const band = bounds && (sex === 'female' || sex === 'male') ? sex : null;
+    range = { low: bounds?.low ?? null, high: bounds?.high ?? null, text: r.ref_text, kind: 'lab', band };
+  } else if (printed) {
     range = { low: printed.low, high: printed.high, text: r.ref_text || rangeText(printed.low, printed.high), kind: 'lab' };
     bounds = printed;
   } else if (r.ref_text) {
@@ -197,13 +218,13 @@ export function toResult(r: LabRow, sex: Sex): LabResult {
     range = { low: null, high: null, text: r.ref_text, kind: 'lab' };
   } else {
     // Only when the report printed no range at all.
-    range = typicalRange(r.biomarker, r.unit, sex);
+    range = typicalRange(key, r.unit, sex);
     bounds = range && { low: range.low, high: range.high, lowOpen: false, highOpen: false };
   }
   return {
     id: r.id,
     collected: r.collected,
-    biomarker: r.biomarker,
+    biomarker: key,
     name: r.name,
     valueText: r.value_text,
     value: parsed.value,
@@ -219,7 +240,10 @@ export function toResult(r: LabRow, sex: Sex): LabResult {
 
 const sig = (v: number) => Number(v.toPrecision(4));
 
-/** Every result for one marker, oldest first, as one marker: its latest result and the values that share a scale. */
+/**
+ * Every result for one marker, oldest first, as one marker: its latest result and the values that share a scale.
+ * Results from one day are in the order they were added (created_at), so the latest is never a coin toss.
+ */
 function marker(key: string, results: LabResult[]): LabMarker {
   const latest = results.at(-1)!;
   const points: LabMarker['points'] = [];
@@ -331,6 +355,10 @@ export function draftRows(raw: unknown, today: string): LabDraft[] {
     const high = num(r.ref_high);
     const printed = str(r.ref_text, 80);
     const collected = realDate(r.collected) && r.collected <= today && r.collected >= '1900-01-01' ? r.collected : null;
+    // A date that was read but can't be used (not a real date, in the future) is flagged, so the review says so.
+    const dateDropped = collected === null && r.collected !== null && r.collected !== undefined && r.collected !== '';
+    const panel = str(r.panel, 80);
+    const key = markerKey(name, panel);
     out.push({
       collected,
       name,
@@ -339,8 +367,9 @@ export function draftRows(raw: unknown, today: string): LabDraft[] {
       // One editable range: as printed, or written from the numbers when only those came back.
       refText: printed || (low !== null && high !== null && low > high ? '' : rangeText(low, high)),
       lab: str(r.lab, 80),
-      panel: str(r.panel, 80),
-      biomarker: isOther(markerKey(name)) ? null : markerKey(name),
+      panel,
+      biomarker: isOther(key) ? null : key,
+      ...(dateDropped ? { dateDropped: true as const } : {}),
     });
   }
   return out;
@@ -378,7 +407,8 @@ export function labsRouter(db: Db, { hosted, client = defaultClient }: { hosted:
     const source = body?.source === undefined ? 'manual' : body.source;
     if (source !== 'manual' && source !== 'report') return void res.status(400).json({ error: "source: expected 'manual' or 'report'" });
     const { today } = await requestContext(scope, hosted);
-    const rows = list.map((r, i) => labRow(parseLabInput(r, `results[${i}]`, today), source));
+    const now = Date.now();
+    const rows = list.map((r, i) => labRow(parseLabInput(r, `results[${i}]`, today), source, now + i));
     await insertLabResults(db, scope.userId, rows);
     await bumpDataVersion(db, scope.userId);
     res.json({ added: rows.length, ids: rows.map((r) => r.id) });
@@ -404,8 +434,8 @@ export function labsRouter(db: Db, { hosted, client = defaultClient }: { hosted:
       ...(newText && !newNumbers ? {} : { refLow: row.ref_low, refHigh: row.ref_high }),
       lab: row.lab,
       panel: row.panel,
-      // A new name is matched again, unless a marker was picked with it.
-      ...('name' in p ? {} : { biomarker: isOther(row.biomarker) ? undefined : row.biomarker }),
+      // A new name or panel is matched again, unless a marker was picked with it; a urine or stool result never keeps a catalog key.
+      ...('name' in p || 'panel' in p ? {} : { biomarker: isOther(row.biomarker) || specimenOf(row.name, row.panel) ? undefined : row.biomarker }),
       ...p,
     };
     const { today, settings } = await requestContext(scope, hosted);
