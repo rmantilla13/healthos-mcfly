@@ -10,9 +10,14 @@ final class Health: @unchecked Sendable {
 
     var isAvailable: Bool { HKHealthStore.isHealthDataAvailable() }
 
+    /// One request for everything, every time: on iOS 27 a request that leaves out one direction of a type it asked
+    /// about before (writing food, after it was allowed) asks again and resets that direction.
     func requestAuthorization() async throws {
-        try await store.requestAuthorization(toShare: SampleData.shareTypes, read: HealthTypes.readTypes)
+        try await store.requestAuthorization(toShare: Self.shareTypes, read: HealthTypes.readTypes)
     }
+
+    /// What this app asks to write: the simulator's sample data, and the food logged here once the person has been asked.
+    static var shareTypes: Set<HKSampleType> { SampleData.shareTypes.union(Config.foodHealthAsked ? FoodHealth.shareTypes : []) }
 
     struct Changes {
         var dates: Set<String> = []

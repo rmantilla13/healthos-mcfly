@@ -84,6 +84,13 @@ enum Config {
     /// Kept with the sync state, which starts over when the server changes.
     static var serverMetrics: [String]? { SyncState.load().acceptedMetrics }
 
+    /// Health was asked about writing the food logged here (the first entry saved on this phone). From then on every
+    /// Health request includes those types.
+    static var foodHealthAsked: Bool {
+        get { defaults.bool(forKey: "foodHealthAsked") }
+        set { defaults.set(newValue, forKey: "foodHealthAsked") }
+    }
+
     static var healthRequested: Bool {
         get { defaults.bool(forKey: "healthRequested") }
         set { defaults.set(newValue, forKey: "healthRequested") }

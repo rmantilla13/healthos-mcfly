@@ -155,19 +155,22 @@ actor FoodHealthStore {
         try? JSONEncoder().encode(written).write(to: Self.file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
 
-    /// Health would ask about writing some food type: HealthKit's own answer, since a type asked about for reading alone
-    /// already reports a write status.
+    /// Health hasn't been asked about writing the food logged here. HealthKit's own answer, since a type asked about for
+    /// reading alone already reports a write status.
     func needsAsking() async -> Bool {
         guard HKHealthStore.isHealthDataAvailable() else { return false }
-        return (try? await store.statusForAuthorizationRequest(toShare: FoodHealth.shareTypes, read: [])) == .shouldRequest
+        if !Config.foodHealthAsked { return true }
+        return (try? await store.statusForAuthorizationRequest(toShare: Health.shareTypes, read: HealthTypes.readTypes)) == .shouldRequest
     }
 
     /// Asks Health for write access to the food types, if it hasn't been asked: after the person saves an entry here,
-    /// once no sheet is up (Health can't show its own over one), never at launch. A refusal leaves logging as it is.
+    /// once no sheet is up (Health can't show its own over one), never at launch. It goes with everything else the app
+    /// asks for (Health.requestAuthorization), so a later request never asks again. A refusal leaves logging as it is.
     func askIfNeeded() async {
         guard await needsAsking() else { return }
+        Config.foodHealthAsked = true
         do {
-            try await store.requestAuthorization(toShare: FoodHealth.shareTypes, read: [])
+            try await Health.shared.requestAuthorization()
         } catch {
             print("[healthos] couldn't ask to write food to Health: \(error.localizedDescription)")
         }
