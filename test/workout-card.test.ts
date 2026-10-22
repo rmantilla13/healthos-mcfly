@@ -15,10 +15,13 @@ import {
   readTicks,
   recentSessions,
   recoverySuggestions,
+  SUGGESTION_HOURS,
   sportKind,
+  suggestionsApply,
   tickKey,
   writeTicks,
 } from '../shared/workouts.ts';
+import { duration } from '../src/lib.ts';
 
 const workout = (o: Partial<Workout> & { id: string; start: string; duration_min: number }): Workout => {
   const end = o.end ?? new Date(Date.parse(o.start) + o.duration_min * 60_000).toISOString().replace('.000Z', 'Z');
@@ -65,6 +68,15 @@ test('seconds are rounded before splitting, so a pace never reads 5:60', () => {
   assert.equal(clockDuration(59.5), '1:00');
   assert.equal(clockDuration(3725), '1:02:05');
   assert.equal(formatPace({ kind: 'pace', seconds: 359.6, per: 'km' }), '6:00 /km');
+});
+
+test('minutes are rounded before splitting, so a duration never reads 60m or 1h 60m', () => {
+  assert.equal(duration(59.6), '1h 00m');
+  assert.equal(duration(119.7), '2h 00m');
+  assert.equal(duration(59.4), '59m');
+  assert.equal(duration(45.4), '45m');
+  assert.equal(duration(61), '1h 01m');
+  assert.equal(duration(0.3), '0m');
 });
 
 test('a ride gets speed, a swim pace per 100, other sports nothing', () => {
@@ -185,6 +197,27 @@ test('an evening session ending at 20:00 or later (or past midnight) adds windin
     recoverySuggestions(early).map((x) => x.id),
     ['water'],
   );
+});
+
+test('suggestions are for a session that ended in the last few hours, by the real clock', () => {
+  const w = workout({ id: 'run', start: '2026-10-22T07:00:00-05:00', end: '2026-10-22T07:45:00-05:00', duration_min: 45 });
+  const end = Date.parse(w.end);
+  const hour = 3_600_000;
+  assert.ok(suggestionsApply(w, end + 2 * hour), 'two hours ago');
+  assert.ok(suggestionsApply(w, end), 'just ended');
+  assert.ok(suggestionsApply(w, end + SUGGESTION_HOURS * hour), 'at the edge of the window');
+  assert.ok(!suggestionsApply(w, end + SUGGESTION_HOURS * hour + 60_000), 'just past it');
+  // A past day's workout, looked at today: no "drink some water over the next hour".
+  assert.ok(!suggestionsApply(w, Date.parse('2026-11-01T12:00:00-05:00')), 'ten days ago');
+  // The day before's evening session still counts the next morning, whichever day the page shows.
+  const evening = workout({ id: 'eve', start: '2026-10-21T19:00:00-05:00', end: '2026-10-21T20:00:00-05:00', duration_min: 60 });
+  assert.ok(suggestionsApply(evening, Date.parse('2026-10-22T08:00:00-05:00')));
+  // The clock is the ISO string's own offset, not this computer's time zone: 20:00 at -05:00 is 01:00Z.
+  assert.ok(suggestionsApply(evening, Date.parse('2026-10-22T02:00:00Z')));
+  // Not one still going, and not one without a readable end.
+  assert.ok(!suggestionsApply(w, end - 60_000));
+  assert.ok(!suggestionsApply({ end: '' }, end));
+  assert.ok(!suggestionsApply({ end: 'not a time' }, end));
 });
 
 test('every suggestion says why, and none reads as a prescription or a diagnosis', () => {

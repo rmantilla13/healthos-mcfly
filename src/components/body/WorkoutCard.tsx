@@ -19,12 +19,13 @@ import {
   recentSessions,
   recoverySuggestions,
   sportKind,
+  suggestionsApply,
   tickKey,
   wallClock,
   writeTicks,
 } from '../../../shared/workouts.ts';
 import { barPath, useWidth } from '../../charts/core.tsx';
-import { daysBetween, duration, fmt, fmtDate, relativeDay, useApi, useUnits } from '../../lib.ts';
+import { duration, fmt, fmtDate, relativeDay, useApi, useUnits } from '../../lib.ts';
 import { CardHead } from '../../pages/Home.tsx';
 import { Icon, type IconName } from '../Icon.tsx';
 
@@ -68,8 +69,11 @@ function Latest({ w, list, s, units, userId }: { w: Workout; list: Workout[]; s:
   const kcal = num(w.energy_kcal);
   const strain = num(w.strain);
   const sessions = recentSessions(list, w, 6);
-  // Suggestions are for a session on this day or the day before; for an older one they'd be beside the point.
-  const recent = daysBetween(w.date, s.date) <= 1;
+  // Suggestions are for a session that ended in the last 18 hours (SUGGESTION_HOURS), by the real clock: for an
+  // older one (a past day's, or the latest of a quiet week) they'd be beside the point. Ticks are kept per workout,
+  // so the same ones show on today's page and the day before's, and across midnight.
+  const recent = suggestionsApply(w, Date.now());
+  const ticks = userId ? tickKey(userId, w.id, w.date) : null;
 
   const stats: { label: string; value: string; title?: string }[] = [];
   if (dist && minutes !== null) stats.push({ label: 'Duration', value: duration(minutes) });
@@ -123,7 +127,7 @@ function Latest({ w, list, s, units, userId }: { w: Workout; list: Workout[]; s:
       ) : (
         <p className="card-note">No other {w.sport.toLowerCase()} sessions in the last {DAYS} days to compare with.</p>
       )}
-      {recent && userId && <Suggestions key={tickKey(userId, w.id, s.date)} w={w} storageKey={tickKey(userId, w.id, s.date)} />}
+      {recent && ticks && <Suggestions key={ticks} w={w} storageKey={ticks} />}
       <div className="metric-foot">
         <span>From {SOURCE[w.source] ?? 'demo data'}</span>
       </div>
