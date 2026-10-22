@@ -24,6 +24,8 @@ export type MetricRange = 'day' | 'week' | 'month' | 'year';
 /** Rolling windows ending on the day asked for: the last 7, 30 and 365 days. */
 export const RANGE_DAYS: Record<Exclude<MetricRange, 'day'>, number> = { week: 7, month: 30, year: 365 };
 export const RANGE_LABEL: Record<MetricRange, string> = { day: 'Day', week: 'Week', month: 'Month', year: 'Year' };
+/** A range's window as the sheet says it. */
+export const RANGE_WINDOW: Record<Exclude<MetricRange, 'day'>, string> = { week: 'the last 7 days', month: 'the last 30 days', year: 'the last 12 months' };
 
 export type MetricInfo = {
   label: string;
@@ -154,4 +156,33 @@ export function aboutBefore(points: Point[], days = 30, slack = 9): Point | null
     }
   }
   return best;
+}
+
+/**
+ * The range a sheet moves to when the one it opened on has nothing in it: its longest. The card it was opened from
+ * can show a reading older than a month (a weigh-in, a VO₂ max estimate, a meter's last glucose day; each card looks
+ * back 120 days at most), and the sheet shouldn't then say there's nothing. Null to stay where it is: a Day (which
+ * says why it's empty), a window with data, or one that's already the longest.
+ */
+export function widerRange(sheet: Pick<MetricSheet, 'range' | 'ranges' | 'headline' | 'points'>): MetricRange | null {
+  // A point without a headline is today's unfinished total, which is drawn but not counted: not an empty window.
+  if (sheet.range === 'day' || sheet.headline.value !== null || sheet.points.length) return null;
+  const longest = sheet.ranges.at(-1);
+  return longest && longest !== sheet.range ? longest : null;
+}
+
+/**
+ * What an empty window says when a longer range may have something: "Nothing in the last 30 days. Year shows the
+ * last 12 months." Null for a Day or the longest range, which say why there's nothing at all.
+ */
+export function emptyWindowText(sheet: Pick<MetricSheet, 'range' | 'ranges' | 'points'>): string | null {
+  const longest = sheet.ranges.at(-1);
+  if (sheet.range === 'day' || sheet.points.length || !longest || longest === 'day' || longest === sheet.range) return null;
+  return `Nothing in ${RANGE_WINDOW[sheet.range]}. ${RANGE_LABEL[longest]} shows ${RANGE_WINDOW[longest]}.`;
+}
+
+/** The note a sheet shows when it moved to a longer range by itself: "Nothing in the last 30 days, so this shows the last 12 months." */
+export function widenedNote(from: MetricRange, to: MetricRange): string | null {
+  if (from === 'day' || to === 'day' || from === to) return null;
+  return `Nothing in ${RANGE_WINDOW[from]}, so this shows ${RANGE_WINDOW[to]}.`;
 }

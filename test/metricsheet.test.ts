@@ -4,8 +4,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { AddressInfo } from 'node:net';
 import type { MetricSheet } from '../shared/metrics.ts';
-import { aboutBefore, mmolFromMgDl } from '../shared/metrics.ts';
-import type { Point, Summary } from '../shared/types.ts';
+import { aboutBefore, emptyWindowText, mmolFromMgDl, widenedNote, widerRange } from '../shared/metrics.ts';
+import type { DayData, Point, Summary } from '../shared/types.ts';
 import { createApp } from '../server/app.ts';
 import { hashPassword } from '../server/auth.ts';
 import { addDays, todayLocal } from '../server/dates.ts';
@@ -51,9 +51,17 @@ test("the sentence's status is the card's, in the card's own terms, and never a 
   const latest = { date: '2026-10-21', value: 63, source: 'whoop' };
   const s = (phrase: string) => sentence({ ...base, key: 'resting_hr', unit: 'bpm', average: 55, delta: null, previous: null, status: { phrase, latest } });
   assert.equal(s('is above your usual range'), 'Your resting heart rate averaged 55 bpm over the last 30 days; your latest, 63 bpm yesterday, is above your usual range.');
-  const hrv = sentence({ ...base, key: 'hrv', unit: 'ms', average: 48, delta: 4, previous: 44, status: { phrase: 'is at or above your usual', latest: { ...latest, value: 52, date: '2026-10-22' } } });
-  assert.equal(hrv, 'Your HRV averaged 48 ms over the last 30 days, 4 ms higher than the 30 days before; your latest, 52 ms today, is at or above your usual.');
+  const hrv = sentence({ ...base, key: 'hrv', unit: 'ms', average: 48, delta: 4, previous: 44, status: { phrase: 'is at or above the average of the 30 days before it', latest: { ...latest, value: 52, date: '2026-10-22' } } });
+  assert.equal(hrv, 'Your HRV averaged 48 ms over the last 30 days, 4 ms higher than the 30 days before; your latest, 52 ms today, is at or above the average of the 30 days before it.');
   assert.doesNotMatch(hrv, /optimal|good|better|improv/i);
+});
+
+test("glucose's sentence says daily averages, not readings", () => {
+  const latest = { date: '2026-10-21', value: 98, source: 'apple' };
+  assert.equal(
+    sentence({ ...base, key: 'glucose', unit: 'mg/dL', average: 97, delta: null, previous: null, status: { phrase: 'is within your usual range', latest } }),
+    'Your daily glucose averaged 97 mg/dL over the last 30 days; your latest daily average, 98 mg/dL yesterday, is within your usual range.',
+  );
 });
 
 test('a change is steady below the metric\'s threshold or once it rounds to nothing', () => {
@@ -63,6 +71,35 @@ test('a change is steady below the metric\'s threshold or once it rounds to noth
   assert.equal(isSteady('steps', 300, 8000, 'steps'), true, 'under 5% of steps');
   assert.equal(isSteady('weight', 0.04, 70, 'kg'), true);
   assert.equal(isSteady('weight', 0.3, 70, 'kg'), false);
+  // A mass's threshold is in kg whatever the units shown: 0.15 kg is steady in kg, and so in pounds (0.33 lb).
+  assert.equal(isSteady('weight', 0.15, 70, 'kg'), true);
+  assert.equal(isSteady('weight', 0.15 / 0.45359237, 70 / 0.45359237, 'lb'), true, '0.33 lb is 0.15 kg');
+  assert.equal(isSteady('lean_mass', 0.15 / 0.45359237, 55 / 0.45359237, 'lb'), true);
+  assert.equal(isSteady('weight', 0.5, 154, 'lb'), false, '0.5 lb is 0.23 kg');
+  assert.equal(
+    sentence({ ...base, key: 'weight', unit: 'lb', average: 154.3, delta: 0.33, previous: 153.97, status: null }),
+    'Your weight averaged 154.3 lb over the last 30 days, about the same as the 30 days before.',
+  );
+});
+
+test('an empty window moves to the longest range once, and says so; a Day or the longest stays', () => {
+  const empty = { value: null, label: 'Average', unit: 'kg' };
+  const ranges = ['week', 'month', 'year'] as MetricSheet['ranges'];
+  const points: Point[] = [];
+  assert.equal(widerRange({ range: 'month', ranges, headline: empty, points }), 'year');
+  assert.equal(widerRange({ range: 'week', ranges, headline: empty, points }), 'year');
+  assert.equal(widerRange({ range: 'year', ranges, headline: empty, points }), null, 'already the longest');
+  assert.equal(widerRange({ range: 'month', ranges, headline: { ...empty, value: 72 }, points }), null, 'a window with data stays');
+  assert.equal(widerRange({ range: 'day', ranges: ['day', ...ranges], headline: empty, points }), null, 'a Day says why it is empty');
+  // Only today's unfinished total: drawn, not counted, so the window isn't empty and isn't called so.
+  const today = [{ date: '2026-10-22', value: 1200 }];
+  assert.equal(widerRange({ range: 'week', ranges, headline: empty, points: today }), null);
+  assert.equal(emptyWindowText({ range: 'week', ranges, points: today }), null);
+  assert.equal(emptyWindowText({ range: 'month', ranges, points }), 'Nothing in the last 30 days. Year shows the last 12 months.');
+  assert.equal(emptyWindowText({ range: 'year', ranges, points }), null);
+  assert.equal(emptyWindowText({ range: 'day', ranges: ['day', ...ranges], points }), null);
+  assert.equal(widenedNote('month', 'year'), 'Nothing in the last 30 days, so this shows the last 12 months.');
+  assert.equal(widenedNote('day', 'week'), null);
 });
 
 test('a year is drawn as weekly averages, each dated its Monday', () => {
@@ -297,6 +334,52 @@ test('the Day range is for steps, active energy and heart rate only', async () =
   assert.deepEqual((await bob.sheet('steps', `range=week&date=${asOf}`)).ranges, ['week', 'month', 'year']);
 });
 
+test("today's Day sheet compares at the cards' hour, the latest synced of any Day metric", async () => {
+  // Steps synced through 8 AM, heart rate through noon: Body's cards (GET /api/day for all three) are at noon.
+  await upsertHourly(db, OWNER_ID, [
+    { date: today, hour: 8, metric: 'steps', source: 'apple', value: 300 },
+    { date: today, hour: 12, metric: 'hr_avg', source: 'apple', value: 80 },
+  ]);
+  const cards = (await owner.call('GET', '/api/day?metrics=heart_rate,steps,active_energy')).json as DayData;
+  assert.equal(cards.asOf, 12);
+  const sheet = await owner.sheet('steps', `range=day&date=${today}`);
+  assert.equal(sheet.day!.asOf, 12, "the sheet's chart is drawn through the cards' hour");
+  assert.deepEqual(Object.keys(sheet.day!.metrics), ['steps'], 'only the metric asked for');
+  assert.equal(sheet.tiles[0].label, 'Typical by now');
+  assert.equal(sheet.tiles[0].value, cards.metrics.steps!.typical[12], 'typical by noon, not by 8 AM');
+  assert.notEqual(cards.metrics.steps!.typical[12], cards.metrics.steps!.typical[8]);
+  // Heart rate's own latest hour is noon: an hour still filling up, as on Home.
+  const hr = await owner.sheet('heart_rate', `date=${today}`);
+  assert.equal(hr.headline.value, 80);
+  assert.equal(hr.headline.note, `average since ${new Intl.DateTimeFormat('en-US', { hour: 'numeric', timeZone: 'UTC' }).format(Date.UTC(2000, 0, 1, 12))}`);
+  // A metric with no hours of its own that day isn't given the others' hour.
+  const energy = await owner.sheet('active_energy', `range=day&date=${today}`);
+  assert.equal(energy.day?.asOf ?? null, null);
+  assert.equal(energy.headline.value, null);
+});
+
+test("HRV at or above its 30-day mean is said against that average, not a range", async () => {
+  await upsertDaily(db, OWNER_ID, [{ date: asOf, metric: 'hrv_rmssd', source: 'whoop', value: 70 }]);
+  const hrv = await owner.sheet('hrv', `range=month&date=${asOf}`);
+  assert.deepEqual(hrv.status, { text: 'At or above your usual', position: 'at_or_above' });
+  assert.match(hrv.narrative!, /; your latest, 70 ms yesterday, is at or above the average of the 30 days before it\.$/);
+  assert.doesNotMatch(hrv.narrative!, /usual range/);
+  await upsertDaily(db, OWNER_ID, [{ date: asOf, metric: 'hrv_rmssd', source: 'whoop', value: 40 }]);
+});
+
+test('a reading older than the window: the month is empty, the longest range has it', async () => {
+  // One VO₂ max estimate, 50 days ago: Body's cardio fitness card looks back 120 days and shows it.
+  await upsertDaily(db, OWNER_ID, [{ date: ago(50), metric: 'vo2max', source: 'apple', value: 42.5 }]);
+  const month = await owner.sheet('vo2max', `range=month&date=${asOf}`);
+  assert.equal(month.headline.value, null);
+  assert.equal(widerRange(month), 'year');
+  assert.equal(emptyWindowText(month), 'Nothing in the last 30 days. Year shows the last 12 months.');
+  const year = await owner.sheet('vo2max', `range=year&date=${asOf}`);
+  assert.equal(year.headline.value, 42.5);
+  assert.deepEqual(year.latest, { date: ago(50), value: 42.5 });
+  assert.equal(widerRange(year), null);
+});
+
 test('unknown metrics, ranges and dates are refused without repeating them', async () => {
   const r = await owner.call('GET', '/api/metric/secret_thing?range=week');
   assert.equal(r.status, 404);
@@ -339,4 +422,11 @@ test("mass is in the person's units; glucose stays in mg/dL with its own usual r
   assert.ok(glucose.status, 'a daily average against its own last 30 days');
   assert.equal(glucose.status.position, 'within');
   assert.match(glucose.narrative!, /mg\/dL/);
+  // Each day is the mean of its readings, and the figures and the sentence say so.
+  assert.deepEqual(
+    glucose.tiles.map((t) => t.label),
+    ['Lowest daily average', 'Highest daily average', 'Latest daily average'],
+  );
+  assert.match(glucose.narrative!, /^Your daily glucose averaged \d+ mg\/dL over the last 30 days/);
+  assert.match(glucose.narrative!, /; your latest daily average, 95 mg\/dL yesterday, is within your usual range\.$/);
 });
