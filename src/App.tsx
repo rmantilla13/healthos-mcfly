@@ -11,7 +11,7 @@ import { Home } from './pages/Home.tsx';
 import { Integrations, SettingsPage } from './pages/Integrations.tsx';
 import { Labs } from './pages/Labs.tsx';
 import { McFly } from './pages/McFly.tsx';
-import { CommandPalette } from './components/Search.tsx';
+import { CommandPalette, SearchButton } from './components/Search.tsx';
 import { Nutrition } from './pages/Nutrition.tsx';
 import { Sleep } from './pages/Sleep.tsx';
 import { AccountLinkPage, Login } from './pages/Login.tsx';
@@ -142,6 +142,7 @@ function Dashboard({ signedIn }: { signedIn: boolean }) {
             <Logo />
             <span>healthOS</span>
           </a>
+          <SearchButton />
           <nav aria-label="Main">
             {NAV.flatMap((n) =>
               n.page === 'body'

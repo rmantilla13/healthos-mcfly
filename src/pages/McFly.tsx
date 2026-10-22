@@ -4,6 +4,7 @@ import { Fragment, useEffect, useRef, useState } from 'react';
 import type { McflyStatus, McflyTurn, McflyVisual as Visual, SessionUser } from '../../shared/types.ts';
 import { Icon } from '../components/Icon.tsx';
 import { McflyVisual, visualNote } from '../components/McflyVisual.tsx';
+import { useMcflyDraft } from '../components/Search.tsx';
 import { ShinyText } from '../components/ShinyText.tsx';
 import { useApi } from '../lib.ts';
 
@@ -64,6 +65,8 @@ export function McFly({ me }: { me: SessionUser }) {
   const { data: status, reload } = useApi<McflyStatus>('/mcfly');
   const [msgs, setMsgs] = useState<Msg[]>(() => load(me.id));
   const [draft, setDraft] = useState('');
+  // A question handed over from ⌘K search ("Ask McFly about …") fills the box.
+  useMcflyDraft(me.id, setDraft);
   const [busy, setBusy] = useState(false);
   const abort = useRef<AbortController | null>(null);
   const thread = useRef<HTMLDivElement>(null);
