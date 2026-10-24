@@ -212,8 +212,8 @@ export function FitbitImport({ status, refresh, onClose }: { status: Status; ref
             </p>
           )}
           <p className="muted small">
-            A large export comes as several .zip files: choose them all at once. healthOS reads the export here, in this browser; only the daily readings it finds are sent to your
-            account. Nothing else about the file leaves this device.
+            A large export comes as several .zip files: choose them all at once. healthOS reads the export here, in this browser; only per-day readings and each night's sleep times
+            and stages are sent to your account. Nothing else about the file leaves this device.
           </p>
         </>
       )}

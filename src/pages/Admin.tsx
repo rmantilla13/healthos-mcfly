@@ -185,7 +185,7 @@ function People({ data, me, act, onLink }: { data: AdminOverview; me: SessionUse
                   <td>
                     <AdminCards u={u} self={self} act={act} />
                     {self ? (
-                      <span className="muted small">Change your own password in Settings</span>
+                      <span className="muted small">Change your own password in your Profile.</span>
                     ) : (
                       <div className="btn-row admin-actions">
                         <button
@@ -411,7 +411,7 @@ function PlatformSettingsCard({ data, act }: { data: AdminOverview; act: Act }) 
           <span>Daily step goal</span>
           <input inputMode="numeric" value={goal} onChange={(e) => setGoal(e.target.value.replace(/\D/g, ''))} onBlur={() => goal !== s.default_step_goal && save({ default_step_goal: goal })} />
         </label>
-        <small className="muted">For anyone who hasn't picked their own in Settings.</small>
+        <small className="muted">For anyone who hasn't picked their own in their Profile.</small>
         <p className={`muted small saved ${saved ? 'is-on' : ''}`}>
           <Icon name="check" size={14} /> Saved
         </p>

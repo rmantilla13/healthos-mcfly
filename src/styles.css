@@ -7072,6 +7072,10 @@ html:has(.palette[open]) {
   .app:has(.mcfly) .main {
     padding-bottom: calc(84px + env(safe-area-inset-bottom));
   }
+  /* Home's last line scrolls clear of the Ask McFly pill, which floats 74px up and is 44px tall. */
+  .app:has(.ask-pill) .main {
+    padding-bottom: calc(130px + env(safe-area-inset-bottom));
+  }
   .app-foot {
     flex-direction: column;
     align-items: center;

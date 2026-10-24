@@ -609,9 +609,14 @@ function SetupLine({ can, ai, numbers }: { can: FoodLog['can'] | undefined; ai: 
   }
   const provider = can.estimateProvider ?? 'anthropic';
   const where = `your words and photos go to ${COMPANY[provider]} for each estimate, and healthOS doesn't keep them.`;
+  // Hold to talk sends the recording to OpenAI to be written down, on the person's own OpenAI key or else the server's
+  // (openaiKeyFor). Said here unless the line above already names OpenAI.
+  const ownOpenai = ai.keys.some((k) => k.provider === 'openai');
+  const voice = can.voice && provider !== 'openai' ? ` Voice notes are transcribed by OpenAI first, on ${ownOpenai ? 'your key' : "this server's key"}.` : '';
   return (
     <p className="nutri-setup is-quiet">
       {can.estimateSource === 'own' ? `Using your own ${KEY_LABEL[provider]} key` : "Using healthOS's shared assistant"} · {where}
+      {voice}
     </p>
   );
 }

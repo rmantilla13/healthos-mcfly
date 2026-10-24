@@ -74,6 +74,12 @@
   font-weight: 600;
   color: var(--ink);
 }
+/* The column headings stick to the top as the page scrolls; above the rows' range bars and dots (positioned, so
+   they'd otherwise paint over them), on the card's own solid colour. */
+.records-card .labs-table thead th {
+  z-index: 1;
+  background: var(--surface);
+}
 
 /* Lab documents: what happened, then one row per file */
 .records-status:empty {
