@@ -567,6 +567,11 @@ nav {
 .main-page > .mcfly {
   max-width: 820px;
 }
+/* Ask McFly is one screen tall: the shell's column may shrink so the conversation scrolls inside it, not the page. */
+.app:has(.mcfly) .main-inner,
+.app:has(.mcfly) .main-page {
+  min-height: 0;
+}
 .page-message {
   padding: 60px;
   color: var(--ink-3);
@@ -7062,6 +7067,10 @@ html:has(.palette[open]) {
   }
   .ask-pill > .icon {
     display: none;
+  }
+  /* Ask McFly's composer stays above the tab bar. */
+  .app:has(.mcfly) .main {
+    padding-bottom: calc(84px + env(safe-area-inset-bottom));
   }
   .app-foot {
     flex-direction: column;
