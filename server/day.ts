@@ -105,7 +105,10 @@ export async function dayView(scope: Scope, hosted: boolean, requested: DayMetri
         "SELECT source, value FROM daily WHERE user_id = $1 AND metric = 'steps' AND date = $2 AND source = ANY($3)",
         [scope.userId, date, sources],
       );
-      const total = pickSteps(rows.find((r) => r.source === 'apple'), rows.find((r) => r.source === 'whoop')) ?? rows.find((r) => r.source === 'demo');
+      const total =
+        pickSteps(rows.find((r) => r.source === 'apple'), rows.find((r) => r.source === 'whoop')) ??
+        rows.find((r) => r.source === 'fitbit') ??
+        rows.find((r) => r.source === 'demo');
       if (total) series.total = { value: Math.round(Number(total.value)), source: total.source };
     }
     metrics[m] = series;
