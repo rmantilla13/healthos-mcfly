@@ -302,7 +302,7 @@ function useReferencePhoto() {
   const [photo, setPhoto] = useState<Chosen | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [earlier, setEarlier] = useState(0);
-  // Reference ids already known, so the one an upload added can be told apart in GET /api/portraits.
+  // Reference ids already there, so the one an upload added can be told apart in GET /api/portraits; null until known.
   const known = useRef<Set<string> | null>(null);
 
   const references = async () => (await getJson<PortraitList>('/portraits')).portraits.filter((p) => p.kind === 'reference').map((p) => p.id);
@@ -328,16 +328,21 @@ function useReferencePhoto() {
     }
     const replacing = photo?.state === 'saved' ? photo.id : null;
     setPhoto({ preview: shrunk.preview, state: 'saving', id: null });
+    // Chosen before the first list came back: read it now, or an older photo could pass for the new one.
+    known.current ??= await references()
+      .then((ids) => new Set(ids))
+      .catch(() => null);
+    const before = known.current;
     try {
       await sendJson('POST', '/portraits/reference', shrunk.input);
     } catch {
       setPhoto({ preview: shrunk.preview, state: 'failed', id: null });
       return setNote(NOT_SAVED);
     }
-    // The id of the photo just added: the reference that wasn't there before.
-    const ids = await references().catch(() => [] as string[]);
-    const id = ids.find((x) => !known.current?.has(x)) ?? null;
-    known.current = new Set(ids);
+    // The id of the photo just added: the reference that wasn't there before (null when that can't be told).
+    const ids = await references().catch(() => null);
+    const id = ids && before ? (ids.find((x) => !before.has(x)) ?? null) : null;
+    if (ids) known.current = new Set(ids);
     setPhoto({ preview: shrunk.preview, state: 'saved', id });
     // Changing the photo replaces the one chosen a moment ago, rather than keeping both.
     if (replacing) void sendJson('DELETE', `/portraits/${encodeURIComponent(replacing)}`).catch(() => {});
@@ -345,7 +350,12 @@ function useReferencePhoto() {
 
   async function remove() {
     setNote(null);
-    if (photo?.state === 'saved' && photo.id) {
+    if (photo?.state === 'saved') {
+      // Saved, but which one it is couldn't be told: say where it can be removed rather than guess.
+      if (!photo.id) {
+        setPhoto(null);
+        return setNote('Your photo is still saved for your portrait studio. You can remove it in your Profile.');
+      }
       try {
         await sendJson('DELETE', `/portraits/${encodeURIComponent(photo.id)}`);
       } catch {

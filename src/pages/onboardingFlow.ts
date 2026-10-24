@@ -46,9 +46,12 @@ export function stepSave(step: OnboardingStep, a: Answers, mode: Mode, to: Onboa
   const body: Record<string, unknown> = {};
   if (step === 1) body.perspective = a.perspective;
   if (step === 2) {
-    if (a.gender) body.gender = a.gender;
-    // Woman and Man follow their gender, so a figure picked for another answer earlier doesn't stick.
-    body.figure = choosesFigure(a.gender) ? a.figure : null;
+    // Woman and Man follow their gender, so a figure picked for another answer earlier doesn't stick. No answer
+    // leaves both as they are.
+    if (a.gender) {
+      body.gender = a.gender;
+      body.figure = choosesFigure(a.gender) ? a.figure : null;
+    }
     // The page asks for a valid age before leaving step 2; an unreadable one is never sent as a null (which deletes).
     const age = parseAge(a.age);
     if (age !== null) body.age = age;

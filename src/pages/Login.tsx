@@ -97,7 +97,9 @@ export function Login({ misconfigured, setup, onSignedIn }: { misconfigured: boo
 
   if (mode === 'code') {
     return (
+      // Keyed apart from the sign-in form, so its field mounts afresh and takes the focus.
       <Shell
+        key="code"
         eyebrow="Join healthOS"
         title="Join with an invite code"
         lede="Enter the code the admin gave you, like ABCD-EFGH."
@@ -128,6 +130,7 @@ export function Login({ misconfigured, setup, onSignedIn }: { misconfigured: boo
 
   return (
     <Shell
+      key="signin"
       eyebrow={setup ? 'Welcome' : 'Welcome back'}
       title={setup ? 'Create your admin account' : 'Sign in to healthOS'}
       lede={setup ? 'First sign-in: enter your email and the password you set with the setup script. This creates your admin account.' : undefined}

@@ -34,8 +34,9 @@ test('each step saves its own answers and, for a new account, the next step', ()
   assert.deepEqual(stepSave(1, answers({ perspective: 'digital' }), 'new', 2), { perspective: 'digital', onboarding: 2 });
   assert.deepEqual(stepSave(2, answers({ gender: 'woman', figure: 'man', age: '40' }), 'new', 3), { gender: 'woman', figure: null, age: 40, onboarding: 3 });
   assert.deepEqual(stepSave(2, answers({ gender: 'unsaid', figure: 'woman', age: '40' }), 'new', 3), { gender: 'unsaid', figure: 'woman', age: 40, onboarding: 3 });
-  // No gender chosen: none sent. An unreadable age is never sent as null, which would delete the one saved.
-  assert.deepEqual(stepSave(2, answers({ age: 'x' }), 'new', 3), { figure: null, onboarding: 3 });
+  // No gender chosen: neither it nor the figure is sent (a figure chosen before stays). An unreadable age is never
+  // sent as null, which would delete the one saved.
+  assert.deepEqual(stepSave(2, answers({ figure: 'woman', age: 'x' }), 'new', 3), { onboarding: 3 });
   assert.deepEqual(stepSave(3, answers({ age: '40', peer: true }), 'new', null), { peerComparison: true, onboarding: null });
 });
 
