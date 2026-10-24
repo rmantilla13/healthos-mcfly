@@ -26,6 +26,15 @@ export type PortraitList = { portraits: Portrait[]; chosen: string | null; canGe
 /** POST /api/portraits/reference: a JPEG shrunk on the device (longest side 1600 or less), base64 without a data: prefix. */
 export type PortraitReferenceInput = { image: string; width: number; height: number };
 
+/** POST /api/portraits/reference and POST /api/portraits/generate: the photo saved, or the portrait being made. */
+export type PortraitCreated = { portrait: Portrait };
+
 export const MAX_REFERENCES = 5;
 /** Base64 characters, a little under Vercel's 4.5 MB request limit. */
 export const MAX_REFERENCE_BASE64 = 4_400_000;
+/** A reference's longest side, in pixels: the device shrinks it to this. */
+export const MAX_REFERENCE_EDGE = 1600;
+/** Generated portraits kept per person: delete one to make another. */
+export const MAX_GENERATED = 20;
+/** Portraits a person can make in a day (UTC), each one a paid image call. */
+export const PORTRAITS_PER_DAY = 10;

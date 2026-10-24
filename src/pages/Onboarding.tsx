@@ -4,11 +4,12 @@
 // Nothing on the server waits for it: the API and the iPhone app work the same before, during and after.
 import { useEffect, useRef, useState, type FormEvent, type RefObject } from 'react';
 import { PEER_MIN_AGE, PEER_MIN_DAYS, PEER_MIN_OTHERS, PEER_WINDOW_DAYS } from '../../shared/peers.ts';
-import { MAX_REFERENCE_BASE64, type PortraitList, type PortraitReferenceInput } from '../../shared/portraits.ts';
+import type { PortraitList } from '../../shared/portraits.ts';
 import type { FigureVariant, Gender, OnboardingStep, Perspective, PhotoMeta, Status } from '../../shared/types.ts';
 import { Icon } from '../components/Icon.tsx';
 import { WelcomeFoot, WelcomeShell } from '../components/WelcomeShell.tsx';
 import { getJson, href, notifyDataChanged, sendJson, signOut } from '../lib.ts';
+import { shrinkReference, uploadReference } from '../portraits.ts';
 import { type Answers, type Mode, answersFrom, canJoinPeers, choosesFigure, figureOf, parseAge, preview, startStep, stepSave } from './onboardingFlow.ts';
 import '../styles/onboarding.css';
 
@@ -290,29 +291,22 @@ function ReferenceRow({ reference }: { reference: ReferencePhoto }) {
 }
 
 // The portrait's reference photo, chosen on step 1. It lives on the page (not the step) so leaving step 1 while it
-// uploads doesn't lose it, and nothing waits for it: Continue works whether it saved, failed or is still going.
+// uploads doesn't lose it, and nothing waits for it: Continue works whether it saved, failed or is still going. It's
+// shrunk and saved by src/portraits.ts, as the portrait studio in Profile does, and the save answers with its id.
 
 type ReferencePhoto = ReturnType<typeof useReferencePhoto>;
 type Chosen = { preview: string; state: 'saving' | 'saved' | 'failed'; id: string | null };
 
-const REFERENCE_EDGE = 1600;
 const NOT_SAVED = "Your photo couldn't be saved just now. You can add it later in your Profile.";
 
 function useReferencePhoto() {
   const [photo, setPhoto] = useState<Chosen | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [earlier, setEarlier] = useState(0);
-  // Reference ids already there, so the one an upload added can be told apart in GET /api/portraits; null until known.
-  const known = useRef<Set<string> | null>(null);
-
-  const references = async () => (await getJson<PortraitList>('/portraits')).portraits.filter((p) => p.kind === 'reference').map((p) => p.id);
 
   useEffect(() => {
-    references()
-      .then((ids) => {
-        known.current ??= new Set(ids);
-        setEarlier(ids.length);
-      })
+    getJson<PortraitList>('/portraits')
+      .then((list) => setEarlier(list.portraits.filter((p) => p.kind === 'reference').length))
       .catch(() => {});
   }, []);
 
@@ -328,21 +322,13 @@ function useReferencePhoto() {
     }
     const replacing = photo?.state === 'saved' ? photo.id : null;
     setPhoto({ preview: shrunk.preview, state: 'saving', id: null });
-    // Chosen before the first list came back: read it now, or an older photo could pass for the new one.
-    known.current ??= await references()
-      .then((ids) => new Set(ids))
-      .catch(() => null);
-    const before = known.current;
+    let id: string;
     try {
-      await sendJson('POST', '/portraits/reference', shrunk.input);
+      id = (await uploadReference(shrunk.input)).id;
     } catch {
       setPhoto({ preview: shrunk.preview, state: 'failed', id: null });
       return setNote(NOT_SAVED);
     }
-    // The id of the photo just added: the reference that wasn't there before (null when that can't be told).
-    const ids = await references().catch(() => null);
-    const id = ids && before ? (ids.find((x) => !before.has(x)) ?? null) : null;
-    if (ids) known.current = new Set(ids);
     setPhoto({ preview: shrunk.preview, state: 'saved', id });
     // Changing the photo replaces the one chosen a moment ago, rather than keeping both.
     if (replacing) void sendJson('DELETE', `/portraits/${encodeURIComponent(replacing)}`).catch(() => {});
@@ -350,49 +336,17 @@ function useReferencePhoto() {
 
   async function remove() {
     setNote(null);
-    if (photo?.state === 'saved') {
-      // Saved, but which one it is couldn't be told: say where it can be removed rather than guess.
-      if (!photo.id) {
-        setPhoto(null);
-        return setNote('Your photo is still saved for your portrait studio. You can remove it in your Profile.');
-      }
+    if (photo?.state === 'saved' && photo.id) {
       try {
         await sendJson('DELETE', `/portraits/${encodeURIComponent(photo.id)}`);
       } catch {
         return setNote("Your photo couldn't be removed just now. Try again, or remove it later in your Profile.");
       }
-      known.current?.delete(photo.id);
     }
     setPhoto(null);
   }
 
   return { photo, note, earlier, choose, remove };
-}
-
-/**
- * The reference as a JPEG, longest side 1600 or less, drawn afresh on a canvas: that also leaves the file's metadata
- * (where and when it was taken, the camera) behind. Smaller again in the rare case it's still over the upload limit.
- */
-async function shrinkReference(file: File): Promise<{ input: PortraitReferenceInput; preview: string }> {
-  const url = URL.createObjectURL(file);
-  try {
-    const img = new Image();
-    img.src = url;
-    await img.decode();
-    for (let edge = REFERENCE_EDGE; edge >= 400; edge = Math.round(edge * 0.75)) {
-      const scale = Math.min(1, edge / Math.max(img.naturalWidth, img.naturalHeight));
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.round(img.naturalWidth * scale);
-      canvas.height = Math.round(img.naturalHeight * scale);
-      canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
-      const preview = canvas.toDataURL('image/jpeg', 0.86);
-      const image = preview.slice(preview.indexOf(',') + 1);
-      if (image.length <= MAX_REFERENCE_BASE64) return { input: { image, width: canvas.width, height: canvas.height }, preview };
-    }
-    throw new Error('Too large');
-  } finally {
-    URL.revokeObjectURL(url);
-  }
 }
 
 // ---------- step 2: a little about you ----------
