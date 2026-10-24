@@ -1,0 +1,2 @@
+sleep_id,sleep_type,minutes_in_sleep_period,minutes_after_wake_up,minutes_to_fall_asleep,minutes_asleep,minutes_awake,minutes_longest_awakening,minutes_to_persistent_sleep,start_utc_offset,sleep_start,end_utc_offset,sleep_end,data_source,algorithm_version,sleep_created,sleep_last_updated
+s1,STAGES,450,0,10,410,40,12,10,-05:00,2026-09-20T04:00:00Z,-05:00,2026-09-20T11:30:00Z,Google Fitbit Air,1,2026-09-20T11:40:00Z,2026-09-20T11:40:00Z

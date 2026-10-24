@@ -1,0 +1,5 @@
+timestamp,steps,data source
+2026-09-20T15:00:00.000Z,100,MobileTrack
+2026-09-20T15:01:00.000Z,50,MobileTrack
+2026-09-20T15:00:00.000Z,100,Fit Health Connect
+2026-09-20T15:00:00.000Z,30,Google Fitbit Air
