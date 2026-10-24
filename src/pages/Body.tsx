@@ -62,6 +62,8 @@ export function Body({ params, stepGoal, date, setDate }: { params: URLSearchPar
 const OVERVIEW_TRENDS = 'resting_hr,recovery,resp_rate,body_temp,wrist_temp,skin_temp,active_energy';
 const TEMP_METRIC: Record<string, string> = { 'Body temp': 'body_temp', 'Wrist temp': 'wrist_temp', 'Skin temp': 'skin_temp' };
 const MEASURES = BODY_METRICS.map((m) => m.metric);
+/** The cards under "From your devices": with every one hidden, the heading and day picker go too. */
+const DEVICE_CARDS = ['body.rhr', 'body.hrv', 'body.strain', 'body.recovery', 'body.heart', 'body.metrics', 'body.energy', 'body.steps', 'body.workout', 'body.glucose', 'body.biomarkers'];
 
 function Overview({ tabs, date, setDate }: { tabs: ReactNode; date: string | null; setDate: (d: string | null) => void }) {
   const q = date ? `?date=${date}` : '';
@@ -116,7 +118,7 @@ function Overview({ tabs, date, setDate }: { tabs: ReactNode; date: string | nul
           )}
         </div>
       )}
-      {devices && s && (
+      {devices && s && DEVICE_CARDS.some(shown) && (
         <section className="body-devices" aria-labelledby={devicesId}>
           <div className="body-devices-head">
             <h2 id={devicesId}>From your devices</h2>
