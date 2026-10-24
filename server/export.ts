@@ -180,11 +180,21 @@ async function* pages(scope: Scope, list: RowList): AsyncGenerator<Row[]> {
   }
 }
 
-/** Writes to the response, waiting when it's full; stops if the person went away. */
+/**
+ * Writes to the response, waiting when it's full; stops if the person went away. A connection that closes while full
+ * never drains, so the wait ends on either (and drops its listeners, or a long export would pile them up).
+ */
 function writer(res: Response) {
   return async (text: string) => {
     if (res.destroyed) throw new Error('The download was cancelled.');
-    if (!res.write(text)) await once(res, 'drain');
+    if (res.write(text)) return;
+    const stop = new AbortController();
+    try {
+      await Promise.race([once(res, 'drain', { signal: stop.signal }), once(res, 'close', { signal: stop.signal })]);
+    } finally {
+      stop.abort();
+    }
+    if (res.destroyed) throw new Error('The download was cancelled.');
   };
 }
 
