@@ -130,13 +130,15 @@ test('importing the same export again updates its days and replaces its nights i
   assert.equal(daily.find((r) => r.date === D1 && r.metric === 'weight')!.value, 75.3);
 });
 
-test('finishing keeps the summary Integrations shows', async () => {
+test('finishing keeps the summary Integrations shows, of what is stored', async () => {
   const before = await version(owner);
+  // The browser's summary of this run leaves out weight; the stored days have it, and the summary is theirs.
   const res = await owner.post('/api/fitbit/import/finish', { days: 2, firstDate: D1, lastDate: D2, metrics: ['resting_hr', 'hr_avg', 'sleep_hours', 'hrv_rmssd'] });
   assert.equal(res.status, 200);
   assert.notEqual(await version(owner), before);
   const last = (await owner.get('/api/status')).json.fitbit.lastImport;
-  assert.deepEqual({ ...last, importedAt: typeof last.importedAt }, { days: 2, firstDate: D1, lastDate: D2, metrics: ['resting_hr', 'hr_avg', 'sleep_hours', 'hrv_rmssd'], importedAt: 'string' });
+  assert.deepEqual(res.json.lastImport, last);
+  assert.deepEqual({ ...last, importedAt: typeof last.importedAt }, { days: 2, firstDate: D1, lastDate: D2, metrics: ['hr_avg', 'hrv_rmssd', 'resting_hr', 'sleep_hours', 'weight'], importedAt: 'string' });
   assert.ok(Date.now() - Date.parse(last.importedAt) < 60_000);
   assert.equal((await owner.post('/api/fitbit/import/finish', { days: -1, firstDate: null, lastDate: null, metrics: [] })).status, 400);
   assert.equal((await owner.post('/api/fitbit/import/finish', { days: 1, firstDate: 'yesterday', lastDate: null, metrics: [] })).status, 400);
@@ -198,4 +200,23 @@ test("each person's import is their own; removing Fitbit data leaves other sourc
   assert.equal(apple.length, 1, "Apple's night stays");
   assert.equal((await rows(bobId)).length, 1, "Bob's import stays");
   assert.equal((await rows(bobId, 'sleep_stages')).length, 4);
+});
+
+test("a split export imported one part at a time: the summary spans every part, not just the last one's", async () => {
+  // Part 1 (2016) and part 2 (2020), each finished on its own run, as Import again does; the browser's summary is the run's.
+  const part1 = [
+    { date: '2016-03-01', metric: 'steps', value: 9100 },
+    { date: '2016-03-02', metric: 'steps', value: 7400 },
+  ];
+  assert.equal((await owner.post('/api/fitbit/import', { daily: part1 })).status, 200);
+  assert.equal((await owner.post('/api/fitbit/import/finish', { days: 2, firstDate: '2016-03-01', lastDate: '2016-03-02', metrics: ['steps'] })).status, 200);
+  const part2 = [{ date: '2020-05-01', metric: 'resting_hr', value: 55 }];
+  assert.equal((await owner.post('/api/fitbit/import', { daily: part2 })).status, 200);
+  assert.equal((await owner.post('/api/fitbit/import/finish', { days: 1, firstDate: '2020-05-01', lastDate: '2020-05-01', metrics: ['resting_hr'] })).status, 200);
+  const last = (await owner.get('/api/status')).json.fitbit.lastImport;
+  assert.deepEqual([last.days, last.firstDate, last.lastDate, last.metrics], [3, '2016-03-01', '2020-05-01', ['resting_hr', 'steps']]);
+  // Someone else's import doesn't count towards it, and theirs is their own.
+  assert.equal((await bob.post('/api/fitbit/import/finish', { days: 0, firstDate: null, lastDate: null, metrics: [] })).status, 200);
+  const bobs = (await bob.get('/api/status')).json.fitbit.lastImport;
+  assert.deepEqual([bobs.days, bobs.firstDate, bobs.lastDate, bobs.metrics], [1, D2, D2, ['sleep_hours']]);
 });

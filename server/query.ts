@@ -264,6 +264,37 @@ export function series(ctx: Snapshot, metric: string, from: string, to: string):
   return [...dates].sort().map((date) => ({ date, value: valueOn(ctx, metric, date)!.value }));
 }
 
+/** A night's efficiency from one device's own two numbers, only when it measured sleep and not just time in bed. */
+export const MIN_AWAKE_HOURS = 1 / 60;
+
+/**
+ * Sleep efficiency where a device sent none of its own: that device's time asleep over its time in bed, the same
+ * night. Apple Health has no efficiency figure, so without this an Apple-only night would have none. A device's own
+ * figure (WHOOP's, Fitbit's) is kept as sent. Adds to the index it's given (copyDaily first to keep one as it was);
+ * then valueOn picks a night's efficiency as the Sleep page and its sheet both show it.
+ */
+export function withDerivedEfficiency(daily: DailyIndex) {
+  const hours = daily.get('sleep_hours');
+  const bed = daily.get('sleep_in_bed');
+  if (!hours || !bed) return daily;
+  let eff = daily.get('sleep_efficiency');
+  if (!eff) daily.set('sleep_efficiency', (eff = new Map()));
+  for (const [source, byDate] of hours) {
+    const own = eff.get(source) ?? new Map<string, number>();
+    for (const [date, asleep] of byDate) {
+      const inBed = bed.get(source)?.get(date);
+      if (own.has(date) || inBed === undefined || inBed - asleep <= MIN_AWAKE_HOURS) continue;
+      own.set(date, (asleep / inBed) * 100);
+    }
+    if (own.size) eff.set(source, own);
+  }
+  return daily;
+}
+
+/** A copy of these metrics of an index, down to each source's dates, so changing it leaves the original as it was. */
+export const copyDaily = (daily: DailyIndex, metrics: string[]): DailyIndex =>
+  new Map(metrics.flatMap((m) => (daily.has(m) ? [[m, new Map([...daily.get(m)!].map(([source, byDate]) => [source, new Map(byDate)]))] as const] : [])));
+
 /**
  * Metrics whose two sources measure different things, so a reading is judged against the same device's own
  * history. The daily resting heart rate falls back from WHOOP's sleeping measure to the Watch's daytime one,

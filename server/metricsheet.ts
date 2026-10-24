@@ -13,7 +13,7 @@ import { currentUser } from './auth.ts';
 import { addDays } from './dates.ts';
 import type { Db, Scope } from './db.ts';
 import { DAY_METRICS, dayView } from './day.ts';
-import { type Ctx, latest, loadDaily, mean, rangeStatus, requestContext, series, sourceList, summary, valueOn } from './query.ts';
+import { type Ctx, MIN_AWAKE_HOURS, latest, loadDaily, mean, rangeStatus, requestContext, series, sourceList, summary, valueOn, withDerivedEfficiency } from './query.ts';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const KG_PER_LB = 0.45359237;
@@ -284,31 +284,9 @@ function sourcesIn(snap: Snapshot, metric: string, points: Point[]) {
   return [...set].sort();
 }
 
-/** A night's efficiency from one device's own two numbers, only when it measured sleep and not just time in bed (as sleepnight.ts). */
-const MIN_AWAKE_HOURS = 1 / 60;
-
-/**
- * Sleep efficiency where a device sent none of its own: that device's time asleep over its time in bed, the same
- * night. Apple Health has no efficiency figure, so without this an Apple-only night would show on the Sleep page and
- * not in its sheet. A device's own figure (WHOOP's, Fitbit's) is kept as sent.
- */
-export function withDerivedEfficiency(daily: Ctx['daily']) {
-  const hours = daily.get('sleep_hours');
-  const bed = daily.get('sleep_in_bed');
-  if (!hours || !bed) return daily;
-  let eff = daily.get('sleep_efficiency');
-  if (!eff) daily.set('sleep_efficiency', (eff = new Map()));
-  for (const [source, byDate] of hours) {
-    const own = eff.get(source) ?? new Map<string, number>();
-    for (const [date, asleep] of byDate) {
-      const inBed = bed.get(source)?.get(date);
-      if (own.has(date) || inBed === undefined || inBed - asleep <= MIN_AWAKE_HOURS) continue;
-      own.set(date, (asleep / inBed) * 100);
-    }
-    if (own.size) eff.set(source, own);
-  }
-  return daily;
-}
+// Efficiency where a device sent none of its own lives in query.ts, so the Sleep page's card picks the same night's
+// value as this sheet; exported here as before.
+export { withDerivedEfficiency };
 
 /**
  * Whether the person has ever had a reading of this metric, on any day, from the sources the sheet reads: one EXISTS

@@ -169,7 +169,7 @@ export function adminRouter(db: Db) {
       // change applied to their list as it is now (they may have changed it since this page loaded). Nutrition's
       // cards are theirs alone: an admin can't set them (the same answer as an unknown card), and a list an admin
       // sends keeps the ones they hid, so nothing here tells an admin who uses Nutrition.
-      // An optional card (off until turned on) moves in or out of their shown list instead.
+      // An optional card (off until turned on) moves in or out of their shown list too (withCardToggled).
       const editing = req.body?.hiddenCards !== undefined || req.body?.cardShown !== undefined;
       const current = editing ? readHiddenCards(await getUserSetting(db, target.id, 'hidden_cards')) : [];
       const currentShown = editing ? readShownCards(await getUserSetting(db, target.id, 'shown_cards')) : [];

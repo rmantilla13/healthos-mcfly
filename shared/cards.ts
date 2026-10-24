@@ -124,8 +124,10 @@ export function readShownCards(raw: string | undefined | null): string[] {
 }
 
 /**
- * One card shown or hidden, as { hidden, shown } lists after the change (either may be unchanged): an optional card
- * moves in or out of `shown`, any other in or out of `hidden`. Null for an unknown card or a non-boolean.
+ * One card shown or hidden, as { hidden, shown } lists after the change (either may be unchanged): any card moves in
+ * or out of `hidden`, and an optional one in or out of `shown` too. The web reads only `shown` for an optional card;
+ * the iPhone app knows only `hidden` (most optional cards were ordinary ones when it was built), so its change shows
+ * in the first answer instead of needing a second write. Null for an unknown card or a non-boolean.
  */
 export function withCardToggled(lists: { hidden: string[]; shown: string[] }, change: unknown): { hidden: string[]; shown: string[] } | null {
   if (typeof change !== 'object' || change === null) return null;
@@ -133,7 +135,8 @@ export function withCardToggled(lists: { hidden: string[]; shown: string[] }, ch
   if (typeof id !== 'string' || !KNOWN.has(id) || typeof shown !== 'boolean') return null;
   if (OPTIONAL_CARDS.has(id)) {
     const next = cleanShownCards(shown ? [...lists.shown, id] : lists.shown.filter((x) => x !== id));
-    return next && { hidden: lists.hidden, shown: next };
+    const hidden = withCardShown(lists.hidden, change);
+    return next && hidden && { hidden, shown: next };
   }
   const next = withCardShown(lists.hidden, change);
   return next && { hidden: next, shown: lists.shown };

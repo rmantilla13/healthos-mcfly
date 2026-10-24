@@ -26,6 +26,14 @@ function streamError(code: unknown) {
 
 const usageOf = (r: ResponseBody | undefined): Usage => ({ input: Number(r?.usage?.input_tokens) || 0, output: Number(r?.usage?.output_tokens) || 0 });
 
+/**
+ * Models that reason (the o-series, GPT-5 and later, not their -chat versions), whose reasoning items a tool round
+ * sends back. Under store: false that needs each item's encrypted_content, so the chat asks for it by name: OpenAI
+ * now includes it by default, but asking keeps it there. Models that don't reason have refused the include outright
+ * (a 400 on every call), so they're never sent it; a reasoning model this misses still gets the default.
+ */
+const reasons = (model: string) => /^(o\d|gpt-([5-9]|[1-9]\d))/i.test(model) && !/chat/i.test(model);
+
 /** The text of a finished response's messages, and whether any part of it was a refusal. */
 function wordsOf(output: Item[] | undefined) {
   let text = '';
@@ -66,9 +74,10 @@ export function openaiProvider({ key, model, fetchFn }: { key: string; model: st
       const input: unknown[] = history.map((t) => ({ role: t.role, content: t.content }));
       // Not strict: McFly's schemas have optional fields and ranges, and every tool checks its own input anyway.
       const apiTools = tools.map((t) => ({ type: 'function', name: t.name, description: t.description, parameters: t.schema, strict: false }));
+      const include = reasons(model) ? { include: ['reasoning.encrypted_content'] } : {};
       return {
         async next(onText, signal): Promise<Round> {
-          const res = await post({ instructions: system, input, tools: apiTools, stream: true, max_output_tokens: maxTokens }, signal);
+          const res = await post({ instructions: system, input, tools: apiTools, stream: true, max_output_tokens: maxTokens, ...include }, signal);
           const items: Item[] = [];
           const calls: ToolCall[] = [];
           let refusal = false;
