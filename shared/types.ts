@@ -436,8 +436,8 @@ export type SleepSegment = {
 export type SleepNightDetail = {
   date: string;
   today: string;
-  /** The device the night's figures come from. */
-  source: 'apple' | 'whoop' | null;
+  /** The device the night's figures come from. 'fitbit' is from servers since the Fitbit export import. */
+  source: 'apple' | 'whoop' | 'fitbit' | null;
   /** First and last moment asleep (Apple), or the sleep record's start and end (WHOOP). */
   fellAsleep: string | null;
   wokeUp: string | null;
@@ -447,6 +447,14 @@ export type SleepNightDetail = {
   stages: { awake: number; rem: number; light: number; deep: number } | null;
   /** WHOOP's sleep performance, else asleep ÷ in bed (labelled as efficiency); 0–100. */
   score: { kind: 'performance' | 'efficiency'; value: number } | null;
+  // The next three are missing from servers older than the Sleep page's three cards.
+  /** WHOOP's sleep performance for the night (the sleep you got against the sleep you needed), 0–100; null without one. */
+  performance?: number | null;
+  /** The night's sleep efficiency, 0–100: the device's own (WHOOP, Fitbit) when it gives one, else time asleep ÷ time
+   * in bed from that one device; null without both. */
+  efficiency?: number | null;
+  /** The latest night with any sleep recorded, up to today, from any of the person's sources; null when there's none. */
+  lastNight?: string | null;
   /** Stage by stage through the night, oldest first. Only when the iPhone app sent them (Apple Watch nights);
    * WHOOP's API gives totals only. */
   segments: SleepSegment[];

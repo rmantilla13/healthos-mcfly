@@ -1,5 +1,6 @@
-// One night for the Sleep page (GET /api/sleep/night?date=): when you fell asleep and woke, the stages, a score,
-// and, when the iPhone app sent them, the stages through the night. Read for the signed-in person only.
+// One night for the Sleep page (GET /api/sleep/night?date=): when you fell asleep and woke, the stages, WHOOP's sleep
+// performance and the night's efficiency, and, when the iPhone app sent them, the stages through the night. Read for
+// the signed-in person only.
 import type { SleepNightDetail, SleepSegment, SleepStage } from '../shared/types.ts';
 import { addDays } from './dates.ts';
 import type { Scope } from './db.ts';
@@ -16,8 +17,8 @@ export async function sleepNight(scope: Scope, hosted: boolean, dateParam?: stri
   const date = dateParam && dateParam <= today ? dateParam : today;
   const from = addDays(date, -HISTORY_NIGHTS);
   const sources = sourceList(demo);
-  const [daily, events, segmentRows] = await Promise.all([
-    loadDaily(scope, demo, from, date, ['sleep_hours', 'sleep_in_bed', ...STAGE_METRICS, 'sleep_performance', 'sleep_consistency']),
+  const [daily, events, segmentRows, [last]] = await Promise.all([
+    loadDaily(scope, demo, from, date, ['sleep_hours', 'sleep_in_bed', ...STAGE_METRICS, 'sleep_performance', 'sleep_efficiency', 'sleep_consistency']),
     scope.db.query<{ start: string; end: string; date: string; source: string }>(
       `SELECT start, "end", date, source FROM events WHERE user_id = $1 AND kind = 'sleep' AND date BETWEEN $2 AND $3 AND source = ANY($4)`,
       [scope.userId, from, date, sources],
@@ -26,6 +27,12 @@ export async function sleepNight(scope: Scope, hosted: boolean, dateParam?: stri
       `SELECT date, start, "end", stage, source FROM sleep_stages WHERE user_id = $1 AND date BETWEEN $2 AND $3 AND source = ANY($4) ORDER BY start`,
       [scope.userId, from, date, sources],
     ),
+    // Whether this person has ever had a night, so the page can tell "nothing yet" from "nothing on this night".
+    scope.db.query<{ d: string | null }>("SELECT MAX(date) AS d FROM daily WHERE user_id = $1 AND metric = 'sleep_hours' AND source = ANY($2) AND date <= $3", [
+      scope.userId,
+      sources,
+      today,
+    ]),
   ]);
   const ctx = { daily, demo };
   const at = (metric: string, source: string | undefined, d: string) => (source ? daily.get(metric)?.get(source)?.get(d) : undefined);
@@ -91,17 +98,22 @@ export async function sleepNight(scope: Scope, hosted: boolean, dateParam?: stri
   const efficiency = asleep !== null && effBed && effBed - asleep > 1 / 60 ? (asleep / effBed) * 100 : null;
   const score: SleepNightDetail['score'] =
     performance !== undefined ? { kind: 'performance', value: Math.round(performance) } : efficiency !== null ? { kind: 'efficiency', value: Math.round(efficiency) } : null;
+  // The night's own device's efficiency when it reports one (WHOOP, a Fitbit export), else the one worked out above.
+  const ownEfficiency = at('sleep_efficiency', device, date);
 
   return {
     date,
     today,
-    source: device ? (device === 'whoop' ? 'whoop' : 'apple') : null,
+    source: device === 'whoop' || device === 'fitbit' ? device : device ? 'apple' : null,
     fellAsleep: night?.start ?? null,
     wokeUp: night?.end ?? null,
     asleepHours: asleep === null ? null : round(asleep, 2),
     inBedHours: inBed !== undefined ? round(inBed, 2) : null,
     stages,
     score,
+    performance: performance !== undefined ? Math.round(performance) : null,
+    efficiency: ownEfficiency !== undefined ? Math.round(ownEfficiency) : efficiency !== null ? Math.round(efficiency) : null,
+    lastNight: last?.d ?? null,
     segments,
     latencyMin: latency(segments),
     deepPeak: deepPeak(segments),

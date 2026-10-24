@@ -1,18 +1,24 @@
-// The Body page: one day at a glance (Overview), then a tab per area. Activity lives here as a tab; its old
+// The Body page: your figure and the measurements you add (weight, body fat, lean mass) first, then, once a device
+// has sent anything, one day of its readings (Overview) and a tab per area. Activity lives here as a tab; its old
 // address (#/activity) opens that tab. Every number is a reading or a plain sum of readings; none is invented.
-import type { ReactNode } from 'react';
-import type { DayData, Point, Summary, Trends } from '../../shared/types.ts';
+import '../styles/body.css';
+import { type ReactNode, useId, useState } from 'react';
+import { BODY_METRICS, type BodyLatest, type BodyMetric } from '../../shared/body.ts';
+import type { DayData, Point, Status, Summary, Trends } from '../../shared/types.ts';
 import { cumulative, drawThrough, extent } from '../charts/day.ts';
 import { Gauge, MiniBars, MiniDots, MiniLine } from '../charts/Mini.tsx';
 import { AreaCurve, Change, HourBars } from '../charts/Neka.tsx';
 import { AllHiddenNote, CardRow, useAllHidden } from '../components/CardRow.tsx';
+import { AddEntrySheet } from '../components/body/AddEntrySheet.tsx';
 import { BiomarkersCard } from '../components/body/BiomarkersCard.tsx';
-import { CompositionCard } from '../components/body/CompositionCard.tsx';
+import { FigureCard } from '../components/body/FigureCard.tsx';
 import { GlucoseCard } from '../components/body/GlucoseCard.tsx';
+import { MEASURE_DAYS, MeasurementCard } from '../components/body/MeasurementCard.tsx';
 import { WorkoutCard } from '../components/body/WorkoutCard.tsx';
+import { figureVariant } from '../components/Figure.tsx';
 import { Icon, type IconName } from '../components/Icon.tsx';
 import { MetricSheetLink } from '../components/MetricSheet.tsx';
-import { compact, fmt, fmtDate, shiftDate, temp, useApi, useUnits } from '../lib.ts';
+import { compact, fmt, fmtDate, href, shiftDate, temp, useApi, useCardShown, useUnits } from '../lib.ts';
 import { Activity, DAY, DayNav, IntroTools, Metabolism, Tabs, Trend, useRange } from './Detail.tsx';
 import { PageIntro } from '../components/PageIntro.tsx';
 import { CardHead, Stale, signed } from './Home.tsx';
@@ -31,6 +37,16 @@ export const bodyHref = (id: string) => (id === 'overview' ? '#/body' : `#/body?
 const TITLE = 'Your body, in perspective.';
 const SUB = 'Measurements you add. Progress you can see.';
 
+/** "Change my representation ↗": onboarding's first step again, to pick the portrait, a digital human or the numbers. */
+function Representation() {
+  return (
+    <a className="pill" href={href('welcome')}>
+      Change my representation
+      <Icon name="arrow-up-right" size={14} />
+    </a>
+  );
+}
+
 export function Body({ params, stepGoal, date, setDate }: { params: URLSearchParams; stepGoal: number; date: string | null; setDate: (d: string | null) => void }) {
   const tab = TABS.some((t) => t.id === params.get('tab')) ? params.get('tab')! : 'overview';
   const tabs = <Tabs tabs={TABS} current={tab} hrefOf={bodyHref} label="Body" />;
@@ -41,28 +57,96 @@ export function Body({ params, stepGoal, date, setDate }: { params: URLSearchPar
   return <Overview tabs={tabs} date={date} setDate={setDate} />;
 }
 
-// ---------- Overview: one day ----------
+// ---------- Overview: your figure and measurements, then one day from your devices ----------
 
 const OVERVIEW_TRENDS = 'resting_hr,recovery,resp_rate,body_temp,wrist_temp,skin_temp,active_energy';
 const TEMP_METRIC: Record<string, string> = { 'Body temp': 'body_temp', 'Wrist temp': 'wrist_temp', 'Skin temp': 'skin_temp' };
+const MEASURES = BODY_METRICS.map((m) => m.metric);
 
 function Overview({ tabs, date, setDate }: { tabs: ReactNode; date: string | null; setDate: (d: string | null) => void }) {
   const q = date ? `?date=${date}` : '';
-  const { data: s, error, loading } = useApi<Summary>(`/summary${q}`);
+  // The figure and your measurements are as of today; the day picker moves only what your devices recorded below them.
+  const { data: now, error, loading } = useApi<Summary>('/summary');
+  const { data: s } = useApi<Summary>(`/summary${q}`);
+  // Already loaded by the shell: the perspective, the figure, the photo.
+  const { data: status } = useApi<Status>('/status');
+  const { data: measured } = useApi<Trends>(`/trends?metrics=${MEASURES.join(',')}&days=${MEASURE_DAYS}`);
+  const { data: latest } = useApi<BodyLatest>('/body/latest');
+  // A weigh-in typed in doesn't count (latestDataDate leaves it out): this part waits for a device's readings.
+  const devices = now ? now.latestDataDate !== null : false;
   // 45 days: the temperature row compares with the 30 days before its latest reading, which can be two weeks old.
-  const { data: t } = useApi<Trends>(`/trends?metrics=${OVERVIEW_TRENDS}&days=45${date ? `&date=${date}` : ''}`);
-  const { data: day } = useApi<DayData>(`/day?metrics=heart_rate,steps,active_energy${date ? `&date=${date}` : ''}`);
+  const { data: t } = useApi<Trends>(devices ? `/trends?metrics=${OVERVIEW_TRENDS}&days=45${date ? `&date=${date}` : ''}` : null);
+  const { data: day } = useApi<DayData>(devices ? `/day?metrics=heart_rate,steps,active_energy${date ? `&date=${date}` : ''}` : null);
+  const shown = useCardShown();
   const allHidden = useAllHidden('body');
-  if (error && !s) return <div className="page-message">Couldn't load your data: {error.message}</div>;
-  if (!s) return <div className="page-message">Loading…</div>;
+  const [adding, setAdding] = useState<BodyMetric | null>(null);
+  const devicesId = useId();
+  if (error && !now) return <div className="page-message">Couldn't load your data: {error.message}</div>;
+  if (!now) return <div className="page-message">Loading…</div>;
   const tr = t ?? {};
   const label = (d: string) => fmtDate(d, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+  const settings = status?.settings;
+  const perspective = settings?.perspective ?? 'portrait';
+  // 'Just the statistics', or the figure card hidden: the measurements go in a row with the story under them.
+  const figure = perspective !== 'stats' && shown('body.figure');
+  const measures = shown('body.composition');
+  const story = shown('body.story');
+  const add = (metric: BodyMetric) => (opener: HTMLElement) => {
+    // So the sheet gives focus back to the button that opened it (Safari doesn't focus a clicked button).
+    opener.focus();
+    setAdding(metric);
+  };
 
   return (
-    <div className={`page page-wide ${loading ? 'is-refreshing' : ''}`}>
-      <PageIntro title={TITLE} sub={SUB}>
-        <IntroTools tabs={tabs} tools={<DayNav today={s.today} date={date} setDate={setDate} label={label} />} />
+    <div className={`page page-wide body-page ${loading ? 'is-refreshing' : ''}`}>
+      <PageIntro title={TITLE} sub={SUB} actions={<Representation />}>
+        {devices ? <IntroTools tabs={tabs} /> : null}
       </PageIntro>
+      {(figure || measures || story) && (
+        <div className={`body-hero${figure ? '' : ' no-figure'}`}>
+          {figure && <FigureCard s={now} photo={status?.photo ?? null} perspective={perspective} figure={figureVariant(settings)} />}
+          {(measures || story) && (
+            <div className="body-measures">
+              {measures &&
+                MEASURES.map((metric) => (
+                  <MeasurementCard key={metric} metric={metric} points={measured?.[metric] ?? []} latest={latest?.[metric]} asOf={now.date} onAdd={add(metric)} />
+                ))}
+              {story && <StoryCard figure={figure} />}
+            </div>
+          )}
+        </div>
+      )}
+      {devices && s && (
+        <section className="body-devices" aria-labelledby={devicesId}>
+          <div className="body-devices-head">
+            <h2 id={devicesId}>From your devices</h2>
+            <DayNav today={s.today} date={date} setDate={setDate} label={label} />
+          </div>
+          <DeviceRows s={s} tr={tr} day={day} date={date} />
+        </section>
+      )}
+      {allHidden && <AllHiddenNote />}
+      {adding && <AddEntrySheet metric={adding} today={now.today} demo={now.demo} onClose={() => setAdding(null)} />}
+    </div>
+  );
+}
+
+/** What a scale, a scan or your records can add, and (beside a figure) that the figure isn't a measurement. */
+function StoryCard({ figure }: { figure: boolean }) {
+  return (
+    <section className="card body-story">
+      <p className="eyebrow">A picture of your progress</p>
+      <h2>Make your measurements part of the story.</h2>
+      <p>Add your weight, body fat or lean mass directly from a scale, a scan or your records. Each entry keeps its date so you can follow changes over time.</p>
+      <p className="body-story-fine">No wearable connection needed.{figure && ' Your portrait is a visual representation, not a measurement.'}</p>
+    </section>
+  );
+}
+
+/** One day of what WHOOP, Apple Watch or a Fitbit export recorded (the cards from before the redesign). */
+function DeviceRows({ s, tr, day, date }: { s: Summary; tr: Trends; day: DayData | undefined; date: string | null }) {
+  return (
+    <>
       <CardRow
         className="cards cards-4"
         fill={{ wide: 4, mid: 3, small: 2 }}
@@ -95,12 +179,10 @@ function Overview({ tabs, date, setDate }: { tabs: ReactNode; date: string | nul
         cards={[
           ['body.workout', <WorkoutCard s={s} date={date} />],
           ['body.glucose', <GlucoseCard s={s} date={date} />],
-          ['body.composition', <CompositionCard s={s} date={date} />],
           ['body.biomarkers', <BiomarkersCard s={s} date={date} />],
         ]}
       />
-      {allHidden && <AllHiddenNote />}
-    </div>
+    </>
   );
 }
 
