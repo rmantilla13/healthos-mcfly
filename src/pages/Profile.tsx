@@ -97,7 +97,11 @@ export function Profile({ status, refresh, signedIn, params }: { status: Status;
             </p>
           </Row>
           <Row title="OpenAI · Nutrition & portraits" action={manage('openai', openai ? 'Manage AI key' : 'Connect AI key')}>
-            <p>Connect your own OpenAI API key for meal photos, descriptions, voice notes and portraits.</p>
+            <p>
+              {ai && !ai.byok
+                ? "For meal photos, descriptions, voice notes and portraits. Storing your own AI keys isn't set up on this server."
+                : 'Connect your own OpenAI API key for meal photos, descriptions, voice notes and portraits.'}
+            </p>
             {openai && <p className="profile-ok">Connected · key ending ••••{openai.last4}</p>}
           </Row>
           <Row

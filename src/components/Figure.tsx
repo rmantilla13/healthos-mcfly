@@ -560,7 +560,9 @@ let womanLoads: boolean | null = null;
 export function useDrawnVariant(variant: FigureVariant): FigureVariant {
   const [woman, setWoman] = useState(womanLoads);
   useEffect(() => {
-    if (variant !== 'woman' || womanLoads !== null) return;
+    if (variant !== 'woman') return;
+    // Another label's probe may have finished since this one rendered.
+    if (womanLoads !== null) return setWoman(womanLoads);
     let alive = true;
     const img = new Image();
     const done = (ok: boolean) => {
