@@ -1,6 +1,10 @@
-import { useEffect, useState } from 'react';
+// Sign-in, joining with an invite code, and the page an invite or reset link opens. They share onboarding's frame
+// (WelcomeShell), so a new member's way in reads as one flow: invite code → Create your account → the three steps of
+// "Make this space yours" (Onboarding.tsx) → their dashboard.
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Icon } from '../components/Icon.tsx';
-import { Logo } from '../components/shell/Logo.tsx';
+import { WelcomeFoot, WelcomeShell } from '../components/WelcomeShell.tsx';
+import '../styles/onboarding.css';
 
 const MIN_PASSWORD = 10;
 
@@ -15,18 +19,33 @@ async function post(path: string, body: unknown) {
   return json;
 }
 
-function Shell({ children, onSubmit }: { children: React.ReactNode; onSubmit?: (e: React.FormEvent) => void }) {
+/** The sign-in card: an eyebrow and a title over the form, in the welcome frame. */
+function Shell({
+  eyebrow,
+  title,
+  lede,
+  children,
+  onSubmit,
+}: {
+  eyebrow?: string;
+  title?: string;
+  lede?: ReactNode;
+  children?: ReactNode;
+  onSubmit?: (e: FormEvent) => void;
+}) {
   return (
-    <div className="login">
-      <form className="card login-card" onSubmit={onSubmit ?? ((e) => e.preventDefault())}>
-        <div className="brand login-brand">
-          <Logo />
-          <span>healthOS</span>
-        </div>
+    <WelcomeShell main>
+      <form className="card onb-card onb-card-narrow" onSubmit={onSubmit ?? ((e) => e.preventDefault())} aria-labelledby={title ? 'onb-title' : undefined}>
+        {title && (
+          <div className="onb-head">
+            {eyebrow && <p className="eyebrow">{eyebrow}</p>}
+            <h1 id="onb-title">{title}</h1>
+            {lede && <p className="onb-lede">{lede}</p>}
+          </div>
+        )}
         {children}
       </form>
-      <p className="login-foot muted small">Your health, in perspective. Only yours.</p>
-    </div>
+    </WelcomeShell>
   );
 }
 
@@ -54,7 +73,7 @@ export function Login({ misconfigured, setup, onSignedIn }: { misconfigured: boo
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  async function submit(e: React.FormEvent) {
+  async function submit(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
     setError(null);
@@ -71,67 +90,73 @@ export function Login({ misconfigured, setup, onSignedIn }: { misconfigured: boo
 
   if (misconfigured) {
     return (
-      <Shell>
-        {/* Anyone can land here, before we know who they are. The fix (scripts/setup-vercel.sh) is in the server logs. */}
-        <p className="muted">Sign-in isn't available right now. Please try again later.</p>
-      </Shell>
+      // Anyone can land here, before we know who they are. The fix (scripts/setup-vercel.sh) is in the server logs.
+      <Shell eyebrow="Welcome" title="Sign in to healthOS" lede="Sign-in isn't available right now. Please try again later." />
     );
   }
 
   if (mode === 'code') {
     return (
       <Shell
+        eyebrow="Join healthOS"
+        title="Join with an invite code"
+        lede="Enter the code the admin gave you, like ABCD-EFGH."
         onSubmit={(e) => {
           e.preventDefault();
           const c = cleanCode(code);
           if (c) location.hash = `#/invite/${c}`;
         }}
       >
-        <div>
-          <h2 className="login-title">Join with an invite code</h2>
-          <p className="muted small">Enter the code the admin gave you, like ABCD-EFGH.</p>
-        </div>
-        <label>
+        <label className="onb-field">
           <span>Invite code</span>
           <input autoFocus autoCapitalize="characters" autoComplete="off" spellCheck={false} value={code} onChange={(e) => setCode(e.target.value)} />
         </label>
-        <button className="btn btn-primary" type="submit" disabled={!cleanCode(code)}>
-          Continue
-        </button>
-        <button type="button" className="btn btn-quiet" onClick={() => setMode('signin')}>
-          Back to sign-in
-        </button>
+        <WelcomeFoot
+          start={
+            <button type="button" className="onb-back" onClick={() => setMode('signin')}>
+              <span aria-hidden="true">←</span> Back to sign-in
+            </button>
+          }
+        >
+          <button className="btn btn-primary onb-next" type="submit" disabled={!cleanCode(code)}>
+            Continue <Icon name="arrow-up-right" size={14} />
+          </button>
+        </WelcomeFoot>
       </Shell>
     );
   }
 
   return (
-    <Shell onSubmit={submit}>
-      {setup && (
-        <p className="muted small">
-          First sign-in: enter your email and the password you set with the setup script. This creates your admin account.
-        </p>
-      )}
-      <label>
+    <Shell
+      eyebrow={setup ? 'Welcome' : 'Welcome back'}
+      title={setup ? 'Create your admin account' : 'Sign in to healthOS'}
+      lede={setup ? 'First sign-in: enter your email and the password you set with the setup script. This creates your admin account.' : undefined}
+      onSubmit={submit}
+    >
+      <label className="onb-field">
         <span>Email</span>
         <input type="email" autoComplete="username" autoFocus value={email} onChange={(e) => setEmail(e.target.value)} />
       </label>
-      <label>
+      <label className="onb-field">
         <span>Password</span>
         <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
       </label>
       <ErrorNote error={error} />
-      <button className="btn btn-primary" type="submit" disabled={busy || !email || !password}>
-        {busy ? 'Signing in…' : 'Sign in'}
-      </button>
-      {!setup && (
-        <>
-          <button type="button" className="btn btn-quiet" onClick={() => setMode('code')}>
-            Have an invite code?
-          </button>
-          <p className="muted small">Forgot your password? Ask the admin for a reset link.</p>
-        </>
-      )}
+      <WelcomeFoot
+        start={
+          !setup && (
+            <button type="button" className="onb-back" onClick={() => setMode('code')}>
+              Have an invite code?
+            </button>
+          )
+        }
+      >
+        <button className="btn btn-primary onb-next" type="submit" disabled={busy || !email || !password}>
+          {busy ? 'Signing in…' : 'Sign in'}
+          {!busy && <Icon name="arrow-up-right" size={14} />}
+        </button>
+      </WelcomeFoot>
+      {!setup && <p className="onb-note">Forgot your password? Ask the admin for a reset link.</p>}
     </Shell>
   );
 }
@@ -160,7 +185,7 @@ export function AccountLinkPage({ kind, token, onDone }: { kind: 'invite' | 'res
   const tooShort = password.length > 0 && password.length < MIN_PASSWORD;
   const mismatch = confirm.length > 0 && confirm !== password;
 
-  async function submit(e: React.FormEvent) {
+  async function submit(e: FormEvent) {
     e.preventDefault();
     if (password.length < MIN_PASSWORD || password !== confirm) return;
     setBusy(true);
@@ -179,68 +204,79 @@ export function AccountLinkPage({ kind, token, onDone }: { kind: 'invite' | 'res
   const leave = () => {
     location.hash = '#/';
   };
+  const eyebrow = kind === 'invite' ? 'Join healthOS' : 'Reset your password';
 
   if (check.state === 'checking') {
     return (
       <Shell>
-        <p className="muted">Checking your link…</p>
+        <p className="onb-lede" role="status">
+          Checking your link…
+        </p>
       </Shell>
     );
   }
   if (check.state === 'bad') {
     return (
-      <Shell>
+      <Shell eyebrow={eyebrow} title={kind === 'invite' ? 'Create your account' : 'Choose a new password'}>
         <ErrorNote error={check.error} />
-        <p className="muted small">Ask the admin for a new link.</p>
-        <button type="button" className="btn" onClick={leave}>
-          Go to sign-in
-        </button>
+        <p className="onb-note">Ask the admin for a new link.</p>
+        <WelcomeFoot>
+          <button type="button" className="btn btn-primary onb-next" onClick={leave}>
+            Go to sign-in
+          </button>
+        </WelcomeFoot>
       </Shell>
     );
   }
 
   return (
-    <Shell onSubmit={submit}>
-      <div>
-        <h2 className="login-title">{kind === 'invite' ? 'Create your account' : 'Choose a new password'}</h2>
-        <p className="muted small">
-          {kind === 'invite'
-            ? `Invite code ${token.length === 8 ? `${token.slice(0, 4)}-${token.slice(4)}` : 'accepted'}. Your full dashboard is private to you. Members who share, the admin included, see your daily tile and your last 30 days of sleep, recovery or HRV, steps, resting heart rate and training load on the Family board; you can turn that off in Settings.`
-            : 'Setting a new password signs you out everywhere else.'}
-        </p>
-      </div>
+    <Shell
+      eyebrow={eyebrow}
+      title={kind === 'invite' ? 'Create your account' : 'Choose a new password'}
+      lede={
+        kind === 'invite'
+          ? `Invite code ${token.length === 8 ? `${token.slice(0, 4)}-${token.slice(4)}` : 'accepted'}. Your full dashboard is private to you. Members who share, the admin included, see your daily tile and your last 30 days of sleep, recovery or HRV, steps, resting heart rate and training load on the Family board; you can turn that off in your Profile.`
+          : 'Setting a new password signs you out everywhere else.'
+      }
+      onSubmit={submit}
+    >
       {kind === 'invite' && (
-        <>
-          <label>
+        <div className="onb-fields">
+          <label className="onb-field">
             <span>Email</span>
             <input type="email" autoComplete="username" value={email} readOnly={Boolean(check.email)} onChange={(e) => setEmail(e.target.value)} autoFocus={!check.email} />
           </label>
-          <label>
+          <label className="onb-field">
             <span>Name</span>
             <input autoComplete="given-name" value={name} maxLength={60} onChange={(e) => setName(e.target.value)} autoFocus={Boolean(check.email)} />
           </label>
-        </>
+        </div>
       )}
-      <label>
-        <span>Password</span>
-        <input type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus={kind === 'reset'} aria-describedby="pw-hint" />
-        <small id="pw-hint" className={tooShort ? 'note-bad' : 'muted'}>
-          At least {MIN_PASSWORD} characters.
-        </small>
-      </label>
-      <label>
-        <span>Confirm password</span>
-        <input type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
-        {mismatch && <small className="note-bad">The passwords don't match.</small>}
-      </label>
+      <div className="onb-fields">
+        <label className="onb-field">
+          <span>Password</span>
+          <input type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus={kind === 'reset'} aria-describedby="pw-hint" />
+          <small id="pw-hint" className={tooShort ? 'note-bad' : 'onb-field-hint'}>
+            At least {MIN_PASSWORD} characters.
+          </small>
+        </label>
+        <label className="onb-field">
+          <span>Confirm password</span>
+          <input type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+          {mismatch && <small className="note-bad">The passwords don't match.</small>}
+        </label>
+      </div>
       <ErrorNote error={error} />
-      <button
-        className="btn btn-primary"
-        type="submit"
-        disabled={busy || password.length < MIN_PASSWORD || password !== confirm || (kind === 'invite' && !email)}
-      >
-        {busy ? 'Saving…' : kind === 'invite' ? 'Create account' : 'Set password'}
-      </button>
+      <WelcomeFoot start={kind === 'invite' && <span className="onb-hint">Next, three short steps to make this space yours.</span>}>
+        <button
+          className="btn btn-primary onb-next"
+          type="submit"
+          disabled={busy || password.length < MIN_PASSWORD || password !== confirm || (kind === 'invite' && !email)}
+        >
+          {busy ? 'Saving…' : kind === 'invite' ? 'Create account' : 'Set password'}
+          {!busy && <Icon name="arrow-up-right" size={14} />}
+        </button>
+      </WelcomeFoot>
     </Shell>
   );
 }
