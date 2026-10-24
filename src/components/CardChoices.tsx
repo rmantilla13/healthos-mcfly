@@ -108,8 +108,11 @@ export function useCardEditor(saved: CardLists, send: (body: CardChange) => Prom
       apply({ cardShown: { id, shown } }, (l) =>
         OPTIONAL_CARDS.has(id) ? { shown: flip(l.shown, id, shown), hidden: flip(l.hidden, id, !shown) } : { ...l, hidden: flip(l.hidden, id, !shown) },
       ),
-    /** Every default card back on; the optional ones stay as they are. */
-    showAll: () => apply({ hiddenCards: [] }, (l) => ({ ...l, hidden: [] })),
+    /** Every default card back on; the optional ones stay as they are (an optional card that's off is in `hidden` too). */
+    showAll: () => {
+      const optionalOff = lists.hidden.filter((id) => OPTIONAL_CARDS.has(id));
+      return apply({ hiddenCards: optionalOff }, (l) => ({ ...l, hidden: l.hidden.filter((id) => OPTIONAL_CARDS.has(id)) }));
+    },
   };
 }
 
