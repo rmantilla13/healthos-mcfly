@@ -19,6 +19,28 @@ export const AGE_BANDS: { label: string; min: number; max: number }[] = [
 
 export const ageBand = (age: number | null | undefined) => (age == null ? null : (AGE_BANDS.find((b) => age >= b.min && age <= b.max)?.label ?? null));
 
+/**
+ * What can be compared: one measurement from one source, since devices measure differently (WHOOP's resting heart
+ * rate is taken asleep, Apple's during the day; WHOOP's HRV is RMSSD, Apple's SDNN). digits is how a value is rounded
+ * and shown, as on the metric sheets.
+ */
+export const PEER_PAIRS: { metric: string; source: string; label: string; unit: string; digits: number }[] = [
+  { metric: 'resting_hr', source: 'whoop', label: 'Resting heart rate', unit: 'bpm', digits: 0 },
+  { metric: 'resting_hr', source: 'apple', label: 'Resting heart rate', unit: 'bpm', digits: 0 },
+  { metric: 'hrv_rmssd', source: 'whoop', label: 'Heart rate variability', unit: 'ms', digits: 0 },
+  { metric: 'hrv_sdnn', source: 'apple', label: 'Heart rate variability', unit: 'ms', digits: 0 },
+  { metric: 'sleep_hours', source: 'whoop', label: 'Sleep', unit: 'h', digits: 1 },
+  { metric: 'sleep_hours', source: 'apple', label: 'Sleep', unit: 'h', digits: 1 },
+  { metric: 'steps', source: 'apple', label: 'Steps', unit: 'steps', digits: 0 },
+  { metric: 'spo2', source: 'whoop', label: 'Blood oxygen', unit: '%', digits: 1 },
+  { metric: 'spo2', source: 'apple', label: 'Blood oxygen', unit: '%', digits: 1 },
+  { metric: 'resp_rate', source: 'whoop', label: 'Respiratory rate', unit: 'breaths/min', digits: 1 },
+  { metric: 'recovery', source: 'whoop', label: 'Recovery', unit: '%', digits: 0 },
+];
+
+/** A pair's label and unit; source 'demo' (the local preview's sample) uses the metric's first pair. */
+export const peerPair = (metric: string, source: string) => PEER_PAIRS.find((p) => p.metric === metric && p.source === source) ?? PEER_PAIRS.find((p) => p.metric === metric);
+
 export type PeerMetric = {
   metric: string;
   source: string;
@@ -32,7 +54,11 @@ export type PeerMetric = {
   group?: { size: '20+' | '50+' | '100+'; median: number; p25: number; p75: number };
 };
 
-/** GET /api/peers. */
+/**
+ * GET /api/peers. Not participating: 'off' (the person hasn't ticked it), 'no_age' / 'under_age' (it needs an age of
+ * 18 or over), 'no_accounts' (a local healthOS without sign-in: there's nobody else). demo: the local preview's
+ * made-up group, never real people.
+ */
 export type PeerData =
   | { participating: false; reason: 'off' | 'no_age' | 'under_age' | 'no_accounts' }
   | { participating: true; ageBand: string; window: { from: string; to: string }; metrics: PeerMetric[]; demo?: true };
