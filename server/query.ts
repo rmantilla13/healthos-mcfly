@@ -1,12 +1,15 @@
 import os from 'node:os';
 import type { Flag, Insight, Latest, NutritionTargets, Point, RangeStatus, Settings, Summary, TimelineEvent, Trends, Vital, WeekSummary, Workout } from '../shared/types.ts';
-import { readHiddenCards } from '../shared/cards.ts';
+import { readHiddenCards, readShownCards } from '../shared/cards.ts';
 import { OWNER_ID, type Scope, getSettings, getUserSettings } from './db.ts';
 import { addDays, todayLocal } from './dates.ts';
 
 // Which source wins when more than one has a value for the same day.
 // WHOOP is worn overnight so it leads on recovery-type metrics; the iPhone and Watch lead on movement and body.
+// A Fitbit export comes after both: it's a one-off file, usually from before the person's current devices.
 const APPLE_FIRST = new Set(['steps', 'active_energy', 'exercise_min', 'distance_km', 'weight', 'body_fat', 'lean_mass', 'vo2max', 'hr_avg', 'hr_min', 'hr_max']);
+// What a person types in themselves (server/body.ts) beats a device's reading of the same day.
+const MANUAL_FIRST = new Set(['weight', 'body_fat', 'lean_mass']);
 
 // ---------- loading ----------
 // A request loads what it needs in a few queries up front (the hosted database is a network hop away);
@@ -24,6 +27,27 @@ export type Ctx = {
 };
 
 const SEXES = ['female', 'male', 'unspecified'] as const;
+export const PERSPECTIVES = ['portrait', 'digital', 'stats'] as const;
+export const GENDERS = ['woman', 'man', 'nonbinary', 'unsaid'] as const;
+export const FIGURES = ['woman', 'man'] as const;
+
+/**
+ * The age given at onboarding, kept current: stored as {age, asOf} so a birthday moves it on without anyone
+ * storing a birth date. Null when never given or unreadable.
+ */
+export function currentAge(raw: string | undefined, today: string): number | null {
+  if (!raw) return null;
+  try {
+    const { age, asOf } = JSON.parse(raw) as { age?: unknown; asOf?: unknown };
+    if (typeof age !== 'number' || typeof asOf !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(asOf)) return null;
+    const [y1, m1, d1] = asOf.split('-').map(Number);
+    const [y2, m2, d2] = today.split('-').map(Number);
+    const years = y2 - y1 - (m2 < m1 || (m2 === m1 && d2 < d1) ? 1 : 0);
+    return age + Math.max(0, years);
+  } catch {
+    return null;
+  }
+}
 
 /** One person's settings, falling back to the platform defaults an admin sets. */
 export function settingsFrom(mine: Map<string, string>, platform: Map<string, string>, opts: { hosted: boolean; userId: string }): Settings {
@@ -47,8 +71,17 @@ export function settingsFrom(mine: Map<string, string>, platform: Map<string, st
     nutritionApp: mine.get('nutrition_app') ?? null,
     nutritionTargets: nutritionTargets(mine.get('nutrition_targets')),
     hiddenCards: readHiddenCards(mine.get('hidden_cards')),
+    shownCards: readShownCards(mine.get('shown_cards')),
+    perspective: PERSPECTIVES.find((x) => x === mine.get('perspective')) ?? 'portrait',
+    gender: GENDERS.find((x) => x === mine.get('gender')) ?? null,
+    figure: FIGURES.find((x) => x === mine.get('figure')) ?? null,
+    age: currentAge(mine.get('age'), todayLocal(mine.get('timezone'))),
+    peerComparison: mine.get('peer_comparison') === 'on',
+    onboarding: ONBOARDING_STEPS.find((x) => String(x) === mine.get('onboarding')) ?? null,
   };
 }
+
+export const ONBOARDING_STEPS = [1, 2, 3] as const;
 
 /** Each target's allowed range; anything else, or nothing, is no target. */
 export const TARGET_RANGE: Record<keyof NutritionTargets, [number, number]> = { energy_kcal: [500, 10_000], protein_g: [10, 500], water_ml: [250, 8_000] };
@@ -76,7 +109,7 @@ export async function readSettings(scope: Scope, hosted = false) {
 
 export async function hasRealData(scope: Scope) {
   const [row] = await scope.db.query<{ any: boolean }>(
-    "SELECT EXISTS (SELECT 1 FROM daily WHERE user_id = $1 AND source IN ('apple', 'whoop')) AS any",
+    "SELECT EXISTS (SELECT 1 FROM daily WHERE user_id = $1 AND source IN ('apple', 'whoop', 'fitbit', 'manual')) AS any",
     [scope.userId],
   );
   return Boolean(row?.any);
@@ -88,11 +121,13 @@ export async function demoActive(scope: Scope, settings: Settings, hosted: boole
   return settings.demo === 'on' || (settings.demo === 'auto' && !(await hasRealData(scope)));
 }
 
-export const sourceList = (demo: boolean) => (demo ? ['demo'] : ['apple', 'whoop']);
+/** Every source whose rows a person sees: their devices, a Fitbit export, and what they added themselves. */
+export const sourceList = (demo: boolean) => (demo ? ['demo'] : ['apple', 'whoop', 'fitbit', 'manual']);
 
 function sourcesFor(ctx: { demo: boolean }, metric: string): string[] {
   if (ctx.demo) return ['demo'];
-  return APPLE_FIRST.has(metric) ? ['apple', 'whoop'] : ['whoop', 'apple'];
+  if (MANUAL_FIRST.has(metric)) return ['manual', 'apple', 'whoop', 'fitbit'];
+  return APPLE_FIRST.has(metric) ? ['apple', 'whoop', 'fitbit'] : ['whoop', 'apple', 'fitbit'];
 }
 
 export async function loadDaily(scope: Scope, demo: boolean, from: string, to: string, metrics?: string[]): Promise<DailyIndex> {
@@ -117,10 +152,11 @@ export async function loadDaily(scope: Scope, demo: boolean, from: string, to: s
   return index;
 }
 
+/** The last day a device sent anything. A weigh-in typed in by hand doesn't count: it isn't a day of readings. */
 export async function latestDataDate(scope: Scope, demo: boolean, today: string): Promise<string | null> {
   const [row] = await scope.db.query<{ d: string | null }>(
     'SELECT MAX(date) AS d FROM daily WHERE user_id = $1 AND source = ANY($2) AND date <= $3',
-    [scope.userId, sourceList(demo), today],
+    [scope.userId, sourceList(demo).filter((x) => x !== 'manual'), today],
   );
   return row?.d ?? null;
 }
@@ -211,7 +247,11 @@ export function valueOn(ctx: Snapshot, metric: string, date: string): { value: n
     if (pick) return pick;
   }
   const how = decide(ctx, FOLLOWS[metric] ?? metric, date);
-  if (how === 'mean') return { value: present.reduce((t, p) => t + p.value, 0) / present.length, source: 'apple+whoop' };
+  if (how === 'mean') {
+    // The blend is Apple's and WHOOP's alone; a Fitbit value the same day doesn't join the average.
+    const both = present.filter((p) => p.source === 'apple' || p.source === 'whoop');
+    return { value: both.reduce((t, p) => t + p.value, 0) / both.length, source: 'apple+whoop' };
+  }
   return present.find((p) => p.source === how) ?? present[0];
 }
 
@@ -392,10 +432,12 @@ export async function summary(scope: Scope, hosted: boolean, asOfParam?: string)
   const temp = pickMetric(ctx, ['body_temp', 'wrist_temp', 'skin_temp'], asOf, 14);
   const tempLabel = { body_temp: 'Body temp', wrist_temp: 'Wrist temp', skin_temp: 'Skin temp' }[temp.metric] ?? 'Body temp';
 
+  const spo2Latest = latest(ctx, 'spo2', asOf);
   const vitals: Summary['vitals'] = {
     heart: { label: 'Resting heart', latest: heart, ...vitalRange(ctx, 'resting_hr', heart, 2) } satisfies Vital,
     breathing: { label: 'Breathing', latest: breathing, ...vitalRange(ctx, 'resp_rate', breathing, 0.5) },
     temp: { label: tempLabel, latest: temp.latest, ...vitalRange(ctx, temp.metric, temp.latest, 0.3) },
+    spo2: { label: 'Blood oxygen', latest: spo2Latest, ...vitalRange(ctx, 'spo2', spo2Latest, 1) },
   };
 
   // Readiness: WHOOP recovery when there is one, else Apple's cardio fitness (VO2 max).
@@ -412,7 +454,6 @@ export async function summary(scope: Scope, hosted: boolean, asOfParam?: string)
     }
   }
 
-  const spo2Latest = latest(ctx, 'spo2', asOf);
   const spo2 = { latest: spo2Latest, series: series(ctx, 'spo2', addDays(asOf, -29), asOf), status: rangeStatus(ctx, 'spo2', spo2Latest, 1) };
 
   const hrvPick = pickMetric(ctx, ['hrv_rmssd', 'hrv_sdnn'], asOf);
@@ -460,6 +501,8 @@ export async function summary(scope: Scope, hosted: boolean, asOfParam?: string)
     sleep: { latest: sleepLatest, series: sleepSeries.slice(-14), change: thisWeek && lastWeek ? (thisWeek - lastWeek) / lastWeek : null },
     load,
     activity: { latest: latest(ctx, 'steps', asOf, 2), series: series(ctx, 'steps', addDays(asOf, -6), asOf) },
+    restingHr: { latest: heart, series: series(ctx, 'resting_hr', addDays(asOf, -29), asOf) },
+    respRate: { latest: breathing, series: series(ctx, 'resp_rate', addDays(asOf, -29), asOf) },
     timeline: tl,
     insights: anchor ? insights(ctx, insightEnd) : [],
     week: weekSummary(ctx, asOf),

@@ -34,7 +34,23 @@ export type Insight = {
   page: Page;
 };
 
-export type Page = 'home' | 'family' | 'vitals' | 'sleep' | 'activity' | 'body' | 'nutrition' | 'labs' | 'cycle' | 'mcfly' | 'integrations' | 'settings' | 'admin';
+export type Page =
+  | 'home'
+  | 'family'
+  | 'vitals'
+  | 'sleep'
+  | 'activity'
+  | 'body'
+  | 'nutrition'
+  | 'journal'
+  | 'labs'
+  | 'cycle'
+  | 'mcfly'
+  | 'integrations'
+  | 'profile'
+  | 'settings'
+  | 'welcome'
+  | 'admin';
 
 export type Summary = {
   date: string;
@@ -43,7 +59,11 @@ export type Summary = {
   name: string;
   demo: boolean;
   stepGoal: number;
-  vitals: { heart: Vital; breathing: Vital; temp: Vital };
+  /** spo2 is missing from servers older than the Blood oxygen callout. */
+  vitals: { heart: Vital; breathing: Vital; temp: Vital; spo2?: Vital };
+  /** Resting heart rate and respiratory rate over the last 30 days, for their Home cards. Missing from older servers. */
+  restingHr?: { latest: Latest | null; series: Point[] };
+  respRate?: { latest: Latest | null; series: Point[] };
   readiness:
     | { kind: 'recovery'; latest: Latest; average: number | null; zone: 'red' | 'yellow' | 'green' }
     | { kind: 'vo2max'; latest: Latest; previous: number | null }
@@ -124,7 +144,28 @@ export type Settings = {
   nutritionTargets: NutritionTargets;
   /** Cards this person doesn't want on Home, Sleep or Body (ids from shared/cards.ts). Layout only. */
   hiddenCards: string[];
+  /** Optional cards (defaultHidden in shared/cards.ts) this person turned on. Layout only. Missing from older servers. */
+  shownCards?: string[];
+  // The rest come from onboarding ("Make this space yours") and Profile → Your profile & perspective. All are
+  // missing from servers older than onboarding, so readers treat absent as the default.
+  /** How Home and Body show you: your portrait, a digital human, or the numbers alone. Default 'portrait'. */
+  perspective?: Perspective;
+  /** How the person describes themselves. Never used for health calculations (that's `sex`). */
+  gender?: Gender | null;
+  /** Which digital human to show; null follows gender (woman or man), and otherwise the man until one is chosen. */
+  figure?: FigureVariant | null;
+  /** Age in whole years, kept current from the age given and the day it was given. Null until given. */
+  age?: number | null;
+  /** In anonymous peer comparisons (server/peers.ts). Off unless the person ticked it. */
+  peerComparison?: boolean;
+  /** The onboarding step a new account is on; null when done (and for every account that predates it). */
+  onboarding?: OnboardingStep | null;
 };
+
+export type Perspective = 'portrait' | 'digital' | 'stats';
+export type Gender = 'woman' | 'man' | 'nonbinary' | 'unsaid';
+export type FigureVariant = 'woman' | 'man';
+export type OnboardingStep = 1 | 2 | 3;
 
 export type PhotoMeta = {
   version: number;
@@ -164,7 +205,11 @@ export type Status = {
     lastSync: string | null;
     lastError: string | null;
   };
+  /** A Fitbit (Google Takeout) export read in the browser and sent here (server/fitbit.ts). Missing from older servers. */
+  fitbit?: { lastImport: FitbitImportSummary | null };
 };
+
+export type FitbitImportSummary = { days: number; firstDate: string | null; lastDate: string | null; metrics: string[]; importedAt: string };
 
 /** POST /api/sync: the status, and whether a WHOOP sync was started by this call. */
 export type SyncResult = Status & { whoopStarted: boolean };

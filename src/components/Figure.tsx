@@ -16,7 +16,7 @@ const BODY =
   'M300,44 C338,44 363,72 363,116 C363,154 350,190 330,210 L332,260 C350,270 384,276 406,288 C430,301 442,326 446,364 ' +
   'L456,640 L144,640 L154,364 C158,326 170,301 194,288 C216,276 250,270 268,260 L270,210 C250,190 237,154 237,116 C237,72 262,44 300,44 Z';
 
-type Callout = { key: keyof Summary['vitals']; dot: [number, number]; anchor: [number, number]; side: 'left' | 'right' };
+type Callout = { key: Exclude<keyof Summary['vitals'], 'spo2'>; dot: [number, number]; anchor: [number, number]; side: 'left' | 'right' };
 
 const SILHOUETTE: Record<'forehead' | 'wrist', Callout[]> = {
   forehead: [

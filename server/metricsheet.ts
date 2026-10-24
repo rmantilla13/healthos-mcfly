@@ -13,7 +13,7 @@ import { currentUser } from './auth.ts';
 import { addDays } from './dates.ts';
 import type { Db, Scope } from './db.ts';
 import { DAY_METRICS, dayView } from './day.ts';
-import { type Ctx, latest, loadDaily, mean, rangeStatus, requestContext, series, summary, valueOn } from './query.ts';
+import { type Ctx, latest, loadDaily, mean, rangeStatus, requestContext, series, sourceList, summary, valueOn } from './query.ts';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const KG_PER_LB = 0.45359237;
@@ -384,7 +384,7 @@ async function rangesOf(scope: Scope, demo: boolean, key: MetricKey): Promise<Me
   const info = METRIC_INFO[key];
   const dm = SPECS[key].day;
   if (!dm || !info.ranges.includes('day')) return info.ranges;
-  const sources = demo ? ['demo', 'apple', 'whoop'] : ['apple', 'whoop'];
+  const sources = demo ? ['demo', ...sourceList(false)] : sourceList(false);
   const [row] = await scope.db.query<{ has: boolean }>('SELECT EXISTS (SELECT 1 FROM hourly WHERE user_id = $1 AND metric = $2 AND source = ANY($3)) AS has', [
     scope.userId,
     HOURLY_BASE[dm],
@@ -411,7 +411,7 @@ async function daySheet(scope: Scope, hosted: boolean, key: MetricKey, asOf: str
         scope.userId,
         HOURLY_BASE[dm],
         data.date,
-        demo ? ['demo', 'apple', 'whoop'] : ['apple', 'whoop'],
+        demo ? ['demo', ...sourceList(false)] : sourceList(false),
       ])
     : [];
   const hourSources = rows.some((r) => r.source === 'apple') ? ['apple'] : rows.map((r) => r.source).sort().slice(0, 1);

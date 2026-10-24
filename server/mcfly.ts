@@ -297,7 +297,7 @@ const TOOLS: Tool[] = [
     input_schema: { type: 'object', properties: {}, additionalProperties: false },
     label: () => 'Checking which data you have',
     async run(ctx) {
-      const sources = ctx.demo ? ['demo'] : ['apple', 'whoop'];
+      const sources = sourceList(ctx.demo);
       const [metrics, w, s] = await Promise.all([
         ctx.scope.db.query<{ metric: string; first: string; last: string; days: number; sources: string }>(
           `SELECT metric, MIN(date) AS first, MAX(date) AS last, COUNT(DISTINCT date)::int AS days, string_agg(DISTINCT source, ',') AS sources
@@ -488,7 +488,7 @@ const TOOLS: Tool[] = [
       const rows = await ctx.scope.db.query<{ kind: string; start: string; end: string; date: string; source: string }>(
         `SELECT kind, start, "end", date, source FROM events
          WHERE user_id = $1 AND kind IN ('sleep', 'nap') AND date BETWEEN $2 AND $3 AND source = ANY($4) ORDER BY start`,
-        [ctx.scope.userId, addDays(to, -(days - 1)), to, ctx.demo ? ['demo'] : ['apple', 'whoop']],
+        [ctx.scope.userId, addDays(to, -(days - 1)), to, sourceList(ctx.demo)],
       );
       return {
         sessions: rows.map((r) => ({

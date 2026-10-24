@@ -927,3 +927,21 @@ export function draftGroups(rows: LabDraft[]): { collected: string; lab: string;
   }
   return out;
 }
+
+// ---------- lab documents ----------
+
+/** An original lab report kept in the person's account (server/labs.ts, lab_documents): metadata only. */
+export type LabDocument = {
+  id: string;
+  name: string;
+  mime: 'application/pdf' | 'image/jpeg' | 'image/png' | 'image/webp';
+  size: number;
+  uploadedAt: number;
+  /** When the results were read from it (POST /api/labs/extract?document=), if ever. */
+  readAt: number | null;
+};
+
+/** GET /api/labs/documents: newest first. */
+export type LabDocuments = { documents: LabDocument[] };
+
+export const MAX_LAB_DOCUMENTS = 200;

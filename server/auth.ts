@@ -10,7 +10,7 @@
 import { createHash, createHmac, randomBytes, randomInt, randomUUID, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import type { NextFunction, Request, Response } from 'express';
-import { OWNER_ID, type Db, type Queryable } from './db.ts';
+import { OWNER_ID, type Db, type Queryable, setUserSetting } from './db.ts';
 
 const scrypt = promisify(scryptCb) as (pw: string, salt: Buffer, len: number, opts: object) => Promise<Buffer>;
 
@@ -271,6 +271,13 @@ export function authRoutes(db: Db) {
           return false;
         }
         if (!validEmail(email)) throw new HttpError(400, 'Enter a valid email address.');
+        // A brand-new install (no settings and no data for the owner yet) gets onboarding too; an existing single-user
+        // healthOS moving to accounts doesn't.
+        const [fresh] = await db.query<{ fresh: boolean }>(
+          `SELECT NOT EXISTS (SELECT 1 FROM user_settings WHERE user_id = $1) AND NOT EXISTS (SELECT 1 FROM daily WHERE user_id = $1 AND source <> 'demo') AS fresh`,
+          [OWNER_ID],
+        );
+        if (fresh?.fresh) await setUserSetting(db, OWNER_ID, 'onboarding', '1');
         await db.query(
           // Keep the name the owner already set in Settings (single-user healthOS stored it there).
           `INSERT INTO users (id, email, name, password_hash, role, created_at, last_login_at)
@@ -334,6 +341,9 @@ export function authRoutes(db: Db) {
         );
         // The dashboard reads the name from the person's settings, like everything else they can edit.
         if (name) await q.query("INSERT INTO user_settings (user_id, key, value) VALUES ($1, 'name', $2)", [id, name]);
+        // A new account starts at onboarding step 1 ("Make this space yours"). Only the web shows it, and nothing on
+        // the server waits for it: the iPhone app and the API work the same before and after.
+        await q.query("INSERT INTO user_settings (user_id, key, value) VALUES ($1, 'onboarding', '1')", [id]);
         return true;
       }).catch((err) => {
         if (err instanceof HttpError && err.status === 404) return false;

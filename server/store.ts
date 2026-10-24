@@ -243,6 +243,83 @@ export const MIGRATIONS: { id: number; name: string; statements: string[] }[] = 
       'CREATE INDEX lab_results_user_marker ON lab_results (user_id, biomarker, collected)',
     ],
   },
+  {
+    id: 11,
+    name: 'Blood records: original lab reports kept in the account',
+    statements: [
+      // The file itself, as uploaded (a PDF or a photo, shrunk on the device to 4 MB or less). Only its owner reads
+      // it: never the Family board, the admin screens, McFly's tools or the export (which lists metadata only).
+      // read_at is when its results were read with AI, which happens only when the person asks.
+      `CREATE TABLE lab_documents (
+        user_id TEXT NOT NULL, id TEXT NOT NULL, name TEXT NOT NULL,
+        mime TEXT NOT NULL CHECK (mime IN ('application/pdf', 'image/jpeg', 'image/png', 'image/webp')),
+        size INTEGER NOT NULL, sha256 TEXT NOT NULL, data BYTEA NOT NULL, read_at DOUBLE PRECISION,
+        created_at DOUBLE PRECISION NOT NULL, PRIMARY KEY (user_id, id))`,
+      'CREATE INDEX lab_documents_user_created ON lab_documents (user_id, created_at)',
+    ],
+  },
+  {
+    id: 12,
+    name: 'Journal: private check-ins',
+    statements: [
+      // Kept apart from `daily` like `cycle`, so nothing that reads health data (the summary, the Family board, peer
+      // comparisons, McFly's tools, the admin view) can reach it; see server/journal.ts.
+      `CREATE TABLE journal_entries (
+        user_id TEXT NOT NULL, id TEXT NOT NULL, date TEXT NOT NULL, time TEXT NOT NULL,
+        mood SMALLINT CHECK (mood BETWEEN 1 AND 5), text TEXT NOT NULL,
+        origin TEXT NOT NULL CHECK (origin IN ('web', 'iphone')),
+        created_at DOUBLE PRECISION NOT NULL, updated_at DOUBLE PRECISION NOT NULL, PRIMARY KEY (user_id, id))`,
+      'CREATE INDEX journal_entries_user_date ON journal_entries (user_id, date)',
+    ],
+  },
+  {
+    id: 13,
+    name: 'Your own AI keys, encrypted',
+    statements: [
+      // AES-256-GCM with a key derived from HEALTHOS_DATA_KEY (server/ai/keys.ts), bound to the row's user and
+      // provider. Never returned, logged or exported: the browser sees only last4.
+      `CREATE TABLE ai_keys (
+        user_id TEXT NOT NULL, provider TEXT NOT NULL CHECK (provider IN ('anthropic', 'openai', 'gemini')),
+        ciphertext BYTEA NOT NULL, iv BYTEA NOT NULL, tag BYTEA NOT NULL, key_version SMALLINT NOT NULL DEFAULT 1,
+        last4 TEXT NOT NULL, model TEXT, created_at DOUBLE PRECISION NOT NULL, updated_at DOUBLE PRECISION NOT NULL,
+        last_used_at DOUBLE PRECISION, last_error TEXT, PRIMARY KEY (user_id, provider))`,
+      // Questions asked on a person's own key are counted apart, so they never use the shared daily limit and
+      // never appear in the admin's cost view.
+      'ALTER TABLE mcfly_usage ADD COLUMN own_questions INTEGER NOT NULL DEFAULT 0',
+      'ALTER TABLE mcfly_usage ADD COLUMN own_input_tokens BIGINT NOT NULL DEFAULT 0',
+      'ALTER TABLE mcfly_usage ADD COLUMN own_output_tokens BIGINT NOT NULL DEFAULT 0',
+    ],
+  },
+  {
+    id: 14,
+    name: 'Body: measurements you add yourself',
+    statements: [
+      // Each entry as given (kg and %), with where it came from. Every write also sets the day's `daily` row for
+      // source 'manual' to that day's latest entry (server/body.ts), so charts and summaries read it like a scale's.
+      `CREATE TABLE body_entries (
+        user_id TEXT NOT NULL, id TEXT NOT NULL, date TEXT NOT NULL, time TEXT,
+        metric TEXT NOT NULL CHECK (metric IN ('weight', 'body_fat', 'lean_mass')), value DOUBLE PRECISION NOT NULL,
+        method TEXT NOT NULL DEFAULT 'other' CHECK (method IN ('scale', 'scan', 'records', 'other')),
+        note TEXT NOT NULL DEFAULT '', origin TEXT NOT NULL DEFAULT 'web' CHECK (origin IN ('web', 'iphone')),
+        created_at DOUBLE PRECISION NOT NULL, updated_at DOUBLE PRECISION NOT NULL, PRIMARY KEY (user_id, id))`,
+      'CREATE INDEX body_entries_user_metric_date ON body_entries (user_id, metric, date)',
+    ],
+  },
+  {
+    id: 15,
+    name: 'Portraits: reference photos and generated likenesses',
+    statements: [
+      // Apart from profile_assets (which a new photo replaces wholesale). A reference is a face photo: only its owner
+      // reads it, and it's sent nowhere but that person's own OpenAI call. data is null while generating.
+      `CREATE TABLE portraits (
+        user_id TEXT NOT NULL, id TEXT NOT NULL, kind TEXT NOT NULL CHECK (kind IN ('reference', 'generated')),
+        status TEXT NOT NULL CHECK (status IN ('pending', 'ready', 'failed')), mime TEXT NOT NULL, data BYTEA,
+        width INTEGER, height INTEGER, bytes INTEGER NOT NULL DEFAULT 0, reference_id TEXT,
+        model TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '',
+        created_at DOUBLE PRECISION NOT NULL, PRIMARY KEY (user_id, id))`,
+      'CREATE INDEX portraits_user_kind ON portraits (user_id, kind, created_at)',
+    ],
+  },
 ];
 
 async function migrate(db: Db) {
