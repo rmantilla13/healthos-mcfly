@@ -439,7 +439,11 @@ export function OpenAIKeySheet({ onClose }: { onClose: () => void }) {
           <div className="ai-where">
             <Icon name="shield" size={16} />
             <div>
-              <p>Photos, descriptions and recordings go to OpenAI on your key, for that one request, and aren't kept by healthOS. Estimates on your key don't count toward healthOS's daily limit.</p>
+              <p>
+                Meal photos, descriptions and voice notes go to OpenAI on your key, for that one request, and aren't kept by healthOS. Estimates on your key don't count toward
+                healthOS's daily limit.
+              </p>
+              <p>Portrait photos stay in your account, seen only by you and sent only to your own OpenAI key, until you delete them.</p>
               <p className="muted">Choose OpenAI in Chatbot to use this same key for Ask McFly.</p>
             </div>
           </div>
