@@ -5,6 +5,8 @@
 // can copy the entries the iPhone writes there back under their own name, and a sum would count those twice.
 import { randomUUID } from 'node:crypto';
 import express, { type Response } from 'express';
+import type { AiStatus } from '../shared/ai.ts';
+import type { FoodDay } from '../shared/foodday.ts';
 import type { FoodEntry, FoodLog, FoodMethod, FoodValues, Nutrient, NutritionNumbers } from '../shared/types.ts';
 import { HttpError, currentUser } from './auth.ts';
 import { addDays } from './dates.ts';
@@ -243,9 +245,34 @@ function checkScaled(per: FoodValues, quantity: number) {
   }
 }
 
+/** The day asked for (POST /day): today when none is sent; never later than today, never more than a year back. */
+function dayFrom(v: unknown, today: string) {
+  if (v === undefined || v === null) return today;
+  if (typeof v !== 'string' || !validDate(v)) throw bad('Choose a date.');
+  if (v > today || v < addDays(today, -MAX_AGE_DAYS)) throw bad('Choose a date in the last year.');
+  return v;
+}
+
 // ---------- the routes ----------
 
-export type FoodLogDeps = { estimateAvailable: () => Promise<boolean> };
+export type FoodLogDeps = {
+  /** What this person's AI requests use (server/ai/resolve.ts aiStatus): who reads an estimate, and voice notes. */
+  ai: (userId: string) => Promise<AiStatus>;
+  /** The app whose totals count on a date, among the Health apps and this log (server/nutrition.ts), or null. */
+  countedApp: (scope: Scope, date: string, preferred: string | null) => Promise<string | null>;
+};
+
+/** What this person can do here: an estimate needs their own key or the shared one, so it's worked out per person. */
+async function canFor(deps: FoodLogDeps, userId: string): Promise<FoodLog['can']> {
+  const ai = await deps.ai(userId);
+  return {
+    estimate: ai.estimate !== null,
+    usda: Boolean(process.env.FDC_API_KEY),
+    estimateProvider: ai.estimate?.provider ?? null,
+    estimateSource: ai.estimate?.source ?? null,
+    voice: ai.voice,
+  };
+}
 
 /** The person, their numbers setting and their local now; refuses while Nutrition is off. */
 export async function loggingContext(db: Db, hosted: boolean, res: Response) {
@@ -254,7 +281,7 @@ export async function loggingContext(db: Db, hosted: boolean, res: Response) {
   const numbers = rc.settings.nutritionNumbers;
   if (!rc.settings.nutrition || !numbers) throw new HttpError(409, 'Turn on Nutrition to log food.');
   await dropStaleDrafts(db, scope.userId);
-  return { scope, numbers, today: rc.today, now: nowIn(rc.settings.timeZone), timeZone: rc.settings.timeZone };
+  return { scope, numbers, today: rc.today, now: nowIn(rc.settings.timeZone), timeZone: rc.settings.timeZone, app: rc.settings.nutritionApp };
 }
 
 export function foodLogRouter(db: Db, hosted: boolean, deps: FoodLogDeps) {
@@ -267,7 +294,7 @@ export function foodLogRouter(db: Db, hosted: boolean, deps: FoodLogDeps) {
     const numbers = rc.settings.nutritionNumbers;
     const days = Math.min(Math.max(Math.round(Number(req.query.days)) || 7, 1), 31);
     const start = addDays(rc.today, -(days - 1));
-    const can = { estimate: await deps.estimateAvailable(), usda: Boolean(process.env.FDC_API_KEY) };
+    const can = await canFor(deps, scope.userId);
     await dropStaleDrafts(db, scope.userId);
     if (!rc.settings.nutrition || !numbers) {
       const off: FoodLog = { enabled: false, numbers: null, today: rc.today, start, end: rc.today, entries: [], drafts: [], draftBatch: null, can };
@@ -283,6 +310,37 @@ export function foodLogRouter(db: Db, hosted: boolean, deps: FoodLogDeps) {
       entries: entries.map((r) => toEntry(r, numbers)),
       drafts: drafts.map((r) => toEntry(r, numbers)),
       draftBatch: drafts[0]?.batch ?? null,
+      can,
+    };
+    res.json(body);
+  });
+
+  /**
+   * One day (the Nutrition page's Today, for any day in the last year): its saved entries, the estimate waiting for
+   * review (whichever day it's for, so it never sits hidden until it expires), the day added up, and which app's
+   * totals count that day. A POST, so the date is in the body and never in an address or a log line.
+   */
+  router.post('/day', async (req, res) => {
+    const { scope, numbers, today, app } = await loggingContext(db, hosted, res);
+    const date = dayFrom((req.body as { date?: unknown } | undefined)?.date, today);
+    const [rows, drafts, countedApp, can] = await Promise.all([
+      entriesBetween(db, scope.userId, date, date),
+      draftsOf(db, scope.userId),
+      deps.countedApp(scope, date, app),
+      canFor(deps, scope.userId),
+    ]);
+    // Added up from the stored amounts, then filtered once, like each entry: a hidden number never leaves the server.
+    const total: FoodValues = {};
+    for (const r of rows) for (const [k, v] of Object.entries(scaleValues(readPer(r.per), Number(r.quantity))) as [FoodKey, number][]) total[k] = (total[k] ?? 0) + v;
+    const body: FoodDay = {
+      numbers,
+      today,
+      date,
+      entries: rows.map((r) => toEntry(r, numbers)),
+      drafts: drafts.map((r) => toEntry(r, numbers)),
+      draftBatch: drafts[0]?.batch ?? null,
+      balance: shownValues(total, numbers),
+      countedApp,
       can,
     };
     res.json(body);

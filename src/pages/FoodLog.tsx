@@ -2,26 +2,27 @@
 // to add more: a food database search (or a typed barcode), McFly's estimate from a photo or a few words (a draft to
 // check and save, never saved on its own), or amounts typed in. The server has already removed every number the
 // person chose not to see, and saves a database food from its own copy, so this page never needs them. Same tone as
-// the rest of Nutrition: no score, no "remaining", no colour for more or less.
+// the rest of Nutrition: no score, no "remaining", no colour for more or less. Today's conversation
+// (NutritionChat.tsx) reuses the pieces exported here.
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import type { FoodEntry, FoodEstimate, FoodLog, FoodResult, FoodSearch, FoodValues, NutritionData, NutritionNumbers, Settings, Status } from '../../shared/types.ts';
 import { Icon } from '../components/Icon.tsx';
 import { fmt, fmtDate, notifyDataChanged, relativeDay, sendJson, shiftDate, useApi } from '../lib.ts';
 
-type Units = Settings['units'];
+export type Units = Settings['units'];
 type Key = keyof FoodValues;
 
 const FL_OZ_ML = 29.5735;
 /** Long edge of a photo sent for an estimate: plenty to tell foods apart, and about 1,600 tokens. */
 const PHOTO_EDGE = 1280;
 
-const waterText = (ml: number, units: Units) => (units === 'imperial' ? `${fmt(ml / FL_OZ_ML)} fl oz` : `${fmt(ml)} mL`);
+export const waterText = (ml: number, units: Units) => (units === 'imperial' ? `${fmt(ml / FL_OZ_ML)} fl oz` : `${fmt(ml)} mL`);
 
 /** Grams: a decimal only for small amounts that have one (0.5 g, not 6.0 g). */
-const grams = (v: number) => fmt(v, v < 10 && Math.round(v * 10) % 10 !== 0 ? 1 : 0);
+export const grams = (v: number) => fmt(v, v < 10 && Math.round(v * 10) % 10 !== 0 ? 1 : 0);
 
 /** An entry's amounts in one line, in the order people read a label. Only what the server sent. */
-function amounts(v: FoodValues, units: Units) {
+export function amounts(v: FoodValues, units: Units) {
   const parts: string[] = [];
   if (v.energy_kcal !== undefined) parts.push(`${fmt(v.energy_kcal)} kcal`);
   if (v.protein_g !== undefined) parts.push(`${grams(v.protein_g)} g protein`);
@@ -38,12 +39,12 @@ function addUp(entries: FoodEntry[]) {
   return total;
 }
 
-const scaled = (v: FoodValues, by: number) => Object.fromEntries(Object.entries(v).map(([k, x]) => [k, x * by])) as FoodValues;
+export const scaled = (v: FoodValues, by: number) => Object.fromEntries(Object.entries(v).map(([k, x]) => [k, x * by])) as FoodValues;
 
 const portionText = (e: Pick<FoodEntry, 'portion' | 'quantity'>) => (e.quantity === 1 ? e.portion : `${Number(e.quantity.toFixed(2))} × ${e.portion || 'portion'}`);
 
 /** The amounts this setting lets a person type: never calories in 'no_energy', none at all in 'none'. */
-function typedKeys(numbers: NutritionNumbers): { key: Key; label: string; unit: (u: Units) => string }[] {
+export function typedKeys(numbers: NutritionNumbers): { key: Key; label: string; unit: (u: Units) => string }[] {
   if (numbers === 'none') return [];
   return [
     ...(numbers === 'all' ? [{ key: 'energy_kcal' as Key, label: 'Calories', unit: () => 'kcal' }] : []),
@@ -65,7 +66,19 @@ const fromAmount = (key: Key, v: number | undefined, units: Units) =>
   v === undefined ? '' : String(Math.round((key === 'water_ml' && units === 'imperial' ? v / FL_OZ_ML : v) * 10) / 10);
 
 /** Now, as HH:MM. */
-const nowTime = () => new Date().toTimeString().slice(0, 5);
+export const nowTime = () => new Date().toTimeString().slice(0, 5);
+
+/** The company a photo and words go to for an estimate, and the name its key goes by in Profile. */
+export const COMPANY = { anthropic: 'Anthropic', openai: 'OpenAI', gemini: 'Google' } as const;
+export const KEY_LABEL = { anthropic: 'Claude', openai: 'OpenAI', gemini: 'Gemini' } as const;
+
+/** Where an estimate's photo and words go, in plain words: the provider actually used, and whose key pays for it. */
+export function estimatePrivacy(can: FoodLog['can']) {
+  // An older server, without estimateProvider, had only Claude.
+  const provider = can.estimateProvider ?? 'anthropic';
+  const cost = can.estimateSource === 'own' ? `It runs on your own ${KEY_LABEL[provider]} key.` : 'It counts as one McFly question.';
+  return `The photo and words go to ${COMPANY[provider]} for this one estimate, and healthOS doesn't keep them. ${cost}`;
+}
 
 // ---------- the tab ----------
 
@@ -125,7 +138,7 @@ export function FoodLogTab({ status }: { status: Status }) {
 
 // ---------- one entry ----------
 
-function EntryRow({ entry, numbers, units }: { entry: FoodEntry; numbers: NutritionNumbers; units: Units }) {
+export function EntryRow({ entry, numbers, units }: { entry: FoodEntry; numbers: NutritionNumbers; units: Units }) {
   const [editing, setEditing] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -299,7 +312,7 @@ function AddFood({ log, date, numbers, units }: { log: FoodLog; date: string; nu
             </div>
           )}
           {current === 'search' && <SearchFood when={when} units={units} usda={log.can.usda} />}
-          {current === 'estimate' && <EstimateFood when={when} onNote={setNote} />}
+          {current === 'estimate' && <EstimateFood when={when} onNote={setNote} can={log.can} />}
           {current === 'quick' && <QuickAdd when={when} numbers={numbers} units={units} />}
         </>
       )}
@@ -308,7 +321,7 @@ function AddFood({ log, date, numbers, units }: { log: FoodLog; date: string; nu
 }
 
 /** The date and time to log at, worked out when the person adds. */
-type When = () => { date: string; time: string };
+export type When = () => { date: string; time: string };
 
 /** Water in one tap: a glass or a bottle, in the person's units. Any other amount goes through Quick add. */
 const WATER: Record<Units, { label: string; portion: string; ml: number }[]> = {
@@ -322,7 +335,7 @@ const WATER: Record<Units, { label: string; portion: string; ml: number }[]> = {
   ],
 };
 
-function WaterButtons({ when, units }: { when: When; units: Units }) {
+export function WaterButtons({ when, units }: { when: When; units: Units }) {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -364,7 +377,7 @@ function WaterButtons({ when, units }: { when: When; units: Units }) {
   );
 }
 
-function SearchFood({ when, units, usda }: { when: When; units: Units; usda: boolean }) {
+export function SearchFood({ when, units, usda }: { when: When; units: Units; usda: boolean }) {
   const [query, setQuery] = useState('');
   const [found, setFound] = useState<(FoodSearch & { barcode: boolean }) | null>(null);
   const [busy, setBusy] = useState(false);
@@ -522,7 +535,7 @@ function ResultRow({
 }
 
 /** Shrinks and re-encodes a photo on this device: a smaller upload, fewer tokens, and no location or camera data. */
-async function shrinkPhoto(file: File): Promise<{ data: string; preview: string }> {
+export async function shrinkPhoto(file: File): Promise<{ data: string; preview: string }> {
   const url = URL.createObjectURL(file);
   try {
     const img = new Image();
@@ -540,7 +553,7 @@ async function shrinkPhoto(file: File): Promise<{ data: string; preview: string 
   }
 }
 
-function EstimateFood({ when, onNote }: { when: When; onNote: (note: string) => void }) {
+function EstimateFood({ when, onNote, can }: { when: When; onNote: (note: string) => void; can: FoodLog['can'] }) {
   const [description, setDescription] = useState('');
   const [photo, setPhoto] = useState<{ data: string; preview: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -604,8 +617,8 @@ function EstimateFood({ when, onNote }: { when: When; onNote: (note: string) => 
         </button>
       )}
       <p className="muted small">
-        The photo and words go to Anthropic for this one estimate, and healthOS doesn't keep them. It counts as one McFly question. Estimates are rough, often a third off on
-        calories, so you check them before anything is saved. A few words about oil, sauces or portion size help most.
+        {estimatePrivacy(can)} Estimates are rough, often a third off on calories, so you check them before anything is saved. A few words about oil, sauces or portion size
+        help most.
       </p>
       {note && <p className="muted">{note}</p>}
       {error && <p className="note-bad small">{error}</p>}
@@ -616,13 +629,18 @@ function EstimateFood({ when, onNote }: { when: When; onNote: (note: string) => 
   );
 }
 
-/** McFly's draft: rename, change how many, or drop items, then save what's left. Nothing counts until then. */
-function EstimateReview({ drafts, batch, note, units, numbers }: { drafts: FoodEntry[]; batch: string; note: string; units: Units; numbers: NutritionNumbers }) {
+/**
+ * Reviewing McFly's draft: rename, change how many or the time, or leave items out, then save what's left (or discard
+ * it all). Nothing counts until then. The Log tab and Today's conversation each draw it their own way.
+ */
+export function useEstimateReview(drafts: FoodEntry[], batch: string, onDone?: (saved: number | null) => void) {
   const [kept, setKept] = useState(() => drafts.map((d) => ({ id: d.id, name: d.name, quantity: String(d.quantity) })));
+  const [time, setTime] = useState(drafts[0]?.time ?? '12:00');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const byId = new Map(drafts.map((d) => [d.id, d]));
   const update = (id: string, patch: Partial<{ name: string; quantity: string }>) => setKept(kept.map((k) => (k.id === id ? { ...k, ...patch } : k)));
+  const leaveOut = (id: string) => setKept(kept.filter((x) => x.id !== id));
   async function save() {
     setBusy(true);
     setError(null);
@@ -633,9 +651,11 @@ function EstimateReview({ drafts, batch, note, units, numbers }: { drafts: FoodE
         if (k.name.trim() !== d.name) patch.name = k.name;
         const q = Number(k.quantity.replace(',', '.'));
         if (q !== d.quantity) patch.quantity = q;
+        if (time && time !== d.time) patch.time = time;
         if (Object.keys(patch).length) await sendJson('PATCH', `/nutrition/log/${k.id}`, patch);
       }
-      await sendJson('POST', '/nutrition/log/save', { batch, ids: kept.map((k) => k.id) });
+      const r = await sendJson<{ entries: FoodEntry[] }>('POST', '/nutrition/log/save', { batch, ids: kept.map((k) => k.id) });
+      onDone?.(r.entries.length);
       notifyDataChanged();
     } catch (err) {
       setError((err as Error).message);
@@ -645,8 +665,10 @@ function EstimateReview({ drafts, batch, note, units, numbers }: { drafts: FoodE
   }
   async function discard() {
     setBusy(true);
+    setError(null);
     try {
       await sendJson('POST', '/nutrition/log/discard', { batch });
+      onDone?.(null);
       notifyDataChanged();
     } catch (err) {
       setError((err as Error).message);
@@ -654,6 +676,12 @@ function EstimateReview({ drafts, batch, note, units, numbers }: { drafts: FoodE
       setBusy(false);
     }
   }
+  return { kept, byId, update, leaveOut, time, setTime, save, discard, busy, error };
+}
+
+/** McFly's draft on the Log tab: rename, change how many, or drop items, then save what's left. Nothing counts until then. */
+function EstimateReview({ drafts, batch, note, units, numbers }: { drafts: FoodEntry[]; batch: string; note: string; units: Units; numbers: NutritionNumbers }) {
+  const { kept, byId, update, leaveOut, save, discard, busy, error } = useEstimateReview(drafts, batch);
   const first = drafts[0];
   return (
     <div className="food-review">
@@ -678,7 +706,7 @@ function EstimateReview({ drafts, batch, note, units, numbers }: { drafts: FoodE
                   <span className="muted small">How many</span>
                   <input inputMode="decimal" value={k.quantity} onChange={(e) => update(k.id, { quantity: e.target.value })} />
                 </label>
-                <button type="button" className="btn btn-quiet small food-drop" onClick={() => setKept(kept.filter((x) => x.id !== k.id))} aria-label={`Leave out ${k.name}`}>
+                <button type="button" className="btn btn-quiet small food-drop" onClick={() => leaveOut(k.id)} aria-label={`Leave out ${k.name}`}>
                   Leave out
                 </button>
               </div>
@@ -701,7 +729,7 @@ function EstimateReview({ drafts, batch, note, units, numbers }: { drafts: FoodE
   );
 }
 
-function QuickAdd({ when, numbers, units }: { when: When; numbers: NutritionNumbers; units: Units }) {
+export function QuickAdd({ when, numbers, units }: { when: When; numbers: NutritionNumbers; units: Units }) {
   const keys = typedKeys(numbers);
   const [name, setName] = useState('');
   const [typed, setTyped] = useState<Record<string, string>>({});
