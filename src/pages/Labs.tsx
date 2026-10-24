@@ -1,12 +1,17 @@
-// Lab tests: blood panels and other lab results, each against the reference range printed by the lab. Results are
-// typed in as printed, or read from a report by Claude and checked by the person before anything is saved. A status
+// Blood records (#/labs): blood panels and other lab results, each against the reference range printed by the lab,
+// and the original reports, kept in the person's account (Lab documents). Results are typed in as printed, or read
+// from a kept report by Claude, only when the person asks, and checked by them before anything is saved. A status
 // only says where a number sits against a range; nothing here is a diagnosis.
-import { Fragment, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import '../styles/records.css';
+import { Fragment, type ReactNode, type RefObject, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BIOMARKERS,
+  type LabDocument,
+  type LabDocuments,
   type LabDraft,
   type LabExtract,
   type LabMarker,
+  type LabReader,
   type LabResult,
   type LabsData,
   biomarker,
@@ -22,59 +27,172 @@ import type { Status } from '../../shared/types.ts';
 import { TrendChart } from '../charts/Charts.tsx';
 import { Icon } from '../components/Icon.tsx';
 import { LabRangeBar, LabStatusChip, labNumber, rangeLabel } from '../components/LabRange.tsx';
-import { REPORT_ACCEPT, prepareReport, readReport } from '../labsUpload.ts';
+import { REPORT_ACCEPT, prepareReport, readDocument, reportName, uploadDocument } from '../labsUpload.ts';
 import { fmtDate, notifyDataChanged, sendJson, useApi } from '../lib.ts';
 import { PageIntro } from '../components/PageIntro.tsx';
 
 const longDate = (d: string) => fmtDate(d, { month: 'short', day: 'numeric', year: 'numeric' });
+// Upload and read times are moments (epoch ms), shown in this device's own time zone.
+const uploadedDay = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+const readDay = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
 
-type Mode = 'add' | 'import' | null;
+/** The form open under the intro: typing results in, or checking what was read from a report. */
+type Mode = 'add' | 'review' | null;
 
 /** What closing the open form would lose: rows typed in, rows read from a report, or a read still going. */
 type Pending = 'none' | 'typed' | 'draft' | 'reading';
 const DISCARD: Record<'typed' | 'draft', string> = {
   typed: 'Discard the results you’ve typed? They haven’t been saved.',
-  draft: 'Discard the results read from your report? They haven’t been saved, and reading the report again counts as another Ask McFly question.',
+  draft: 'Discard the results read from your report? They haven’t been saved. The report stays in Lab documents, but reading it again counts as a new read.',
 };
+
+const NOT_SET_UP = "Reading reports isn't set up on this server yet. You can still type results in.";
+const TURNED_OFF = 'Reading reports uses Ask McFly, which is turned off right now. You can still type results in.';
+
+const readButtonId = (id: string) => `labs-doc-read-${id}`;
+const documentUrl = (id: string) => `/api/labs/documents/${encodeURIComponent(id)}`;
 
 export function Labs({ status: _status, params: _params }: { status: Status; params: URLSearchParams }) {
   const { data, error, loading } = useApi<LabsData>('/labs');
+  const docs = useApi<LabDocuments>('/labs/documents');
+  const reader = useApi<LabReader>('/labs/reader');
   const [mode, setMode] = useState<Mode>(null);
   const [pending, setPending] = useState<Pending>('none');
+  const [review, setReview] = useState<{ doc: LabDocument; read: LabExtract } | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [notice, setNotice] = useState('');
+  // Lab documents: an upload going (share sent, null while the file is prepared), what happened, the report whose
+  // "Read the results?" is open, and the one being read.
+  const [upload, setUpload] = useState<{ share: number | null } | null>(null);
+  const [docNotice, setDocNotice] = useState('');
+  const [docError, setDocError] = useState<{ id: string | null; message: string } | null>(null);
+  const [offer, setOffer] = useState<string | null>(null);
+  const [reading, setReading] = useState<string | null>(null);
   const today = data?.today ?? new Date().toLocaleDateString('en-CA');
   const addButton = useRef<HTMLButtonElement>(null);
-  const importButton = useRef<HTMLButtonElement>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
   const noticeRef = useRef<HTMLParagraphElement>(null);
+  const docNoticeRef = useRef<HTMLParagraphElement>(null);
+  const offerRef = useRef<HTMLParagraphElement>(null);
   const focusNotice = useRef(false);
+  const focusDocNotice = useRef(false);
+  const focusOffer = useRef(false);
 
   // After a save, focus goes to the notice saying what was added, once the form it came from has gone.
   useEffect(() => {
     if (focusNotice.current && notice) noticeRef.current?.focus();
     focusNotice.current = false;
   }, [notice]);
+  // After a delete, to the notice saying so (the row and its buttons are gone).
+  useEffect(() => {
+    if (focusDocNotice.current && docNotice) docNoticeRef.current?.focus();
+    focusDocNotice.current = false;
+  }, [docNotice]);
+  // After an upload, to the offer to read it, once its row is listed (the button that opened the picker may be gone).
+  useEffect(() => {
+    if (focusOffer.current && offerRef.current) {
+      offerRef.current.focus();
+      focusOffer.current = false;
+    }
+  }, [offer, docs.data]);
 
-  /** Open a form, switch to the other one or close it: never losing typed rows, a draft or a read without asking. */
+  /** Open the add form or close it: never losing typed rows, a draft or a read without asking. */
   const start = (m: Mode) => {
     if (pending === 'reading') return;
     if ((pending === 'typed' || pending === 'draft') && !confirm(DISCARD[pending])) return;
     setNotice('');
     setPending('none');
+    setReview(null);
     setMode(m);
   };
   const cancel = () => {
-    const from = mode;
+    const from = review?.doc.id;
     setPending('none');
     setMode(null);
-    (from === 'import' ? importButton : addButton).current?.focus();
+    setReview(null);
+    (from ? document.getElementById(readButtonId(from)) : addButton.current)?.focus();
   };
   const saved = (n: number) => {
     setPending('none');
     setMode(null);
+    setReview(null);
     focusNotice.current = true;
     setNotice(`Added ${n} ${n === 1 ? 'result' : 'results'}.`);
     notifyDataChanged();
+  };
+
+  /** Keep a report: prepared on this device, then sent with its progress. Reading it is offered, never started. */
+  async function keep(file: File) {
+    setDocNotice('');
+    setDocError(null);
+    setOffer(null);
+    setUpload({ share: null });
+    try {
+      const blob = await prepareReport(file);
+      setUpload({ share: 0 });
+      const { document: doc } = await uploadDocument(blob, reportName(file, blob), (share) => setUpload({ share }));
+      docs.reload();
+      setDocNotice(`Saved ${doc.name}.`);
+      focusOffer.current = true;
+      setOffer(doc.id);
+    } catch (e) {
+      setDocError({ id: null, message: (e as Error).message });
+    } finally {
+      setUpload(null);
+      if (fileInput.current) fileInput.current.value = '';
+    }
+  }
+  const chooseFile = () => fileInput.current?.click();
+
+  /** Read a kept report's results into the "Check what was read" form, asking first before a form's rows are lost. */
+  async function read(doc: LabDocument) {
+    if (pending === 'reading') return;
+    if ((pending === 'typed' || pending === 'draft') && !confirm(DISCARD[pending])) return;
+    setNotice('');
+    setDocNotice('');
+    setDocError(null);
+    setMode(null);
+    setReview(null);
+    setPending('reading');
+    setReading(doc.id);
+    try {
+      const r = await readDocument(doc.id);
+      if (r.rows.length) {
+        setReview({ doc, read: r });
+        setMode('review');
+        setOffer(null);
+        setPending('draft');
+      } else {
+        setDocError({ id: doc.id, message: r.note ?? 'No results could be read from that file.' });
+        setPending('none');
+      }
+    } catch (e) {
+      setDocError({ id: doc.id, message: (e as Error).message });
+      setPending('none');
+    } finally {
+      setReading(null);
+      reader.reload();
+      docs.reload();
+    }
+  }
+
+  async function remove(doc: LabDocument) {
+    if (!confirm(`Delete ${doc.name}? It can't be undone.`)) return;
+    setDocError(null);
+    try {
+      await sendJson('DELETE', `/labs/documents/${encodeURIComponent(doc.id)}`);
+      if (offer === doc.id) setOffer(null);
+      focusDocNotice.current = true;
+      setDocNotice(`Deleted ${doc.name}.`);
+      docs.reload();
+    } catch (e) {
+      setDocError({ id: doc.id, message: (e as Error).message });
+    }
+  }
+
+  const closeOffer = (id: string) => {
+    setOffer(null);
+    document.getElementById(readButtonId(id))?.focus();
   };
 
   const tools = (
@@ -83,7 +201,7 @@ export function Labs({ status: _status, params: _params }: { status: Status; par
         <Icon name="plus" size={15} />
         Add blood result
       </button>
-      <button ref={importButton} className="btn" aria-pressed={mode === 'import'} disabled={pending === 'reading'} onClick={() => start(mode === 'import' ? null : 'import')}>
+      <button className="btn" disabled={upload !== null} onClick={chooseFile}>
         <Icon name="upload" size={15} />
         Upload report
       </button>
@@ -91,7 +209,7 @@ export function Labs({ status: _status, params: _params }: { status: Status; par
   );
 
   return (
-    <div className={`page page-wide labs ${loading ? 'is-refreshing' : ''}`}>
+    <div className={`page page-wide labs records ${loading ? 'is-refreshing' : ''}`}>
       <PageIntro title="Your records, together." sub="Blood results and original reports, saved to your private account." actions={tools} />
       {/* Always there, so the change of text is announced. */}
       <div className="labs-notice" role="status">
@@ -103,7 +221,7 @@ export function Labs({ status: _status, params: _params }: { status: Status; par
       </div>
       {mode === 'add' && (
         <ResultsForm
-          title="Add results"
+          title="Add blood results"
           intro={<p className="muted small">Type each result as it's printed on your report, with the reference range printed beside it. Leave a row empty to skip it.</p>}
           initial={[{ id: 1, collected: today, lab: '', dateDropped: false, rows: [blankRow(1), blankRow(2), blankRow(3)] }]}
           source="manual"
@@ -113,50 +231,270 @@ export function Labs({ status: _status, params: _params }: { status: Status; par
           onPending={setPending}
         />
       )}
-      {mode === 'import' && <ImportReport today={today} onSaved={saved} onCancel={cancel} onPending={setPending} />}
-      {error && !data ? (
-        <div className="page-message">Couldn't load your lab results: {error.message}</div>
-      ) : !data ? (
-        <div className="page-message">Loading…</div>
-      ) : data.count === 0 ? (
-        mode === null && <NothingYet start={start} />
-      ) : (
-        <>
-          {data.demo && (
-            <p className="banner labs-demo">
-              <Icon name="labs" size={16} /> These are demo results. Add your own and they take their place.
+      {mode === 'review' && review && (
+        <ResultsForm
+          title="Check what was read"
+          intro={
+            <div className="labs-review-intro">
+              <p className="muted small">
+                Claude read {review.read.rows.length} {review.read.rows.length === 1 ? 'result' : 'results'} from <strong>{review.doc.name}</strong>. Compare each row with the
+                report (
+                <a href={documentUrl(review.doc.id)} target="_blank" rel="noopener noreferrer">
+                  open it in a new tab
+                </a>
+                ) and fix anything that's off, or remove it. Nothing is saved until you press Save.
+              </p>
+              {review.read.note && (
+                <p className="small labs-review-note">
+                  <Icon name="alert" size={14} /> {review.read.note}
+                </p>
+              )}
+            </div>
+          }
+          initial={groupsFromDrafts(review.read.rows)}
+          source="report"
+          today={today}
+          onSaved={saved}
+          onCancel={cancel}
+        />
+      )}
+
+      <section className="card records-card" aria-labelledby="records-results-title">
+        <div className="records-card-head">
+          <h2 id="records-results-title">Blood results</h2>
+          {data && <span className="badge badge-sage">{count(data.count, 'result')}</span>}
+        </div>
+        {error && !data ? (
+          <p className="note-bad records-loading">Couldn't load your blood results: {error.message}</p>
+        ) : !data ? (
+          <p className="muted small records-loading">Loading…</p>
+        ) : data.count === 0 ? (
+          <Empty icon="vitals" title="Your results, over time" text="Add the value, unit and reference range exactly as printed by your laboratory.">
+            {mode !== 'add' && (
+              <button className="btn" onClick={() => start('add')} disabled={pending === 'reading'}>
+                Add a blood result
+              </button>
+            )}
+          </Empty>
+        ) : (
+          <>
+            {data.demo && (
+              <p className="banner labs-demo">
+                <Icon name="labs" size={16} /> These are demo results. Add your own and they take their place.
+              </p>
+            )}
+            <LatestResults data={data} open={open} setOpen={setOpen} />
+            <ByDate data={data} />
+          </>
+        )}
+      </section>
+
+      <section className="card records-card" aria-labelledby="records-docs-title">
+        <div className="records-card-head">
+          <h2 id="records-docs-title">Lab documents</h2>
+          {docs.data && <span className="badge badge-sage">{count(docs.data.documents.length, 'file')}</span>}
+        </div>
+        {/* Always there, so progress and what happened are announced. */}
+        <div className="records-status" role="status">
+          {upload && <p className="muted small">{upload.share === null ? 'Preparing your file…' : `Uploading… ${Math.round(upload.share * 100)}%`}</p>}
+          {docNotice && (
+            <p className="note-good" tabIndex={-1} ref={docNoticeRef}>
+              <Icon name="check" size={15} /> {docNotice}
             </p>
           )}
-          <LatestResults data={data} open={open} setOpen={setOpen} />
-          <ByDate data={data} />
-        </>
-      )}
+        </div>
+        {docError?.id === null && (
+          <p className="note-bad records-error" role="alert">
+            <Icon name="alert" size={15} /> {docError.message}
+          </p>
+        )}
+        {!docs.data ? (
+          <p className={docs.error ? 'note-bad records-loading' : 'muted small records-loading'}>{docs.error ? `Couldn't load your lab documents: ${docs.error.message}` : 'Loading…'}</p>
+        ) : docs.data.documents.length === 0 ? (
+          <Empty icon="file-text" title="A home for your health history" text="Upload a PDF or image. Only your account can access it.">
+            <button className="btn" onClick={chooseFile} disabled={upload !== null}>
+              Upload a report
+            </button>
+          </Empty>
+        ) : (
+          <ul className="records-docs">
+            {docs.data.documents.map((doc) => (
+              <DocumentRow
+                key={doc.id}
+                doc={doc}
+                offered={offer === doc.id}
+                onOffer={() => (offer === doc.id ? closeOffer(doc.id) : setOffer(doc.id))}
+                error={docError?.id === doc.id ? docError.message : null}
+                onDelete={() => remove(doc)}
+              >
+                {offer === doc.id && (
+                  <ReadOffer
+                    doc={doc}
+                    reader={reader}
+                    reading={reading === doc.id}
+                    busy={pending === 'reading'}
+                    onRead={() => read(doc)}
+                    onClose={() => closeOffer(doc.id)}
+                    titleRef={offerRef}
+                  />
+                )}
+              </DocumentRow>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <p className="records-foot">
+        Reference flags compare your entry with the range you provide, or a labelled typical range when there's none. They are not a diagnosis. Values in units that can't be
+        converted are kept separate.
+      </p>
+      <input ref={fileInput} type="file" accept={REPORT_ACCEPT} hidden onChange={(e) => e.target.files?.[0] && keep(e.target.files[0])} />
     </div>
   );
 }
 
-function NothingYet({ start }: { start: (m: Mode) => void }) {
+const count = (n: number, word: string) => `${n.toLocaleString()} ${word}${n === 1 ? '' : 's'}`;
+
+/** A card's first-run state: an icon, a line of what goes here, and the way to add it. */
+function Empty({ icon, title, text, children }: { icon: 'vitals' | 'file-text'; title: string; text: string; children?: ReactNode }) {
   return (
-    <section className="card labs-empty">
-      <span className="labs-empty-icon" aria-hidden="true">
-        <Icon name="labs" size={22} />
-      </span>
-      <h2>No lab results yet</h2>
-      <p className="muted">
-        Add results from a blood test or other lab report: type them in as printed, or import a PDF or photo of the report and check what's read before saving. Each result is
-        shown against the reference range the lab printed, so you can see where it sits and how it changes between tests.
+    <div className="records-empty">
+      <Icon name={icon} size={22} strokeWidth={1.4} />
+      <h3>{title}</h3>
+      <p>{text}</p>
+      {children}
+    </div>
+  );
+}
+
+// ---------- lab documents ----------
+
+const TYPE_LABEL: Record<LabDocument['mime'], string> = { 'application/pdf': 'PDF', 'image/jpeg': 'JPEG', 'image/png': 'PNG', 'image/webp': 'WebP' };
+const fileSize = (bytes: number) => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`);
+
+function DocumentRow({
+  doc,
+  offered,
+  onOffer,
+  onDelete,
+  error,
+  children,
+}: {
+  doc: LabDocument;
+  offered: boolean;
+  onOffer: () => void;
+  onDelete: () => void;
+  error: string | null;
+  /** The offer to read it, when open. */
+  children?: ReactNode;
+}) {
+  return (
+    <li className="records-doc">
+      <div className="records-doc-main">
+        <span className="records-doc-icon" aria-hidden="true">
+          <Icon name={doc.mime === 'application/pdf' ? 'file-text' : 'image'} size={17} />
+        </span>
+        <div className="records-doc-text">
+          <p className="records-doc-name">{doc.name}</p>
+          <p className="records-doc-meta">
+            {TYPE_LABEL[doc.mime]} · {fileSize(doc.size)} · Uploaded {uploadedDay.format(doc.uploadedAt)}
+            {doc.readAt !== null && <span className="records-doc-read"> · Results read {readDay.format(doc.readAt)}</span>}
+          </p>
+        </div>
+        <div className="records-doc-actions">
+          <a className="btn btn-quiet" href={documentUrl(doc.id)} target="_blank" rel="noopener noreferrer" aria-label={`Open ${doc.name} in a new tab`}>
+            Open
+          </a>
+          <button
+            id={readButtonId(doc.id)}
+            className="btn btn-quiet"
+            aria-expanded={offered}
+            aria-controls={offered ? `labs-doc-offer-${doc.id}` : undefined}
+            aria-label={`Read the results from ${doc.name}`}
+            onClick={onOffer}
+          >
+            Read results
+          </button>
+          <button className="btn btn-quiet btn-danger" onClick={onDelete} aria-label={`Delete ${doc.name}`}>
+            Delete
+          </button>
+        </div>
+      </div>
+      {children}
+      {error && (
+        <p className="note-bad records-error" role="alert">
+          <Icon name="alert" size={15} /> {error}
+        </p>
+      )}
+    </li>
+  );
+}
+
+/** What reading a report means, said before anything is sent: where it goes, what it counts as, and that rows are checked. */
+function ReadOffer({
+  doc,
+  reader,
+  reading,
+  busy,
+  onRead,
+  onClose,
+  titleRef,
+}: {
+  doc: LabDocument;
+  reader: { data?: LabReader; error?: Error };
+  reading: boolean;
+  busy: boolean;
+  onRead: () => void;
+  onClose: () => void;
+  titleRef: RefObject<HTMLParagraphElement | null>;
+}) {
+  const r = reader.data;
+  const own = r?.source === 'own';
+  const unavailable = r?.source === null ? (r.reason === 'off' ? TURNED_OFF : NOT_SET_UP) : null;
+  const left = r && r.source !== null ? Math.max(0, r.limit - r.usedToday) : null;
+  // Until it's known what reading would use, the button waits; if that can't be found out, the server decides.
+  const unknown = !r && !reader.error;
+  return (
+    <div className="records-offer" id={`labs-doc-offer-${doc.id}`} role="group" aria-labelledby={`labs-doc-offer-title-${doc.id}`}>
+      <p className="records-offer-title" id={`labs-doc-offer-title-${doc.id}`} tabIndex={-1} ref={titleRef}>
+        Read the results from this report?
       </p>
-      <p className="muted small">Only you see them: never the Family board or the admin screens.</p>
+      {unavailable ? (
+        <p className="records-offer-off">{unavailable}</p>
+      ) : (
+        <ul className="records-offer-notes">
+          <li>
+            It's sent to <strong>Claude, Anthropic's AI</strong>, to read the results. The original stays here in Lab documents.
+          </li>
+          <li>
+            {own ? (
+              "It runs on your own Claude key, so it doesn't use the shared daily questions."
+            ) : (
+              <>Reading a report counts as one of your Ask McFly questions today{left !== null && ` (you have ${left} left)`}.</>
+            )}
+          </li>
+          <li>You check every row before anything is saved.</li>
+        </ul>
+      )}
+      {left === 0 && (
+        <p className="note-bad">
+          {own ? "You've used your own Claude key the most it takes in a day. Try again tomorrow, or type the results in." : "You've used today's Ask McFly questions. Try again tomorrow, or type the results in."}
+        </p>
+      )}
       <div className="btn-row">
-        <button className="btn btn-primary" onClick={() => start('add')}>
-          Add results
-        </button>
-        <button className="btn" onClick={() => start('import')}>
-          <Icon name="upload" size={15} />
-          Import a report
+        {!unavailable && (
+          <button className="btn btn-primary" disabled={busy || unknown || left === 0} onClick={onRead}>
+            {reading ? 'Reading…' : 'Read results'}
+          </button>
+        )}
+        <button className="btn btn-quiet" onClick={onClose} disabled={reading}>
+          {unavailable ? 'Close' : 'Not now'}
         </button>
       </div>
-    </section>
+      <p className="muted small" aria-live="polite">
+        {reading ? 'Claude is reading your report. This can take up to a minute…' : ''}
+      </p>
+    </div>
   );
 }
 
@@ -177,21 +515,21 @@ function LatestResults({ data, open, setOpen }: { data: LabsData; open: string |
   }, [data]);
 
   return (
-    <section className="card labs-latest" aria-labelledby="labs-latest-title">
+    <div className="labs-latest" role="group" aria-labelledby="labs-latest-title">
       <div className="labs-card-head">
-        <h2 id="labs-latest-title">Latest results</h2>
+        <h3 id="labs-latest-title">Latest results</h3>
         <p className="muted small">Each marker's most recent result, against the range printed with it. Select a marker to see its history.</p>
       </div>
       {groups.map((g) => (
         <div className="labs-group" key={`${g.collected}|${g.lab}|${g.panel}`}>
-          <h3 className="labs-group-title">
+          <h4 className="labs-group-title">
             {g.panel || 'Results'}
             <span className="muted">
               {' '}
               · {longDate(g.collected)}
               {g.lab && ` · ${g.lab}`}
             </span>
-          </h3>
+          </h4>
           <table className="labs-table">
             <thead>
               <tr>
@@ -241,7 +579,7 @@ function LatestResults({ data, open, setOpen }: { data: LabsData; open: string |
           </table>
         </div>
       ))}
-    </section>
+    </div>
   );
 }
 
@@ -360,9 +698,9 @@ function ByDate({ data }: { data: LabsData }) {
     return [...map.values()];
   }, [data]);
   return (
-    <section className="card labs-bydate" aria-labelledby="labs-bydate-title">
+    <div className="labs-bydate" role="group" aria-labelledby="labs-bydate-title">
       <div className="labs-card-head">
-        <h2 id="labs-bydate-title">Every result, by date</h2>
+        <h3 id="labs-bydate-title">Every result, by date</h3>
         <p className="muted small">Each collection as it was printed.</p>
       </div>
       {days.map((panels) => {
@@ -378,7 +716,7 @@ function ByDate({ data }: { data: LabsData }) {
             </summary>
             {panels.map((p) => (
               <div key={p.panel} className="labs-day-panel">
-                {p.panel && <h3 className="labs-group-title">{p.panel}</h3>}
+                {p.panel && <h4 className="labs-group-title">{p.panel}</h4>}
                 <table className="labs-table">
                   <thead>
                     <tr>
@@ -413,7 +751,7 @@ function ByDate({ data }: { data: LabsData }) {
           </details>
         );
       })}
-    </section>
+    </div>
   );
 }
 
@@ -614,7 +952,7 @@ function RowFields({ row, n, gid, set, remove }: { row: Row; n: number; gid: num
   );
 }
 
-// ---------- importing a report ----------
+// ---------- reading a report ----------
 
 /** The draft rows as form groups: one per collection date and lab, a missing date left for the person to fill in. */
 function groupsFromDrafts(rows: LabDraft[]): Group[] {
@@ -626,113 +964,4 @@ function groupsFromDrafts(rows: LabDraft[]): Group[] {
     dateDropped: g.dateDropped,
     rows: g.rows.map((r) => ({ id: id++, name: r.name, valueText: r.valueText, unit: r.unit ?? '', refText: r.refText ?? '', panel: r.panel ?? '' })),
   }));
-}
-
-function ImportReport({ today, onSaved, onCancel, onPending }: { today: string; onSaved: (n: number) => void; onCancel: () => void; onPending: (p: Pending) => void }) {
-  const mcfly = useApi<{ configured: boolean; limit: number; usedToday: number }>('/mcfly');
-  const [phase, setPhase] = useState<'choose' | 'preparing' | 'reading'>('choose');
-  const [err, setErr] = useState('');
-  const [read, setRead] = useState<LabExtract | null>(null);
-  const input = useRef<HTMLInputElement>(null);
-  const heading = useRef<HTMLHeadingElement>(null);
-  const choose = useRef<HTMLButtonElement>(null);
-  // A read in progress has already used a question, and a draft hasn't been saved: the page asks before losing either.
-  useEffect(() => onPending(phase !== 'choose' ? 'reading' : read ? 'draft' : 'none'), [phase, read, onPending]);
-  useEffect(() => heading.current?.focus(), []);
-  // A file that couldn't be read: back to the button, to try another.
-  useEffect(() => {
-    if (err) choose.current?.focus();
-  }, [err]);
-  const configured = mcfly.data?.configured ?? true;
-  /** McFly turned off by an admin (a limit of 0), which isn't the same as having used today's questions. */
-  const off = mcfly.data !== undefined && !(mcfly.data.limit > 0);
-  const left = mcfly.data && !off ? Math.max(0, mcfly.data.limit - mcfly.data.usedToday) : null;
-  const busy = phase !== 'choose';
-
-  async function pick(file: File) {
-    setErr('');
-    setPhase('preparing');
-    try {
-      const blob = await prepareReport(file);
-      setPhase('reading');
-      const r = await readReport(blob);
-      mcfly.reload();
-      if (r.rows.length) setRead(r);
-      else setErr(r.note ?? 'No results could be read from that file.');
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setPhase('choose');
-      if (input.current) input.current.value = '';
-    }
-  }
-
-  if (read) {
-    return (
-      <ResultsForm
-        title="Check what was read"
-        intro={
-          <div className="labs-review-intro">
-            <p className="muted small">
-              Claude read {read.rows.length} {read.rows.length === 1 ? 'result' : 'results'} from your report. Compare each row with the report and fix anything that's off, or remove it.
-              Nothing is saved until you press Save.
-            </p>
-            {read.note && (
-              <p className="small labs-review-note">
-                <Icon name="alert" size={14} /> {read.note}
-              </p>
-            )}
-          </div>
-        }
-        initial={groupsFromDrafts(read.rows)}
-        source="report"
-        today={today}
-        onSaved={onSaved}
-        onCancel={onCancel}
-      />
-    );
-  }
-
-  return (
-    <section className="card labs-import" aria-labelledby="labs-import-title">
-      <div className="card-title-row">
-        <h2 id="labs-import-title" tabIndex={-1} ref={heading}>
-          Import a report
-        </h2>
-        <button className="btn btn-quiet" onClick={onCancel} disabled={busy}>
-          Cancel
-        </button>
-      </div>
-      <ul className="labs-import-notes">
-        <li>Choose a PDF, or a photo or screenshot of your lab report, up to 4 MB. Photos are made smaller on this device first.</li>
-        <li>
-          It's sent to <strong>Claude, Anthropic's AI</strong>, to read the results. healthOS doesn't keep the file.
-        </li>
-        <li>
-          Reading a report counts as one of your Ask McFly questions today{left !== null && ` (you have ${left} left)`}.
-        </li>
-        <li>You check every row before anything is saved.</li>
-      </ul>
-      {!configured ? (
-        <p className="note-bad">Reading reports isn't set up on this server yet. You can still type results in.</p>
-      ) : (
-        off && <p className="note-bad">Reading reports uses Ask McFly, which is turned off right now. You can still type results in.</p>
-      )}
-      <div className="btn-row">
-        <button ref={choose} className="btn btn-primary" disabled={busy || !configured || off || left === 0} onClick={() => input.current?.click()}>
-          <Icon name="upload" size={15} />
-          Choose a file
-        </button>
-      </div>
-      <input ref={input} type="file" accept={REPORT_ACCEPT} hidden onChange={(e) => e.target.files?.[0] && pick(e.target.files[0])} />
-      <p className="muted small labs-progress" aria-live="polite">
-        {phase === 'preparing' ? 'Preparing your file…' : phase === 'reading' ? 'Claude is reading your report. This can take up to a minute…' : left === 0 ? "You've used today's Ask McFly questions. Try again tomorrow, or type the results in." : ''}
-      </p>
-      {err && (
-        <p className="note-bad" role="alert">
-          <Icon name="alert" size={15} /> {err}
-        </p>
-      )}
-    </section>
-  );
 }

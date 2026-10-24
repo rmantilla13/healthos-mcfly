@@ -25,8 +25,8 @@ export type JournalEntry = {
   updatedAt: number;
 };
 
-/** GET /api/journal?days=: newest first. */
-export type JournalData = { today: string; entries: JournalEntry[] };
+/** GET /api/journal?days=: newest first. older: there are check-ins from before those days (missing from older servers). */
+export type JournalData = { today: string; entries: JournalEntry[]; older?: boolean };
 
 /** POST /api/journal and PATCH /api/journal/:id. date and time default to now in the person's time zone. */
 export type JournalInput = { text: string; mood?: Mood | null; date?: string; time?: string };
