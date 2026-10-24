@@ -4,6 +4,7 @@ import { BarChart, ChartCard, Legend, TrendChart, type StackSeries } from '../ch
 import { DayChart } from '../charts/Day.tsx';
 import { cumulative, drawThrough, extent, hourLabel, hourSpan, lastReading } from '../charts/day.ts';
 import { Icon } from '../components/Icon.tsx';
+import { ManageSources, PageIntro } from '../components/PageIntro.tsx';
 import { compact, distance, duration, fmt, fmtDate, mass, relativeDay, shiftDate, temp, useApi, useUnits } from '../lib.ts';
 
 export const RANGES = [
@@ -38,45 +39,43 @@ function sessionStorageGet(key: string) {
   }
 }
 
-/** The page's title, its tools (a date or a range), and the page's tabs under it when it has them. */
-export function PageHead({
-  title,
-  sub,
+/** The range picker (7 days to a year, and Day once hourly data exists). */
+export function RangeFilters({ days, setDays, ranges = RANGES }: { days?: number; setDays: (d: number) => void; ranges?: { days: number; label: string }[] }) {
+  return (
+    <div className="filters" role="group" aria-label="Date range">
+      {ranges.map((r) => (
+        <button key={r.days} className={days === r.days ? 'on' : ''} aria-pressed={days === r.days} onClick={() => setDays(r.days)}>
+          {r.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * What goes in a PageIntro's slot on the health pages: the page's tabs, and its tools (a day picker, a range) on the
+ * right, in a row that keeps its height whichever a tab has (.page-head-tools' min-height).
+ */
+export function IntroTools({
+  tabs,
+  tools,
   days,
   setDays,
   ranges = RANGES,
-  tools,
-  tabs,
 }: {
-  title: string;
-  sub: string;
+  tabs?: ReactNode;
+  tools?: ReactNode;
   days?: number;
   setDays?: (d: number) => void;
   ranges?: { days: number; label: string }[];
-  tools?: ReactNode;
-  tabs?: ReactNode;
 }) {
   return (
     <>
-      <header className="page-head">
-        <div>
-          <h1>{title}</h1>
-          <p>{sub}</p>
-        </div>
-        <div className="page-head-tools">
-          {tools}
-          {setDays && (
-            <div className="filters" role="group" aria-label="Date range">
-              {ranges.map((r) => (
-                <button key={r.days} className={days === r.days ? 'on' : ''} aria-pressed={days === r.days} onClick={() => setDays(r.days)}>
-                  {r.label}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </header>
       {tabs}
+      <div className="page-head-tools">
+        {tools}
+        {setDays && <RangeFilters days={days} setDays={setDays} ranges={ranges} />}
+      </div>
     </>
   );
 }
@@ -275,17 +274,23 @@ export function Vitals() {
   const has = (m: string) => (t[m]?.length ?? 0) > 0;
   const tf = (c: number) => `${fmt(temp(c, units).value, 1)} ${temp(c, units).unit}`;
   const d = day.mode === 'day' ? day.data : undefined;
+  // How many of the five signals have a reading in this range (HRV counts once, from either measure).
+  const signals = data ? ['resting_hr', 'spo2', 'recovery', 'resp_rate'].filter(has).length + (has('hrv_rmssd') || has('hrv_sdnn') ? 1 : 0) : null;
 
   return (
     <div className={`page page-wide ${loading || (day.mode !== 'range' && day.loading) ? 'is-refreshing' : ''}`}>
-      <PageHead
-        title="Vitals"
-        sub="Overnight readings from WHOOP and Apple Watch."
-        days={day.mode === 'range' ? days : DAY}
-        setDays={setRange}
-        ranges={day.available ? [DAY_RANGE, ...RANGES] : RANGES}
-        tools={d && <DayNav today={d.today} date={day.date} setDate={day.setDate} />}
-      />
+      <PageIntro
+        title="A closer look at your signals."
+        sub={signals === null ? 'Overnight readings from your connected sources.' : `${signals} available measurement${signals === 1 ? '' : 's'} from your connected sources.`}
+        actions={<ManageSources />}
+      >
+        <IntroTools
+          days={day.mode === 'range' ? days : DAY}
+          setDays={setRange}
+          ranges={day.available ? [DAY_RANGE, ...RANGES] : RANGES}
+          tools={d && <DayNav today={d.today} date={day.date} setDate={day.setDate} />}
+        />
+      </PageIntro>
       {d && (
         <div className="grid-1">
           {d.metrics.heart_rate && (
@@ -325,7 +330,7 @@ export const STAGES: StackSeries[] = [
 // ---------- Activity ----------
 
 /** Steps, energy, strain and workouts. The Body page shows it as its Activity tab, under its own title and tabs. */
-export function Activity({ stepGoal, title = 'Activity', sub = 'Movement from your iPhone and Apple Watch, strain from WHOOP.', tabs }: { stepGoal: number; title?: string; sub?: string; tabs?: ReactNode }) {
+export function Activity({ stepGoal, title, sub = 'Movement from your iPhone and Apple Watch, strain from WHOOP.', tabs }: { stepGoal: number; title?: string; sub?: string; tabs?: ReactNode }) {
   const [range, setRange] = useRange();
   const days = range === DAY ? 30 : range;
   const day = useDay(range, 'steps,active_energy');
@@ -340,15 +345,15 @@ export function Activity({ stepGoal, title = 'Activity', sub = 'Movement from yo
 
   return (
     <div className={`page page-wide ${loading || (day.mode !== 'range' && day.loading) ? 'is-refreshing' : ''}`}>
-      <PageHead
-        title={title}
-        sub={sub}
-        tabs={tabs}
-        days={inRange ? days : DAY}
-        setDays={setRange}
-        ranges={day.available ? [DAY_RANGE, ...RANGES] : RANGES}
-        tools={d && <DayNav today={d.today} date={day.date} setDate={day.setDate} />}
-      />
+      <PageIntro title={title} sub={sub}>
+        <IntroTools
+          tabs={tabs}
+          days={inRange ? days : DAY}
+          setDays={setRange}
+          ranges={day.available ? [DAY_RANGE, ...RANGES] : RANGES}
+          tools={d && <DayNav today={d.today} date={day.date} setDate={day.setDate} />}
+        />
+      </PageIntro>
       {d && (
         <div className="grid-2">
           {d.metrics.steps && (
@@ -447,7 +452,7 @@ export function Activity({ stepGoal, title = 'Activity', sub = 'Movement from yo
 // ---------- Body ----------
 
 /** Weight and composition: the Body page's Metabolism tab. */
-export function Metabolism({ tabs }: { tabs?: ReactNode }) {
+export function Metabolism({ tabs, title, sub = 'Weight and composition from Apple Health; cardio fitness from Apple Watch.' }: { tabs?: ReactNode; title?: string; sub?: string }) {
   const [range, setDays] = useRange();
   const days = range === DAY ? 30 : range;
   const units = useUnits();
@@ -457,7 +462,9 @@ export function Metabolism({ tabs }: { tabs?: ReactNode }) {
 
   return (
     <div className={`page page-wide ${loading ? 'is-refreshing' : ''}`}>
-      <PageHead title="Body" sub="Weight and composition from Apple Health; cardio fitness from Apple Watch." days={days} setDays={setDays} tabs={tabs} />
+      <PageIntro title={title} sub={sub}>
+        <IntroTools tabs={tabs} days={days} setDays={setDays} />
+      </PageIntro>
       <div className="grid-2">
         <Trend title="Weight" points={t.weight ?? []} format={mf} tickFormat={(v) => fmt(mass(v, units).value)} />
         <Trend title="Body fat" points={t.body_fat ?? []} format={(v) => `${fmt(v, 1)}%`} tickFormat={(v) => fmt(v)} color="var(--series-2)" />

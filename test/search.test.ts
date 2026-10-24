@@ -10,7 +10,7 @@ const flat = (q: string, a: SearchAccess = ALL) => rank(q, searchItems(a)).flatM
 
 test('the catalogue offers only what this person can open', () => {
   const base = ids(EVERYONE);
-  for (const id of ['page.home', 'page.vitals', 'page.body', 'page.sleep', 'page.nutrition', 'page.labs', 'page.mcfly', 'page.integrations', 'page.settings'])
+  for (const id of ['page.home', 'page.vitals', 'page.body', 'page.sleep', 'page.nutrition', 'page.journal', 'page.labs', 'page.mcfly', 'page.integrations', 'page.profile'])
     assert.ok(base.includes(id), id);
   // Cycle only with cycle tracking on, Family only with sign-in and sharing, Admin only for admins.
   for (const id of ['page.cycle', 'metric.cycle', 'page.family', 'page.admin']) assert.ok(!base.includes(id), id);

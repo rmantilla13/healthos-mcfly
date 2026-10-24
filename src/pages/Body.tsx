@@ -13,7 +13,8 @@ import { WorkoutCard } from '../components/body/WorkoutCard.tsx';
 import { Icon, type IconName } from '../components/Icon.tsx';
 import { MetricSheetLink } from '../components/MetricSheet.tsx';
 import { compact, fmt, fmtDate, shiftDate, temp, useApi, useUnits } from '../lib.ts';
-import { Activity, DAY, DayNav, Metabolism, PageHead, Tabs, Trend, useRange } from './Detail.tsx';
+import { Activity, DAY, DayNav, IntroTools, Metabolism, Tabs, Trend, useRange } from './Detail.tsx';
+import { PageIntro } from '../components/PageIntro.tsx';
 import { CardHead, Stale, signed } from './Home.tsx';
 
 const TABS = [
@@ -26,14 +27,15 @@ const TABS = [
   { id: 'metabolism', label: 'Metabolism' },
 ];
 export const bodyHref = (id: string) => (id === 'overview' ? '#/body' : `#/body?tab=${id}`);
-const TITLE = 'Body';
-const SUB = 'Your heart, recovery, strain and movement, from WHOOP and Apple Watch.';
+// The intro on every tab, so switching tabs never moves it (the page's title, Body, is in the shell's header).
+const TITLE = 'Your body, in perspective.';
+const SUB = 'Measurements you add. Progress you can see.';
 
 export function Body({ params, stepGoal, date, setDate }: { params: URLSearchParams; stepGoal: number; date: string | null; setDate: (d: string | null) => void }) {
   const tab = TABS.some((t) => t.id === params.get('tab')) ? params.get('tab')! : 'overview';
   const tabs = <Tabs tabs={TABS} current={tab} hrefOf={bodyHref} label="Body" />;
   if (tab === 'activity') return <Activity stepGoal={stepGoal} title={TITLE} sub={SUB} tabs={tabs} />;
-  if (tab === 'metabolism') return <Metabolism tabs={tabs} />;
+  if (tab === 'metabolism') return <Metabolism tabs={tabs} title={TITLE} sub={SUB} />;
   const spec = TREND_TABS[tab];
   if (spec) return <TrendTab key={tab} tabs={tabs} specs={spec} />;
   return <Overview tabs={tabs} date={date} setDate={setDate} />;
@@ -58,7 +60,9 @@ function Overview({ tabs, date, setDate }: { tabs: ReactNode; date: string | nul
 
   return (
     <div className={`page page-wide ${loading ? 'is-refreshing' : ''}`}>
-      <PageHead title={TITLE} sub={SUB} tabs={tabs} tools={<DayNav today={s.today} date={date} setDate={setDate} label={label} />} />
+      <PageIntro title={TITLE} sub={SUB}>
+        <IntroTools tabs={tabs} tools={<DayNav today={s.today} date={date} setDate={setDate} label={label} />} />
+      </PageIntro>
       <CardRow
         className="cards cards-4"
         fill={{ wide: 4, mid: 3, small: 2 }}
@@ -502,7 +506,9 @@ function TrendTab({ tabs, specs }: { tabs: ReactNode; specs: Spec[] }) {
   const shown = specs.filter((x) => x.always || (t[x.key]?.length ?? 0) > 0);
   return (
     <div className={`page page-wide ${loading ? 'is-refreshing' : ''}`}>
-      <PageHead title={TITLE} sub={SUB} tabs={tabs} days={days} setDays={setDays} />
+      <PageIntro title={TITLE} sub={SUB}>
+        <IntroTools tabs={tabs} days={days} setDays={setDays} />
+      </PageIntro>
       {data && shown.length === 0 && (
         <section className="card">
           <p className="muted">Nothing recorded in this range.</p>

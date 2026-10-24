@@ -1,5 +1,5 @@
 import { type KeyboardEvent, type PointerEvent, type ReactNode, useEffect, useRef, useState } from 'react';
-import type { DayData, Insight, NutritionNumbers, PhotoMeta, Summary, TimelineEvent, WeekSummary } from '../../shared/types.ts';
+import type { DayData, FigureVariant, Insight, NutritionNumbers, Perspective, PhotoMeta, Summary, TimelineEvent, WeekSummary } from '../../shared/types.ts';
 import { Gauge, MiniBars, MiniDots, MiniLine, RangeScale } from '../charts/Mini.tsx';
 import { clockOf, DAY_MINUTES, eventSpan, type HeartAt, hourClock, type Moment, momentAt, pressMinute, scrubMax, stepMinute, type TotalAt } from '../charts/scrub.ts';
 import type { MetricKey, MetricRange } from '../../shared/metrics.ts';
@@ -8,19 +8,24 @@ import { Figure, type HeartScrub } from '../components/Figure.tsx';
 import { Icon, type IconName } from '../components/Icon.tsx';
 import { MetricSheetLink } from '../components/MetricSheet.tsx';
 import { NutritionCard } from './Nutrition.tsx';
-import { clock, compact, duration, fmt, fmtDate, hoursMinutes, href, relativeDay, shiftDate, useApi } from '../lib.ts';
+import { clock, compact, duration, fmt, fmtDate, hoursMinutes, href, relativeDay, useApi } from '../lib.ts';
 
 export function Home({
   date,
-  onDate,
+  onDate: _onDate,
   photo,
   nutrition = null,
+  perspective = 'portrait',
+  figure = 'man',
 }: {
+  /** The day shown (null is today); the shell's header picks it (previous and next beside the date). */
   date: string | null;
   onDate: (d: string | null) => void;
   photo: PhotoMeta | null;
   /** What the person chose to see of Nutrition, or null while it's off. */
   nutrition?: NutritionNumbers | null;
+  perspective?: Perspective;
+  figure?: FigureVariant;
 }) {
   const { data, error, loading } = useApi<Summary>(`/summary${date ? `?date=${date}` : ''}`);
   const allHidden = useAllHidden('home');
@@ -29,25 +34,28 @@ export function Home({
   if (error && !data) return <div className="page-message">Couldn't load your data: {error.message}</div>;
   if (!data) return <div className="page-message">Loading…</div>;
   const s = data;
-  const isToday = s.date === s.today;
 
+  // The greeting, the day and the avatar are in the shell's header (ShellHeader, TopBar).
   return (
-    <div className={`home ${loading ? 'is-refreshing' : ''}`}>
+    <div className={`home ${loading ? 'is-refreshing' : ''}${perspective === 'stats' ? ' is-stats' : ''}`}>
       <div className="home-left">
-        <header className="greeting">
-          <p className="greeting-hello">Hello,</p>
-          <h1>{s.name || 'there'}.</h1>
-          <p className="greeting-sub">{isToday ? "Here's your health today." : `Here's your health on ${fmtDate(s.date, { weekday: 'long', month: 'long', day: 'numeric' })}.`}</p>
-        </header>
-        <Figure vitals={s.vitals} asOf={s.date} photo={photo} heartScrub={s.timeline.date === s.date ? heartScrub : null} />
+        <Figure
+          vitals={s.vitals}
+          asOf={s.date}
+          photo={photo}
+          heartScrub={s.timeline.date === s.date ? heartScrub : null}
+          perspective={perspective}
+          figure={figure}
+          callouts={['spo2', 'breathing', 'heart']}
+        />
         <div className="figure-caption">
           {s.week ? (
             <WeekSummaryText week={s.week} stepGoal={s.stepGoal} />
           ) : (
             <p className="week-summary">Vitals from your latest night, compared with your own last 30 days.</p>
           )}
-          {!photo && (
-            <a className="pill pill-photo" href={href('settings')}>
+          {!photo && perspective === 'portrait' && (
+            <a className="pill pill-photo" href={href('profile')}>
               Add your photo
             </a>
           )}
@@ -55,26 +63,6 @@ export function Home({
       </div>
 
       <div className="home-right">
-        <div className="topbar">
-          {s.demo && (
-            <a className="pill pill-demo" href={href('integrations')}>
-              Demo data · Connect yours
-            </a>
-          )}
-          <div className="date-nav">
-            <span>{fmtDate(s.date, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</span>
-            <button className="icon-btn" onClick={() => onDate(shiftDate(s.date, -1))} aria-label="Previous day">
-              <Icon name="chevron-left" size={16} />
-            </button>
-            <button className="icon-btn" onClick={() => onDate(shiftDate(s.date, 1) >= s.today ? null : shiftDate(s.date, 1))} disabled={isToday} aria-label="Next day">
-              <Icon name="chevron-right" size={16} />
-            </button>
-          </div>
-          <a className="avatar" href={href('settings')} aria-label="Settings">
-            {photo ? <img src={`/api/profile/avatar.png?v=${photo.version}`} alt="" /> : (s.name || '·').slice(0, 1).toUpperCase()}
-          </a>
-        </div>
-
         <CardRow
           className="cards"
           fill={{ wide: 3, mid: 2 }}

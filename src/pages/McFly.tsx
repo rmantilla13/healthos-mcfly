@@ -4,6 +4,7 @@ import { Fragment, useEffect, useRef, useState } from 'react';
 import type { McflyStatus, McflyTurn, McflyVisual as Visual, SessionUser } from '../../shared/types.ts';
 import { Icon } from '../components/Icon.tsx';
 import { McflyVisual, visualNote } from '../components/McflyVisual.tsx';
+import { PageIntro } from '../components/PageIntro.tsx';
 import { useMcflyDraft } from '../components/Search.tsx';
 import { ShinyText } from '../components/ShinyText.tsx';
 import { useApi } from '../lib.ts';
@@ -169,24 +170,24 @@ export function McFly({ me }: { me: SessionUser }) {
 
   return (
     <div className="page mcfly">
-      <header className="page-head">
-        <div>
-          <h1>Ask McFly</h1>
-          <p>Questions about your own sleep, recovery, heart and activity. McFly reads your data to answer. It isn't a doctor.</p>
-        </div>
-        {msgs.length > 0 && (
-          <button
-            className="btn"
-            disabled={busy}
-            onClick={() => {
-              setMsgs([]);
-              input.current?.focus();
-            }}
-          >
-            New chat
-          </button>
-        )}
-      </header>
+      <PageIntro
+        sub="Questions about your own sleep, recovery, heart and activity. McFly reads your data to answer. It isn't a doctor."
+        actions={
+          msgs.length > 0 && (
+            <button
+              className="btn"
+              disabled={busy}
+              onClick={() => {
+                setMsgs([]);
+                input.current?.focus();
+              }}
+            >
+              <Icon name="plus" size={15} />
+              New chat
+            </button>
+          )
+        }
+      />
 
       {unavailable ? (
         <section className="card">

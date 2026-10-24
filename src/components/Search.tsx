@@ -1,5 +1,5 @@
-// ⌘K: search pages, tabs, metrics and a few actions from anywhere. ⌘K on a Mac, Ctrl+K elsewhere, or the Search
-// button; not while you're typing in a field. A dialog with a combobox and its listbox of results (the ARIA
+// ⌘K: search pages, tabs, metrics and a few actions from anywhere. ⌘K on a Mac, Ctrl+K elsewhere, or the search
+// button in the shell's top bar (openSearch); not while you're typing in a field. A dialog with a combobox and its listbox of results (the ARIA
 // combobox pattern): arrow keys move, Enter opens, Escape closes and focus goes back where it was. The catalogue
 // and its ranking live in shared/search.ts. What's typed stays on the page: it never goes into the address.
 import { type KeyboardEvent as ReactKeyboardEvent, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
@@ -9,33 +9,11 @@ import type { AuthMe, Status } from '../../shared/types.ts';
 import { useApi } from '../lib.ts';
 import { Icon, type IconName } from './Icon.tsx';
 
-/** The Search button and the palette mount in different places; this event joins them. */
+/** The search buttons and the palette mount in different places; this event joins them. */
 const OPEN_EVENT = 'healthos:search';
 export const openSearch = () => window.dispatchEvent(new Event(OPEN_EVENT));
 
 const isMac = () => typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent);
-
-/**
- * A sidebar item that opens the palette. On a phone's top bar its label hides, as the other items' do, so the
- * button carries its name itself.
- */
-export function SearchButton() {
-  const mac = useMemo(isMac, []);
-  return (
-    <button
-      type="button"
-      className="nav-item search-button"
-      onClick={openSearch}
-      aria-label="Search"
-      aria-haspopup="dialog"
-      aria-keyshortcuts={mac ? 'Meta+K' : 'Control+K'}
-    >
-      <Icon name="search" />
-      <span>Search</span>
-      <kbd aria-hidden="true">{mac ? '⌘K' : 'Ctrl K'}</kbd>
-    </button>
-  );
-}
 
 /**
  * Listens for the shortcut and the button, and shows the palette. Renders nothing while closed (it sits in the
@@ -129,11 +107,12 @@ const PAGE_ICON: Record<string, IconName> = {
   'page.cycle': 'cycle',
   'page.sleep': 'sleep',
   'page.nutrition': 'nutrition',
-  'page.labs': 'labs',
-  'page.mcfly': 'spark',
-  'page.integrations': 'integrations',
-  'page.settings': 'settings',
-  'page.admin': 'shield',
+  'page.journal': 'journal',
+  'page.labs': 'records',
+  'page.mcfly': 'message-square-text',
+  'page.integrations': 'link',
+  'page.profile': 'person-standing',
+  'page.admin': 'users',
 };
 
 function iconOf(it: SearchItem): IconName {

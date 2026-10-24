@@ -46,7 +46,7 @@ const sleep = (tab: string) => `#/sleep?tab=${tab}`;
 const nutrition = (tab: string) => `#/nutrition?tab=${tab}`;
 
 const CATALOGUE: SearchItem[] = [
-  // ---------- pages, in the sidebar's order ----------
+  // ---------- pages, in the sidebar's order, then the account menu's ----------
   { id: 'page.home', group: 'pages', label: 'Home', to: '#/', keywords: ['today', 'dashboard', 'overview', 'timeline'] },
   { id: 'page.family', group: 'pages', label: 'Family', to: '#/family', keywords: ['family board', 'members', 'shared'], needs: 'family' },
   { id: 'page.vitals', group: 'pages', label: 'Vitals', to: '#/vitals', keywords: ['heart', 'vital signs'] },
@@ -54,10 +54,13 @@ const CATALOGUE: SearchItem[] = [
   { id: 'page.cycle', group: 'pages', label: 'Cycle', to: '#/cycle', keywords: ['period', 'menstrual', 'cycle tracking'], needs: 'cycle' },
   { id: 'page.sleep', group: 'pages', label: 'Sleep', to: '#/sleep', keywords: ['night', 'bed', 'rest'] },
   { id: 'page.nutrition', group: 'pages', label: 'Nutrition', to: '#/nutrition', keywords: ['food', 'diet', 'meals', 'eating'] },
-  { id: 'page.labs', group: 'pages', label: 'Lab tests', to: '#/labs', keywords: ['labs', 'blood test', 'blood work', 'bloodwork', 'panel', 'results'] },
+  { id: 'page.journal', group: 'pages', label: 'Journal', to: '#/journal', keywords: ['health journal', 'check-in', 'diary', 'notes', 'feelings', 'mood'] },
+  { id: 'page.labs', group: 'pages', label: 'Blood records', to: '#/labs', keywords: ['lab tests', 'labs', 'blood test', 'blood work', 'bloodwork', 'panel', 'results', 'reports'] },
+  // Reached from Home's pill and here; not in the sidebar.
   { id: 'page.mcfly', group: 'pages', label: 'Ask McFly', to: '#/mcfly', keywords: ['mcfly', 'chat', 'assistant', 'ai', 'question'] },
+  // In the account menu, like Profile and Privacy & data.
   { id: 'page.integrations', group: 'pages', label: 'Integrations', to: '#/integrations', keywords: ['connect', 'whoop', 'apple health', 'iphone app', 'import', 'sync', 'sources'] },
-  { id: 'page.settings', group: 'pages', label: 'Settings', to: '#/settings', keywords: ['preferences', 'account', 'units', 'cards', 'profile'] },
+  { id: 'page.profile', group: 'pages', label: 'Profile', to: '#/profile', keywords: ['settings', 'preferences', 'account', 'units', 'cards', 'photo', 'sign out'] },
   { id: 'page.admin', group: 'pages', label: 'Admin', to: '#/admin', keywords: ['people', 'users', 'invite', 'accounts'], needs: 'admin' },
 
   // ---------- tabs ----------
@@ -96,7 +99,7 @@ const CATALOGUE: SearchItem[] = [
   { id: 'metric.lean', group: 'metrics', label: 'Lean body mass', hint: 'Body · Metabolism', to: body('metabolism'), keywords: ['lean mass', 'muscle', 'body composition'] },
   { id: 'metric.vo2', group: 'metrics', label: 'VO₂ max', hint: 'Body · Cardiovascular', to: body('cardiovascular'), keywords: ['cardio fitness', 'vo2max', 'aerobic fitness'] },
   { id: 'metric.glucose', group: 'metrics', label: 'Glucose', hint: 'Body', to: '#/body', keywords: ['blood glucose', 'blood sugar', 'sugar', 'cgm'] },
-  { id: 'metric.labs', group: 'metrics', label: 'Lab results', hint: 'Lab tests', to: '#/labs', keywords: ['lab tests', 'biomarkers', 'cholesterol', 'blood test', 'bloodwork', 'panel'] },
+  { id: 'metric.labs', group: 'metrics', label: 'Blood results', hint: 'Blood records', to: '#/labs', keywords: ['lab results', 'lab tests', 'biomarkers', 'cholesterol', 'blood test', 'bloodwork', 'panel'] },
   { id: 'metric.cycle', group: 'metrics', label: 'Period and cycle', hint: 'Cycle', to: '#/cycle', keywords: ['period', 'menstruation', 'ovulation', 'fertile window'], needs: 'cycle' },
   { id: 'metric.food', group: 'metrics', label: 'Food logged', hint: 'Nutrition', to: '#/nutrition', keywords: ['calories eaten', 'meals', 'food'], needs: 'nutrition' },
   { id: 'metric.protein', group: 'metrics', label: 'Protein', hint: 'Nutrition · Macros', to: nutrition('macros'), keywords: ['macros', 'carbs', 'carbohydrates', 'fat eaten'], needs: 'amounts' },
@@ -104,10 +107,10 @@ const CATALOGUE: SearchItem[] = [
 
   // ---------- actions ----------
   { id: 'action.mcfly', group: 'actions', label: 'Ask McFly a question', to: '#/mcfly', keywords: ['ask', 'chat', 'question', 'mcfly'] },
-  { id: 'action.labs', group: 'actions', label: 'Add lab results', to: '#/labs', keywords: ['upload', 'lab tests', 'blood test', 'new results'] },
+  { id: 'action.labs', group: 'actions', label: 'Add a blood result', to: '#/labs', keywords: ['upload', 'report', 'lab results', 'lab tests', 'blood test', 'new results'] },
   { id: 'action.connect', group: 'actions', label: 'Connect WHOOP or Apple Health', to: '#/integrations', keywords: ['connect', 'sync', 'import', 'iphone app'] },
-  { id: 'action.cards', group: 'actions', label: 'Choose which cards show', to: '#/settings', keywords: ['hide cards', 'show cards', 'layout', 'cards'] },
-  { id: 'action.units', group: 'actions', label: 'Change units', to: '#/settings', keywords: ['metric', 'imperial', 'kilometres', 'miles', 'pounds'] },
+  { id: 'action.cards', group: 'actions', label: 'Choose which cards show', to: '#/profile', keywords: ['edit widgets', 'widgets', 'hide cards', 'show cards', 'layout', 'cards'] },
+  { id: 'action.units', group: 'actions', label: 'Change units', to: '#/profile', keywords: ['metric', 'imperial', 'kilometres', 'miles', 'pounds'] },
 ];
 
 /** The catalogue minus what this person can't open: Cycle without cycle tracking, Admin for others, and so on. */

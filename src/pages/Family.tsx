@@ -4,6 +4,7 @@ import { BarChart, ChartCard, TrendChart } from '../charts/Charts.tsx';
 import { MiniBars, MiniLine } from '../charts/Mini.tsx';
 import { hourLabel } from '../charts/day.ts';
 import { Icon, type IconName } from '../components/Icon.tsx';
+import { PageIntro } from '../components/PageIntro.tsx';
 import { compact, daysBetween, fmt, fmtDate, hoursMinutes, href, notifyDataChanged, sendJson, useApi } from '../lib.ts';
 
 /** Other people's changes don't move your data version, so the board re-reads itself while it's open. */
@@ -29,10 +30,7 @@ export function Family({ isAdmin, refreshStatus, params }: { isAdmin: boolean; r
   const others = data.members.filter((m) => !m.isYou);
   return (
     <div className="page family">
-      <header className="greeting family-greeting">
-        <h1>Your family, today.</h1>
-        <p className="greeting-sub">{groupLine(data.members) || 'Each person against their own last 30 days.'}</p>
-      </header>
+      <PageIntro title="Your family, today." sub={groupLine(data.members) || 'Each person against their own last 30 days.'} />
       <div className="family-grid">
         {data.members.map((m) => (
           <Tile key={m.id} m={m} boardToday={data.today} />
@@ -50,7 +48,7 @@ export function Family({ isAdmin, refreshStatus, params }: { isAdmin: boolean; r
       </div>
       <p className="muted small family-foot">
         Statuses compare each person with their own last 30 days. They're a nudge to check in, not medical advice. Change what you share in{' '}
-        <a href={href('settings')}>Settings</a>.
+        <a href={href('profile')}>your Profile</a>.
       </p>
     </div>
   );
@@ -222,7 +220,7 @@ function MemberPage({ m, boardToday }: { m: FamilyMember; boardToday: string }) 
         <Avatar m={m} />
         <div className="family-who">
           <div className="family-name">
-            <h1>{m.isYou ? `${m.name} (you)` : m.name}</h1>
+            <h2>{m.isYou ? `${m.name} (you)` : m.name}</h2>
             {m.cyclePhase && <span className="chip tone-pink">{PHASE[m.cyclePhase]}</span>}
             {m.demo && <span className="pill pill-demo">Demo data</span>}
           </div>
@@ -363,9 +361,6 @@ function SharingOff({ onOn }: { onOn: () => void }) {
   const [busy, setBusy] = useState(false);
   return (
     <div className="page family">
-      <header className="greeting family-greeting">
-        <h1>Family</h1>
-      </header>
       <section className="card family-empty">
         <p>Family is off: you don't see anyone, and nobody sees you.</p>
         <button

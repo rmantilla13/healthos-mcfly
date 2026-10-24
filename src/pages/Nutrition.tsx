@@ -10,7 +10,8 @@ import { DayBars, GlassBars } from '../charts/DayBars.tsx';
 import { Donut } from '../charts/Donut.tsx';
 import { AllHiddenNote, CardRow } from '../components/CardRow.tsx';
 import { Icon, type IconName } from '../components/Icon.tsx';
-import { PageHead, RANGES, Tabs } from './Detail.tsx';
+import { IntroTools, RANGES, Tabs } from './Detail.tsx';
+import { PageIntro } from '../components/PageIntro.tsx';
 import { FoodLogTab } from './FoodLog.tsx';
 import { fmt, fmtDate, href, notifyDataChanged, relativeDay, sendJson, shiftDate, useApi, useCardShown, useCardsKnown } from '../lib.ts';
 
@@ -73,14 +74,14 @@ export function Nutrition({ status, params, refresh }: { status: Status; params:
   const ranged = current === 'macros' || current === 'hydration';
   return (
     <div className="page page-wide nutrition-page">
-      <PageHead
-        title="Nutrition"
-        sub="What you log here or in your food app. Only you can see it."
-        tabs={<Tabs tabs={tabs} current={current} hrefOf={tabHref} label="Nutrition" center />}
-        days={ranged ? days : undefined}
-        setDays={ranged ? setDays : undefined}
-        ranges={RANGES.filter((r) => r.days <= 90)}
-      />
+      <PageIntro sub="What you log here or in your food app. Only you can see it.">
+        <IntroTools
+          tabs={<Tabs tabs={tabs} current={current} hrefOf={tabHref} label="Nutrition" center />}
+          days={ranged ? days : undefined}
+          setDays={ranged ? setDays : undefined}
+          ranges={RANGES.filter((r) => r.days <= 90)}
+        />
+      </PageIntro>
       {current === 'overview' && <Overview status={status} />}
       {current === 'log' && <FoodLogTab status={status} />}
       {current === 'macros' && <Macros days={days} hosted={status.hosted} numbers={numbers} />}
@@ -114,13 +115,7 @@ function NutritionIntro({ refresh }: { refresh: () => void }) {
   }
   return (
     <div className="page page-wide nutrition-page">
-      {/* No tabs here, so no PageHead: its tools row keeps a fixed height for pages that switch tabs. */}
-      <header className="page-head">
-        <div>
-          <h1>Nutrition</h1>
-          <p>What you eat, next to how you sleep and recover. Off until you turn it on.</p>
-        </div>
-      </header>
+      <PageIntro sub="What you eat, next to how you sleep and recover. Off until you turn it on." />
       <div className="split split-even">
         <section className="card nutrition-intro">
           <h2>What it shows</h2>
@@ -276,7 +271,7 @@ function Overview({ status }: { status: Status }) {
                 <h2>{latest ? relativeDay(latest.date, data.today) : 'Nothing logged lately'}</h2>
                 <p className="muted">
                   {latest ? `You logged food ${latest.app === 'healthOS' ? 'here' : `in ${latest.app}`}.` : ''} You chose to see no amounts, so this shows only the days you logged, and the Log tab what you logged. Change it in{' '}
-                  <a href={href('settings')}>Settings</a>.
+                  <a href={href('profile')}>your Profile</a>.
                 </p>
               </section>,
             ],
@@ -285,7 +280,7 @@ function Overview({ status }: { status: Status }) {
       </div>
     );
   }
-  // Rows lay out from the cards left after the ones the person hid (Settings → Cards), like Home, Sleep and Body.
+  // Rows lay out from the cards left after the ones the person hid (Profile → Cards), like Home, Sleep and Body.
   const cards: [string, ReactNode][] = [
     ...(numbers === 'all' ? ([['nutrition.energy', <EnergyCard week={series('energy_kcal', week)} target={data.targets.energy_kcal} today={data.today} />]] as [string, ReactNode][]) : []),
     ['nutrition.protein', <ProteinCard week={series('protein_g', week)} before={series('protein_g', before)} target={data.targets.protein_g} today={data.today} />],

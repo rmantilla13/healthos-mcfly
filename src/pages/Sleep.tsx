@@ -9,7 +9,8 @@ import { AllHiddenNote, CardRow, useAllHidden } from '../components/CardRow.tsx'
 import { Figure } from '../components/Figure.tsx';
 import { Icon, type IconName } from '../components/Icon.tsx';
 import { clock, daysBetween, fmt, fmtDate, hoursMinutes, useApi, useCardShown } from '../lib.ts';
-import { DAY, DayNav, PageHead, STAGES, Tabs, Trend, avg, useRange, weekLabel, weekly } from './Detail.tsx';
+import { DAY, DayNav, IntroTools, STAGES, Tabs, Trend, avg, useRange, weekLabel, weekly } from './Detail.tsx';
+import { ManageSources, PageIntro } from '../components/PageIntro.tsx';
 import { CardHead, INSIGHT_TONE } from './Home.tsx';
 
 const TABS = [
@@ -19,6 +20,8 @@ const TABS = [
   { id: 'coaching', label: 'Coaching' },
 ];
 const tabHref = (id: string) => (id === 'overview' ? '#/sleep' : `#/sleep?tab=${id}`);
+// The intro on every tab (the page's title, Sleep, is in the shell's header).
+const TITLE = 'Your night, in perspective.';
 const SUB = 'Understand and improve your rest. Each night counts on the day you wake up.';
 
 export function Sleep({ params, photo, date, setDate }: { params: URLSearchParams; photo: PhotoMeta | null; date: string | null; setDate: (d: string | null) => void }) {
@@ -47,7 +50,9 @@ function Overview({ tabs, photo, date, setDate }: { tabs: ReactNode; photo: Phot
 
   return (
     <div className={`page page-wide ${loading ? 'is-refreshing' : ''}`}>
-      <PageHead title="Sleep" sub={SUB} tabs={tabs} tools={<DayNav today={night.today} date={date} setDate={setDate} label={nightLabel} />} />
+      <PageIntro title={TITLE} sub={SUB} actions={<ManageSources />}>
+        <IntroTools tabs={tabs} tools={<DayNav today={night.today} date={date} setDate={setDate} label={nightLabel} />} />
+      </PageIntro>
       <div className={s ? 'night-layout has-hero' : 'night-layout'}>
         {s && (
           <div className="page-hero">
@@ -345,7 +350,9 @@ function StagesTab({ tabs }: { tabs: ReactNode }) {
 
   return (
     <div className={`page page-wide ${loading ? 'is-refreshing' : ''}`}>
-      <PageHead title="Sleep" sub={SUB} tabs={tabs} days={days} setDays={setDays} />
+      <PageIntro title={TITLE} sub={SUB} actions={<ManageSources />}>
+        <IntroTools tabs={tabs} days={days} setDays={setDays} />
+      </PageIntro>
       <div className="grid-1">
         <ChartCard
           title={days > 90 ? 'Sleep stages, weekly average' : 'Sleep stages'}
@@ -395,7 +402,9 @@ function TrendsTab({ tabs }: { tabs: ReactNode }) {
   const h = (v: number) => `${fmt(v)}h`;
   return (
     <div className={`page page-wide ${loading ? 'is-refreshing' : ''}`}>
-      <PageHead title="Sleep" sub={SUB} tabs={tabs} days={days} setDays={setDays} />
+      <PageIntro title={TITLE} sub={SUB} actions={<ManageSources />}>
+        <IntroTools tabs={tabs} days={days} setDays={setDays} />
+      </PageIntro>
       <div className="grid-2">
         <Trend title="Time asleep" points={t.sleep_hours ?? []} format={hoursMinutes} tickFormat={h} />
         {has('sleep_performance') ? (
@@ -428,7 +437,9 @@ function CoachingTab({ tabs }: { tabs: ReactNode }) {
   const sleepPatterns = (p?.patterns ?? []).filter((x) => x.page === 'sleep');
   return (
     <div className={`page page-wide ${loading ? 'is-refreshing' : ''}`}>
-      <PageHead title="Sleep" sub={SUB} tabs={tabs} />
+      <PageIntro title={TITLE} sub={SUB} actions={<ManageSources />}>
+        <IntroTools tabs={tabs} />
+      </PageIntro>
       {!st ? (
         <div className="page-message">Loading…</div>
       ) : st.nights < 7 ? (

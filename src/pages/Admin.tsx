@@ -5,6 +5,7 @@ import type { AdminInvite, AdminOverview, AdminUser, PlatformSettings, Role, Ses
 import { Icon } from '../components/Icon.tsx';
 import { fmt, fmtDate, notifyDataChanged, sendJson, useApi } from '../lib.ts';
 import { CardChoices, useCardEditor } from '../components/CardChoices.tsx';
+import { PageIntro } from '../components/PageIntro.tsx';
 import { CopyField } from './Integrations.tsx';
 
 type Tab = 'users' | 'invites' | 'settings';
@@ -45,19 +46,18 @@ export function Admin({ me }: { me: SessionUser }) {
 
   return (
     <div className="page">
-      <header className="page-head">
-        <div>
-          <h1>Admin</h1>
-          <p>Accounts, invites and platform settings. Nobody's health values are shown here.</p>
-        </div>
-        <div className="filters" role="tablist" aria-label="Admin sections">
-          {(['users', 'invites', 'settings'] as const).map((t) => (
-            <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>
-              {t === 'users' ? `People${data ? ` · ${data.users.length}` : ''}` : t === 'invites' ? 'Invites' : 'Settings'}
-            </button>
-          ))}
-        </div>
-      </header>
+      <PageIntro
+        sub="Accounts, invites and platform settings. Nobody's health values are shown here."
+        actions={
+          <div className="filters" role="tablist" aria-label="Admin sections">
+            {(['users', 'invites', 'settings'] as const).map((t) => (
+              <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>
+                {t === 'users' ? `People${data ? ` · ${data.users.length}` : ''}` : t === 'invites' ? 'Invites' : 'Settings'}
+              </button>
+            ))}
+          </div>
+        }
+      />
 
       {shown && (
         <section className="card admin-link" aria-live="polite">
@@ -226,18 +226,19 @@ function People({ data, me, act, onLink }: { data: AdminOverview; me: SessionUse
 
 /** The cards a person sees, which an admin can change for them (only the layout, never their data). */
 function AdminCards({ u, self, act }: { u: AdminUser; self: boolean; act: Act }) {
-  const cards = useCardEditor(u.hiddenCards ?? [], async (body) => {
+  // Only the hidden list: this endpoint doesn't know the optional cards a person turned on, so those aren't offered.
+  const cards = useCardEditor({ hidden: u.hiddenCards ?? [], shown: [] }, async (body) => {
     const r = await act(() => sendJson<{ hiddenCards: string[] }>('PATCH', `/admin/users/${u.id}`, body));
     if (!r) throw new Error('Not saved.');
     // Your own pages pick it up now, not at the next background check.
     if (self) notifyDataChanged();
-    return r.hiddenCards;
+    return { hidden: r.hiddenCards, shown: [] };
   });
   return (
     <details className="admin-cards">
-      <summary>{cards.hidden.length ? `Cards · ${cards.hidden.length} hidden` : 'Cards · all shown'}</summary>
-      <p className="muted small">{self ? 'The cards on your Home, Sleep and Body pages.' : `The cards ${u.name || u.email} sees on Home, Sleep and Body. They can change these in their Settings too.`}</p>
-      <CardChoices hidden={cards.hidden} onToggle={cards.toggle} idPrefix={`admin-${u.id}`} />
+      <summary>{cards.lists.hidden.length ? `Cards · ${cards.lists.hidden.length} hidden` : 'Cards · all shown'}</summary>
+      <p className="muted small">{self ? 'The cards on your Home, Sleep and Body pages.' : `The cards ${u.name || u.email} sees on Home, Sleep and Body. They can change these in their Profile too.`}</p>
+      <CardChoices lists={cards.lists} onToggle={cards.toggle} idPrefix={`admin-${u.id}`} optional={false} />
     </details>
   );
 }

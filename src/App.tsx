@@ -1,48 +1,34 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AuthMe, Page, Status, SyncResult } from '../shared/types.ts';
-import { Icon, type IconName } from './components/Icon.tsx';
-import { HiddenCardsContext, UnitsContext, clearLoadedData, fmtDate, href, notifyDataChanged, sendJson, useAccountLink, useApi, useBackgroundRefresh, useRoute } from './lib.ts';
+import { Icon } from './components/Icon.tsx';
+import { PhotoToneFilters, figureVariant } from './components/Figure.tsx';
+import { AppFooter } from './components/shell/AppFooter.tsx';
+import { AskPill } from './components/shell/AskPill.tsx';
+import { MenuContext } from './components/shell/Menu.tsx';
+import { MobileBar, TabBar } from './components/shell/MobileNav.tsx';
+import { mainNav } from './components/shell/nav.ts';
+import { ShellHeader } from './components/shell/ShellHeader.tsx';
+import { Sidebar } from './components/shell/Sidebar.tsx';
+import { CardListsContext, UnitsContext, cardListsOf, clearLoadedData, href, notifyDataChanged, sendJson, useAccountLink, useApi, useBackgroundRefresh, useRoute } from './lib.ts';
 import { Admin } from './pages/Admin.tsx';
 import { Cycle } from './pages/Cycle.tsx';
 import { Family } from './pages/Family.tsx';
 import { Body } from './pages/Body.tsx';
 import { Vitals } from './pages/Detail.tsx';
 import { Home } from './pages/Home.tsx';
-import { Integrations, SettingsPage } from './pages/Integrations.tsx';
+import { Integrations } from './pages/Integrations.tsx';
+import { Journal } from './pages/Journal.tsx';
 import { Labs } from './pages/Labs.tsx';
 import { McFly } from './pages/McFly.tsx';
-import { CommandPalette, SearchButton } from './components/Search.tsx';
+import { CommandPalette } from './components/Search.tsx';
 import { Nutrition } from './pages/Nutrition.tsx';
+import { Onboarding } from './pages/Onboarding.tsx';
+import { Profile } from './pages/Profile.tsx';
 import { Sleep } from './pages/Sleep.tsx';
 import { AccountLinkPage, Login } from './pages/Login.tsx';
 
-const NAV: { page: Page; label: string; icon: IconName }[] = [
-  { page: 'home', label: 'Home', icon: 'home' },
-  { page: 'vitals', label: 'Vitals', icon: 'vitals' },
-  { page: 'body', label: 'Body', icon: 'body' },
-  { page: 'sleep', label: 'Sleep', icon: 'sleep' },
-  { page: 'labs', label: 'Lab tests', icon: 'labs' },
-  { page: 'mcfly', label: 'Ask McFly', icon: 'spark' },
-];
-
-/** Shown after Home to signed-in people who share with family (everyone, unless they turned it off). */
-const FAMILY_NAV: { page: Page; label: string; icon: IconName } = { page: 'family', label: 'Family', icon: 'family' };
-
-/** Shown after Sleep to everyone. While Nutrition is off, the page explains it and offers to turn it on. */
-const NUTRITION_NAV: { page: Page; label: string; icon: IconName } = { page: 'nutrition', label: 'Nutrition', icon: 'nutrition' };
-
-/** Shown after Body, only to people who turned cycle tracking on. */
-const CYCLE_NAV: { page: Page; label: string; icon: IconName } = { page: 'cycle', label: 'Cycle', icon: 'cycle' };
-
-const DATA_NAV: { page: Page; label: string; icon: IconName }[] = [
-  { page: 'integrations', label: 'Integrations', icon: 'integrations' },
-  { page: 'settings', label: 'Settings', icon: 'settings' },
-];
-
-const ADMIN_NAV: { page: Page; label: string; icon: IconName }[] = [{ page: 'admin', label: 'Admin', icon: 'shield' }];
-
-/** From an older server without the setting: nothing hidden. One array, so the context stays stable. */
-const NONE_HIDDEN: string[] = [];
+/** From an older server without the settings: nothing hidden, nothing optional on. One object, so the context stays stable. */
+const NO_CHOICES = { hidden: [], shown: [] };
 
 type AuthState = { state: 'checking' } | { state: 'signin' | 'misconfigured'; setup: boolean } | { state: 'open'; signedIn: boolean };
 
@@ -109,10 +95,12 @@ export function App() {
 
 function Dashboard({ signedIn }: { signedIn: boolean }) {
   const { page: route, params } = useRoute();
-  // Activity is a tab of Body now; its old address still opens it there.
-  const page = route === 'activity' ? 'body' : route;
+  // Activity is a tab of Body now, and Settings is Profile; their old addresses still open them.
+  const page: Page = route === 'activity' ? 'body' : route === 'settings' ? 'profile' : route;
   const { data: status, error: statusError, reload } = useApi<Status>('/status');
   const [date, setDate] = useState<string | null>(null);
+  // Which shell menu is open (the account menu from one of its buttons, or More on a phone): one at a time.
+  const [menu, setMenu] = useState<string | null>(null);
   // Only meaningful when sign-in is on; the server enforces it either way.
   const isAdmin = signedIn && status?.user.role === 'admin';
   // The board needs accounts: without sign-in there's only you.
@@ -132,69 +120,83 @@ function Dashboard({ signedIn }: { signedIn: boolean }) {
     }
   }, [status, reload]);
 
-  return (
-    <UnitsContext.Provider value={status?.settings.units ?? 'metric'}>
-      {/* Until the settings load, no card shows (so a hidden one never flashes up); if they can't load, all do. */}
-      <HiddenCardsContext.Provider value={status ? (status.settings.hiddenCards ?? NONE_HIDDEN) : statusError ? NONE_HIDDEN : null}>
-      <div className="app">
-        <aside className="sidebar">
-          <a className="brand" href={href('home')}>
-            <Logo />
-            <span>healthOS</span>
-          </a>
-          <SearchButton />
-          <nav aria-label="Main">
-            {NAV.flatMap((n) =>
-              n.page === 'body'
-                ? [n, ...(status?.settings.cycleTracking ? [CYCLE_NAV] : [])]
-                : n.page === 'sleep'
-                  ? [n, NUTRITION_NAV]
-                  : n.page === 'home' && family
-                    ? [n, FAMILY_NAV]
-                    : [n],
-            ).map((n) => (
-              <a key={n.page} href={href(n.page)} className={page === n.page ? 'nav-item is-active' : 'nav-item'} aria-current={page === n.page ? 'page' : undefined}>
-                <Icon name={n.icon} />
-                <span>{n.label}</span>
-              </a>
-            ))}
-            <div className="nav-section">Data</div>
-            {[...DATA_NAV, ...(isAdmin ? ADMIN_NAV : [])].map((n) => (
-              <a key={n.page} href={href(n.page)} className={page === n.page ? 'nav-item is-active' : 'nav-item'} aria-current={page === n.page ? 'page' : undefined}>
-                <Icon name={n.icon} />
-                <span>{n.label}</span>
-              </a>
-            ))}
-          </nav>
-          {status && <SourceCard status={status} />}
-        </aside>
-        <CommandPalette />
+  // A menu left open doesn't follow you to the next page.
+  useEffect(() => setMenu(null), [page]);
 
-        <main className="main">
-          {page === 'home' && status && noSources(status) && (
-            <a className="banner banner-start" href={href('integrations')}>
-              <Icon name="integrations" size={16} /> Your dashboard fills in once you connect WHOOP or the healthOS iPhone app.
-              <Icon name="chevron-right" size={16} />
-            </a>
+  const settings = status?.settings;
+  // Until the settings load, no card shows (so a hidden one never flashes up); if they can't load, all do.
+  const cards = useMemo(() => (settings ? cardListsOf(settings) : statusError ? NO_CHOICES : null), [settings, statusError]);
+  const menus = useMemo(() => ({ open: menu, setOpen: setMenu }), [menu]);
+  const nav = mainNav({ family, cycle: Boolean(settings?.cycleTracking) });
+  const account = { status, signedIn, isAdmin };
+
+  // Nothing until the status is known: a new account goes straight to onboarding, without the dashboard flashing first.
+  if (!status && !statusError) return null;
+  // A new account sees onboarding, full screen, until it's done; #/welcome runs it again for anyone.
+  const onboarding = status && (settings?.onboarding != null ? 'new' : page === 'welcome' ? 'edit' : null);
+
+  return (
+    <UnitsContext.Provider value={settings?.units ?? 'metric'}>
+      <CardListsContext.Provider value={cards}>
+        <MenuContext.Provider value={menus}>
+          {status && onboarding ? (
+            <main className="fullscreen">
+              <Onboarding status={status} reload={reload} signedIn={signedIn} mode={onboarding} />
+            </main>
+          ) : (
+            <div className="app">
+              <Sidebar page={page} nav={nav} account={account} />
+              <MobileBar page={page} account={account} />
+              <CommandPalette />
+
+              <main className="main">
+                <div className="main-inner">
+                  <ShellHeader page={page} date={date} setDate={setDate} reload={reload} account={account} />
+                  {page === 'home' && status && noSources(status) && (
+                    <a className="banner banner-start" href={href('integrations')}>
+                      <Icon name="integrations" size={16} /> Your dashboard fills in once you connect WHOOP or the healthOS iPhone app.
+                      <Icon name="chevron-right" size={16} />
+                    </a>
+                  )}
+                  {page === 'home' && status && family && !status.settings.familyNoticeSeen && <FamilyNotice refresh={reload} />}
+                  <div className="main-page">
+                    {page === 'home' && (
+                      <Home
+                        date={date}
+                        onDate={setDate}
+                        photo={status?.photo ?? null}
+                        nutrition={status?.settings.nutrition ? status.settings.nutritionNumbers : null}
+                        perspective={settings?.perspective ?? 'portrait'}
+                        figure={figureVariant(settings)}
+                      />
+                    )}
+                    {page === 'family' && (family ? <Family isAdmin={isAdmin} refreshStatus={reload} params={params} /> : status && <FamilyOff signedIn={signedIn} />)}
+                    {page === 'vitals' && <Vitals />}
+                    {page === 'sleep' && <Sleep params={params} photo={status?.photo ?? null} date={date} setDate={setDate} />}
+                    {page === 'body' && (
+                      <Body params={route === 'activity' ? new URLSearchParams('tab=activity') : params} stepGoal={status?.settings.stepGoal ?? 10_000} date={date} setDate={setDate} />
+                    )}
+                    {page === 'nutrition' && status && <Nutrition status={status} params={params} refresh={reload} />}
+                    {page === 'journal' && status && <Journal status={status} />}
+                    {page === 'labs' && status && <Labs status={status} params={params} />}
+                    {page === 'cycle' && status && <Cycle status={status} />}
+                    {page === 'mcfly' && status && <McFly key={status.user.id} me={status.user} />}
+                    {page === 'integrations' && status && <Integrations status={status} params={params} refresh={reload} signedIn={signedIn} />}
+                    {page === 'profile' && status && <Profile key={status.settings.name} status={status} refresh={reload} signedIn={signedIn} />}
+                    {page === 'admin' && (isAdmin ? <Admin me={status!.user} /> : status && <NotAllowed />)}
+                  </div>
+                  <AppFooter home={page === 'home'} />
+                </div>
+              </main>
+
+              {page === 'home' && <AskPill />}
+              <TabBar page={page} nav={nav} />
+              {/* The avatar's photo takes the same tone as the figure's, on every page. */}
+              <PhotoToneFilters />
+            </div>
           )}
-          {page === 'home' && status && family && !status.settings.familyNoticeSeen && <FamilyNotice refresh={reload} />}
-          {page === 'home' && <Home date={date} onDate={setDate} photo={status?.photo ?? null} nutrition={status?.settings.nutrition ? status.settings.nutritionNumbers : null} />}
-          {page === 'family' && (family ? <Family isAdmin={isAdmin} refreshStatus={reload} params={params} /> : status && <FamilyOff signedIn={signedIn} />)}
-          {page === 'vitals' && <Vitals />}
-          {page === 'sleep' && <Sleep params={params} photo={status?.photo ?? null} date={date} setDate={setDate} />}
-          {page === 'body' && (
-            <Body params={route === 'activity' ? new URLSearchParams('tab=activity') : params} stepGoal={status?.settings.stepGoal ?? 10_000} date={date} setDate={setDate} />
-          )}
-          {page === 'nutrition' && status && <Nutrition status={status} params={params} refresh={reload} />}
-          {page === 'labs' && status && <Labs status={status} params={params} />}
-          {page === 'cycle' && status && <Cycle status={status} />}
-          {page === 'mcfly' && status && <McFly key={status.user.id} me={status.user} />}
-          {page === 'integrations' && status && <Integrations status={status} params={params} refresh={reload} signedIn={signedIn} />}
-          {page === 'settings' && status && <SettingsPage key={status.settings.name} status={status} refresh={reload} signedIn={signedIn} />}
-          {page === 'admin' && (isAdmin ? <Admin me={status!.user} /> : status && <NotAllowed />)}
-        </main>
-      </div>
-      </HiddenCardsContext.Provider>
+        </MenuContext.Provider>
+      </CardListsContext.Provider>
     </UnitsContext.Provider>
   );
 }
@@ -238,7 +240,7 @@ function FamilyNotice({ refresh }: { refresh: () => void }) {
     <div className="banner banner-start family-notice">
       <Icon name="family" size={16} />
       <span>
-        Your family can see your daily status and your last 30 days on the <a href={href('family')}>Family</a> board. Change this in <a href={href('settings')}>Settings</a>.
+        Your family can see your daily status and your last 30 days on the <a href={href('family')}>Family</a> board. Change this in <a href={href('profile')}>your Profile</a>.
       </span>
       <button className="btn btn-quiet" onClick={dismiss}>
         Got it
@@ -255,7 +257,7 @@ function FamilyOff({ signedIn }: { signedIn: boolean }) {
         <p className="muted">
           {signedIn ? (
             <>
-              Family is off: you don't see anyone, and nobody sees you. Turn on <a href={href('settings')}>Share with family</a> in Settings.
+              Family is off: you don't see anyone, and nobody sees you. Turn on <a href={href('profile')}>Share with family</a> in your Profile.
             </>
           ) : (
             'The Family board needs sign-in, so each person has their own account.'
@@ -276,48 +278,5 @@ function NotAllowed() {
         <p className="muted">This page is for the people who run this healthOS. Your own data is under Home.</p>
       </section>
     </div>
-  );
-}
-
-function SourceCard({ status }: { status: Status }) {
-  const apple = status.apple.lastImport;
-  const synced = status.apple.lastSync && new Date(status.apple.lastSync.syncedAt).toLocaleDateString('en-CA');
-  return (
-    <a className="source-card" href={href('integrations')}>
-      {status.demo ? (
-        <>
-          <span className="source-title">Showing demo data</span>
-          <span className="muted small">Connect Apple Health or WHOOP</span>
-        </>
-      ) : (
-        <>
-          <span className="source-row">
-            <i className={apple || synced ? 'on' : ''} /> Apple Health
-            <small>{synced ? fmtDate(synced) : apple?.lastDate ? fmtDate(apple.lastDate) : 'off'}</small>
-          </span>
-          <span className="source-row">
-            <i className={status.whoop.connected ? 'on' : ''} /> WHOOP
-            <small>{status.whoop.connected ? (status.whoop.syncing ? 'syncing' : 'on') : 'off'}</small>
-          </span>
-        </>
-      )}
-      <Icon name="chevron-right" size={16} />
-    </a>
-  );
-}
-
-function Logo() {
-  return (
-    <svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true" className="logo">
-      <g fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round">
-        {Array.from({ length: 24 }, (_, i) => {
-          const a = (i / 24) * Math.PI * 2;
-          const r1 = 5 + (i % 2) * 1.5;
-          const r2 = 13 - (i % 3);
-          return <line key={i} x1={16 + r1 * Math.cos(a)} y1={16 + r1 * Math.sin(a)} x2={16 + r2 * Math.cos(a)} y2={16 + r2 * Math.sin(a)} />;
-        })}
-      </g>
-      <circle cx="16" cy="16" r="2.4" fill="currentColor" />
-    </svg>
   );
 }

@@ -1,4 +1,4 @@
-// Rows of dashboard cards that leave out the ones a person hid (Settings → Cards).
+// Rows of dashboard cards that leave out the ones a person hid, and the optional ones they haven't turned on.
 import { type CSSProperties, Fragment, type ReactNode } from 'react';
 import { CARDS, type CardPage, fillColumns } from '../../shared/cards.ts';
 import { href, useCardShown, useCardsKnown } from '../lib.ts';
@@ -52,7 +52,7 @@ export function AllHiddenNote() {
   return (
     <section className="card all-hidden">
       <p className="muted">
-        All the cards on this page are hidden. Choose the ones to show in <a href={href('settings')}>Settings → Cards</a>.
+        All the cards on this page are hidden. Choose the ones to show with Edit widgets on Home, or in <a href={`${href('profile')}`}>your Profile</a>.
       </p>
     </section>
   );

@@ -1,6 +1,8 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App.tsx';
+// DM Sans, served from this app (never a font CDN: privacy.html promises nothing goes to third parties).
+import '@fontsource-variable/dm-sans';
 import './styles.css';
 
 // No right-click menu and no dragging images, charts or links off the page, on every screen (sign-in included).

@@ -24,7 +24,7 @@ import { Icon } from '../components/Icon.tsx';
 import { LabRangeBar, LabStatusChip, labNumber, rangeLabel } from '../components/LabRange.tsx';
 import { REPORT_ACCEPT, prepareReport, readReport } from '../labsUpload.ts';
 import { fmtDate, notifyDataChanged, sendJson, useApi } from '../lib.ts';
-import { PageHead } from './Detail.tsx';
+import { PageIntro } from '../components/PageIntro.tsx';
 
 const longDate = (d: string) => fmtDate(d, { month: 'short', day: 'numeric', year: 'numeric' });
 
@@ -80,18 +80,19 @@ export function Labs({ status: _status, params: _params }: { status: Status; par
   const tools = (
     <div className="btn-row">
       <button ref={addButton} className="btn btn-primary" aria-pressed={mode === 'add'} disabled={pending === 'reading'} onClick={() => start(mode === 'add' ? null : 'add')}>
-        Add results
+        <Icon name="plus" size={15} />
+        Add blood result
       </button>
       <button ref={importButton} className="btn" aria-pressed={mode === 'import'} disabled={pending === 'reading'} onClick={() => start(mode === 'import' ? null : 'import')}>
         <Icon name="upload" size={15} />
-        Import a report
+        Upload report
       </button>
     </div>
   );
 
   return (
     <div className={`page page-wide labs ${loading ? 'is-refreshing' : ''}`}>
-      <PageHead title="Lab tests" sub="Blood tests and other lab results, each against the reference range printed by the lab." tools={tools} />
+      <PageIntro title="Your records, together." sub="Blood results and original reports, saved to your private account." actions={tools} />
       {/* Always there, so the change of text is announced. */}
       <div className="labs-notice" role="status">
         {notice && (

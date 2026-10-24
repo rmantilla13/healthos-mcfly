@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Icon } from '../components/Icon.tsx';
+import { Logo } from '../components/shell/Logo.tsx';
 
 const MIN_PASSWORD = 10;
 
@@ -19,14 +20,12 @@ function Shell({ children, onSubmit }: { children: React.ReactNode; onSubmit?: (
     <div className="login">
       <form className="card login-card" onSubmit={onSubmit ?? ((e) => e.preventDefault())}>
         <div className="brand login-brand">
-          <svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true">
-            <circle cx="16" cy="16" r="2.4" fill="currentColor" />
-            <circle cx="16" cy="16" r="11" fill="none" stroke="currentColor" strokeWidth="1.2" strokeDasharray="2 3" />
-          </svg>
+          <Logo />
           <span>healthOS</span>
         </div>
         {children}
       </form>
+      <p className="login-foot muted small">Your health, in perspective. Only yours.</p>
     </div>
   );
 }
