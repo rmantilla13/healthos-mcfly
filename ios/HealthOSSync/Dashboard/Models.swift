@@ -45,11 +45,23 @@ struct Summary: Codable {
     /// Gentle heads-ups (resting heart rate up, with or without a raised temperature). Element by element:
     /// one the app can't read drops only itself. Empty from servers older than flags.
     @LossyArray var flags: [Flag]
+    /// Resting heart rate and respiratory rate over the last 30 days, for the web's Home cards. nil from older servers.
+    @Lossy var restingHr: Reading?
+    @Lossy var respRate: Reading?
 
+    /// Each vital on its own, so one the app can't read leaves the others.
     struct Vitals: Codable {
-        let heart: Vital?
-        let breathing: Vital?
-        let temp: Vital?
+        @Lossy var heart: Vital?
+        @Lossy var breathing: Vital?
+        @Lossy var temp: Vital?
+        /// nil from servers older than the Blood oxygen callout.
+        @Lossy var spo2: Vital?
+    }
+
+    /// A reading over the last 30 days: the latest, and the days before it.
+    struct Reading: Codable {
+        @Lossy var latest: Latest?
+        @LossyArray var series: [Point]
     }
 
     /// kind "recovery" (WHOOP: average, zone) or "vo2max" (Apple Watch: previous).
@@ -701,10 +713,15 @@ extension FamilyMember {
 }
 
 struct ServerStatus: Codable {
+    /// shared/types.ts Settings. Each field is read on its own (init(from:) below): one the app can't read is nil, not
+    /// the whole settings, so an odd value can't hide the Family tab, switch units or turn Nutrition off. A field an
+    /// older server doesn't send is nil too.
     struct Settings: Codable {
         let name: String?
         let stepGoal: Double?
         let units: String?
+        /// Demo data while there's none of your own: "auto" | "on" | "off".
+        let demo: String?
         let timeZone: String?
         let sex: String?
         let cycleTracking: Bool?
@@ -719,16 +736,60 @@ struct ServerStatus: Codable {
         let nutrition: Bool?
         /// How much of their nutrition they see: "all" | "no_energy" | "none". nil until chosen.
         let nutritionNumbers: String?
+        /// The app whose totals count on a day two apps logged food; nil is whichever logged the most that day.
+        let nutritionApp: String?
         /// Targets they set themselves, if any. Shown as a plain line, never scored. Older servers have none.
-        @Lossy var nutritionTargets: NutritionTargets?
+        let nutritionTargets: NutritionTargets?
         /// Card ids (shared/cards.ts) this person hid. nil from servers older than card hiding.
         let hiddenCards: [String]?
+        /// Optional cards (defaultHidden in shared/cards.ts) this person turned on. nil from servers older than
+        /// optional cards, where every card shows unless it's hidden.
+        let shownCards: [String]?
+        /// How Home and Body show you: "portrait" | "digital" | "stats". nil from servers older than onboarding, which
+        /// read it as "portrait".
+        let perspective: String?
+        /// How the person describes themselves: "woman" | "man" | "nonbinary" | "unsaid". Never used for health
+        /// calculations (that's `sex`).
+        let gender: String?
+        /// Which digital human to show: "woman" | "man"; nil follows gender.
+        let figure: String?
+        /// Age in whole years; nil until given.
+        let age: Int?
+        /// In anonymous peer comparisons. Off unless the person ticked it.
+        let peerComparison: Bool?
+        /// The onboarding step a new account is on (1, 2 or 3); nil when it's done, and from older servers.
+        let onboarding: Int?
     }
 
     struct Apple: Codable {
         struct Sync: Codable { let syncedAt: String }
         struct Import: Codable { let importedAt: String }
+        /// The Mac's export import while it runs (shared/types.ts ImportJob).
+        struct Job: Codable {
+            /// "idle" | "uploading" | "parsing" | "done" | "error"
+            let state: String
+            let bytesRead: Double?
+            let totalBytes: Double?
+            let records: Double?
+            let days: Double?
+            let error: String?
+        }
         @Lossy var lastSync: Sync?
+        @Lossy var lastImport: Import?
+        @Lossy var job: Job?
+        /// This person has made an iPhone app token (Integrations). nil from older servers.
+        @Lossy var iphoneToken: Bool?
+    }
+
+    /// A Fitbit (Google Takeout) export read in the browser and sent to the server. nil from older servers.
+    struct Fitbit: Codable {
+        struct Import: Codable {
+            let days: Double?
+            let firstDate: String?
+            let lastDate: String?
+            @LossyArray var metrics: [String]
+            let importedAt: String
+        }
         @Lossy var lastImport: Import?
     }
 
@@ -740,14 +801,56 @@ struct ServerStatus: Codable {
         let lastError: String?
     }
 
-    let hosted: Bool?
-    let demo: Bool?
+    // Each part on its own, like the settings: one the app can't read leaves the rest.
+    @Lossy var hosted: Bool?
+    @Lossy var demo: Bool?
     /// POST /api/sync only: a WHOOP sync started on the server for this request.
-    let whoopStarted: Bool?
+    @Lossy var whoopStarted: Bool?
+    /// Who's signed in. On a server without sign-in it's the owner, with no email.
+    @Lossy var user: AuthState.User?
     @Lossy var photo: PhotoMeta?
     @Lossy var settings: Settings?
     @Lossy var apple: Apple?
     @Lossy var whoop: Whoop?
+    @Lossy var fitbit: Fitbit?
+}
+
+extension ServerStatus.Settings {
+    private enum CodingKeys: String, CodingKey {
+        case name, stepGoal, units, demo, timeZone, sex, cycleTracking, familySharing, shareCyclePhase, familyNoticeSeen, nutrition,
+             nutritionNumbers, nutritionApp, nutritionTargets, hiddenCards, shownCards, perspective, gender, figure, age, peerComparison,
+             onboarding
+    }
+
+    /// Field by field: one missing or unreadable is nil, and a card list keeps the ids it can read.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        func value<T: Decodable>(_ key: CodingKeys) -> T? { try? c.decodeIfPresent(T.self, forKey: key) }
+        func ids(_ key: CodingKeys) -> [String]? { (value(key) as [Lossy<String>]?)?.compactMap(\.wrappedValue) }
+        self.init(
+            name: value(.name),
+            stepGoal: value(.stepGoal),
+            units: value(.units),
+            demo: value(.demo),
+            timeZone: value(.timeZone),
+            sex: value(.sex),
+            cycleTracking: value(.cycleTracking),
+            familySharing: value(.familySharing),
+            shareCyclePhase: value(.shareCyclePhase),
+            familyNoticeSeen: value(.familyNoticeSeen),
+            nutrition: value(.nutrition),
+            nutritionNumbers: value(.nutritionNumbers),
+            nutritionApp: value(.nutritionApp),
+            nutritionTargets: value(.nutritionTargets),
+            hiddenCards: ids(.hiddenCards),
+            shownCards: ids(.shownCards),
+            perspective: value(.perspective),
+            gender: value(.gender),
+            figure: value(.figure),
+            age: value(.age),
+            peerComparison: value(.peerComparison),
+            onboarding: value(.onboarding))
+    }
 }
 
 /// Daily targets a person set for themselves (shared/types.ts NutritionTargets); nil means none. healthOS never suggests one.
@@ -822,6 +925,10 @@ struct PhotoMeta: Codable, Equatable {
     /// Face box [x, y, w, h], 0–1 within the cut-out. Labels stay off it.
     let face: [Double]?
     @Lossy var dots: Dots?
+    /// Where the shoulders are, 0–1 down the cut-out. nil from older servers.
+    @Lossy var shoulderY: Double?
+    /// The silhouette by row (100 rows, top to bottom): [left, right], 0–1 of the width; [1, 0] where empty.
+    @Lossy var outline: [[Double]]?
 
     var versionKey: String { String(Int64(version)) }
 

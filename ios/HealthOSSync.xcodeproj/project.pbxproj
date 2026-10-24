@@ -74,6 +74,7 @@
 		F2CF3049F540CE571BFB4FEB /* IngestClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3775E6E7872E65E05A16415F /* IngestClient.swift */; };
 		F46DEAD6BB2AD61A09947B46 /* summary.json in Resources */ = {isa = PBXBuildFile; fileRef = 3B5343DD7A76AF3586052896 /* summary.json */; };
 		F63C14CEF5D36D163347D448 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 7DF4A8A7E1D690C6DFD9708D /* PrivacyInfo.xcprivacy */; };
+		FA4A394CBB37998BD7A24A5F /* StatusDecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F555F043B0421EDF7E4BAC46 /* StatusDecodingTests.swift */; };
 		FB1865DBB690F3EF8386BA77 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63C3960DE078C3D0C9951540 /* AppModel.swift */; };
 		FC3C5C525A00D4C42F8173FC /* TrendsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDFE71549B0A68674DB9E571 /* TrendsScreen.swift */; };
 		FDB2E43925F6C4A59CCAE87A /* patterns.json in Resources */ = {isa = PBXBuildFile; fileRef = 2467D3DA7F3A0754100A23C3 /* patterns.json */; };
@@ -155,6 +156,7 @@
 		EDFE71549B0A68674DB9E571 /* TrendsScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrendsScreen.swift; sourceTree = "<group>"; };
 		EFF903C401BAB3E580094868 /* HealthTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthTypes.swift; sourceTree = "<group>"; };
 		F008DF762D744EBDC6621FF1 /* HealthOSSync.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = HealthOSSync.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F555F043B0421EDF7E4BAC46 /* StatusDecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusDecodingTests.swift; sourceTree = "<group>"; };
 		F7445CD36B063431BB3F1392 /* nutrition-all.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "nutrition-all.json"; sourceTree = "<group>"; };
 		FA10EABB4D8994CA0CEDBA4C /* HealthOSSyncApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthOSSyncApp.swift; sourceTree = "<group>"; };
 		FB45FFDD1FA53CE0B2371012 /* NutritionViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NutritionViews.swift; sourceTree = "<group>"; };
@@ -200,6 +202,7 @@
 				DCB8EE7A62B1F4AB7B71786B /* HeartRateMeasurementTests.swift */,
 				557B903874008E25C2245C9B /* NutritionScreenTests.swift */,
 				CD2F0A99D2A54D83358903BC /* NutritionTests.swift */,
+				F555F043B0421EDF7E4BAC46 /* StatusDecodingTests.swift */,
 				79BD7CA7671A5F04D1C985A9 /* Fixtures */,
 			);
 			path = HealthOSSyncTests;
@@ -414,6 +417,7 @@
 				8901142952134DD35512BE8D /* HeartRateMeasurementTests.swift in Sources */,
 				44A5C2011D28476A534774B9 /* NutritionScreenTests.swift in Sources */,
 				4235342A47A876C689995E06 /* NutritionTests.swift in Sources */,
+				FA4A394CBB37998BD7A24A5F /* StatusDecodingTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
