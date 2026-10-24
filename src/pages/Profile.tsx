@@ -22,8 +22,15 @@ import { NutritionSettings } from './Nutrition.tsx';
 
 type SheetKey = 'chatbot' | 'openai' | 'basics' | 'cards' | 'family' | 'cycle' | 'nutrition';
 
-export function Profile({ status, refresh, signedIn }: { status: Status; refresh: () => void; signedIn: boolean }) {
-  const [sheet, setSheet] = useState<SheetKey | null>(null);
+/** Sheets other pages can open by link: #/profile?connect=openai (Nutrition's setup line) or ?connect=chatbot. */
+const LINKED: Record<string, SheetKey> = { openai: 'openai', chatbot: 'chatbot' };
+
+export function Profile({ status, refresh, signedIn, params }: { status: Status; refresh: () => void; signedIn: boolean; params?: URLSearchParams }) {
+  const [sheet, setSheet] = useState<SheetKey | null>(() => LINKED[params?.get('connect') ?? ''] ?? null);
+  // Once opened from a link, drop the query, so a refresh or Back doesn't open the sheet again.
+  useEffect(() => {
+    if (params?.has('connect')) history.replaceState(null, '', `${location.pathname}${location.search}#/profile`);
+  }, [params]);
   const [password, setPassword] = useState(false);
   const passwordId = useId();
   const { data: ai, reload: reloadAi } = useApi<AiStatus>('/ai');

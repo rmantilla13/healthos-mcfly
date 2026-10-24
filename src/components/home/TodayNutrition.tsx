@@ -22,10 +22,10 @@ const segmentOf = (time: string) => Math.min(SEGMENTS - 1, Math.max(0, Math.floo
 const partOf = (time: string) => (minutes(time) < 11 * 60 ? 'morning' : minutes(time) < 15 * 60 ? 'midday' : 'evening');
 const listTimes = (ts: string[]) => (ts.length < 2 ? ts.join('') : `${ts.slice(0, -1).join(', ')} and ${ts.at(-1)}`);
 
-/** The orb and where it goes: the food log's composer with Nutrition on (`compose=1`), Nutrition's own page while it's off. */
+/** The orb and where it goes: Nutrition's Today composer with Nutrition on (`compose=1`), Nutrition's own page while it's off. */
 function LogButton({ on }: { on: boolean }) {
   return (
-    <a className="home-orb-btn" href={on ? '#/nutrition?tab=log&compose=1' : href('nutrition')} aria-label={on ? 'Log food' : 'Open Nutrition'}>
+    <a className="home-orb-btn" href={on ? '#/nutrition?compose=1' : href('nutrition')} aria-label={on ? 'Log food' : 'Open Nutrition'}>
       <Orb size={22} />
     </a>
   );

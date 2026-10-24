@@ -283,8 +283,8 @@ function ReferenceRow({ reference }: { reference: ReferencePhoto }) {
         </div>
       </div>
       <p className="onb-reference-after">
-        After saving, open the portrait studio in your Profile to generate and review your likeness using your own OpenAI key. Your photo stays private; it is not
-        displayed on your dashboard. You can do this later.
+        After saving, open the portrait studio in your Profile to generate and review your likeness with an OpenAI key (connect your own there). Your photo stays
+        private; it is not displayed on your dashboard. You can do this later.
       </p>
     </div>
   );

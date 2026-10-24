@@ -182,7 +182,7 @@ function Dashboard({ signedIn }: { signedIn: boolean }) {
                     {page === 'cycle' && status && <Cycle status={status} />}
                     {page === 'mcfly' && status && <McFly key={status.user.id} me={status.user} />}
                     {page === 'integrations' && status && <Integrations status={status} params={params} refresh={reload} signedIn={signedIn} />}
-                    {page === 'profile' && status && <Profile key={status.settings.name} status={status} refresh={reload} signedIn={signedIn} />}
+                    {page === 'profile' && status && <Profile key={status.settings.name} status={status} refresh={reload} signedIn={signedIn} params={params} />}
                     {page === 'admin' && (isAdmin ? <Admin me={status!.user} /> : status && <NotAllowed />)}
                   </div>
                   <AppFooter home={page === 'home'} />

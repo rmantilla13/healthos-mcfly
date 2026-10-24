@@ -171,11 +171,6 @@ export function readEstimate(text: string): { items: Item[]; note: string } {
   return { items, note };
 }
 
-/** Whether estimates can run on the shared key: Claude is set up and McFly's daily limit isn't 0. */
-export async function estimateAvailable(db: Db, client: () => McflyClient | null) {
-  return Boolean(client()) && Number((await platformSettings(db)).mcfly_daily_limit) > 0;
-}
-
 export function estimateHandler(db: Db, hosted: boolean, client: () => McflyClient | null, aiFetch?: AiFetch) {
   return async (req: Request, res: Response) => {
     const { scope, numbers, now } = await loggingContext(db, hosted, res);
