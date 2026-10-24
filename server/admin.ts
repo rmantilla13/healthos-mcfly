@@ -3,6 +3,7 @@
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { HttpError, type Role, countActiveAdmins, createLink, currentUser, formatCode, getUser, normalizeEmail, requireAdmin } from './auth.ts';
 import { NUTRITION_CARDS, cleanHiddenCards, readHiddenCards, storedHiddenCards, withCardShown, withoutNutritionCards } from '../shared/cards.ts';
+import { MODEL_ID } from './ai/provider.ts';
 import { type Db, bumpDataVersion, deleteUserData, getSettings, getUserSetting, setSetting, setUserSetting } from './db.ts';
 import * as whoop from './whoop.ts';
 
@@ -16,6 +17,13 @@ export const PLATFORM_DEFAULTS = {
   invite_days: '7',
   mcfly_model: 'claude-opus-5-5',
   mcfly_daily_limit: '50',
+  // The models used on a person's own OpenAI or Gemini key unless they choose one (Profile → Chatbot). Checked against
+  // the providers' model pages in October 2026: GPT-6.1 Sol (OpenAI's balanced model: tools, structured outputs,
+  // images), gpt-transcribe (its recommended speech-to-text), Gemini 3.8 Flash (Google's recommended stable model).
+  openai_model: 'gpt-6.1-sol',
+  openai_vision_model: 'gpt-6.1-sol',
+  openai_transcribe_model: 'gpt-transcribe',
+  gemini_model: 'gemini-3.8-flash',
 } as const;
 
 export async function platformSettings(db: Db) {
@@ -253,6 +261,17 @@ export function adminRouter(db: Db) {
       if (b.mcfly_model !== undefined) {
         if (typeof b.mcfly_model !== 'string' || !/^claude-[a-z0-9-]+$/.test(b.mcfly_model)) throw new HttpError(400, 'Unknown model id.');
         await setSetting(db, 'mcfly_model', b.mcfly_model);
+      }
+      // The other providers' defaults, each checked against what that provider's ids look like.
+      for (const [field, provider] of [
+        ['openai_model', 'openai'],
+        ['openai_vision_model', 'openai'],
+        ['openai_transcribe_model', 'openai'],
+        ['gemini_model', 'gemini'],
+      ] as const) {
+        if (b[field] === undefined) continue;
+        if (typeof b[field] !== 'string' || !MODEL_ID[provider].test(b[field])) throw new HttpError(400, 'Unknown model id.');
+        await setSetting(db, field, b[field]);
       }
       if (b.mcfly_daily_limit !== undefined) {
         const n = Math.round(Number(b.mcfly_daily_limit));

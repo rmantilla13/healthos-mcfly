@@ -52,9 +52,11 @@ export type AppOptions = {
   mcflyClient?: () => McflyClient | null;
   /** The food databases' fetch (tests pass a fake, so no test calls USDA or Open Food Facts). */
   foodFetch?: FetchFn;
+  /** fetch for OpenAI, Gemini and people's own Claude keys (tests pass a fake, so no test calls a provider). */
+  aiFetch?: FetchFn;
 };
 
-export function createApp({ db, hosted, ingestToken, mcflyClient = defaultClient, foodFetch }: AppOptions) {
+export function createApp({ db, hosted, ingestToken, mcflyClient = defaultClient, foodFetch, aiFetch }: AppOptions) {
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', hosted);
@@ -102,9 +104,9 @@ export function createApp({ db, hosted, ingestToken, mcflyClient = defaultClient
     res.json({ ok: true });
   });
 
-  // A food photo is the same: shrunk on the device, but over the general limit. It goes to Anthropic for McFly's
-  // estimate and is never stored or logged (server/estimate.ts).
-  api.post('/nutrition/estimate', requireSession(db), express.json({ limit: '4400kb' }), estimateHandler(db, hosted, mcflyClient), nutritionErrors);
+  // A food photo is the same: shrunk on the device, but over the general limit. It goes to the person's AI provider
+  // for McFly's estimate and is never stored or logged (server/estimate.ts).
+  api.post('/nutrition/estimate', requireSession(db), express.json({ limit: '4400kb' }), estimateHandler(db, hosted, mcflyClient, aiFetch), nutritionErrors);
 
   // A portrait reference photo and a Fitbit export chunk are a few MB each: these routers parse their own bodies.
   api.use('/portraits', requireSession(db), portraitsRouter(db, hosted));
@@ -124,7 +126,7 @@ export function createApp({ db, hosted, ingestToken, mcflyClient = defaultClient
 
   api.post('/auth/password', auth.changePassword);
   api.use('/admin', adminRouter(db));
-  api.use('/mcfly', mcflyRouter(db, { hosted, client: mcflyClient }));
+  api.use('/mcfly', mcflyRouter(db, { hosted, client: mcflyClient, aiFetch }));
   api.use('/cycle', cycleRouter(db, hosted));
   api.use('/nutrition', nutritionRouter(db, hosted, { fetchFn: foodFetch, client: mcflyClient }));
   api.use('/labs', labsRouter(db, { hosted, client: mcflyClient }));
@@ -133,7 +135,7 @@ export function createApp({ db, hosted, ingestToken, mcflyClient = defaultClient
   api.use('/journal', journalRouter(db, hosted));
   api.use('/body', bodyRouter(db, hosted));
   api.use('/peers', peersRouter(db, hosted));
-  api.use('/ai', aiRouter(db, { hosted, client: mcflyClient }));
+  api.use('/ai', aiRouter(db, { hosted, client: mcflyClient, aiFetch }));
   api.use('/me/export', exportRouter(db, hosted));
 
   const asOf = (req: Request) => (typeof req.query.date === 'string' && DATE.test(req.query.date) ? req.query.date : undefined);

@@ -268,6 +268,11 @@ export type PlatformSettings = {
   invite_days: string;
   mcfly_model: string;
   mcfly_daily_limit: string;
+  /** Defaults for a person's own OpenAI or Gemini key (server/admin.ts). Missing from older servers. */
+  openai_model?: string;
+  openai_vision_model?: string;
+  openai_transcribe_model?: string;
+  gemini_model?: string;
 };
 
 export type AdminOverview = {
@@ -280,7 +285,20 @@ export type AdminOverview = {
 
 // ---------- Ask McFly ----------
 
-export type McflyStatus = { configured: boolean; limit: number; usedToday: number };
+/**
+ * GET /api/mcfly. On the shared key, limit and usedToday are the admin's daily limit; on a person's own key they're
+ * its anti-abuse cap (limited false). provider, source and limited are missing from older servers, and while nothing
+ * is set up.
+ */
+export type McflyStatus = {
+  configured: boolean;
+  limit: number;
+  usedToday: number;
+  provider?: 'anthropic' | 'openai' | 'gemini';
+  source?: 'own' | 'shared';
+  /** The shared daily limit applies (shown as "N questions left today"). */
+  limited?: boolean;
+};
 export type McflyTurn = { role: 'user' | 'assistant'; content: string };
 
 /**

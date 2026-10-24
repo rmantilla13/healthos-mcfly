@@ -1,11 +1,15 @@
-// Ask McFly (/api/mcfly): a Claude agent that answers questions about the signed-in person's own health
-// data. It can only read, through the tools below, and every tool runs in that person's scope. The server
-// keeps no conversation: the browser sends the visible history (plain text) with each question.
+// Ask McFly (/api/mcfly): an agent that answers questions about the signed-in person's own health data, on the
+// server's shared Claude key or on the person's own Claude, OpenAI or Gemini key (server/ai/resolve.ts). It can only
+// read, through the tools below, and every tool runs in that person's scope. The server keeps no conversation: the
+// browser sends the visible history (plain text) with each question.
 import Anthropic from '@anthropic-ai/sdk';
 import express, { type Request, type Response } from 'express';
+import type { AiSource } from '../shared/ai.ts';
 import { type LabResult, matchBiomarker, normalizeName, statusHint } from '../shared/labs.ts';
-import type { Digest, DigestReply, McflyVisual, NutritionNumbers, Point, Units } from '../shared/types.ts';
+import type { Digest, DigestReply, McflyStatus, McflyVisual, NutritionNumbers, Point, Units } from '../shared/types.ts';
 import { platformSettings } from './admin.ts';
+import { AiError, type AiFetch, PROVIDER_LABEL, type ToolResult } from './ai/provider.ts';
+import { type AiRoute, chatFor, noteOwnUse } from './ai/resolve.ts';
 import { currentUser } from './auth.ts';
 import { cycleView } from './cycle/index.ts';
 import { labsView } from './labs.ts';
@@ -15,10 +19,7 @@ import { type Db, type Scope, getUserSetting, setUserSetting } from './db.ts';
 import { patterns } from './insights.ts';
 import { requestContext, sourceList, summary, trends, workouts } from './query.ts';
 
-type BetaMessageParam = Anthropic.Beta.BetaMessageParam;
 type BetaTool = Anthropic.Beta.BetaTool;
-type BetaToolUseBlock = Anthropic.Beta.BetaToolUseBlock;
-type BetaToolResultBlockParam = Anthropic.Beta.BetaToolResultBlockParam;
 
 /** The part of the SDK client McFly uses; tests pass a fake. */
 export type McflyClient = Pick<Anthropic, 'beta'>;
@@ -667,8 +668,8 @@ const TOOLS: Tool[] = [
 /** The tools this person's question may use. */
 const toolsFor = (ctx: Ctx) => TOOLS.filter((t) => !t.when || t.when(ctx));
 
-/** What the API sees: the definitions without our run/label functions. Eager streaming, so we validate inputs ourselves. */
-const apiTools = (tools: Tool[]): BetaTool[] => tools.map(({ name, description, input_schema }) => ({ name, description, input_schema, eager_input_streaming: true }));
+/** What the model sees: the definitions without our run/label functions (each provider writes them its own way). */
+const toolDefs = (tools: Tool[]) => tools.map(({ name, description = '', input_schema }) => ({ name, description, schema: input_schema as Record<string, unknown> }));
 
 /** Who McFly is, who it's talking with and when: the opening of both the chat's and the weekly digest's instructions. */
 function intro(name: string, today: string, timeZone: string | null, units: Units) {
@@ -785,10 +786,65 @@ export async function refundQuestion(db: Db, userId: string, day: string) {
 /** The limit counts by UTC date, so changing your own time zone can't reset it. */
 export const usageDay = () => new Date().toISOString().slice(0, 10);
 
-async function usedToday(db: Db, userId: string, day: string) {
-  const [row] = await db.query<{ questions: number }>('SELECT questions FROM mcfly_usage WHERE user_id = $1 AND day = $2', [userId, day]);
-  return row ? Number(row.questions) : 0;
+async function usedToday(db: Db, userId: string, day: string, source: AiSource = 'shared') {
+  const [row] = await db.query<{ questions: number; own_questions: number }>('SELECT questions, own_questions FROM mcfly_usage WHERE user_id = $1 AND day = $2', [userId, day]);
+  return row ? Number(source === 'own' ? row.own_questions : row.questions) : 0;
 }
+
+// ---------- a person's own key ----------
+// Questions on someone's own key cost the owner nothing, so the shared limit doesn't apply. They're counted apart
+// (own_*), never in the admin's cost view, with a high cap: the tools still run on this server and its database.
+
+/** Questions (and meal estimates) a day on a person's own key. */
+export const OWN_DAILY_LIMIT = 200;
+
+/** Count a question on a person's own key; null at the cap. Atomic, like claimQuestion. */
+export async function claimOwnQuestion(db: Db, userId: string, day: string): Promise<number | null> {
+  const [row] = await db.query<{ own_questions: number }>(
+    `INSERT INTO mcfly_usage (user_id, day, own_questions) VALUES ($1, $2, 1)
+     ON CONFLICT (user_id, day) DO UPDATE SET own_questions = mcfly_usage.own_questions + 1 WHERE mcfly_usage.own_questions < $3
+     RETURNING own_questions`,
+    [userId, day, OWN_DAILY_LIMIT],
+  );
+  return row ? Number(row.own_questions) : null;
+}
+
+/** Count a question against whichever key answers it: the shared daily limit, or the own-key cap. */
+export const claimFor = (db: Db, userId: string, day: string, source: AiSource, limit: number) =>
+  source === 'own' ? claimOwnQuestion(db, userId, day) : claimQuestion(db, userId, day, limit);
+
+/** Give back a question that never got an answer, on whichever key it was counted. */
+export async function refundFor(db: Db, userId: string, day: string, source: AiSource) {
+  if (source === 'shared') return refundQuestion(db, userId, day);
+  await db.query('UPDATE mcfly_usage SET own_questions = own_questions - 1 WHERE user_id = $1 AND day = $2 AND own_questions > 0', [userId, day]);
+}
+
+/** Tokens used, in the shared columns (the admin's cost view) or the person's own. */
+export async function addTokens(db: Db, userId: string, day: string, source: AiSource, input: number, output: number) {
+  const [i, o] = source === 'own' ? ['own_input_tokens', 'own_output_tokens'] : ['input_tokens', 'output_tokens'];
+  await db.query(`UPDATE mcfly_usage SET ${i} = ${i} + $3, ${o} = ${o} + $4 WHERE user_id = $1 AND day = $2`, [userId, day, input, output]);
+}
+
+/** Words for a question over the limit of the key it would use. */
+const overLimit = (route: AiRoute, limit: number) =>
+  route.source === 'own'
+    ? `You've asked McFly ${OWN_DAILY_LIMIT} questions today on your own ${PROVIDER_LABEL[route.provider]} key, the most it takes in a day. Ask again tomorrow.`
+    : `You've asked McFly ${limit} questions today, the daily limit. Ask again tomorrow.`;
+
+/** A failed call in plain words. On someone's own key, a key or billing problem is theirs to fix; on the shared one, the admin's. */
+export function failureWords(route: AiRoute, err: unknown) {
+  const kind = err instanceof AiError ? err.kind : null;
+  const who = route.source === 'own' ? PROVIDER_LABEL[route.provider] : null;
+  if (kind === 'auth') return who ? `Your ${who} key isn't working. Check it in your Profile → Chatbot.` : "McFly's API key isn't working. The admin needs to check ANTHROPIC_API_KEY.";
+  if (kind === 'quota') return who ? `Your ${who} account is out of credit.` : "McFly's Claude account is out of credit. Ask the admin to top it up.";
+  if (kind === 'rate' || kind === 'server') return 'McFly is busy right now. Try again in a minute.';
+  if (kind === 'bad_request') return "McFly couldn't take that request. Start a new chat and try again.";
+  return null;
+}
+
+/** The kind of failure for the log: never the question, the data, the answer or the provider's own message. */
+const logged = (route: AiRoute, err: unknown) =>
+  err instanceof AiError ? `${route.provider} ${err.kind}${err.status ? ` ${err.status}` : ''}` : err instanceof Error ? err.name : 'error';
 
 // ---------- the weekly digest ----------
 
@@ -861,28 +917,45 @@ type DigestResult = { status: number; body: DigestReply | { error: string } };
 
 // ---------- the router ----------
 
-export type McflyOptions = { hosted: boolean; client?: () => McflyClient | null };
+export type McflyOptions = {
+  hosted: boolean;
+  /** The server's shared Claude client (tests pass a fake). */
+  client?: () => McflyClient | null;
+  /** fetch for OpenAI, Gemini and a person's own Claude key (tests pass a fake). */
+  aiFetch?: AiFetch;
+};
 
 export const defaultClient = () => (process.env.ANTHROPIC_API_KEY ? new Anthropic() : null);
 
-export function mcflyRouter(db: Db, { hosted, client = defaultClient }: McflyOptions) {
+export function mcflyRouter(db: Db, { hosted, client = defaultClient, aiFetch }: McflyOptions) {
   const router = express.Router();
 
   router.get('/', async (_req: Request, res: Response) => {
     const user = currentUser(res);
-    const platform = await platformSettings(db);
-    const limit = Number(platform.mcfly_daily_limit);
-    res.json({ configured: Boolean(client()), limit, usedToday: await usedToday(db, user.id, usageDay()) });
+    const [platform, route] = await Promise.all([platformSettings(db), chatFor(db, user.id, client, aiFetch)]);
+    const day = usageDay();
+    // On a person's own key, limit and usedToday are its cap, so a client that counts questions left (the iPhone
+    // app) keeps working when the admin's limit is 0.
+    const body: McflyStatus =
+      typeof route === 'object' && route.source === 'own'
+        ? { configured: true, limit: OWN_DAILY_LIMIT, usedToday: await usedToday(db, user.id, day, 'own'), provider: route.provider, source: 'own', limited: false }
+        : {
+            configured: Boolean(client()),
+            limit: Number(platform.mcfly_daily_limit),
+            usedToday: await usedToday(db, user.id, day),
+            ...(route !== 'none' ? { provider: 'anthropic' as const, source: 'shared' as const, limited: true } : {}),
+          };
+    res.json(body);
   });
 
   /** Last week's digest, written at most once per person per week and kept in user_settings. */
   async function weeklyDigest(userId: string): Promise<DigestResult> {
-    const anthropic = client();
-    if (!anthropic) return { status: 200, body: { configured: false, digest: null, reason: 'not_configured' } };
+    const route = await chatFor(db, userId, client, aiFetch);
+    if (route === 'none') return { status: 200, body: { configured: false, digest: null, reason: 'not_configured' } };
     const scope: Scope = { db, userId };
     const [platform, rc, kept] = await Promise.all([platformSettings(db), requestContext(scope, hosted), cachedDigest(db, userId)]);
     const limit = Number(platform.mcfly_daily_limit);
-    if (!(limit > 0)) return { status: 200, body: { configured: true, digest: null, reason: 'off' } };
+    if (route === 'off') return { status: 200, body: { configured: true, digest: null, reason: 'off' } };
     // A digest of the demo data isn't this person's week once their own data arrives (or the other way round).
     const cached = kept && kept.demo === rc.demo ? kept.digest : null;
     const week = digestWeek(rc.today);
@@ -891,51 +964,34 @@ export function mcflyRouter(db: Db, { hosted, client = defaultClient }: McflyOpt
     if (days < DIGEST_MIN_DAYS) return { status: 200, body: { configured: true, digest: null, reason: 'no_data' } };
     // Claimed before the model is called, like a question, so the limit holds whatever happens next.
     const day = usageDay();
-    if ((await claimQuestion(db, userId, day, limit)) === null) return { status: 200, body: { configured: true, digest: cached, reason: 'limit' } };
+    if ((await claimFor(db, userId, day, route.source, limit)) === null) return { status: 200, body: { configured: true, digest: cached, reason: 'limit' } };
 
     let inputTokens = 0;
     let outputTokens = 0;
     try {
       const input = await digestInput(scope, hosted, week, days);
-      // No cache_control: each digest's prompt is read once.
-      const message = await anthropic.beta.messages.create({
-        model: platform.mcfly_model,
-        max_tokens: 16_000,
-        output_config: { effort: 'medium' },
-        betas: ['server-side-fallback-2026-07-01'],
-        fallbacks: 'default',
+      const reply = await route.api.text({
         system: digestPrompt(rc.settings.name, rc.today, rc.settings.timeZone, rc.settings.units),
-        messages: [{ role: 'user', content: `Write my digest for the week of ${week.start} to ${week.end}.\n\n${JSON.stringify(input)}` }],
+        text: `Write my digest for the week of ${week.start} to ${week.end}.\n\n${JSON.stringify(input)}`,
+        maxTokens: 16_000,
       });
-      inputTokens = message.usage.input_tokens + (message.usage.cache_read_input_tokens ?? 0) + (message.usage.cache_creation_input_tokens ?? 0);
-      outputTokens = message.usage.output_tokens;
-      const text =
-        message.stop_reason === 'refusal'
-          ? ''
-          : message.content
-              .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === 'text')
-              .map((b) => b.text)
-              .join('')
-              .trim();
-      if (!text) throw new Error(message.stop_reason === 'refusal' ? 'refusal' : 'empty');
-      const digest: Digest = { weekStart: week.start, weekEnd: week.end, text, generatedAt: new Date().toISOString() };
+      inputTokens = reply.usage.input;
+      outputTokens = reply.usage.output;
+      if (!reply.text) throw new Error(reply.stop === 'refusal' ? 'refusal' : 'empty');
+      await noteOwnUse(db, userId, route.provider, route.source);
+      const digest: Digest = { weekStart: week.start, weekEnd: week.end, text: reply.text, generatedAt: new Date().toISOString() };
       await setUserSetting(db, userId, DIGEST_KEY, JSON.stringify({ ...digest, demo: rc.demo }));
       return { status: 200, body: { configured: true, digest } };
     } catch (err) {
       // Log the kind of failure only: never the data or the digest.
-      console.error('mcfly digest:', err instanceof Anthropic.APIError ? `API ${err.status}` : err instanceof Error ? err.message : 'error');
+      console.error('mcfly digest:', logged(route, err));
+      await noteOwnUse(db, userId, route.provider, route.source, err);
       // A digest that wasn't written doesn't count against the limit.
-      await db.query('UPDATE mcfly_usage SET questions = GREATEST(questions - 1, 0) WHERE user_id = $1 AND day = $2', [userId, day]).catch(() => {});
-      return { status: 503, body: { error: "McFly couldn't write this week's digest right now. Try again later." } };
+      await refundFor(db, userId, day, route.source).catch(() => {});
+      const why = route.source === 'own' && err instanceof AiError && (err.kind === 'auth' || err.kind === 'quota') ? failureWords(route, err) : null;
+      return { status: 503, body: { error: why ?? "McFly couldn't write this week's digest right now. Try again later." } };
     } finally {
-      await db
-        .query('UPDATE mcfly_usage SET input_tokens = input_tokens + $3, output_tokens = output_tokens + $4 WHERE user_id = $1 AND day = $2', [
-          userId,
-          day,
-          inputTokens,
-          outputTokens,
-        ])
-        .catch(() => {});
+      await addTokens(db, userId, day, route.source, inputTokens, outputTokens).catch(() => {});
     }
   }
 
@@ -956,25 +1012,23 @@ export function mcflyRouter(db: Db, { hosted, client = defaultClient }: McflyOpt
   router.post('/chat', async (req: Request, res: Response) => {
     const user = currentUser(res);
     const scope: Scope = { db, userId: user.id };
-    const anthropic = client();
-    if (!anthropic) return void res.status(503).json({ error: "Ask McFly isn't set up on this server yet." });
+    const route = await chatFor(db, user.id, client, aiFetch);
+    if (route === 'none') return void res.status(503).json({ error: "Ask McFly isn't set up on this server yet." });
     const history = parseHistory(req.body);
     if (typeof history === 'string') return void res.status(400).json({ error: history });
 
     const [platform, rc] = await Promise.all([platformSettings(db), requestContext(scope, hosted)]);
     const limit = Number(platform.mcfly_daily_limit);
-    if (!(limit > 0)) return void res.status(403).json({ error: 'Ask McFly is turned off right now.' });
+    if (route === 'off') return void res.status(403).json({ error: 'Ask McFly is turned off right now.' });
     const day = usageDay();
-    if ((await claimQuestion(db, user.id, day, limit)) === null) {
-      return void res.status(429).json({ error: `You've asked McFly ${limit} questions today, the daily limit. Ask again tomorrow.` });
-    }
+    if ((await claimFor(db, user.id, day, route.source, limit)) === null) return void res.status(429).json({ error: overLimit(route, limit) });
 
     const nutrition = rc.settings.nutrition ? rc.settings.nutritionNumbers : null;
     const ctx: Ctx = { scope, hosted, units: rc.settings.units, today: rc.today, demo: rc.demo, cycle: rc.settings.cycleTracking, nutrition, stepGoal: rc.settings.stepGoal, shown: 0 };
     const tools = toolsFor(ctx);
     const toolByName = new Map(tools.map((t) => [t.name, t]));
-    const messages: BetaMessageParam[] = history.map((t) => ({ role: t.role, content: t.content }));
     const system = systemPrompt(rc.settings.name, rc.today, rc.settings.timeZone, rc.settings.units, ctx.cycle, ctx.nutrition);
+    const session = route.api.chat({ system, tools: toolDefs(tools), history, maxTokens: 32_000 });
 
     res.status(200);
     res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
@@ -993,65 +1047,37 @@ export function mcflyRouter(db: Db, { hosted, client = defaultClient }: McflyOpt
     let outputTokens = 0;
     let wroteText = false;
     try {
-      let jsonRetries = 0;
       for (let round = 0; ; round++) {
         if (round >= MAX_ROUNDS) throw new Error('rounds');
-        const stream = anthropic.beta.messages.stream(
-          {
-            model: platform.mcfly_model,
-            max_tokens: 32_000,
-            output_config: { effort: 'medium' },
-            // A classifier false positive is retried on Anthropic's recommended model instead of failing.
-            betas: ['server-side-fallback-2026-07-01'],
-            fallbacks: 'default',
-            cache_control: { type: 'ephemeral' },
-            system,
-            tools: apiTools(tools),
-            messages,
-          },
-          { signal: abort.signal },
-        );
         let roundText = false;
-        stream.on('text', (delta) => {
+        const step = await session.next((delta) => {
           // Text from an earlier round (a note before reading data) gets a paragraph break before the next.
           if (!roundText && wroteText) send('text', { text: '\n\n' });
           roundText = wroteText = true;
           send('text', { text: delta });
-        });
-        let message: Anthropic.Beta.BetaMessage;
-        try {
-          message = await stream.finalMessage();
-          jsonRetries = 0;
-        } catch (err) {
-          // With eager input streaming, a tool input that isn't parseable JSON rejects the turn: re-issue it.
-          if (err instanceof Anthropic.APIError || abort.signal.aborted || jsonRetries++ >= 2) throw err;
-          continue;
-        }
-        inputTokens += message.usage.input_tokens + (message.usage.cache_read_input_tokens ?? 0) + (message.usage.cache_creation_input_tokens ?? 0);
-        outputTokens += message.usage.output_tokens;
+        }, abort.signal);
+        inputTokens += step.usage.input;
+        outputTokens += step.usage.output;
 
-        if (message.stop_reason === 'refusal') {
+        if (step.stop === 'continue') continue;
+        if (step.stop === 'refusal') {
           send('refusal', { error: "McFly can't help with that one. Try asking another way." });
           break;
         }
-        if (message.stop_reason === 'pause_turn') {
-          messages.push({ role: 'assistant', content: message.content });
-          continue;
-        }
-        const calls = message.content.filter((b): b is BetaToolUseBlock => b.type === 'tool_use');
-        if (message.stop_reason !== 'tool_use' || calls.length === 0) {
-          if (message.stop_reason === 'max_tokens') send('text', { text: '\n\n(The answer was cut off. Ask a narrower question.)' });
+        if (step.stop !== 'tool_calls' || step.calls.length === 0) {
+          if (step.stop === 'length') send('text', { text: '\n\n(The answer was cut off. Ask a narrower question.)' });
           break;
         }
 
-        messages.push({ role: 'assistant', content: message.content });
+        const calls = step.calls;
         // Pictures go out once every call in the round is done, in the order McFly asked for them.
         const drawn: (McflyVisual | null)[] = calls.map(() => null);
         const results = await Promise.all(
-          calls.map(async (call, i): Promise<BetaToolResultBlockParam> => {
+          calls.map(async (call, i): Promise<ToolResult> => {
             const tool = toolByName.get(call.name);
-            const input = call.input && typeof call.input === 'object' && !Array.isArray(call.input) ? (call.input as Record<string, unknown>) : null;
-            if (!tool || !input) return { type: 'tool_result', tool_use_id: call.id, is_error: true, content: `Unknown tool or malformed input: ${call.name}` };
+            const out = (content: string, isError = false): ToolResult => ({ id: call.id, name: call.name, content, isError });
+            if (!tool || !call.input) return out(`Unknown tool or malformed input: ${call.name}`, true);
+            const input = call.input;
             send('tool', { label: tool.label(input) });
             try {
               const result = await tool.run(ctx, input);
@@ -1059,11 +1085,11 @@ export function mcflyRouter(db: Db, { hosted, client = defaultClient }: McflyOpt
                 // The picture goes to the browser; McFly gets back what was drawn.
                 const { visual, forModel } = result as { visual: McflyVisual; forModel: unknown };
                 drawn[i] = visual;
-                return { type: 'tool_result', tool_use_id: call.id, content: JSON.stringify(forModel) };
+                return out(JSON.stringify(forModel));
               }
-              return { type: 'tool_result', tool_use_id: call.id, content: JSON.stringify(result) };
+              return out(JSON.stringify(result));
             } catch (err) {
-              if (err instanceof ToolInputError) return { type: 'tool_result', tool_use_id: call.id, is_error: true, content: err.message };
+              if (err instanceof ToolInputError) return out(err.message, true);
               throw err;
             }
           }),
@@ -1075,41 +1101,27 @@ export function mcflyRouter(db: Db, { hosted, client = defaultClient }: McflyOpt
             ctx.shown++;
             send('visual', { visual });
           } else {
-            results[i] = { type: 'tool_result', tool_use_id: calls[i].id, is_error: true, content: TOO_MANY };
+            results[i] = { ...results[i], content: TOO_MANY, isError: true };
           }
         });
-        messages.push({ role: 'user', content: results });
+        session.addResults(results);
       }
       send('done', {});
+      await noteOwnUse(db, user.id, route.provider, route.source);
     } catch (err) {
       if (!abort.signal.aborted) {
         const message =
-          err instanceof Anthropic.AuthenticationError || err instanceof Anthropic.PermissionDeniedError
-            ? "McFly's API key isn't working. The admin needs to check ANTHROPIC_API_KEY."
-            : err instanceof Anthropic.RateLimitError || err instanceof Anthropic.InternalServerError
-              ? 'McFly is busy right now. Try again in a minute.'
-              : err instanceof Anthropic.BadRequestError
-                ? "McFly couldn't take that request. Start a new chat and try again."
-                : err instanceof Error && err.message === 'rounds'
-                  ? 'McFly took too many steps on that one. Try a narrower question.'
-                  : "McFly couldn't answer right now. Try again.";
+          failureWords(route, err) ??
+          (err instanceof Error && err.message === 'rounds' ? 'McFly took too many steps on that one. Try a narrower question.' : "McFly couldn't answer right now. Try again.");
         // Log the kind of failure only: never the question, the data or the answer.
-        console.error('mcfly:', err instanceof Anthropic.APIError ? `API ${err.status}` : err instanceof Error ? err.name : 'error');
+        console.error('mcfly:', logged(route, err));
         send('error', { error: message });
+        await noteOwnUse(db, user.id, route.provider, route.source, err);
       }
       // A question that failed before any answer doesn't count against the limit.
-      if (!wroteText) {
-        await db.query('UPDATE mcfly_usage SET questions = GREATEST(questions - 1, 0) WHERE user_id = $1 AND day = $2', [user.id, day]).catch(() => {});
-      }
+      if (!wroteText) await refundFor(db, user.id, day, route.source).catch(() => {});
     } finally {
-      await db
-        .query('UPDATE mcfly_usage SET input_tokens = input_tokens + $3, output_tokens = output_tokens + $4 WHERE user_id = $1 AND day = $2', [
-          user.id,
-          day,
-          inputTokens,
-          outputTokens,
-        ])
-        .catch(() => {});
+      await addTokens(db, user.id, day, route.source, inputTokens, outputTokens).catch(() => {});
       res.end();
     }
   });
