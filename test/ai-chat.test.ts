@@ -196,7 +196,7 @@ test("own-key questions work with McFly's limit at 0, never count against it, an
   // Shared-key users are still off; the admin's cost view shows nothing for Bob.
   assert.equal((await carol.ask('hello?')).status, 403);
   const ov = (await owner.call('GET', '/api/admin/overview')).json;
-  assert.deepEqual(ov.users.find((u: { id: string }) => u.id === bobId).mcfly, { questions30d: 0, tokens30d: 0 });
+  assert.deepEqual(ov.users.find((u: { id: string }) => u.id === bobId).mcfly, { questions30d: 0, tokens30d: 0, voiceNotes30d: 0 });
   assert.equal(claude.length, 0);
 });
 

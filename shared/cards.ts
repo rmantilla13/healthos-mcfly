@@ -65,6 +65,8 @@ const KNOWN = new Set(CARDS.map((c) => c.id));
 export const OPTIONAL_CARDS = new Set(CARDS.filter((c) => c.defaultHidden).map((c) => c.id));
 /** Whether a card shows, given both lists: an optional card when turned on, any other unless hidden. */
 export const cardShown = (id: string, hidden: string[], shown: string[]) => (OPTIONAL_CARDS.has(id) ? shown.includes(id) : !hidden.includes(id));
+/** How many default cards are hidden. An optional card turned off is in `hidden` too (for the iPhone), but it isn't hidden from a default. */
+export const hiddenDefaults = (hidden: string[]) => hidden.filter((id) => !OPTIONAL_CARDS.has(id)).length;
 
 /** Nutrition's cards, kept out of everything an admin sees or sends: the admin screens can't tell who uses Nutrition. */
 export const NUTRITION_CARDS = new Set(CARDS.filter((c) => c.nutrition).map((c) => c.id));

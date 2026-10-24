@@ -233,7 +233,9 @@
         <li>
           <strong>Voice notes</strong>: a voice note is recorded in your browser and sent once to <strong>OpenAI</strong> to be turned into
           words, using your own OpenAI key, or the server's if the admin set one. healthOS never stores or logs the recording. The words fill
-          the message box for you to check, and nothing is estimated until you send it.
+          the message box for you to check, and nothing is estimated until you send it. On the server's key, each person can send up to 40
+          voice notes a day (counted by UTC date), and one OpenAI couldn't turn into words isn't counted. Voice notes on your own OpenAI key
+          aren't limited, and a voice note never counts as an Ask McFly question.
         </li>
       </ul>
 
@@ -319,7 +321,7 @@
         <li>
           <strong>What you see</strong>: when you turn it on, you choose everything, everything except calories, or no calorie or nutrient
           amounts at all (what you logged and when still shows, with its portion). Whatever you leave out is removed on the server, so it never
-          reaches the page or Ask McFly. The Nutrition page also shows the water and
+          reaches the page, Ask McFly or your data export. The Nutrition page also shows the water and
           caffeine you already log, and patterns between them and your sleep and heart rate variability, worded as things that tend to go
           together, not causes.
         </li>
@@ -452,7 +454,8 @@
         <li>
           You can download all your data as a JSON file from your Profile (<strong>Export your data</strong>): your readings, sleep, workouts,
           food log, cycle entries, blood records, journal, body measurements, settings, and a list of your files (name, type, size and dates;
-          not the files themselves). Passwords, keys and connection tokens are never included.
+          not the files themselves). Passwords, keys and connection tokens are never included, and neither are the nutrition amounts your
+          Nutrition setting hides.
         </li>
         <li>
           Disconnecting WHOOP in healthOS revokes the app's access with WHOOP and deletes the stored tokens. You can also revoke access from

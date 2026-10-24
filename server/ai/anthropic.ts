@@ -38,6 +38,23 @@ const replyOf = (m: BetaMessage, text: string): Reply => ({
   usage: usageOf(m),
 });
 
+/**
+ * A round's content as it goes back. After a mid-output fallback, what the declining model made before the last
+ * `fallback` block isn't part of the turn: its thinking, narration and tool calls are dropped (a server tool call is
+ * kept only with its result), and its tool calls are never run. Everything else, the fallback block included, goes
+ * back exactly where it was, since the API checks the thinking around that boundary.
+ */
+export function echoable(content: Anthropic.Beta.BetaContentBlock[]): Anthropic.Beta.BetaContentBlock[] {
+  let last = -1;
+  content.forEach((b, i) => {
+    if (b.type === 'fallback') last = i;
+  });
+  if (last < 0) return content;
+  const answered = new Set(content.flatMap((b) => ('tool_use_id' in b && typeof b.tool_use_id === 'string' ? [b.tool_use_id] : [])));
+  const dropped = new Set(['thinking', 'redacted_thinking', 'connector_text', 'tool_use']);
+  return content.filter((b, i) => i >= last || (!dropped.has(b.type) && !(b.type === 'server_tool_use' && !answered.has(b.id))));
+}
+
 export function anthropicProvider(client: McflyClient, model: string): ChatProviderApi {
   return {
     id: 'anthropic',
@@ -76,13 +93,14 @@ export function anthropicProvider(client: McflyClient, model: string): ChatProvi
           }
           const usage = usageOf(message);
           if (message.stop_reason === 'refusal') return { stop: 'refusal', calls: [], usage };
+          const turn = echoable(message.content);
           if (message.stop_reason === 'pause_turn') {
-            messages.push({ role: 'assistant', content: message.content });
+            messages.push({ role: 'assistant', content: turn });
             return { stop: 'continue', calls: [], usage };
           }
-          const calls = message.content.filter((b): b is BetaToolUseBlock => b.type === 'tool_use');
+          const calls = turn.filter((b): b is BetaToolUseBlock => b.type === 'tool_use');
           if (message.stop_reason !== 'tool_use' || calls.length === 0) return { stop: message.stop_reason === 'max_tokens' ? 'length' : 'end', calls: [], usage };
-          messages.push({ role: 'assistant', content: message.content });
+          messages.push({ role: 'assistant', content: turn });
           return {
             stop: 'tool_calls',
             calls: calls.map((c) => ({

@@ -72,8 +72,8 @@ export function adminRouter(db: Db) {
           'SELECT id, kind, email, role, user_id, created_at, expires_at, used_at, used_by, revoked_at FROM invites ORDER BY created_at DESC LIMIT 100',
         ),
         platformSettings(db),
-        db.query<{ user_id: string; questions: number; tokens: number }>(
-          'SELECT user_id, SUM(questions)::int AS questions, SUM(input_tokens + output_tokens)::float8 AS tokens FROM mcfly_usage WHERE day >= $1 GROUP BY user_id',
+        db.query<{ user_id: string; questions: number; tokens: number; voice_notes: number }>(
+          'SELECT user_id, SUM(questions)::int AS questions, SUM(input_tokens + output_tokens)::float8 AS tokens, SUM(voice_notes)::int AS voice_notes FROM mcfly_usage WHERE day >= $1 GROUP BY user_id',
           [since],
         ),
       ]);
@@ -107,7 +107,7 @@ export function adminRouter(db: Db) {
               historyComplete: Boolean((sync?.lastCounts as Record<string, number> | undefined)?.historyComplete),
             },
             photo: Boolean(setting(u.id, 'photo_meta')),
-            mcfly: { questions30d: mcfly.get(u.id)?.questions ?? 0, tokens30d: Number(mcfly.get(u.id)?.tokens ?? 0) },
+            mcfly: { questions30d: mcfly.get(u.id)?.questions ?? 0, tokens30d: Number(mcfly.get(u.id)?.tokens ?? 0), voiceNotes30d: mcfly.get(u.id)?.voice_notes ?? 0 },
             hiddenCards: withoutNutritionCards(readHiddenCards(setting(u.id, 'hidden_cards'))),
             shownCards: withoutNutritionCards(readShownCards(setting(u.id, 'shown_cards'))),
           };

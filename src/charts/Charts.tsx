@@ -42,14 +42,18 @@ function xLabels(dates: string[], width: number) {
   return out;
 }
 
-export function YAxis({ ticks, yOf, width, format }: { ticks: number[]; yOf: (v: number) => number; width: number; format: (v: number) => string }) {
+/** A tick label: the value, and the step between ticks for labels that need its decimals (stepDigits). */
+export type TickFormat = (v: number, step?: number) => string;
+
+export function YAxis({ ticks, yOf, width, format }: { ticks: number[]; yOf: (v: number) => number; width: number; format: TickFormat }) {
+  const step = ticks.length > 1 ? ticks[1] - ticks[0] : undefined;
   return (
     <g>
       {ticks.map((t) => (
         <g key={t}>
           <line x1={M.left} x2={width - M.right} y1={yOf(t)} y2={yOf(t)} className="grid" />
           <text x={M.left - 8} y={yOf(t)} dy="0.32em" textAnchor="end" className="axis-label">
-            {format(t)}
+            {format(t, step)}
           </text>
         </g>
       ))}
@@ -72,7 +76,7 @@ export function TrendChart({
 }: {
   points: Point[];
   format: (v: number) => string;
-  tickFormat?: (v: number) => string;
+  tickFormat?: TickFormat;
   color?: string;
   height?: number;
   zero?: boolean;
@@ -186,7 +190,7 @@ export function BarChart({
 }: {
   points: Point[];
   format: (v: number) => string;
-  tickFormat?: (v: number) => string;
+  tickFormat?: TickFormat;
   height?: number;
   goal?: { value: number; label: string };
   median?: boolean;
@@ -270,7 +274,7 @@ export function StackedBars({
   rows: { date: string; values: Record<string, number> }[];
   series: StackSeries[];
   format: (v: number) => string;
-  tickFormat?: (v: number) => string;
+  tickFormat?: TickFormat;
   height?: number;
   label: string;
   periodLabel?: (date: string) => string;

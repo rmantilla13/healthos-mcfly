@@ -6,6 +6,7 @@ import '../styles/profile.css';
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { AI_PROVIDERS, type AiStatus } from '../../shared/ai.ts';
 import { PEER_BANDS, PEER_MIN_DAYS, PEER_MIN_OTHERS, type PeerBand, type PeerData, type PeerMetric, peerPair } from '../../shared/peers.ts';
+import { hiddenDefaults } from '../../shared/cards.ts';
 import type { PortraitList } from '../../shared/portraits.ts';
 import type { FigureVariant, Settings, Status } from '../../shared/types.ts';
 import { ChatbotSheet, OpenAIKeySheet } from '../components/ai/AiSheets.tsx';
@@ -68,7 +69,11 @@ export function Profile({ status, refresh, signedIn, params }: { status: Status;
             <p>{s.peerComparison ? 'Peer comparisons enabled.' : 'Peer comparisons off.'} Change your image, age or participation anytime.</p>
           </Row>
           <Row title="Chatbot" action={manage('chatbot', 'Manage chatbot AI')}>
-            <p>Choose OpenAI, Claude or Gemini and connect your own API key.</p>
+            <p>
+              {ai && !ai.byok
+                ? "Ask McFly can answer on your own OpenAI, Claude or Gemini key, but storing your own AI keys isn't set up on this server."
+                : 'Choose OpenAI, Claude or Gemini and connect your own API key.'}
+            </p>
             {ownChat && <p>Ask McFly uses your own {providerLabel(ownChat.provider)} key.</p>}
           </Row>
           <Row
@@ -386,7 +391,7 @@ function CardsSheet({ status, refresh, onClose }: { status: Status; refresh: () 
       onClose={onClose}
       footer={
         <>
-          {cards.lists.hidden.length > 0 && (
+          {hiddenDefaults(cards.lists.hidden) > 0 && (
             <button type="button" className="btn btn-quiet" onClick={cards.showAll}>
               Show all
             </button>

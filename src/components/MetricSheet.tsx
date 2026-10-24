@@ -24,6 +24,7 @@ import {
 } from '../../shared/metrics.ts';
 import type { DayMetric } from '../../shared/types.ts';
 import { BarChart, ChartCard, TrendChart } from '../charts/Charts.tsx';
+import { stepDigits } from '../charts/core.tsx';
 import { DayChart } from '../charts/Day.tsx';
 import { cumulative, drawThrough, hourSpan } from '../charts/day.ts';
 import { compact, fmt, fmtDate, hoursMinutes, href, useApi } from '../lib.ts';
@@ -85,7 +86,8 @@ function formatter(sheet: { key: MetricKey; unit: string; digits: number }) {
 const tickFormatter = (sheet: { key: MetricKey; digits: number }) => {
   if (METRIC_INFO[sheet.key].duration) return (v: number) => `${fmt(v)}h`;
   if (sheet.key === 'steps' || sheet.key === 'active_energy') return compact;
-  return (v: number) => fmt(v, sheet.digits && Math.abs(v) < 100 ? 1 : 0);
+  // At least the decimals the tick step needs, so 0.25 steps don't round to repeated or wrong labels.
+  return (v: number, step?: number) => fmt(v, Math.max(sheet.digits && Math.abs(v) < 100 ? 1 : 0, stepDigits(step)));
 };
 
 const SOURCE: Record<string, string> = { apple: 'Apple Health', whoop: 'WHOOP', fitbit: 'Fitbit', manual: 'Added by you', demo: 'Demo data' };

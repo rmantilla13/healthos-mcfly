@@ -2,6 +2,7 @@ import { type KeyboardEvent, type PointerEvent, type ReactNode, useEffect, useRe
 import type { DayData, FigureVariant, Insight, NutritionNumbers, Perspective, PhotoMeta, Summary, TimelineEvent, WeekSummary } from '../../shared/types.ts';
 import { Gauge, MiniBars } from '../charts/Mini.tsx';
 import { clockOf, DAY_MINUTES, eventSpan, type HeartAt, hourClock, type Moment, momentAt, pressMinute, scrubMax, stepMinute, type TotalAt } from '../charts/scrub.ts';
+import type { AiStatus } from '../../shared/ai.ts';
 import type { MetricKey, MetricRange } from '../../shared/metrics.ts';
 import { AllHiddenNote, CardRow, useAllHidden } from '../components/CardRow.tsx';
 import { Figure, type HeartScrub } from '../components/Figure.tsx';
@@ -60,11 +61,7 @@ export function Home({
               callouts={['spo2', 'breathing', 'heart']}
             />
             {/* A portrait is made from photos in Profile; until then the digital human stands in. */}
-            {perspective === 'portrait' && !photo && (
-              <p className="home-portrait-note">
-                Your portrait appears here once it's made. Add photos in <a href={href('profile')}>Profile → Your portrait photos</a>.
-              </p>
-            )}
+            {perspective === 'portrait' && !photo && <PortraitNote />}
           </div>
           <Tagline />
         </div>
@@ -120,6 +117,18 @@ export function Home({
 }
 
 /** The line at the bottom of the figure's column, and the way on to every measurement (Vitals). */
+/** Where a portrait comes from, as true for this server: made from your photos on an OpenAI key, yours or the server's. */
+function PortraitNote() {
+  const { data: ai } = useApi<AiStatus>('/ai');
+  if (ai && !ai.portraits && !ai.byok) return <p className="home-portrait-note">Portraits aren't available on this server yet, so the digital human stands in.</p>;
+  return (
+    <p className="home-portrait-note">
+      Your portrait appears here once it's made. {ai && !ai.portraits ? 'Connect an OpenAI key and add' : 'Add'} photos in{' '}
+      <a href={href('profile')}>Profile → Your portrait photos</a>.
+    </p>
+  );
+}
+
 function Tagline({ compact = false }: { compact?: boolean }) {
   return (
     <div className={`home-tagline${compact ? ' is-compact' : ''}`}>

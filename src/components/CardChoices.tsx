@@ -67,7 +67,8 @@ export type CardChange = { cardShown: { id: string; shown: boolean } } | { hidde
  * Card choices edited one card at a time. Each click shows at once and goes to the server in order, as that one
  * card's change, which the server applies to the lists as stored then, so nothing changed elsewhere meanwhile
  * (another tab, or an admin) is undone. Whenever nothing is on its way, the boxes follow the stored lists.
- * `send` returns the lists the server stored. An optional card moves in or out of `shown`, any other of `hidden`.
+ * `send` returns the lists the server stored. An optional card moves in or out of `shown` (and the other way in `hidden`, for the
+ * iPhone), any other in or out of `hidden`.
  */
 export function useCardEditor(saved: CardLists, send: (body: CardChange) => Promise<CardLists>) {
   const [lists, setLists] = useState(saved);
@@ -103,7 +104,10 @@ export function useCardEditor(saved: CardLists, send: (body: CardChange) => Prom
     lists,
     error,
     toggle: (id: string, shown: boolean) =>
-      apply({ cardShown: { id, shown } }, (l) => (OPTIONAL_CARDS.has(id) ? { ...l, shown: flip(l.shown, id, shown) } : { ...l, hidden: flip(l.hidden, id, !shown) })),
+      // As withCardToggled does on the server: an optional card moves in or out of `shown`, and the other way in `hidden`.
+      apply({ cardShown: { id, shown } }, (l) =>
+        OPTIONAL_CARDS.has(id) ? { shown: flip(l.shown, id, shown), hidden: flip(l.hidden, id, !shown) } : { ...l, hidden: flip(l.hidden, id, !shown) },
+      ),
     /** Every default card back on; the optional ones stay as they are. */
     showAll: () => apply({ hiddenCards: [] }, (l) => ({ ...l, hidden: [] })),
   };

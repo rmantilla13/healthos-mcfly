@@ -79,6 +79,9 @@ export function median(values: number[]): number | null {
 }
 
 /** Clean axis ticks: 1, 2, 2.5 or 5 times a power of ten. */
+/** Decimals a tick step needs, so 0.5 steps read 96.5, 97.0, 97.5 rather than 97, 97, 98 (0.25 steps need two). */
+export const stepDigits = (step: number | undefined) => (step ? (String(Number(step.toFixed(10))).split('.')[1]?.length ?? 0) : 0);
+
 export function niceTicks(min: number, max: number, count = 4): number[] {
   if (!Number.isFinite(min) || !Number.isFinite(max)) return [];
   if (min === max) {

@@ -1,6 +1,7 @@
 // Admin panel: accounts, invite links and platform settings. It shows how much data each account has and
 // whether its syncs are healthy, never the health values themselves (the server doesn't send them).
 import { useState } from 'react';
+import { hiddenDefaults } from '../../shared/cards.ts';
 import type { AdminInvite, AdminOverview, AdminUser, PlatformSettings, Role, SessionUser } from '../../shared/types.ts';
 import { Icon } from '../components/Icon.tsx';
 import { fmt, fmtDate, notifyDataChanged, sendJson, useApi } from '../lib.ts';
@@ -181,6 +182,11 @@ function People({ data, me, act, onLink }: { data: AdminOverview; me: SessionUse
                   <td>
                     {u.mcfly.questions30d ? `${fmt(u.mcfly.questions30d)} question${u.mcfly.questions30d === 1 ? '' : 's'}` : <span className="muted">None</span>}
                     {u.mcfly.tokens30d > 0 && <div className="muted small">{fmt(u.mcfly.tokens30d / 1000)}K tokens</div>}
+                    {(u.mcfly.voiceNotes30d ?? 0) > 0 && (
+                      <div className="muted small">
+                        {fmt(u.mcfly.voiceNotes30d ?? 0)} voice note{u.mcfly.voiceNotes30d === 1 ? '' : 's'} on the server's key
+                      </div>
+                    )}
                   </td>
                   <td>
                     <AdminCards u={u} self={self} act={act} />
@@ -237,7 +243,7 @@ function AdminCards({ u, self, act }: { u: AdminUser; self: boolean; act: Act })
   });
   return (
     <details className="admin-cards">
-      <summary>{cards.lists.hidden.length ? `Cards · ${cards.lists.hidden.length} hidden` : 'Cards · all shown'}</summary>
+      <summary>{hiddenDefaults(cards.lists.hidden) ? `Cards · ${hiddenDefaults(cards.lists.hidden)} hidden` : 'Cards · all shown'}</summary>
       <p className="muted small">{self ? 'The cards on your Home, Sleep and Body pages.' : `The cards ${u.name || u.email} sees on Home, Sleep and Body. They can change these in their Profile too.`}</p>
       <CardChoices lists={cards.lists} onToggle={cards.toggle} idPrefix={`admin-${u.id}`} optional={optional} />
     </details>

@@ -242,8 +242,9 @@ export type AdminUser = {
   apple: { lastImport: string | null; lastSync: string | null; iphoneToken: boolean };
   whoop: { connected: boolean; lastSync: string | null; lastError: string | null; historyComplete: boolean };
   photo: boolean;
-  /** Ask McFly over the last 30 days: how many questions and tokens, never their content. */
-  mcfly: { questions30d: number; tokens30d: number };
+  /** Ask McFly over the last 30 days: how many questions and tokens, never their content. voiceNotes30d: voice notes
+   *  transcribed on the server's OpenAI key (missing from older servers). */
+  mcfly: { questions30d: number; tokens30d: number; voiceNotes30d?: number };
   /** Cards hidden on their dashboard (layout only). */
   hiddenCards: string[];
   /** Optional cards they turned on (layout only). Missing from older servers. */

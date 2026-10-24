@@ -440,8 +440,9 @@ export function OpenAIKeySheet({ onClose }: { onClose: () => void }) {
             <Icon name="shield" size={16} />
             <div>
               <p>
-                Meal photos, descriptions and voice notes go to OpenAI on your key, for that one request, and aren't kept by healthOS. Estimates on your key don't count toward
-                healthOS's daily limit.
+                {/* Before a key is stored, the line above says what's used meanwhile; this one is what your key changes. */}
+                {info ? 'Meal photos, descriptions and voice notes go' : 'Once your key is connected, meal photos, descriptions and voice notes go'} to OpenAI on
+                your key, for that one request, and aren't kept by healthOS. Estimates and voice notes on your key don't count toward healthOS's daily limits.
               </p>
               <p>
                 {info

@@ -622,22 +622,11 @@ nav {
   z-index: 1;
   padding: 2px 4px 0;
 }
-.greeting-hello {
-  font-size: 26px;
-  font-weight: 300;
-  color: var(--ink-2);
-  letter-spacing: -0.01em;
-}
 .greeting h1 {
   font-size: 52px;
   line-height: 1.02;
   font-weight: 600;
   letter-spacing: -0.035em;
-}
-.greeting-sub {
-  margin-top: 8px;
-  font-size: 15px;
-  color: var(--ink-2);
 }
 .figure {
   position: relative;
@@ -767,17 +756,6 @@ nav {
 .figure-photo-wrap .callout-dot {
   vector-effect: non-scaling-stroke;
 }
-.pill-photo {
-  cursor: pointer;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--ink);
-  flex: none;
-}
-.pill-photo:hover {
-  background: var(--surface-hover);
-}
 .avatar img {
   width: 100%;
   height: 100%;
@@ -799,17 +777,6 @@ nav {
 .photo-drop {
   flex: 1;
   min-height: 150px;
-}
-.figure-caption {
-  margin-top: -56px;
-  padding: 0 4px;
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 12px;
-  font-size: 13px;
-  color: var(--ink-3);
-  position: relative;
 }
 .week-summary {
   max-width: 360px;
@@ -1473,23 +1440,6 @@ button.avatar {
   max-width: 1300px;
   margin: 0 auto;
 }
-.page-head {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
-  margin-bottom: 6px;
-}
-.page-head h1 {
-  font-size: 34px;
-  font-weight: 600;
-  letter-spacing: -0.03em;
-}
-.page-head p {
-  color: var(--ink-2);
-  margin-top: 4px;
-}
 .filters,
 .seg {
   display: inline-flex;
@@ -1643,37 +1593,6 @@ td {
   display: flex;
   flex-direction: column;
   gap: 14px;
-}
-.integration-head {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-.integration-head > div:first-of-type {
-  flex: 1;
-}
-.integration-head .muted {
-  margin-top: 2px;
-  font-size: 13px;
-}
-.integration-logo {
-  display: grid;
-  place-items: center;
-  width: 42px;
-  height: 42px;
-  border-radius: 12px;
-  font-weight: 800;
-  font-size: 18px;
-}
-.logo-apple {
-  background: linear-gradient(160deg, #ff6b81, #ff2d55);
-  color: #fff;
-}
-.logo-whoop {
-  background: #0b0b0b;
-  color: #fff;
-  box-shadow: inset 0 0 0 1px var(--border);
-  letter-spacing: -0.04em;
 }
 .steps {
   margin: 0;
@@ -1855,9 +1774,6 @@ td {
     margin-top: 0;
     grid-row: span 2;
   }
-  .figure-caption {
-    margin-top: 0;
-  }
 }
 @media (max-width: 1080px) {
   .cards {
@@ -1913,19 +1829,6 @@ td {
   padding: 24px 16px;
   background: radial-gradient(60% 60% at 50% 35%, var(--page-glow) 0%, var(--page) 70%);
 }
-.login-card {
-  width: min(100%, 360px);
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 28px;
-}
-.login-brand {
-  padding: 0 0 4px;
-}
-.login-brand span {
-  display: inline; /* the narrow-sidebar rule hides .brand text; the sign-in card keeps it */
-}
 .login label {
   display: flex;
   flex-direction: column;
@@ -1945,35 +1848,12 @@ td {
   padding: 10px 14px;
 }
 
-.login-title {
-  font-size: 18px;
-  margin: 0 0 4px;
-}
 .login small,
 .settings small {
   font-weight: 400;
   font-size: 12px;
 }
 
-.sync-now {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 4px;
-  text-align: right;
-}
-.sync-now .btn-primary {
-  align-self: flex-end;
-}
-@media (max-width: 820px) {
-  .sync-now {
-    align-items: flex-start;
-    text-align: left;
-  }
-  .sync-now .btn-primary {
-    align-self: flex-start;
-  }
-}
 .photo-confirm {
   display: flex;
   flex-direction: column;
@@ -3189,7 +3069,6 @@ td {
   font-weight: 500;
   letter-spacing: -0.02em;
 }
-.nutrition-day,
 .nutrition-logged {
   display: flex;
   flex-direction: column;
@@ -3200,9 +3079,6 @@ td {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-}
-.nutrition-day .chip {
-  background: var(--surface-2);
 }
 .logged-strip {
   display: flex;
@@ -3436,16 +3312,6 @@ td {
 }
 .nutrition-turn-on .choice-list {
   max-width: 560px;
-}
-.turn-on-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-.turn-on-row p {
-  margin: 0;
 }
 .average-day {
   display: flex;
@@ -3731,9 +3597,6 @@ td {
 }
 
 /* ---------- family board ---------- */
-.family-greeting h1 {
-  font-size: 40px;
-}
 .family-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr));
@@ -3913,9 +3776,6 @@ a.family-tile:hover {
   color: inherit;
 }
 @media (max-width: 560px) {
-  .family-greeting h1 {
-    font-size: 30px;
-  }
   .family-grid {
     grid-template-columns: minmax(0, 1fr);
     gap: 10px;
@@ -3953,11 +3813,6 @@ html {
 /* Narrower screens: the date or range picker always goes on its own row under the title, whichever a tab has,
    so the tabs sit at the same height on every tab rather than moving with how wide the picker is. */
 @media (max-width: 1080px) {
-  .page-head {
-    flex-direction: column;
-    align-items: stretch;
-    flex-wrap: nowrap;
-  }
   .page-head-tools {
     justify-content: flex-start;
   }
@@ -4030,20 +3885,6 @@ nav.tabs {
   margin-top: 10px;
 }
 
-/* one night, with the figure beside it on wide screens (as on Home) */
-.night-layout {
-  display: grid;
-  gap: 16px;
-}
-.night-main {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  min-width: 0;
-}
-.page-hero {
-  display: none;
-}
 
 /* score bar */
 .score-pill {
@@ -4398,24 +4239,6 @@ nav.tabs {
   padding: 8px 0;
 }
 
-@media (min-width: 1400px) {
-  .night-layout.has-hero {
-    grid-template-columns: minmax(300px, 0.8fr) minmax(0, 2fr);
-    align-items: start;
-  }
-  .has-hero .page-hero {
-    display: block;
-    position: sticky;
-    top: 16px;
-  }
-  .has-hero .night-cards {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  /* The figure already shows resting heart rate. */
-  .has-hero .rhr-card {
-    display: none;
-  }
-}
 @media (max-width: 1360px) {
   .cards-4 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -4471,12 +4294,6 @@ nav.tabs {
 .all-hidden a {
   color: var(--ink);
   font-weight: 600;
-}
-/* On the wide Sleep layout the figure stands in for resting heart rate; a row left with only that card goes. */
-@media (min-width: 1400px) {
-  .has-hero .night-cards:has(> .rhr-card:only-child) {
-    display: none;
-  }
 }
 .settings-cards {
   max-width: 560px;
@@ -4682,12 +4499,6 @@ nav.tabs {
 @media (max-width: 1080px) {
   .cards.fill-row {
     --cols: var(--cols-small, var(--cols-mid, 2));
-  }
-}
-@media (min-width: 1400px) {
-  /* Beside the figure, without the resting heart rate card it already shows. */
-  .has-hero .night-cards.fill-row {
-    --cols: var(--cols-hero, 2);
   }
 }
 @media (max-width: 560px) {
@@ -4912,66 +4723,6 @@ button.metric-sheet-btn {
   cursor: pointer;
 }
 
-.msheet-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 100;
-  display: grid;
-  place-items: center;
-  padding: 24px 16px;
-  background: var(--msheet-backdrop);
-  overscroll-behavior: contain;
-}
-.msheet {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  width: min(720px, 100%);
-  max-height: calc(100dvh - 48px);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 18px 20px 20px;
-  background: var(--surface);
-  color: var(--ink);
-  border: 1px solid var(--border);
-  border-radius: 24px;
-  box-shadow: var(--msheet-shadow);
-}
-/* The panel takes focus only from a click on its text (tabIndex -1), never from the keyboard: no ring for that. */
-.msheet:focus {
-  outline: none;
-}
-.msheet-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-.msheet-crumbs {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 6px;
-  min-width: 0;
-  font-size: 13px;
-  color: var(--ink-3);
-}
-.msheet-crumbs h2 {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--ink);
-}
-.msheet-crumbs h2:focus {
-  outline: none;
-}
-.msheet-crumbs h2:focus-visible {
-  outline: 2px solid var(--series-1);
-  outline-offset: 2px;
-}
-.msheet-close {
-  flex: none;
-}
 .msheet-ranges {
   align-self: flex-start;
 }
@@ -5104,18 +4855,6 @@ button.metric-sheet-btn {
 
 /* Phones: the sheet takes the whole screen. */
 @media (max-width: 560px) {
-  .msheet-backdrop {
-    padding: 0;
-    place-items: stretch;
-  }
-  .msheet {
-    width: 100%;
-    height: 100%;
-    max-height: none;
-    border-radius: 0;
-    border: 0;
-    padding: max(16px, env(safe-area-inset-top)) 16px max(20px, env(safe-area-inset-bottom));
-  }
   .msheet-tiles {
     gap: 6px;
   }
@@ -5124,14 +4863,6 @@ button.metric-sheet-btn {
   }
   .msheet-tiles b {
     font-size: 15px;
-  }
-}
-@media (prefers-reduced-motion: no-preference) {
-  .msheet-backdrop {
-    animation: msheet-fade 0.16s ease-out;
-  }
-  .msheet {
-    animation: msheet-rise 0.2s ease-out;
   }
 }
 @keyframes msheet-fade {
@@ -5156,52 +4887,6 @@ button.metric-sheet-btn {
   margin-top: -2px;
 }
 
-/* Body composition: the main reading, then the others as rows that open their own sheets. */
-.composition-rows {
-  list-style: none;
-  margin: 2px 0 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-}
-.composition-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto 14px;
-  align-items: center;
-  gap: 8px;
-  padding: 6px;
-  margin: 0 -6px;
-  width: calc(100% + 12px);
-  border: 0;
-  border-radius: 10px;
-  background: transparent;
-  text-align: left;
-  cursor: pointer;
-  color: var(--ink);
-}
-.composition-row:hover {
-  background: var(--chip);
-}
-.composition-label {
-  font-size: 13px;
-  color: var(--ink-2);
-}
-.composition-value {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  font-variant-numeric: tabular-nums;
-}
-.composition-value b {
-  font-weight: 600;
-}
-.composition-value small {
-  font-size: 11px;
-  color: var(--ink-3);
-}
-.composition-row .icon {
-  color: var(--ink-3);
-}
 
 /* ---------- Latest workout and ⌘K search (components/body/WorkoutCard.tsx, components/Search.tsx) ---------- */
 
@@ -5698,13 +5383,11 @@ html:has(.palette[open]) {
   position: absolute;
 }
 .labs-notice .note-good:focus,
-.labs-form h2:focus,
-.labs-import h2:focus {
+.labs-form h2:focus {
   outline: none;
 }
 .labs-notice .note-good:focus-visible,
-.labs-form h2:focus-visible,
-.labs-import h2:focus-visible {
+.labs-form h2:focus-visible {
   outline: 2px solid var(--series-1);
   outline-offset: 2px;
 }
@@ -5715,23 +5398,6 @@ html:has(.palette[open]) {
   margin-bottom: 14px;
 }
 .labs-demo {
-  background: var(--tone-blue-bg);
-  color: var(--tone-blue-ink);
-}
-.labs-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 10px;
-  max-width: 680px;
-  line-height: 1.5;
-}
-.labs-empty-icon {
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
   background: var(--tone-blue-bg);
   color: var(--tone-blue-ink);
 }
@@ -5849,14 +5515,12 @@ html:has(.palette[open]) {
 }
 
 /* Adding results and checking what was read */
-.labs-form,
-.labs-import {
+.labs-form {
   display: flex;
   flex-direction: column;
   gap: 14px;
 }
-.labs-form .card-title-row,
-.labs-import .card-title-row {
+.labs-form .card-title-row {
   margin-bottom: 0;
 }
 .labs-fieldset {
@@ -5924,15 +5588,6 @@ html:has(.palette[open]) {
   margin-top: 20px;
   padding: 8px 10px;
 }
-.labs-import-notes {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: 0;
-  padding-left: 18px;
-  color: var(--ink-2);
-  line-height: 1.45;
-}
 .labs-review-intro {
   display: flex;
   flex-direction: column;
@@ -5943,9 +5598,6 @@ html:has(.palette[open]) {
   gap: 6px;
   align-items: flex-start;
   color: var(--tone-yellow-ink);
-}
-.labs-progress:empty {
-  display: none;
 }
 
 /* The Body overview's card */
@@ -6480,15 +6132,6 @@ html:has(.palette[open]) {
   font-size: 12px;
   color: var(--accent-text);
 }
-.journal-placeholder {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
-}
-.journal-placeholder > .icon {
-  color: var(--ink-3);
-}
 
 /* the footer (AppFooter.tsx): at the bottom of the screen on a short page */
 .app-foot {
@@ -6823,10 +6466,6 @@ html:has(.palette[open]) {
   filter: brightness(0.84);
 }
 
-/* The digital human stands on its feet: the caption goes under it rather than over the faded bottom of a photo. */
-.figure-digital + .figure-caption {
-  margin-top: 12px;
-}
 .callout-label {
   font-size: 11px;
   color: var(--ink-2);
@@ -6882,51 +6521,8 @@ html:has(.palette[open]) {
   gap: 24px;
   padding: 28px 24px 32px;
 }
-.onboarding-top {
-  width: 100%;
-  max-width: 1180px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.onboarding-card {
-  width: min(100%, 920px);
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  margin-top: 4vh;
-  padding: 40px;
-}
-.onboarding-card h1 {
-  font-size: 34px;
-  font-weight: 500;
-  letter-spacing: -0.02em;
-}
-.onboarding-foot {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 14px;
-  padding-top: 20px;
-  border-top: 1px solid var(--border);
-}
-.onboarding-foot .btn-primary {
-  align-self: auto;
-}
-.onboarding-note {
-  text-align: center;
-}
-.login-foot {
-  margin-top: 18px;
-  text-align: center;
-}
 .login {
   align-content: center;
-}
-.login-card .brand {
-  font-size: 21px;
 }
 .profile-page > .muted.small:first-child,
 .page > .page-intro + .muted.small {

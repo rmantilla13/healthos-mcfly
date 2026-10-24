@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { isDeepStrictEqual } from 'node:util';
 import Anthropic from '@anthropic-ai/sdk';
-import { anthropicProvider } from '../server/ai/anthropic.ts';
+import { anthropicProvider, echoable } from '../server/ai/anthropic.ts';
 import { geminiProvider } from '../server/ai/gemini.ts';
 import { openaiProvider } from '../server/ai/openai.ts';
 import { AiError, type AiFetch, type ChatSession } from '../server/ai/provider.ts';
@@ -402,6 +402,36 @@ test("Claude: a tool round's thinking blocks go back with their signatures, unch
     { role: 'assistant', content: thinkingRound.content },
     { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_1', content: '{"mean":58}' }] },
   ]);
+});
+
+test("Claude: after a mid-output fallback, the declining model's thinking and tool calls before the boundary are dropped and never run", async () => {
+  const fallback = { type: 'fallback', from: { model: 'claude-opus-5-5' }, to: { model: 'claude-opus-5' }, trigger: { type: 'refusal' } };
+  const handedOff = claudeMessage(
+    [
+      { type: 'thinking', thinking: '', signature: 'SIGNATURE-DECLINED' },
+      { type: 'text', text: 'Checking. ', citations: null },
+      { type: 'tool_use', id: 'toolu_declined', name: 'get_metric_history', input: { metrics: ['steps'] } },
+      { type: 'server_tool_use', id: 'srvtoolu_open', name: 'web_search', input: {} },
+      fallback,
+      { type: 'thinking', thinking: '', signature: 'SIGNATURE-FALLBACK' },
+      { type: 'tool_use', id: 'toolu_2', name: 'get_metric_history', input: { metrics: ['resting_hr'] } },
+    ] as unknown as Anthropic.Beta.BetaContentBlock[],
+    'tool_use',
+  );
+  const kept = [handedOff.content[1], handedOff.content[4], handedOff.content[5], handedOff.content[6]];
+  const answer = claudeMessage([{ type: 'text', text: 'About **58 bpm**.', citations: null }], 'end_turn');
+  const { client, sent } = fakeClaude([() => handedOff, echoes({ ...handedOff, content: kept } as Anthropic.Beta.BetaMessage, answer)]);
+  const session = anthropicProvider(client, 'claude-opus-5-5').chat({ system: 's', tools: TOOLS, history: HISTORY, maxTokens: 100 });
+  const first = await round(session);
+  assert.deepEqual(first.calls, [{ id: 'toolu_2', name: 'get_metric_history', input: { metrics: ['resting_hr'] } }], 'only the fallback model\'s call runs');
+  session.addResults([{ id: 'toolu_2', name: 'get_metric_history', content: '{"mean":58}', isError: false }]);
+  const second = await round(session);
+  assert.equal(second.text, 'About **58 bpm**.');
+  assert.deepEqual(sent[1].messages.slice(HISTORY.length, HISTORY.length + 1), [{ role: 'assistant', content: kept }]);
+});
+
+test('Claude: a round with no fallback block goes back exactly as it came', () => {
+  assert.equal(echoable(thinkingRound.content), thinkingRound.content);
 });
 
 test('Claude: the strict fake refuses a round whose thinking blocks were left out, and the session says so', async () => {
