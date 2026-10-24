@@ -1,14 +1,21 @@
 import { type KeyboardEvent, type PointerEvent, type ReactNode, useEffect, useRef, useState } from 'react';
 import type { DayData, FigureVariant, Insight, NutritionNumbers, Perspective, PhotoMeta, Summary, TimelineEvent, WeekSummary } from '../../shared/types.ts';
-import { Gauge, MiniBars, MiniDots, MiniLine, RangeScale } from '../charts/Mini.tsx';
+import { Gauge, MiniBars } from '../charts/Mini.tsx';
 import { clockOf, DAY_MINUTES, eventSpan, type HeartAt, hourClock, type Moment, momentAt, pressMinute, scrubMax, stepMinute, type TotalAt } from '../charts/scrub.ts';
 import type { MetricKey, MetricRange } from '../../shared/metrics.ts';
 import { AllHiddenNote, CardRow, useAllHidden } from '../components/CardRow.tsx';
 import { Figure, type HeartScrub } from '../components/Figure.tsx';
+import { JournalPromptCard } from '../components/home/JournalPrompt.tsx';
+import { HrvCard, RecoveryCard, RespRateCard, RestingHrCard, SleepCard, Spo2Card, Stale, signed } from '../components/home/Signals.tsx';
+import { TodayNutritionCard } from '../components/home/TodayNutrition.tsx';
 import { Icon, type IconName } from '../components/Icon.tsx';
 import { MetricSheetLink } from '../components/MetricSheet.tsx';
 import { NutritionCard } from './Nutrition.tsx';
 import { clock, compact, duration, fmt, fmtDate, hoursMinutes, href, relativeDay, useApi } from '../lib.ts';
+import '../styles/home.css';
+
+// Body and Sleep build their cards from these too.
+export { Stale, signed };
 
 export function Home({
   date,
@@ -34,61 +41,106 @@ export function Home({
   if (error && !data) return <div className="page-message">Couldn't load your data: {error.message}</div>;
   if (!data) return <div className="page-message">Loading…</div>;
   const s = data;
+  const stats = perspective === 'stats';
 
   // The greeting, the day and the avatar are in the shell's header (ShellHeader, TopBar).
   return (
-    <div className={`home ${loading ? 'is-refreshing' : ''}${perspective === 'stats' ? ' is-stats' : ''}`}>
-      <div className="home-left">
-        <Figure
-          vitals={s.vitals}
-          asOf={s.date}
-          photo={photo}
-          heartScrub={s.timeline.date === s.date ? heartScrub : null}
-          perspective={perspective}
-          figure={figure}
-          callouts={['spo2', 'breathing', 'heart']}
-        />
-        <div className="figure-caption">
-          {s.week ? (
-            <WeekSummaryText week={s.week} stepGoal={s.stepGoal} />
-          ) : (
-            <p className="week-summary">Vitals from your latest night, compared with your own last 30 days.</p>
-          )}
-          {!photo && perspective === 'portrait' && (
-            <a className="pill pill-photo" href={href('profile')}>
-              Add your photo
-            </a>
-          )}
+    <div className={`home ${loading ? 'is-refreshing' : ''}${stats ? ' is-stats' : ''}`}>
+      {!stats && (
+        <div className="home-left">
+          {/* Stays in view while the widgets beside it scroll (the timeline's scrub moves its heart). */}
+          <div className="home-figure">
+            <Figure
+              vitals={s.vitals}
+              asOf={s.date}
+              photo={photo}
+              heartScrub={s.timeline.date === s.date ? heartScrub : null}
+              perspective={perspective}
+              figure={figure}
+              callouts={['spo2', 'breathing', 'heart']}
+            />
+            {/* A portrait is made from photos in Profile; until then the digital human stands in. */}
+            {perspective === 'portrait' && !photo && (
+              <p className="home-portrait-note">
+                Your portrait appears here once it's made. Add photos in <a href={href('profile')}>Profile → Your portrait photos</a>.
+              </p>
+            )}
+          </div>
+          <Tagline />
         </div>
-      </div>
+      )}
 
       <div className="home-right">
+        <CardRow
+          className="cards home-signals"
+          fill={{ wide: 3, mid: 2 }}
+          cards={[
+            ['home.rhr', <RestingHrCard s={s} />],
+            ['home.spo2', <Spo2Card s={s} />],
+            ['home.hrv', <HrvCard s={s} />],
+            ['home.sleep', <SleepCard s={s} />],
+            ['home.readiness', <RecoveryCard s={s} />],
+            ['home.resp', <RespRateCard s={s} />],
+          ]}
+        />
+        <CardRow
+          className="lower home-lower"
+          pair
+          cards={[
+            ['home.nutrition', <TodayNutritionCard numbers={nutrition} date={s.date} today={s.today} />],
+            ['home.journal', <JournalPromptCard />],
+          ]}
+        />
+
+        {/* The optional widgets (off until turned on in Edit widgets), below the design's own. */}
         <CardRow
           className="cards"
           fill={{ wide: 3, mid: 2 }}
           cards={[
-            ['home.readiness', <ReadinessCard s={s} />],
-            ['home.spo2', <Spo2Card s={s} />],
-            ['home.hrv', <HrvCard s={s} />],
-            ['home.sleep', <SleepCard s={s} />],
             ['home.load', <LoadCard s={s} />],
             ['home.activity', <ActivityCard s={s} />],
+            // Only for people with Nutrition on.
+            ...(nutrition ? ([['home.food', <NutritionCard numbers={nutrition} />]] as [string, ReactNode][]) : []),
           ]}
         />
-        {/* Only for people with Nutrition on: its own row, so the cards above keep their layout. */}
-        {nutrition && <CardRow className="cards" cards={[['home.food', <NutritionCard numbers={nutrition} />]]} />}
-
+        <CardRow className="lower" pair cards={[['home.timeline', <TimelineCard key={s.timeline.date} timeline={s.timeline} today={s.today} onHeart={setHeartScrub} />]]} />
         <CardRow
           className="lower"
           pair
           cards={[
-            ['home.timeline', <TimelineCard key={s.timeline.date} timeline={s.timeline} today={s.today} onHeart={setHeartScrub} />],
+            ['home.week', <WeekCard week={s.week} stepGoal={s.stepGoal} />],
             ['home.insights', <InsightsCard insights={s.insights} today={s.today} />],
           ]}
         />
         {allHidden && <AllHiddenNote />}
+        {stats && <Tagline compact />}
       </div>
     </div>
+  );
+}
+
+/** The line at the bottom of the figure's column, and the way on to every measurement (Vitals). */
+function Tagline({ compact = false }: { compact?: boolean }) {
+  return (
+    <div className={`home-tagline${compact ? ' is-compact' : ''}`}>
+      <p>
+        A clearer picture.
+        {compact ? ' ' : <br />}A healthier you.
+      </p>
+      <a className="home-measurements" href={href('vitals')}>
+        Your measurements
+        <Icon name="arrow-up-right" size={14} />
+      </a>
+    </div>
+  );
+}
+
+/** The week so far, as a widget: the sentences that used to sit under the figure. */
+function WeekCard({ week, stepGoal }: { week: Summary['week']; stepGoal: number }) {
+  return (
+    <section className="card home-week">
+      {week ? <WeekSummaryText week={week} stepGoal={stepGoal} /> : <p className="week-summary">Vitals from your latest night, compared with your own last 30 days.</p>}
+    </section>
   );
 }
 
@@ -217,7 +269,7 @@ export function CardHead({
   to,
   metric,
   date,
-  section = 'Home',
+  section = 'Your signals',
   range,
 }: {
   title: string;
@@ -225,7 +277,7 @@ export function CardHead({
   metric?: MetricKey;
   /** The day the card shows, which the sheet's window ends on. */
   date?: string;
-  /** Where the card is, for the sheet's breadcrumb. */
+  /** The sheet's line above the metric's name ("Your signals", "Your body"). */
   section?: string;
   range?: MetricRange;
 }) {
@@ -243,10 +295,6 @@ export function CardHead({
   );
 }
 
-export function Stale({ date, asOf }: { date: string; asOf: string }) {
-  return date === asOf ? null : <span className="stale">{fmtDate(date)}</span>;
-}
-
 function Empty({ text }: { text: string }) {
   return (
     <div className="metric-empty">
@@ -256,176 +304,12 @@ function Empty({ text }: { text: string }) {
   );
 }
 
-export function signed(n: number, digits = 0) {
-  const v = fmt(Math.abs(n), digits);
-  return n > 0 ? `+${v}` : n < 0 ? `−${v}` : v;
-}
-
-function ReadinessCard({ s }: { s: Summary }) {
-  const r = s.readiness;
-  if (!r)
-    return (
-      <article className="card metric metric-green">
-        <CardHead title="Recovery" to={href('vitals')} />
-        <Empty text="Recovery comes from WHOOP; cardio fitness from Apple Watch." />
-      </article>
-    );
-
-  if (r.kind === 'vo2max') {
-    const delta = r.previous !== null ? r.latest.value - r.previous : null;
-    return (
-      <article className="card metric metric-green">
-        <CardHead title="Cardio fitness" to={href('body')} metric="vo2max" date={s.date} />
-        <div className="metric-value">
-          {fmt(r.latest.value, 1)}
-          <small>VO₂ max</small>
-        </div>
-        {delta !== null && <span className="chip">{signed(delta, 1)} vs last month</span>}
-        <Rings value={Math.min(1, (r.latest.value - 25) / 35)} />
-        <div className="metric-foot">
-          <span>mL/kg·min</span>
-          <Stale date={r.latest.date} asOf={s.date} />
-        </div>
-      </article>
-    );
-  }
-
-  const zoneText = { red: 'Low', yellow: 'Moderate', green: 'High' }[r.zone];
-  const delta = r.average !== null ? r.latest.value - r.average : null;
-  return (
-    <article className="card metric metric-green">
-      <CardHead title="Recovery" to={href('vitals')} metric="recovery" date={s.date} />
-      <div className="metric-value">
-        {fmt(r.latest.value)}
-        <small>%</small>
-      </div>
-      {delta !== null && <span className="chip">{signed(delta)} vs 30-day avg</span>}
-      <Rings value={r.latest.value / 100} />
-      <RangeScale
-        value={r.latest.value}
-        min={0}
-        max={100}
-        label={`Recovery ${Math.round(r.latest.value)}%, ${zoneText.toLowerCase()} zone`}
-        zones={[
-          { to: 33, className: 'zone-critical' },
-          { to: 66, className: 'zone-warning' },
-          { to: 100, className: 'zone-good' },
-        ]}
-      />
-      <div className="metric-foot">
-        <span className={`zone-label zone-label-${r.zone}`}>
-          <i />
-          {zoneText}
-        </span>
-        <Stale date={r.latest.date} asOf={s.date} />
-      </div>
-    </article>
-  );
-}
-
-/** Decorative concentric rings; the dot sits at the score's position on the outer ring. */
-function Rings({ value }: { value: number }) {
-  const a = Math.PI * (0.75 - 1.5 * Math.min(1, Math.max(0, value)));
-  return (
-    <svg className="rings" viewBox="0 0 120 120" aria-hidden="true">
-      {[56, 44, 32, 20].map((r) => (
-        <circle key={r} cx="60" cy="60" r={r} />
-      ))}
-      <circle cx={60 + 56 * Math.cos(a)} cy={60 - 56 * Math.sin(a)} r="3.5" className="rings-dot" />
-    </svg>
-  );
-}
-
-function Spo2Card({ s }: { s: Summary }) {
-  const l = s.spo2.latest;
-  return (
-    <article className="card metric metric-peach">
-      <CardHead title="Blood oxygen" to={href('vitals')} metric={l ? 'spo2' : undefined} date={s.date} />
-      {l ? (
-        <>
-          <div className="metric-value-row">
-            <div className="metric-value">
-              {fmt(l.value, l.value % 1 ? 1 : 0)}
-              <small>%</small>
-            </div>
-            <span className="metric-status">{s.spo2.status === 'low' ? 'Below your range' : 'Normal'}</span>
-          </div>
-          <MiniLine points={s.spo2.series} format={(v) => `${fmt(v, 1)}%`} domain={[90, 100]} color="var(--series-2)" height={58} label="Blood oxygen, last 30 days" />
-          <RangeScale value={l.value} min={90} max={100} label={`Blood oxygen ${fmt(l.value, 1)}% on a 90 to 100 scale`} />
-          <div className="metric-foot">
-            <span>90</span>
-            <Stale date={l.date} asOf={s.date} />
-            <span>100</span>
-          </div>
-        </>
-      ) : (
-        <Empty text="No blood oxygen readings yet." />
-      )}
-    </article>
-  );
-}
-
-function HrvCard({ s }: { s: Summary }) {
-  const l = s.hrv.latest;
-  const statusText = { optimal: 'Optimal', normal: 'Normal', low: 'Below baseline' };
-  return (
-    <article className="card metric">
-      <CardHead title="HRV" to={href('vitals')} metric={l ? 'hrv' : undefined} date={s.date} />
-      {l ? (
-        <>
-          <div className="metric-value">
-            {fmt(l.value)}
-            <small>ms</small>
-          </div>
-          <MiniDots points={s.hrv.series} baseline={s.hrv.baseline} format={(v) => `${fmt(v)} ms`} label="Heart rate variability, last 21 nights, with your usual range" height={70} />
-          <div className="metric-foot">
-            <span className="metric-strong">{s.hrv.status ? statusText[s.hrv.status] : 'Building baseline'}</span>
-            <span className="band-key" title={s.hrv.metric === 'hrv_rmssd' ? 'WHOOP measures RMSSD during sleep' : 'Apple Watch measures SDNN'}>
-              <i /> usual · {s.hrv.metric === 'hrv_rmssd' ? 'RMSSD' : 'SDNN'}
-            </span>
-          </div>
-        </>
-      ) : (
-        <Empty text="No HRV readings yet." />
-      )}
-    </article>
-  );
-}
-
-function SleepCard({ s }: { s: Summary }) {
-  const l = s.sleep.latest;
-  const quality = !l ? '' : l.value >= 7 ? 'Good' : l.value >= 6 ? 'Fair' : 'Short';
-  return (
-    <article className="card metric">
-      <CardHead title="Sleep" to={href('sleep')} metric={l ? 'sleep_hours' : undefined} date={s.date} />
-      {l ? (
-        <>
-          <div className="metric-value">
-            {fmt(l.value, 1)}
-            <small>hours</small>
-          </div>
-          <MiniLine points={s.sleep.series} format={hoursMinutes} color="var(--series-1)" height={58} label="Sleep duration, last 14 nights" />
-          <div className="metric-foot">
-            <span className="metric-strong">
-              {quality}
-              <Stale date={l.date} asOf={s.date} />
-            </span>
-            {s.sleep.change !== null && <span title="This week's average vs last week's">{signed(s.sleep.change * 100)}% wk</span>}
-          </div>
-        </>
-      ) : (
-        <Empty text="No sleep recorded yet." />
-      )}
-    </article>
-  );
-}
-
 function LoadCard({ s }: { s: Summary }) {
   const l = s.load;
   if (!l)
     return (
       <article className="card metric metric-pink">
-        <CardHead title="Strain" to={href('activity')} />
+        <CardHead title="Strain" to={href('activity')} metric="strain" date={s.date} />
         <Empty text="Strain comes from WHOOP; active energy from Apple Health." />
       </article>
     );
@@ -460,7 +344,7 @@ function ActivityCard({ s }: { s: Summary }) {
   const pct = l ? Math.min(1, l.value / s.stepGoal) : 0;
   return (
     <article className="card metric">
-      <CardHead title="Activity" to={href('activity')} metric={l ? 'steps' : undefined} date={s.date} />
+      <CardHead title="Activity" to={href('activity')} metric="steps" date={s.date} />
       {l ? (
         <>
           <div className="metric-value">

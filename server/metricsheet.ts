@@ -56,6 +56,8 @@ const SPECS: Record<MetricKey, Spec> = {
   lean_mass: { metric: 'lean_mass', lead: (v) => `Your lean body mass averaged ${v}`, mass: true, steady: 0.2, sparse: true },
   vo2max: { metric: 'vo2max', lead: (v) => `Your cardio fitness averaged ${v}`, steady: 0.5, sparse: true },
   heart_rate: { metric: null, lead: (v) => `Your heart rate averaged ${v}`, steady: 2, day: 'heart_rate' },
+  sleep_performance: { metric: 'sleep_performance', lead: (v) => `Your sleep performance averaged ${v}`, steady: 2 },
+  sleep_efficiency: { metric: 'sleep_efficiency', lead: (v) => `Your sleep efficiency averaged ${v}`, steady: 1 },
 };
 
 /**
@@ -282,13 +284,71 @@ function sourcesIn(snap: Snapshot, metric: string, points: Point[]) {
   return [...set].sort();
 }
 
+/** A night's efficiency from one device's own two numbers, only when it measured sleep and not just time in bed (as sleepnight.ts). */
+const MIN_AWAKE_HOURS = 1 / 60;
+
+/**
+ * Sleep efficiency where a device sent none of its own: that device's time asleep over its time in bed, the same
+ * night. Apple Health has no efficiency figure, so without this an Apple-only night would show on the Sleep page and
+ * not in its sheet. A device's own figure (WHOOP's, Fitbit's) is kept as sent.
+ */
+export function withDerivedEfficiency(daily: Ctx['daily']) {
+  const hours = daily.get('sleep_hours');
+  const bed = daily.get('sleep_in_bed');
+  if (!hours || !bed) return daily;
+  let eff = daily.get('sleep_efficiency');
+  if (!eff) daily.set('sleep_efficiency', (eff = new Map()));
+  for (const [source, byDate] of hours) {
+    const own = eff.get(source) ?? new Map<string, number>();
+    for (const [date, asleep] of byDate) {
+      const inBed = bed.get(source)?.get(date);
+      if (own.has(date) || inBed === undefined || inBed - asleep <= MIN_AWAKE_HOURS) continue;
+      own.set(date, (asleep / inBed) * 100);
+    }
+    if (own.size) eff.set(source, own);
+  }
+  return daily;
+}
+
+/**
+ * Whether the person has ever had a reading of this metric, on any day, from the sources the sheet reads: one EXISTS
+ * per kind of row. HRV counts either measure; the Day metrics count their hours too (heart rate has only hours).
+ */
+async function everMeasured(scope: Scope, demo: boolean, key: MetricKey): Promise<boolean> {
+  const spec = SPECS[key];
+  const daily = key === 'hrv' ? ['hrv_rmssd', 'hrv_sdnn'] : spec.metric ? [spec.metric] : [];
+  // Every parameter is used by a check (Postgres can't type one that isn't).
+  const params: unknown[] = [scope.userId];
+  const checks: string[] = [];
+  if (daily.length) {
+    params.push(sourceList(demo), daily);
+    const [sources, metrics] = [params.length - 1, params.length];
+    checks.push(`EXISTS (SELECT 1 FROM daily WHERE user_id = $1 AND source = ANY($${sources}) AND metric = ANY($${metrics}))`);
+    if (key === 'sleep_efficiency') {
+      checks.push(
+        `EXISTS (SELECT 1 FROM daily h JOIN daily b ON b.user_id = h.user_id AND b.date = h.date AND b.source = h.source AND b.metric = 'sleep_in_bed'
+          WHERE h.user_id = $1 AND h.source = ANY($${sources}) AND h.metric = 'sleep_hours' AND b.value - h.value > ${MIN_AWAKE_HOURS})`,
+      );
+    }
+  }
+  if (spec.day) {
+    params.push(demo ? ['demo', ...sourceList(false)] : sourceList(false), HOURLY_BASE[spec.day]);
+    checks.push(`EXISTS (SELECT 1 FROM hourly WHERE user_id = $1 AND source = ANY($${params.length - 1}) AND metric = $${params.length})`);
+  }
+  const [row] = await scope.db.query<{ has: boolean }>(`SELECT ${checks.join(' OR ')} AS has`, params);
+  return Boolean(row?.has);
+}
+
 export async function metricSheet(scope: Scope, hosted: boolean, key: MetricKey, range: MetricRange, dateParam?: string): Promise<MetricSheet> {
   const info = METRIC_INFO[key];
   const spec = SPECS[key];
   if (!info.ranges.includes(range)) throw new SheetError(400, range === 'day' ? 'Only steps, active energy and heart rate have a Day view.' : `${info.label} has a Day view only.`);
   const { settings, demo, today } = await requestContext(scope, hosted);
   const asOf = dateParam && dateParam <= today ? dateParam : today;
-  if (range === 'day') return daySheet(scope, hosted, key, asOf, settings, demo);
+  const ever = everMeasured(scope, demo, key);
+  // Awaited below; this only keeps a failure that comes while something else is awaited from going unhandled.
+  ever.catch(() => {});
+  if (range === 'day') return { ...(await daySheet(scope, hosted, key, asOf, settings, demo)), everMeasured: await ever };
 
   const n = RANGE_DAYS[range];
   const from = addDays(asOf, -(n - 1));
@@ -298,7 +358,9 @@ export async function metricSheet(scope: Scope, hosted: boolean, key: MetricKey,
   const metric = key === 'hrv' ? s!.hrv.metric : spec.metric!;
   // The glucose status looks back further than a week, at its own 30 days before the latest reading.
   const loadFrom = key === 'glucose' ? addDays(asOf, -(GLUCOSE_LOOKBACK + 31)) : prevFrom;
-  const daily = await loadDaily(scope, demo, loadFrom < prevFrom ? loadFrom : prevFrom, asOf, [metric]);
+  const efficiency = key === 'sleep_efficiency';
+  const loaded = await loadDaily(scope, demo, loadFrom < prevFrom ? loadFrom : prevFrom, asOf, efficiency ? [metric, 'sleep_hours', 'sleep_in_bed'] : [metric]);
+  const daily = efficiency ? withDerivedEfficiency(loaded) : loaded;
   const snap: Snapshot = { daily, demo };
 
   const units = settings.units;
@@ -373,6 +435,7 @@ export async function metricSheet(scope: Scope, hosted: boolean, key: MetricKey,
       average === null
         ? null
         : sentence({ key, range, unit, average, days: counted.length, possible, delta: change?.delta ?? null, previous: change?.previous ?? null, status: found ? { phrase: found.phrase, latest: found.latest } : null, today }),
+    everMeasured: await ever,
   };
 }
 
