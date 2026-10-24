@@ -129,7 +129,7 @@ export function createApp({ db, hosted, ingestToken, mcflyClient = defaultClient
   api.use('/mcfly', mcflyRouter(db, { hosted, client: mcflyClient, aiFetch }));
   api.use('/cycle', cycleRouter(db, hosted));
   api.use('/nutrition', nutritionRouter(db, hosted, { fetchFn: foodFetch, client: mcflyClient }));
-  api.use('/labs', labsRouter(db, { hosted, client: mcflyClient }));
+  api.use('/labs', labsRouter(db, { hosted, client: mcflyClient, aiFetch }));
   api.use('/metric', metricRouter(db, hosted));
   api.use('/family', familyRouter(db, hosted));
   api.use('/journal', journalRouter(db, hosted));

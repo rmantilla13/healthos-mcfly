@@ -1,0 +1,248 @@
+/* ---------- Journal (src/pages/Journal.tsx) ---------- */
+/* The composer in the Home card's look (a blush wash, the journal art on the right), then earlier check-ins by day,
+   and the privacy line. Lines of writing are kept to a readable length however wide the page is. */
+:root {
+  --journal-art-opacity: 0.92;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --journal-art-opacity: 0.42;
+  }
+}
+/* Forced dark (data-theme='dark'): the same values as the block above. Change both together. */
+:root[data-theme='dark'] {
+  --journal-art-opacity: 0.42;
+}
+
+.page.journal-page {
+  gap: 18px;
+}
+.journal-page > .page-loading {
+  margin-top: 4px;
+}
+
+/* the composer */
+.card.journal-compose {
+  position: relative;
+  display: flex;
+  gap: 24px;
+  overflow: hidden;
+  padding: 22px 26px 22px;
+  background: var(--grad-blush);
+}
+.journal-compose-body {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  max-width: 760px;
+}
+.journal-art {
+  flex: none;
+  align-self: flex-end;
+  width: 168px;
+  height: auto;
+  margin: -8px -6px -24px auto;
+  opacity: var(--journal-art-opacity);
+  /* Fades out at the edges, so the figure sits in the wash instead of on it (in dark mode too). */
+  -webkit-mask-image: radial-gradient(70% 62% at 50% 42%, #000 55%, transparent 100%);
+  mask-image: radial-gradient(70% 62% at 50% 42%, #000 55%, transparent 100%);
+  pointer-events: none;
+  user-select: none;
+}
+.journal-moods {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.journal-mood {
+  min-height: 32px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  box-shadow: var(--shadow-pill);
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    background 0.15s,
+    box-shadow 0.15s;
+}
+.journal-mood:hover {
+  color: var(--ink);
+}
+/* The chosen mood: a sage edge over the pale green, and its words in the accent, not colour alone. */
+.journal-mood[aria-pressed='true'] {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  box-shadow: inset 0 0 0 1.5px var(--choice-border);
+}
+.journal-mood:focus-visible {
+  border-radius: var(--r-pill);
+}
+.journal-box {
+  width: 100%;
+  min-height: 112px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-field);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  resize: vertical;
+}
+.journal-box::placeholder {
+  color: var(--ink-3);
+}
+.journal-count {
+  margin-top: -8px;
+  font-size: 12px;
+  color: var(--ink-3);
+  text-align: right;
+}
+.journal-compose-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+}
+.journal-compose-foot .btn-primary {
+  align-self: auto;
+}
+.journal-saved {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--accent-text);
+}
+
+/* earlier check-ins */
+.journal-history {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.journal-history > h2 {
+  margin-bottom: 6px;
+}
+.journal-history > h2:focus {
+  outline: none;
+}
+.journal-history > h2:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.journal-empty {
+  padding: 18px 0 8px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.journal-day + .journal-day {
+  margin-top: 14px;
+}
+.journal-day-title {
+  padding: 8px 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.journal-entries {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.journal-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 0 14px;
+  border-top: 1px solid var(--border);
+}
+.journal-entry-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 28px;
+}
+.journal-time {
+  font-size: 12px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.journal-entry-actions {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+}
+.journal-entry-actions .btn {
+  min-height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+.journal-text {
+  max-width: 72ch;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.journal-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 760px;
+}
+.journal-more {
+  align-self: flex-start;
+  margin-top: 12px;
+}
+
+/* the privacy line, and clearing the journal */
+.journal-privacy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 16px;
+  margin-top: -4px;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.journal-privacy p {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.journal-privacy .btn {
+  min-height: 28px;
+  padding: 0 4px;
+  font-size: 12px;
+}
+
+@media (max-width: 640px) {
+  .card.journal-compose {
+    padding: 18px 16px 18px;
+  }
+  .journal-art {
+    display: none;
+  }
+  /* All five fit on one line of a phone. */
+  .journal-moods {
+    gap: 6px;
+  }
+  .journal-mood {
+    padding: 0 10px;
+  }
+}

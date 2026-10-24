@@ -1,0 +1,234 @@
+/* ---------- Blood records (src/pages/Labs.tsx) ---------- */
+/* Two cards, Blood results and Lab documents, each with its title on the left and a count on the right, a centred
+   first-run state, and a small footnote under both. The results tables, the forms and the marker detail keep their
+   own styles (styles.css, .labs-*); this lays them out inside the cards. */
+
+.page.records {
+  gap: 20px;
+}
+.records .labs-notice {
+  margin: -8px 0 -6px;
+}
+.card.records-card {
+  display: flex;
+  flex-direction: column;
+  padding: 22px 26px 24px;
+}
+.records-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.card.records-card .records-card-head h2 {
+  font-size: 14px;
+  font-weight: 500;
+}
+.records-loading {
+  padding: 28px 0 8px;
+}
+
+/* the first-run state: an icon, a line, a white pill */
+.records-empty {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 250px;
+  padding: 24px 12px 12px;
+  text-align: center;
+}
+.records-empty > .icon {
+  margin-bottom: 14px;
+  color: var(--ink-3);
+}
+.records-empty h3 {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.records-empty p {
+  max-width: 560px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+.records-empty .btn {
+  margin-top: 18px;
+}
+
+/* Blood results, filled: the latest results, then every result by date, both inside the card */
+.records-card .labs-demo {
+  margin-top: 16px;
+}
+.records-card .labs-latest {
+  margin-top: 18px;
+}
+.records-card .labs-bydate {
+  margin-top: 28px;
+}
+.records-card .labs-card-head h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* Lab documents: what happened, then one row per file */
+.records-status:empty {
+  position: absolute;
+}
+.records-status > p {
+  margin-top: 12px;
+}
+.records-status .note-good:focus,
+.records-offer-title:focus {
+  outline: none;
+}
+.records-status .note-good:focus-visible,
+.records-offer-title:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.records-error {
+  margin-top: 12px;
+}
+.records-docs {
+  display: flex;
+  flex-direction: column;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.records-doc {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+.records-doc:last-child {
+  padding-bottom: 2px;
+  border-bottom: 0;
+}
+.records-doc-main {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.records-doc-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--r-tile);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.records-doc-text {
+  flex: 1;
+  min-width: 0;
+}
+.records-doc-name {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.records-doc-meta {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.records-doc-read {
+  color: var(--accent-text);
+}
+.records-doc-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+}
+.records-doc-actions .btn {
+  min-height: 32px;
+  padding: 0 11px;
+}
+.records-doc .records-error {
+  margin-left: 52px;
+}
+
+/* "Read the results from this report?", under its row */
+.records-offer {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 14px 0 0 52px;
+  padding: 16px 18px 12px;
+  border-radius: var(--r-field);
+  background: var(--choice-wash);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.records-offer-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.records-offer-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+.records-offer-off {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+.records-offer .btn-row {
+  margin-top: 4px;
+}
+.records-offer > p.muted:empty {
+  display: none;
+}
+
+.records-foot {
+  margin-top: -6px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--ink-3);
+}
+
+/* a phone: the row's actions go under its name, and the offer uses the full width */
+@media (max-width: 640px) {
+  .card.records-card {
+    padding: 18px 16px 18px;
+  }
+  .records-empty {
+    min-height: 210px;
+  }
+  .records-doc-main {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+  .records-doc-actions {
+    flex: 1 0 100%;
+    flex-wrap: wrap;
+    padding-left: 35px;
+  }
+  .records-offer,
+  .records-doc .records-error {
+    margin-left: 0;
+  }
+  .records-doc-icon {
+    width: 32px;
+    height: 32px;
+  }
+}
