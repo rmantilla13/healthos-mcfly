@@ -810,8 +810,12 @@ export type FoodLog = {
   drafts: FoodEntry[];
   /** Which estimate the drafts are: send it with /log/save or /log/discard. Null when there are none. */
   draftBatch: string | null;
-  /** What this server can do: McFly estimates (needs Claude and a daily limit above 0) and USDA search (needs its key). */
-  can: { estimate: boolean; usda: boolean };
+  /**
+   * What this person can do here: McFly estimates (their own OpenAI or Claude key, else the shared Claude key with a
+   * daily limit above 0) and USDA search (needs its key). Newer servers add who reads an estimate (shared/ai.ts
+   * AiProvider and AiSource, null when nobody can) and whether voice notes work (an OpenAI key).
+   */
+  can: { estimate: boolean; usda: boolean; estimateProvider?: 'anthropic' | 'openai' | 'gemini' | null; estimateSource?: 'own' | 'shared' | null; voice?: boolean };
 };
 
 /** One portion of a database food, with its amounts for one of it, as the person's setting allows. */

@@ -1,0 +1,797 @@
+/* ---------- Nutrition's Today (src/pages/NutritionChat.tsx) and the page around it (src/pages/Nutrition.tsx) ----------
+   A tall conversation card on the left, the day's balance and food journal on the right. Soft, neutral colours only:
+   protein, carbs and fat are three pastels, never a colour for more or less. */
+:root {
+  --nutri-protein: #9cc78c;
+  --nutri-carbs: #f0b07e;
+  --nutri-fat: #b2a6e6;
+  /* The balance ring with nothing in it: a pale green, cream and lavender loop. */
+  --nutri-ring: conic-gradient(from 210deg, #e3eedb, #f6ecd8, #ebe5f6, #e0ede0, #e3eedb);
+  --nutri-bubble: #eaf2e5;
+  --nutri-send-off: #b3bdaf;
+  --nutri-field: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --nutri-protein: #7fae70;
+    --nutri-carbs: #d0905e;
+    --nutri-fat: #9387d2;
+    --nutri-ring: conic-gradient(from 210deg, #2c3a2a, #3d3526, #332e44, #2a3a2e, #2c3a2a);
+    --nutri-bubble: #253128;
+    --nutri-send-off: #3a433c;
+    --nutri-field: #1f221f;
+  }
+}
+/* Forced dark (data-theme='dark'): the same values as the block above. Change both together. */
+:root[data-theme='dark'] {
+  --nutri-protein: #7fae70;
+  --nutri-carbs: #d0905e;
+  --nutri-fat: #9387d2;
+  --nutri-ring: conic-gradient(from 210deg, #2c3a2a, #3d3526, #332e44, #2a3a2e, #2c3a2a);
+  --nutri-bubble: #253128;
+  --nutri-send-off: #3a433c;
+  --nutri-field: #1f221f;
+}
+
+/* ---------- the intro row: the views, and the day being viewed ---------- */
+nav.nutrition-views {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 0;
+  font-size: 12.5px;
+}
+.nutrition-views a {
+  position: relative;
+  padding: 3px 0;
+  color: var(--ink-3);
+}
+/* A small dot between views, drawn rather than written, so a screen reader doesn't read it out. */
+.nutrition-views a + a {
+  margin-left: 21px;
+}
+.nutrition-views a + a::before {
+  content: '';
+  position: absolute;
+  left: -12px;
+  top: 50%;
+  width: 3px;
+  height: 3px;
+  margin-top: -1.5px;
+  border-radius: 50%;
+  background: var(--ink-3);
+  opacity: 0.55;
+}
+.nutrition-views a:hover,
+.nutrition-views a[aria-current='page'] {
+  color: var(--ink);
+}
+.nutrition-views a[aria-current='page'] {
+  font-weight: 500;
+}
+.nutri-viewing {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.nutri-viewing input {
+  min-height: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--r-field);
+  background: var(--surface);
+  box-shadow: var(--shadow-pill);
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.nutri-viewing input::-webkit-calendar-picker-indicator {
+  opacity: 0.65;
+  cursor: pointer;
+}
+
+/* ---------- Today's layout ---------- */
+.nutri-today {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(300px, 1fr);
+  gap: 16px;
+  /* The cards reach the footer on a tall screen, as in the design. */
+  min-height: max(560px, calc(100dvh - 300px));
+}
+.nutri-side {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.nutri-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.nutri-card-head h2 {
+  font-size: 14.5px;
+  font-weight: 500;
+}
+
+/* ---------- the conversation ---------- */
+/* One screen tall on a computer, so the thread scrolls inside it and the composer stays at the bottom; it stays in
+   view (sticky) while a long journal scrolls beside it. */
+.card.nutri-chat {
+  position: sticky;
+  top: 20px;
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  height: max(560px, calc(100dvh - 300px));
+  padding: 28px 30px 18px;
+}
+.nutri-chat-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.nutri-chat-head .eyebrow {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+}
+.card .nutri-chat-head h2 {
+  margin-top: 12px;
+  font-size: 28px;
+  font-weight: 400;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+.nutri-chat-sub {
+  margin-top: 12px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+.nutri-thread {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin: 0 -6px;
+  padding: 20px 6px 18px;
+  scrollbar-width: thin;
+  /* What scrolls up out of view fades under the heading rather than being cut off. */
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 18px);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 18px);
+}
+.nutri-empty {
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 24px 0;
+  text-align: center;
+}
+.nutri-empty .orb {
+  margin-bottom: 28px;
+}
+.nutri-empty-title {
+  font-size: 28px;
+  font-weight: 400;
+  line-height: 1.28;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+.nutri-empty-example {
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+.nutri-turn {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+}
+.nutri-you {
+  justify-content: flex-end;
+}
+.nutri-bubble {
+  max-width: min(78%, 520px);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 18px 18px 6px 18px;
+  background: var(--nutri-bubble);
+  color: var(--ink);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.nutri-bubble p {
+  margin: 0;
+  align-self: stretch;
+}
+.nutri-bubble img {
+  width: 140px;
+  max-width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 12px;
+}
+.nutri-turn-orb {
+  margin-top: 2px;
+}
+.nutri-turn-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 14px;
+}
+.nutri-turn-body > p {
+  margin: 0;
+}
+.nutri-turn-body > .note-bad {
+  align-items: flex-start;
+}
+.nutri-turn-body > .note-bad .icon {
+  flex: none;
+  margin-top: 2px;
+}
+
+/* McFly's estimate, to check and save */
+.nutri-review {
+  max-width: 640px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-pill);
+}
+.nutri-review > p {
+  margin: 0;
+}
+.nutri-note {
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.nutri-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.nutri-item {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+.nutri-item:first-child {
+  padding-top: 2px;
+  border-top: 0;
+}
+.nutri-item-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 86px auto;
+  align-items: end;
+  gap: 10px;
+}
+.nutri-item-qty {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.nutri-item-row .btn {
+  padding: 0 8px;
+}
+.nutri-sum {
+  margin: 0;
+}
+.nutri-review-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+}
+.nutri-review-when {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+/* Fields in the review, the journal's editor and the + sheets, like the Log tab's (.food-log). */
+.nutri-review input,
+.nutri-journal input,
+.nutri-journal select,
+.food-sheet input,
+.food-sheet select,
+.food-sheet textarea {
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  font: inherit;
+  font-size: 14px;
+  color: var(--ink);
+}
+.food-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.food-sheet > p {
+  margin: 0;
+}
+.food-sheet .food-water {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+.food-sheet .food-result.is-open .food-pick input,
+.food-sheet .food-result.is-open .food-pick select {
+  background: var(--surface);
+}
+
+/* the composer, pinned to the bottom of the card */
+.nutri-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 14px 12px 18px;
+  border-radius: 20px;
+  background: var(--nutri-field);
+  box-shadow:
+    var(--shadow-pill),
+    0 0 0 1px var(--border);
+  transition: box-shadow 0.15s;
+}
+.nutri-composer:focus-within {
+  box-shadow:
+    var(--shadow-pill),
+    0 0 0 2px var(--focus);
+}
+.nutri-composer textarea {
+  min-height: 58px;
+  max-height: 180px;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  resize: none;
+  field-sizing: content;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+/* The composer draws the focus ring around itself. */
+.nutri-composer textarea:focus-visible {
+  outline: none;
+}
+.nutri-composer textarea::placeholder {
+  color: var(--ink-3);
+}
+.nutri-composer.is-off textarea {
+  cursor: not-allowed;
+}
+.nutri-composer-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.nutri-composer-gap {
+  flex: 1;
+}
+/* Wide enough for "Search foods or a barcode" on one line; a phone's menu is a sheet from the bottom (styles.css). */
+@media (min-width: 821px) {
+  .nutri-composer-row .menu {
+    width: 268px;
+  }
+}
+.nutri-round {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    transform 0.15s;
+}
+.nutri-round:focus-visible {
+  border-radius: 50%;
+}
+.nutri-plus {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.nutri-plus:hover,
+.nutri-plus[aria-expanded='true'] {
+  color: var(--ink);
+}
+.nutri-send {
+  background: var(--accent-grad);
+  color: var(--accent-ink);
+}
+.nutri-send:hover:not(:disabled) {
+  background: var(--accent-grad-hover);
+}
+.nutri-send:disabled {
+  background: var(--nutri-send-off);
+  color: var(--accent-ink);
+  cursor: default;
+}
+.nutri-voice-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+/* Hold to talk: no text selection, no long-press menu, no scrolling the page from it. */
+.nutri-voice {
+  background: transparent;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.nutri-voice .orb {
+  transition:
+    transform 0.2s ease-out,
+    opacity 0.2s;
+}
+.nutri-voice[aria-disabled='true'],
+.nutri-voice:disabled {
+  cursor: default;
+}
+.nutri-voice[aria-disabled='true'] .orb,
+.nutri-voice:disabled .orb {
+  opacity: 0.45;
+}
+.nutri-voice.is-starting .orb {
+  transform: scale(1.12);
+}
+.nutri-voice.is-recording .orb {
+  transform: scale(1.4);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .nutri-voice.is-recording .orb {
+    animation: nutri-listen 1.2s ease-in-out infinite;
+  }
+}
+@keyframes nutri-listen {
+  0%,
+  100% {
+    box-shadow: 0 0 6px 1px rgba(241, 105, 64, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 16px 6px rgba(241, 105, 64, 0.5);
+  }
+}
+.nutri-attached {
+  position: relative;
+  align-self: flex-start;
+  margin-bottom: 2px;
+}
+.nutri-attached img {
+  display: block;
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+}
+.nutri-attached-x {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: var(--shadow-pill);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.nutri-attached-x:focus-visible {
+  border-radius: 50%;
+}
+.nutri-setup {
+  margin-top: 12px;
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--ink-2);
+}
+.nutri-setup.is-quiet {
+  color: var(--ink-3);
+}
+.nutri-setup a {
+  font-weight: 500;
+  color: var(--accent-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.nutri-problem {
+  justify-content: center;
+  margin-top: 10px;
+  text-align: center;
+}
+.nutri-problem.is-quiet {
+  color: var(--ink-2);
+}
+
+/* ---------- the day's balance ---------- */
+.card.nutri-balance {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px 22px 18px;
+}
+.nutri-balance-body {
+  display: flex;
+  align-items: center;
+  gap: 26px;
+}
+/* The ring: a pastel loop under the parts, and a white middle with a soft edge. */
+.nutri-ring {
+  position: relative;
+  flex: none;
+}
+.nutri-ring::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--nutri-ring);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 11px), #000 calc(100% - 10.5px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 11px), #000 calc(100% - 10.5px));
+}
+.nutri-ring.has-parts::before {
+  opacity: 0.45;
+}
+.nutri-ring .donut svg {
+  position: relative;
+}
+.nutri-ring .donut-track {
+  stroke: transparent;
+}
+.nutri-ring .donut-center {
+  inset: 15px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow:
+    0 3px 12px -6px rgba(36, 49, 42, 0.25),
+    inset 0 0 0 1px var(--border);
+  text-align: center;
+}
+.nutri-ring .donut-center strong {
+  font-size: 28px;
+  font-weight: 400;
+  line-height: 1.1;
+}
+.nutri-ring .donut-center span {
+  max-width: 64px;
+  font-size: 10px;
+  line-height: 1.25;
+  color: var(--ink-3);
+}
+.nutri-macros {
+  list-style: none;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+}
+.nutri-macros li {
+  display: grid;
+  grid-template-columns: 6px minmax(0, 1fr) auto 36px;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 0;
+  border-top: 1px solid var(--border);
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+.nutri-macros li:first-child {
+  border-top: 0;
+}
+.nutri-macros i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.nutri-macros strong {
+  font-size: 20px;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.nutri-macros strong small {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.nutri-macros .muted {
+  text-align: right;
+  font-size: 10.5px;
+}
+.nutri-balance-none {
+  margin: 0;
+  flex: 1;
+}
+.nutri-extras {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
+  gap: 8px 14px;
+  margin: 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.nutri-extras dt {
+  font-size: 11.5px;
+  color: var(--ink-2);
+}
+.nutri-extras dd {
+  margin: 2px 0 0;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* ---------- the food journal ---------- */
+.card.nutri-journal {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px 22px;
+}
+.nutri-journal-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 26px 12px 40px;
+  text-align: center;
+}
+.nutri-journal-empty .icon {
+  margin-bottom: 16px;
+  color: var(--ink-2);
+}
+.nutri-journal-empty-title {
+  margin-bottom: 6px;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.nutri-journal-empty .muted {
+  line-height: 1.75;
+}
+.nutri-counted {
+  margin-top: auto;
+}
+.nutri-counted a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ---------- while Nutrition is off ---------- */
+.card.nutri-intro-hero {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 24px;
+  padding: 28px 30px;
+}
+.nutri-intro-hero > .orb {
+  margin-top: 6px;
+}
+.nutri-intro-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+.card .nutri-intro-text h2 {
+  font-size: 26px;
+  font-weight: 400;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+.nutri-intro-text > p {
+  max-width: 620px;
+}
+.nutri-intro-text .choice-list {
+  align-self: stretch;
+  max-width: 560px;
+}
+
+/* ---------- smaller screens ---------- */
+@media (max-width: 1000px) {
+  .nutri-today {
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
+  }
+  .card.nutri-chat {
+    position: static;
+    height: auto;
+    min-height: 460px;
+  }
+  .nutri-thread {
+    max-height: 62dvh;
+  }
+}
+@media (max-width: 560px) {
+  .card.nutri-chat {
+    padding: 22px 18px 16px;
+  }
+  .card .nutri-chat-head h2,
+  .nutri-empty-title {
+    font-size: 23px;
+  }
+  .nutri-empty .orb {
+    margin-bottom: 14px;
+  }
+  .nutri-voice-more {
+    display: none;
+  }
+  .nutri-composer {
+    padding: 12px 10px 10px 14px;
+  }
+  .nutri-composer-row {
+    gap: 8px;
+  }
+  .nutri-item-row {
+    grid-template-columns: minmax(0, 1fr) 72px;
+  }
+  .nutri-item-row .btn {
+    grid-column: 1 / -1;
+    justify-self: start;
+    padding: 0;
+    min-height: 28px;
+  }
+  .card.nutri-balance,
+  .card.nutri-journal {
+    padding: 18px 18px 16px;
+  }
+  .nutri-balance-body {
+    gap: 18px;
+  }
+  .card.nutri-intro-hero {
+    flex-direction: column;
+    gap: 14px;
+    padding: 22px 18px;
+  }
+  .card .nutri-intro-text h2 {
+    font-size: 22px;
+  }
+}
