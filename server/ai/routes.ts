@@ -3,12 +3,14 @@
 // - A key is checked with its provider (a cheap authenticated list of models) before it's stored, then stored
 //   encrypted (keys.ts). No reply ever carries a key, and no log line or error message does either: a provider's own
 //   error text can echo part of one, so only its status and kind are kept.
-// - A voice note goes to OpenAI's transcription for this one call, and is never stored or logged.
+// - A voice note goes to OpenAI's transcription for this one call, and is never stored or logged. On the server's own
+//   OpenAI key it counts toward VOICE_NOTES_PER_DAY; on the person's own key it isn't counted.
 import express, { type NextFunction, type Request, type Response } from 'express';
-import type { AiProvider } from '../../shared/ai.ts';
+import { type AiProvider, VOICE_NOTES_PER_DAY } from '../../shared/ai.ts';
 import { platformSettings } from '../admin.ts';
 import { HttpError, currentUser } from '../auth.ts';
 import { type Db, bumpDataVersion, setUserSetting } from '../db.ts';
+import { usageDay } from '../mcfly.ts';
 import { GEMINI_API, geminiError } from './gemini.ts';
 import { deleteKey, isProvider, keyInfos, keyProblem, keysAvailable, ownKeys, saveKey, setKeyModel } from './keys.ts';
 import { OPENAI_API, openaiError } from './openai.ts';
@@ -28,6 +30,26 @@ const AUDIO: Record<string, { ext: string; is: (b: Buffer) => boolean }> = {
   'audio/wav': { ext: 'wav', is: (b) => b.length > 12 && b.subarray(0, 4).toString('latin1') === 'RIFF' && b.subarray(8, 12).toString('latin1') === 'WAVE' },
 };
 const AUDIO_ALIASES: Record<string, string> = { 'audio/x-m4a': 'audio/mp4', 'audio/m4a': 'audio/mp4', 'audio/mp3': 'audio/mpeg', 'audio/x-wav': 'audio/wav', 'audio/wave': 'audio/wav' };
+
+/**
+ * Counts a voice note on the server's OpenAI key; null at the day's limit. One statement, so parallel requests can't both
+ * take the last one (as claimQuestion in server/mcfly.ts). Never counted as a McFly question: the meal estimate a note
+ * becomes is one already.
+ */
+async function claimVoiceNote(db: Db, userId: string, day: string): Promise<number | null> {
+  const [row] = await db.query<{ voice_notes: number }>(
+    `INSERT INTO mcfly_usage (user_id, day, voice_notes) VALUES ($1, $2, 1)
+     ON CONFLICT (user_id, day) DO UPDATE SET voice_notes = mcfly_usage.voice_notes + 1 WHERE mcfly_usage.voice_notes < $3
+     RETURNING voice_notes`,
+    [userId, day, VOICE_NOTES_PER_DAY],
+  );
+  return row ? Number(row.voice_notes) : null;
+}
+
+/** Gives back a voice note OpenAI didn't transcribe. */
+async function refundVoiceNote(db: Db, userId: string, day: string) {
+  await db.query('UPDATE mcfly_usage SET voice_notes = voice_notes - 1 WHERE user_id = $1 AND day = $2 AND voice_notes > 0', [userId, day]);
+}
 
 /** Does the provider accept this key? A cheap authenticated call; a rate limit still means the key was recognised. */
 export async function verifyKey(fetchFn: AiFetch, provider: AiProvider, key: string): Promise<'ok' | 'rejected' | 'unreachable'> {
@@ -180,6 +202,12 @@ export function aiRouter(db: Db, { client, aiFetch = fetch }: { hosted: boolean;
       form.append('file', new Blob([new Uint8Array(audio)], { type }), `voice-note.${format.ext}`);
       form.append('model', platform.openai_transcribe_model);
       form.append('response_format', 'json');
+      // Counted just before the call, and given back if it fails.
+      const day = usageDay();
+      if (openai.source === 'shared' && (await claimVoiceNote(db, userId, day)) === null) {
+        const orOwn = keysAvailable() ? ', or connect your own OpenAI key in your Profile' : '';
+        throw new HttpError(429, `You've used today's ${VOICE_NOTES_PER_DAY} voice notes on healthOS's shared key. Type what you had instead${orOwn}.`);
+      }
       let text: string;
       try {
         // FormData sets its own multipart Content-Type, with the boundary.
@@ -189,6 +217,7 @@ export function aiRouter(db: Db, { client, aiFetch = fetch }: { hosted: boolean;
         if (typeof body?.text !== 'string') throw new AiError('server');
         text = body.text.trim();
       } catch (err) {
+        if (openai.source === 'shared') await refundVoiceNote(db, userId, day).catch(() => {});
         await noteOwnUse(db, userId, 'openai', openai.source, err);
         const kind = err instanceof AiError ? err.kind : 'network';
         console.error('transcribe:', kind);
