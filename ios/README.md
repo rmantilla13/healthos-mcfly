@@ -90,7 +90,7 @@ Needs iOS 17 or later. Built and tested with Xcode 27. Bundle ID `health.mcfly.s
 
 1. Install the latest build from **TestFlight**. In App Store Connect → TestFlight, add yourself to an internal testing group once; new builds then appear in the TestFlight app. For a quick local install instead, run the `HealthOSSync` scheme on your phone from Xcode.
 2. Open the app and sign in, or join with an invite code. It already points at `https://health.mcfly.bot`.
-3. In **Settings**, paste your ingest token, then tap **Test connection**. Each person gets their own on the dashboard under Integrations → iPhone app; the owner can also use the `HEALTHOS_INGEST_TOKEN` value set on Vercel.
+3. In **Settings**, paste your ingest token, then tap **Test connection**. Each person gets their own on the dashboard under Integrations → Apple Watch / Health → Set up the iPhone app; the owner can also use the `HEALTHOS_INGEST_TOKEN` value set on Vercel.
 4. Tap **Sync now**. When the Health sheet asks how much history to share, pick **All Recorded Data** if you want a full backfill. The **First upload covers** setting can limit it further.
 5. For background sync, leave **Background App Refresh** on for the app (Settings → General).
 
