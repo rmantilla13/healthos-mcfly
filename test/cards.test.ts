@@ -127,3 +127,21 @@ test("one card's change applies to the list as stored now, so a change made else
   assert.equal((await ana.call('PUT', '/api/settings', { cardShown: { id: 'home.hrv', shown: 'yes' } })).status, 400);
   assert.equal((await owner.call('PATCH', `/api/admin/users/${anaId}`, { cardShown: 'home.hrv' })).status, 400);
 });
+
+test('optional cards are off until turned on, by the person or an admin, and Show all leaves them as they are', async () => {
+  let s = (await ana.call('GET', '/api/status')).json.settings;
+  assert.deepEqual(s.shownCards, []);
+  s = (await ana.call('PUT', '/api/settings', { cardShown: { id: 'home.timeline', shown: true } })).json.settings;
+  assert.deepEqual(s.shownCards, ['home.timeline']);
+  // Turning an optional card on doesn't touch the hidden list, and Show all doesn't turn it off.
+  assert.deepEqual(s.hiddenCards, ['home.hrv']);
+  s = (await ana.call('PUT', '/api/settings', { hiddenCards: [] })).json.settings;
+  assert.deepEqual([s.hiddenCards, s.shownCards], [[], ['home.timeline']]);
+  const a = await owner.call('PATCH', `/api/admin/users/${anaId}`, { cardShown: { id: 'home.insights', shown: true } });
+  assert.deepEqual(a.json.shownCards, ['home.timeline', 'home.insights']);
+  const row = (await owner.call('GET', '/api/admin/overview')).json.users.find((u: { id: string }) => u.id === anaId);
+  assert.deepEqual(row.shownCards, ['home.timeline', 'home.insights']);
+  // Nutrition's optional card stays the person's own: an admin can't set it.
+  assert.equal((await owner.call('PATCH', `/api/admin/users/${anaId}`, { cardShown: { id: 'home.food', shown: true } })).status, 400);
+  assert.equal((await ana.call('PUT', '/api/settings', { shownCards: ['home.hrv'] })).status, 400);
+});

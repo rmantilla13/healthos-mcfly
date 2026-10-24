@@ -2,7 +2,7 @@
 // account's data volume and sync health, but never anyone's health values.
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { HttpError, type Role, countActiveAdmins, createLink, currentUser, formatCode, getUser, normalizeEmail, requireAdmin } from './auth.ts';
-import { NUTRITION_CARDS, cleanHiddenCards, readHiddenCards, storedHiddenCards, withCardShown, withoutNutritionCards } from '../shared/cards.ts';
+import { NUTRITION_CARDS, cleanHiddenCards, readHiddenCards, readShownCards, storedHiddenCards, withCardShown, withCardToggled, withoutNutritionCards } from '../shared/cards.ts';
 import { MODEL_ID } from './ai/provider.ts';
 import { type Db, bumpDataVersion, deleteUserData, getSettings, getUserSetting, setSetting, setUserSetting } from './db.ts';
 import * as whoop from './whoop.ts';
@@ -65,7 +65,7 @@ export function adminRouter(db: Db) {
           "SELECT user_id, COUNT(*)::int AS rows, COUNT(DISTINCT date)::int AS days, MIN(date) AS first, MAX(date) AS last FROM daily WHERE source <> 'demo' GROUP BY user_id",
         ),
         db.query<{ user_id: string; key: string; value: string }>(
-          "SELECT user_id, key, value FROM user_settings WHERE key IN ('apple_last_import', 'apple_last_sync', 'whoop_last_sync', 'whoop_sync', 'photo_meta', 'hidden_cards')",
+          "SELECT user_id, key, value FROM user_settings WHERE key IN ('apple_last_import', 'apple_last_sync', 'whoop_last_sync', 'whoop_sync', 'photo_meta', 'hidden_cards', 'shown_cards')",
         ),
         db.query<{ user_id: string }>("SELECT user_id FROM tokens WHERE provider = 'whoop'"),
         db.query<{ id: string; kind: string; email: string | null; role: Role; user_id: string | null; created_at: number; expires_at: number; used_at: number | null; used_by: string | null; revoked_at: number | null }>(
@@ -109,6 +109,7 @@ export function adminRouter(db: Db) {
             photo: Boolean(setting(u.id, 'photo_meta')),
             mcfly: { questions30d: mcfly.get(u.id)?.questions ?? 0, tokens30d: Number(mcfly.get(u.id)?.tokens ?? 0) },
             hiddenCards: withoutNutritionCards(readHiddenCards(setting(u.id, 'hidden_cards'))),
+            shownCards: withoutNutritionCards(readShownCards(setting(u.id, 'shown_cards'))),
           };
         }),
         invites: invites.map((i) => ({
@@ -168,10 +169,16 @@ export function adminRouter(db: Db) {
       // change applied to their list as it is now (they may have changed it since this page loaded). Nutrition's
       // cards are theirs alone: an admin can't set them (the same answer as an unknown card), and a list an admin
       // sends keeps the ones they hid, so nothing here tells an admin who uses Nutrition.
+      // An optional card (off until turned on) moves in or out of their shown list instead.
       const editing = req.body?.hiddenCards !== undefined || req.body?.cardShown !== undefined;
       const current = editing ? readHiddenCards(await getUserSetting(db, target.id, 'hidden_cards')) : [];
+      const currentShown = editing ? readShownCards(await getUserSetting(db, target.id, 'shown_cards')) : [];
       const cardShown = req.body?.cardShown as { id?: unknown } | undefined;
       const nutritionCard = (id: unknown) => typeof id === 'string' && NUTRITION_CARDS.has(id);
+      const toggled =
+        cardShown !== undefined && !nutritionCard(cardShown?.id)
+          ? withCardToggled({ hidden: withoutNutritionCards(current), shown: withoutNutritionCards(currentShown) }, cardShown)
+          : undefined;
       const hidden =
         req.body?.hiddenCards !== undefined
           ? Array.isArray(req.body.hiddenCards) && req.body.hiddenCards.some(nutritionCard)
@@ -180,8 +187,9 @@ export function adminRouter(db: Db) {
           : cardShown !== undefined
             ? nutritionCard(cardShown?.id)
               ? null
-              : withCardShown(withoutNutritionCards(current), cardShown)
+              : (toggled?.hidden ?? null)
             : undefined;
+      const shown = toggled?.shown;
       if (hidden === null) throw new HttpError(400, 'Unknown card, or not a list of cards.');
       if (role !== undefined && !ROLES.includes(role)) throw new HttpError(400, 'Unknown role.');
       if (status !== undefined && !['active', 'disabled'].includes(status)) throw new HttpError(400, 'Unknown status.');
@@ -196,10 +204,14 @@ export function adminRouter(db: Db) {
       if (hidden) {
         const theirs = current.filter((id) => NUTRITION_CARDS.has(id));
         await setUserSetting(db, target.id, 'hidden_cards', storedHiddenCards(cleanHiddenCards([...hidden, ...theirs]) ?? hidden));
+        if (shown) {
+          const theirShown = currentShown.filter((id) => NUTRITION_CARDS.has(id));
+          await setUserSetting(db, target.id, 'shown_cards', storedHiddenCards([...shown, ...theirShown]));
+        }
         // Their open dashboard picks it up at its next check.
         await bumpDataVersion(db, target.id);
       }
-      res.json(hidden ? { ok: true, hiddenCards: hidden } : { ok: true });
+      res.json(hidden ? { ok: true, hiddenCards: hidden, shownCards: shown ?? withoutNutritionCards(currentShown) } : { ok: true });
     }),
   );
 

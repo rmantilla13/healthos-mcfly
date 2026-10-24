@@ -226,19 +226,20 @@ function People({ data, me, act, onLink }: { data: AdminOverview; me: SessionUse
 
 /** The cards a person sees, which an admin can change for them (only the layout, never their data). */
 function AdminCards({ u, self, act }: { u: AdminUser; self: boolean; act: Act }) {
-  // Only the hidden list: this endpoint doesn't know the optional cards a person turned on, so those aren't offered.
-  const cards = useCardEditor({ hidden: u.hiddenCards ?? [], shown: [] }, async (body) => {
-    const r = await act(() => sendJson<{ hiddenCards: string[] }>('PATCH', `/admin/users/${u.id}`, body));
+  // A server older than optional cards sends no shownCards: then they aren't offered.
+  const optional = u.shownCards !== undefined;
+  const cards = useCardEditor({ hidden: u.hiddenCards ?? [], shown: u.shownCards ?? [] }, async (body) => {
+    const r = await act(() => sendJson<{ hiddenCards: string[]; shownCards?: string[] }>('PATCH', `/admin/users/${u.id}`, body));
     if (!r) throw new Error('Not saved.');
     // Your own pages pick it up now, not at the next background check.
     if (self) notifyDataChanged();
-    return { hidden: r.hiddenCards, shown: [] };
+    return { hidden: r.hiddenCards, shown: r.shownCards ?? [] };
   });
   return (
     <details className="admin-cards">
       <summary>{cards.lists.hidden.length ? `Cards · ${cards.lists.hidden.length} hidden` : 'Cards · all shown'}</summary>
       <p className="muted small">{self ? 'The cards on your Home, Sleep and Body pages.' : `The cards ${u.name || u.email} sees on Home, Sleep and Body. They can change these in their Profile too.`}</p>
-      <CardChoices lists={cards.lists} onToggle={cards.toggle} idPrefix={`admin-${u.id}`} optional={false} />
+      <CardChoices lists={cards.lists} onToggle={cards.toggle} idPrefix={`admin-${u.id}`} optional={optional} />
     </details>
   );
 }

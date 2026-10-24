@@ -246,6 +246,8 @@ export type AdminUser = {
   mcfly: { questions30d: number; tokens30d: number };
   /** Cards hidden on their dashboard (layout only). */
   hiddenCards: string[];
+  /** Optional cards they turned on (layout only). Missing from older servers. */
+  shownCards?: string[];
 };
 
 export type AdminInvite = {
