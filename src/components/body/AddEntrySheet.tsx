@@ -67,7 +67,7 @@ export function AddEntrySheet({ metric, today, demo, onClose }: { metric: BodyMe
     >
       {demo && (
         <p className="entry-demo">
-          Turn off demo data in <a href={href('profile')}>your Profile</a> to add your own measurements.
+          Turn off demo data on <a href={href('integrations')}>Integrations</a> to add your own measurements.
         </p>
       )}
       <form id={formId} className="settings entry-form" onSubmit={save} noValidate>

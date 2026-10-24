@@ -59,7 +59,7 @@ const CATALOGUE: SearchItem[] = [
   // Reached from Home's pill and here; not in the sidebar.
   { id: 'page.mcfly', group: 'pages', label: 'Ask McFly', to: '#/mcfly', keywords: ['mcfly', 'chat', 'assistant', 'ai', 'question'] },
   // In the account menu, like Profile and Privacy & data.
-  { id: 'page.integrations', group: 'pages', label: 'Integrations', to: '#/integrations', keywords: ['connect', 'whoop', 'apple health', 'iphone app', 'import', 'sync', 'sources'] },
+  { id: 'page.integrations', group: 'pages', label: 'Integrations', to: '#/integrations', keywords: ['connect', 'whoop', 'apple health', 'iphone app', 'fitbit', 'google health', 'takeout', 'import', 'sync', 'sources'] },
   { id: 'page.profile', group: 'pages', label: 'Profile', to: '#/profile', keywords: ['settings', 'preferences', 'account', 'units', 'cards', 'photo', 'sign out'] },
   { id: 'page.admin', group: 'pages', label: 'Admin', to: '#/admin', keywords: ['people', 'users', 'invite', 'accounts'], needs: 'admin' },
 
@@ -109,7 +109,7 @@ const CATALOGUE: SearchItem[] = [
   // ---------- actions ----------
   { id: 'action.mcfly', group: 'actions', label: 'Ask McFly a question', to: '#/mcfly', keywords: ['ask', 'chat', 'question', 'mcfly'] },
   { id: 'action.labs', group: 'actions', label: 'Add a blood result', to: '#/labs', keywords: ['upload', 'report', 'lab results', 'lab tests', 'blood test', 'new results'] },
-  { id: 'action.connect', group: 'actions', label: 'Connect WHOOP or Apple Health', to: '#/integrations', keywords: ['connect', 'sync', 'import', 'iphone app'] },
+  { id: 'action.connect', group: 'actions', label: 'Connect WHOOP or Apple Health', to: '#/integrations', keywords: ['connect', 'sync', 'import', 'iphone app', 'fitbit', 'google health', 'takeout'] },
   { id: 'action.cards', group: 'actions', label: 'Choose which cards show', to: '#/profile', keywords: ['edit widgets', 'widgets', 'hide cards', 'show cards', 'layout', 'cards'] },
   { id: 'action.units', group: 'actions', label: 'Change units', to: '#/profile', keywords: ['metric', 'imperial', 'kilometres', 'miles', 'pounds'] },
 ];

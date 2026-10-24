@@ -105,9 +105,12 @@ function Menu({ id, label, trigger, onClose, children }: { id: string; label: st
           else return;
           if (e.key !== 'Tab') e.preventDefault();
         }}
-        // Choosing an item closes the menu (a link still opens: an <a> follows its href after it's gone).
+        // Choosing an item closes the menu (a link still opens: an <a> follows its href after it's gone). Focus goes back
+        // to the button first, before React renders, so a sheet the item opens records the button as what to return to.
         onClick={(e) => {
-          if ((e.target as Element).closest('[role="menuitem"]')) close.current();
+          if (!(e.target as Element).closest('[role="menuitem"]')) return;
+          trigger.current?.focus({ preventScroll: true });
+          close.current();
         }}
       >
         {children}

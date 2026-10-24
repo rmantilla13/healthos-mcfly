@@ -77,7 +77,7 @@ export function Journal({ status }: { status: Status }) {
   const { params } = useRoute();
   const userId = status.user.id;
   const [days, setDays] = useState(RECENT_DAYS);
-  const { data, error, reload } = useApi<JournalData>(`/journal?days=${days}`);
+  const { data, error, loading, current, reload } = useApi<JournalData>(`/journal?days=${days}`);
   const [draft, setDraft] = useState<Draft>(() => readDraft(userId));
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -164,6 +164,11 @@ export function Journal({ status }: { status: Status }) {
   }
 
   const left = JOURNAL_MAX_CHARS - draft.text.length;
+  // Earlier check-ins asked for and not here yet: useApi keeps the 90 days on screen meanwhile, and if they fail to load.
+  // The button stays (with focus on it) until they arrive, and a failure says so under the list.
+  const awaiting = days === ALL_DAYS && !current && Boolean(data.older);
+  const moreFailed = awaiting && Boolean(error);
+  const busyMore = awaiting && loading;
   return (
     <div className="page page-wide journal-page">
       <PageIntro title="How are you feeling today?" sub="A few words, and a mood if you like. Only you can see your journal." />
@@ -231,9 +236,15 @@ export function Journal({ status }: { status: Status }) {
             </div>
           ))
         )}
-        {data.older && days < ALL_DAYS && (
-          <button className="btn journal-more" onClick={() => setDays(ALL_DAYS)}>
-            Show earlier check-ins
+        {moreFailed && (
+          <p className="note-bad" role="alert">
+            <Icon name="alert" size={15} /> Couldn't load your earlier check-ins. Try again.
+          </p>
+        )}
+        {data.older && (days < ALL_DAYS || awaiting) && (
+          // aria-disabled, not disabled, while they load: a disabled button would drop the focus of whoever pressed it.
+          <button className="btn journal-more" aria-disabled={busyMore || undefined} onClick={() => !busyMore && (days < ALL_DAYS ? setDays(ALL_DAYS) : reload())}>
+            {busyMore ? 'Loading…' : 'Show earlier check-ins'}
           </button>
         )}
       </section>

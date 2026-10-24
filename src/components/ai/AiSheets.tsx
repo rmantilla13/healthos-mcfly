@@ -377,7 +377,7 @@ export function OpenAIKeySheet({ onClose }: { onClose: () => void }) {
   function save(e?: FormEvent) {
     e?.preventDefault();
     if (busy || !key.trim()) return;
-    run('Connected. Meal photos, descriptions and voice notes now use your OpenAI key.', () => sendJson<AiStatus>('PUT', '/ai/keys/openai', { key: key.trim() }));
+    run('Connected. Meal photos, descriptions, voice notes and portraits now use your OpenAI key.', () => sendJson<AiStatus>('PUT', '/ai/keys/openai', { key: key.trim() }));
   }
 
   /** What runs instead while no key of their own is connected. */
@@ -443,7 +443,13 @@ export function OpenAIKeySheet({ onClose }: { onClose: () => void }) {
                 Meal photos, descriptions and voice notes go to OpenAI on your key, for that one request, and aren't kept by healthOS. Estimates on your key don't count toward
                 healthOS's daily limit.
               </p>
-              <p>Portrait photos stay in your account, seen only by you and sent only to your own OpenAI key, until you delete them.</p>
+              <p>
+                {info
+                  ? 'Portrait photos stay in your account, seen only by you, and go to OpenAI on your key only when you make a portrait.'
+                  : status.portraits
+                    ? "Portrait photos stay in your account, seen only by you, and go to OpenAI on this healthOS server's key, only when you make a portrait, until you connect yours."
+                    : 'Portrait photos stay in your account, seen only by you. Making a portrait needs this key.'}
+              </p>
               <p className="muted">Choose OpenAI in Chatbot to use this same key for Ask McFly.</p>
             </div>
           </div>

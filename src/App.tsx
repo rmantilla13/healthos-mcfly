@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { AuthMe, Page, Status, SyncResult } from '../shared/types.ts';
 import { Icon } from './components/Icon.tsx';
 import { PhotoToneFilters, figureVariant } from './components/Figure.tsx';
@@ -123,6 +123,16 @@ function Dashboard({ signedIn }: { signedIn: boolean }) {
   // A menu left open doesn't follow you to the next page.
   useEffect(() => setMenu(null), [page]);
 
+  // A new page opens at its top, not at the last page's scroll position. Not on the first load (the browser's own
+  // restore), and not for a change within a page (?tab= and the other queries). Instant, never smooth, for reduced motion.
+  // A layout effect runs before the page's own effects, so one that focuses a field (Nutrition's composer) still wins.
+  const shownPage = useRef(page);
+  useLayoutEffect(() => {
+    if (shownPage.current === page) return;
+    shownPage.current = page;
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+  }, [page]);
+
   const settings = status?.settings;
   // Until the settings load, no card shows (so a hidden one never flashes up); if they can't load, all do.
   const cards = useMemo(() => (settings ? cardListsOf(settings) : statusError ? NO_CHOICES : null), [settings, statusError]);
@@ -154,7 +164,7 @@ function Dashboard({ signedIn }: { signedIn: boolean }) {
                   <ShellHeader page={page} date={date} setDate={setDate} reload={reload} account={account} />
                   {page === 'home' && status && noSources(status) && (
                     <a className="banner banner-start" href={href('integrations')}>
-                      <Icon name="integrations" size={16} /> Your dashboard fills in once you connect WHOOP or the healthOS iPhone app.
+                      <Icon name="integrations" size={16} /> Your dashboard fills in once you connect WHOOP or the healthOS iPhone app, or import a Fitbit export.
                       <Icon name="chevron-right" size={16} />
                     </a>
                   )}
@@ -268,7 +278,7 @@ function FamilyOff({ signedIn }: { signedIn: boolean }) {
   );
 }
 
-const noSources = (s: Status) => !s.demo && !s.apple.lastImport && !s.apple.lastSync && !s.whoop.connected;
+const noSources = (s: Status) => !s.demo && !s.apple.lastImport && !s.apple.lastSync && !s.whoop.connected && !s.fitbit?.lastImport;
 
 function NotAllowed() {
   return (

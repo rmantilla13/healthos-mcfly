@@ -2,6 +2,7 @@ import { type ReactNode, useId, useState } from 'react';
 import type { DayData, DaySeries, Point, Status, Summary, Trends, Workout } from '../../shared/types.ts';
 import { BarChart, ChartCard, Legend, TrendChart, type StackSeries } from '../charts/Charts.tsx';
 import { DayChart } from '../charts/Day.tsx';
+import { niceTicks } from '../charts/core.tsx';
 import { cumulative, drawThrough, extent, hourLabel, hourSpan, lastReading } from '../charts/day.ts';
 import { HrvCard, RecoveryCard, RespRateCard, RestingHrCard, Spo2Card, signalCount } from '../components/home/Signals.tsx';
 import { Icon } from '../components/Icon.tsx';
@@ -265,6 +266,18 @@ export function Trend({
 // ---------- Vitals ----------
 
 /**
+ * Axis labels with as many decimals as the chart's tick step needs, so blood oxygen's 0.5 steps read 96.5, 97.0, 97.5
+ * rather than 97, 97, 98. The ticks are TrendChart's own (niceTicks, four of them); `least` is the fewest decimals shown.
+ */
+function stepTicks(points: Point[], least = 0) {
+  const values = points.map((p) => p.value);
+  const ticks = values.length ? niceTicks(Math.min(...values), Math.max(...values), 4) : [];
+  const step = ticks.length > 1 ? ticks[1] - ticks[0] : 1;
+  const digits = String(Number(step.toFixed(10))).split('.')[1]?.length ?? 0;
+  return (v: number) => fmt(v, Math.max(least, digits));
+}
+
+/**
  * Who measures HRV as RMSSD, for its trend's note: WHOOP, and Fitbit when its export had it (status.fitbit). WHOOP's
  * alone when neither is known yet, as before.
  */
@@ -336,13 +349,13 @@ export function Vitals() {
           {day.mode === 'range' && (
             <div className="grid-2">
               {has('recovery') && <Trend title="Recovery" points={t.recovery} format={(v) => `${fmt(v)}%`} color="var(--series-3)" />}
-              <Trend title="Resting heart rate" points={t.resting_hr ?? []} format={(v) => `${fmt(v)} bpm`} tickFormat={(v) => fmt(v)} color="var(--series-2)" />
+              <Trend title="Resting heart rate" points={t.resting_hr ?? []} format={(v) => `${fmt(v)} bpm`} tickFormat={stepTicks(t.resting_hr ?? [])} color="var(--series-2)" />
               {(has('hrv_rmssd') || !has('hrv_sdnn')) && (
-                <Trend title="HRV (RMSSD)" points={t.hrv_rmssd ?? []} format={(v) => `${fmt(v)} ms`} tickFormat={(v) => fmt(v)} unitNote={rmssdNote(status)} />
+                <Trend title="HRV (RMSSD)" points={t.hrv_rmssd ?? []} format={(v) => `${fmt(v)} ms`} tickFormat={stepTicks(t.hrv_rmssd ?? [])} unitNote={rmssdNote(status)} />
               )}
-              {has('hrv_sdnn') && <Trend title="HRV (SDNN)" points={t.hrv_sdnn} format={(v) => `${fmt(v)} ms`} tickFormat={(v) => fmt(v)} unitNote="Apple Watch" />}
-              <Trend title="Blood oxygen" points={t.spo2 ?? []} format={(v) => `${fmt(v, 1)}%`} tickFormat={(v) => fmt(v)} color="var(--series-2)" />
-              <Trend title="Respiratory rate" points={t.resp_rate ?? []} format={(v) => `${fmt(v, 1)} rpm`} tickFormat={(v) => fmt(v, 1)} />
+              {has('hrv_sdnn') && <Trend title="HRV (SDNN)" points={t.hrv_sdnn} format={(v) => `${fmt(v)} ms`} tickFormat={stepTicks(t.hrv_sdnn)} unitNote="Apple Watch" />}
+              <Trend title="Blood oxygen" points={t.spo2 ?? []} format={(v) => `${fmt(v, 1)}%`} tickFormat={stepTicks(t.spo2 ?? [])} color="var(--series-2)" />
+              <Trend title="Respiratory rate" points={t.resp_rate ?? []} format={(v) => `${fmt(v, 1)} rpm`} tickFormat={stepTicks(t.resp_rate ?? [], 1)} />
               {has('body_temp') && <Trend title="Body temperature" points={t.body_temp} format={tf} tickFormat={(v) => fmt(temp(v, units).value, 1)} />}
               {has('wrist_temp') && <Trend title="Wrist temperature" points={t.wrist_temp} format={tf} tickFormat={(v) => fmt(temp(v, units).value, 1)} unitNote="Apple Watch, during sleep" />}
               {has('skin_temp') && <Trend title="Skin temperature" points={t.skin_temp} format={tf} tickFormat={(v) => fmt(temp(v, units).value, 1)} unitNote="WHOOP" />}
