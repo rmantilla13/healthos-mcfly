@@ -1,0 +1,233 @@
+/* ---------- The portrait studio (src/components/portraits/PortraitStudio.tsx) ---------- */
+/* Inside Profile → Your portrait photos: a title and a muted line with the add pill on the right, then each reference
+   photo as a row (thumbnail, words, pills, a hairline above), with the portraits made from it as tiles beneath it.
+   Colors are the shared tokens only, so light and dark both come from styles.css. */
+
+.portrait-studio {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.portrait-studio-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+.portrait-studio-head > .btn {
+  flex: none;
+}
+.portrait-studio-text {
+  min-width: 0;
+}
+.portrait-studio-text h3,
+.portrait-ref-text h4 {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+  margin-bottom: 4px;
+}
+.portrait-studio-text p,
+.portrait-ref-text p {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--ink-3);
+}
+.portrait-studio-text p {
+  max-width: 72ch;
+}
+
+.portrait-key-note {
+  align-self: flex-start;
+  padding: 8px 14px;
+  border-radius: var(--r-tile);
+  background: var(--badge-peach-bg);
+  color: var(--badge-peach-ink);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.portrait-fine {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.portrait-empty {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: var(--r-tile);
+  background: var(--surface-2);
+  color: var(--ink-3);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+/* Each reference photo, a row. */
+.portrait-refs {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.portrait-ref {
+  padding: 14px 0;
+  border-top: 1px solid var(--border);
+}
+.portrait-ref:last-child {
+  padding-bottom: 0;
+}
+.portrait-ref-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.portrait-ref-thumb {
+  flex: none;
+  width: 54px;
+  height: 70px;
+  object-fit: cover;
+  border-radius: var(--r-tile);
+  background: var(--surface-2);
+}
+.portrait-ref-text {
+  flex: 1;
+  min-width: 0;
+}
+.portrait-ref-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.portrait-ref-actions .btn {
+  min-height: 32px;
+}
+
+/* The portraits made from it: tiles under the row, lined up with its words. */
+.portrait-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(156px, 1fr));
+  gap: 10px;
+  margin: 14px 0 0 68px;
+  padding: 0;
+  list-style: none;
+}
+.portrait-tile {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+}
+.portrait-tile.is-chosen {
+  border-color: var(--choice-border);
+}
+.portrait-tile-art {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 2 / 3;
+  background: var(--grad-cream);
+  color: var(--badge-bad-ink);
+}
+.portrait-tile-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.portrait-tile.is-failed .portrait-tile-art {
+  background: var(--surface-2);
+}
+.portrait-in-use {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+}
+/* Being made: a slow sheen across the tile. */
+.portrait-making {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(105deg, transparent 30%, var(--surface-hover) 50%, transparent 70%) 0 0 / 250% 100%;
+  animation: portrait-sheen 2.4s ease-in-out infinite;
+}
+@keyframes portrait-sheen {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -150% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .portrait-making {
+    animation: none;
+    background: var(--surface-hover);
+  }
+}
+.portrait-tile-foot {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 12px 12px;
+}
+.portrait-tile-state {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+.portrait-tile-state.is-bad {
+  color: var(--badge-bad-ink);
+}
+.portrait-tile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.portrait-tile-actions .btn {
+  min-height: 30px;
+  padding: 0 12px;
+  font-size: 12.5px;
+}
+.portrait-tile-actions .btn-quiet {
+  padding: 0 8px;
+}
+
+.portrait-orphans {
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.portrait-orphans h4 {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink-3);
+}
+.portrait-orphans .portrait-grid {
+  margin-left: 0;
+}
+
+@media (max-width: 560px) {
+  .portrait-studio-head {
+    flex-direction: column;
+    gap: 12px;
+  }
+  .portrait-ref-head {
+    flex-wrap: wrap;
+  }
+  .portrait-ref-text {
+    flex-basis: calc(100% - 68px);
+  }
+  .portrait-ref-actions {
+    width: 100%;
+    padding-left: 68px;
+  }
+  .portrait-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-left: 0;
+  }
+}

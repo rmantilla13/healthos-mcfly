@@ -109,7 +109,7 @@ export function createApp({ db, hosted, ingestToken, mcflyClient = defaultClient
   api.post('/nutrition/estimate', requireSession(db), express.json({ limit: '4400kb' }), estimateHandler(db, hosted, mcflyClient, aiFetch), nutritionErrors);
 
   // A portrait reference photo and a Fitbit export chunk are a few MB each: these routers parse their own bodies.
-  api.use('/portraits', requireSession(db), portraitsRouter(db, hosted));
+  api.use('/portraits', requireSession(db), portraitsRouter(db, hosted, aiFetch));
   api.use('/fitbit', requireSession(db), fitbitRouter(db, hosted));
 
   api.use(express.json());
