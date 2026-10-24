@@ -42,6 +42,7 @@
 		6F75846AD2856A20810C958A /* sleep.json in Resources */ = {isa = PBXBuildFile; fileRef = 572030574C60D416CD1909E1 /* sleep.json */; };
 		75EB4235ADBC9A1D6692527B /* day.json in Resources */ = {isa = PBXBuildFile; fileRef = 77F80A1210D0C76AF0017C5F /* day.json */; };
 		78F5EE3925CD2BBEAACB0AB7 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E1080B46A2122D62513147F8 /* Assets.xcassets */; };
+		79AAD246191E879FAE9A478F /* CardVisibilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4E3C2CA58A4F6345F74E5A3 /* CardVisibilityTests.swift */; };
 		7B68BDE9B48212211C75CDDA /* TimelineScrub.swift in Sources */ = {isa = PBXBuildFile; fileRef = 377F8CF3716B6E99B12E2655 /* TimelineScrub.swift */; };
 		7BBF9340E42241A90EEDB5A3 /* LiveHeartRateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 306699B89C78B5A10F03E0A2 /* LiveHeartRateView.swift */; };
 		7FDD20C507BAC8317D1A2AF3 /* FamilyScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = D87B03EEADCD7E5C790A7D1B /* FamilyScreen.swift */; };
@@ -146,6 +147,7 @@
 		CD2F0A99D2A54D83358903BC /* NutritionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NutritionTests.swift; sourceTree = "<group>"; };
 		D25B24AE8CECEA92F2E4C2BA /* FoodLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoodLog.swift; sourceTree = "<group>"; };
 		D32EDE48EFEC42FFCB4C13F5 /* LocalTime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalTime.swift; sourceTree = "<group>"; };
+		D4E3C2CA58A4F6345F74E5A3 /* CardVisibilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardVisibilityTests.swift; sourceTree = "<group>"; };
 		D6C87B5E93B970D98B02681C /* status.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = status.json; sourceTree = "<group>"; };
 		D8457E60A4786255AE3EBB8F /* FoodLogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoodLogTests.swift; sourceTree = "<group>"; };
 		D87B03EEADCD7E5C790A7D1B /* FamilyScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FamilyScreen.swift; sourceTree = "<group>"; };
@@ -198,6 +200,7 @@
 		29F1E9D037E057F27EB4436A /* HealthOSSyncTests */ = {
 			isa = PBXGroup;
 			children = (
+				D4E3C2CA58A4F6345F74E5A3 /* CardVisibilityTests.swift */,
 				A2F31692BC3B154539132A48 /* DashboardTests.swift */,
 				FF3AD1F8E32A8E71A82AA62D /* DayAggregatorTests.swift */,
 				D8457E60A4786255AE3EBB8F /* FoodLogTests.swift */,
@@ -414,6 +417,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				79AAD246191E879FAE9A478F /* CardVisibilityTests.swift in Sources */,
 				463BE90AB15F967AAF2EAF68 /* DashboardTests.swift in Sources */,
 				0BDF60A216902A26A4A8FE46 /* DayAggregatorTests.swift in Sources */,
 				AD2FCA0181439C67F109F750 /* FoodLogTests.swift in Sources */,

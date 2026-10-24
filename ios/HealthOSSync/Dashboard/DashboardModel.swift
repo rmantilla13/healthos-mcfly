@@ -487,8 +487,8 @@ final class Dashboard {
 
     // MARK: Cards
 
-    /// The hidden cards while changes are on their way to the server; nil shows the server's list.
-    private(set) var pendingHiddenCards: [String]?
+    /// Both card lists while changes are on their way to the server; nil shows the server's lists.
+    private(set) var pendingCards: CardLists?
     /// Card changes sent and not answered yet.
     private var cardChanges = 0
     /// The last card change sent. Each waits for the one before, so they reach the server in the order they were made.
@@ -497,26 +497,35 @@ final class Dashboard {
     /// The server can hide cards (its status names the list). Older servers can't: every card shows, and Settings
     /// has no Cards section.
     var cardsAvailable: Bool { status?.settings?.hiddenCards != nil }
-    /// The cards hidden now (shared/cards.ts ids), changes on their way included.
-    var hiddenCards: [String] { pendingHiddenCards ?? status?.settings?.hiddenCards ?? [] }
-    var hiddenCardSet: Set<String> { Set(hiddenCards) }
-    func cardShown(_ id: String) -> Bool { !hiddenCards.contains(id) }
+    /// The cards hidden now (shared/cards.ts ids), changes on their way included. An optional card turned off can be
+    /// in it too.
+    var hiddenCards: [String] { pendingCards?.hidden ?? status?.settings?.hiddenCards ?? [] }
+    /// The optional cards turned on, changes on their way included; nil from a server older than optional cards.
+    var shownCards: [String]? { pendingCards.map(\.shown) ?? status?.settings?.shownCards }
+    /// The server has optional cards (its status names the list): they're off until turned on. On an older server
+    /// they're ordinary cards, on unless hidden.
+    var optionalCards: Bool { shownCards != nil }
+    /// The cards that don't show now, for the screens to leave out: hidden ones, and optional ones not turned on.
+    var cardsOff: Set<String> { Cards.off(hidden: hiddenCards, shown: shownCards) }
+    func cardShown(_ id: String) -> Bool { Cards.shows(id, hidden: hiddenCards, shown: shownCards) }
 
     /// Shows or hides one card (Settings → Cards). Throws when the server refuses, after the switch went back.
     func setCard(_ id: String, shown: Bool) async throws { try await changeCards(.card(id, shown: shown)) }
 
-    func showAllCards() async throws { try await changeCards(.list([])) }
+    /// Every default card back on (the web's Show all). The optional cards stay as they are: the list sent keeps the
+    /// ones that are off.
+    func showAllCards() async throws { try await changeCards(.list(Cards.afterShowAll(hiddenCards, optionalCards: optionalCards))) }
 
     /// Shows a change at once, then sends it after any still on their way (the web's useCardEditor). When the last
-    /// one is answered the screens follow the server's list, so a refused change goes back. `send` is PUT
+    /// one is answered the screens follow the server's lists, so a refused change goes back. `send` is PUT
     /// /api/settings; tests pass their own.
     func changeCards(_ change: CardChange, send: (@MainActor ([String: Any]) async throws -> ServerStatus)? = nil) async throws {
         let send = send ?? { fields in try await self.fetch { try await $0.updateSettings(fields) } }
-        pendingHiddenCards = change.applied(to: hiddenCards)
+        pendingCards = change.applied(to: CardLists(hidden: hiddenCards, shown: shownCards))
         cardChanges += 1
         defer {
             cardChanges -= 1
-            if cardChanges == 0 { pendingHiddenCards = nil }
+            if cardChanges == 0 { pendingCards = nil }
         }
         let previous = cardQueue
         let work = Task { @MainActor in

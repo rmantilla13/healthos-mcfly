@@ -231,7 +231,7 @@ private struct NutritionOverview: View {
         let week = FoodMath.dates(to: data.end, count: 7)
         let latest = data.days.last
         // Cards hidden in Settings → Cards (shared/cards.ts) are left out, and the rest close up.
-        let layout = Cards.nutritionOverview(mode: data.mode, hidden: dashboard.hiddenCardSet)
+        let layout = Cards.nutritionOverview(mode: data.mode, hidden: dashboard.cardsOff)
         if latest == nil && data.water.isEmpty {
             FoodNothingLoggedCard()
         } else if data.mode == .none {

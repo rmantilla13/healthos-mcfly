@@ -67,8 +67,9 @@ private struct TodayContent: View {
         let isToday = summary.date == summary.today
         // The phase is about today, so it says nothing about a past day on screen.
         let phase = isToday && dashboard.cycleTrackingOn ? cycle?.phase : nil
-        // Cards hidden in Settings → Cards (here or on the web) leave no gap; the rest move up.
-        let hidden = dashboard.hiddenCardSet
+        // Cards hidden in Settings → Cards (here or on the web), and optional ones not turned on, leave no gap; the
+        // rest move up.
+        let hidden = dashboard.cardsOff
         let gridIds = Cards.visible(Cards.todayGrid, hidden: hidden)
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
@@ -86,7 +87,7 @@ private struct TodayContent: View {
                 if let timeline = summary.timeline, !hidden.contains("home.timeline") { TodayPath(timeline: timeline, scrubbed: scrub) }
                 if let cycle, let phase { CycleCard(cycle: cycle, phase: phase) }
                 if let day, !day.metrics.isEmpty { DayCard(data: day, date: isToday ? nil : summary.date) }
-                if let week = summary.week { WeekCard(week: week, stepGoal: dashboard.stepGoal) }
+                if let week = summary.week, !hidden.contains("home.week") { WeekCard(week: week, stepGoal: dashboard.stepGoal) }
                 // Left out with all six hidden, so no extra gap is left where the grid was.
                 if !gridIds.isEmpty { TodayGrid(summary: summary, ids: gridIds, goal: dashboard.stepGoal) }
                 if !hidden.contains("home.insights") { InsightsCard(insights: summary.insights ?? [], today: summary.today) }

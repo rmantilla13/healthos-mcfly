@@ -8,12 +8,11 @@ The app reads the same API as the website (`/api/summary`, `/api/trends`, `/api/
 
 - **Today:**
   - the greeting, then your profile photo as an organic portrait: it reveals through a short ASCII sweep once per launch (skipped with Reduce Motion), with heart, breathing and temperature dots, leader-line callouts, and Slept, Steps and HRV shapes around it;
-  - the day's path, and a "week so far" summary;
-  - six cards: recovery or VO₂ max, blood oxygen, HRV, sleep, strain or active energy, and steps against your goal;
-  - the day's timeline and insights.
+  - four cards: recovery or VO₂ max, blood oxygen, HRV and sleep;
+  - optional cards, off until you turn them on in Settings → Cards, as on the web: the day's path (and with it the portrait's heart following its marker), the "week so far" summary, recent insights, strain or active energy, and steps against your goal.
   - Arrows step through past days. Pull down to refresh, which also pushes any new Health data.
   - **Ask McFly:** a pill above the tab bar opens a chat with the dashboard's assistant (`/api/mcfly`, streamed from `/api/mcfly/chat`). The conversation stays in memory only. It shows how many questions are left today, and the pill is hidden when the server has McFly off.
-- **Trends:** Vitals, Sleep (stacked stages), Activity (steps against goal, plus workouts) and Body, over 30 days, 90 days or a year. Drag across a chart to read a single day.
+- **Trends:** Vitals, Sleep (stacked stages; sleep performance from WHOOP and sleep efficiency are separate cards, each hidden on its own), Activity (steps against goal, plus workouts) and Body, over 30 days, 90 days or a year. Drag across a chart to read a single day.
 - **Nutrition** (only while Nutrition is on): the web's Neka layout from `GET /api/nutrition`.
   - **Overview:** Energy (only when calories are shown), Protein with a neutral week-on-week note, Water in glasses, Days logged, a macro balance donut with fiber, sugar, sodium and caffeine, and food insights worded as associations.
   - **Macros and Hydration:** a bar per logged day over 7, 30 or 90 days. With "No amounts", only the Overview and the Log show, and only which days were logged.
@@ -27,6 +26,7 @@ The app reads the same API as the website (`/api/summary`, `/api/trends`, `/api/
 - **Settings:**
   - server address and sign-in status;
   - the profile photo: **Change photo** picks one from Photos and cuts it out on the phone with Apple Vision, using the same steps as the Mac tool `server/photo/cutout.swift`. After a Save/Cancel preview it uploads to `POST /api/profile/photo/upload`;
+  - **Cards:** the web's card switches, one list for both. Optional cards are marked and stay off until turned on (the server's `shownCards`). **Show all** brings back every card you hid and leaves the optional ones as they are. A server older than optional cards sends no `shownCards`: there every card shows unless it's hidden, and Show all clears the whole list;
   - the Apple Health sync controls.
 
 Cards hide or switch to fit your sources, as on the web: no WHOOP means VO₂ max instead of recovery, active energy instead of strain, and HRV labelled SDNN.

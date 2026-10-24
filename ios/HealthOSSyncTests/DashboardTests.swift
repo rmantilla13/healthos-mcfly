@@ -1126,14 +1126,18 @@ final class CardHidingTests: XCTestCase {
                 (1..<m.numberOfRanges).map { m.range(at: $0).location == NSNotFound ? nil : ns.substring(with: m.range(at: $0)) }
             }
         }
-        let cards = try groups(#"\{ id: '([^']+)', page: '([^']+)', label: (?:'([^']*)'|"([^"]*)")(, nutrition: true)? \}"#)
-        XCTAssertEqual(cards.count, 33, "every card in CARDS")
+        // Either flag, or both (nutrition first, as cards.ts writes them).
+        let cards = try groups(#"\{ id: '([^']+)', page: '([^']+)', label: (?:'([^']*)'|"([^"]*)")(, nutrition: true)?(, defaultHidden: true)? \}"#)
+        XCTAssertEqual(cards.count, 41, "every card in CARDS")
+        XCTAssertEqual(Cards.all.count, 41)
         XCTAssertEqual(cards.map { $0[0]! }, Cards.all.map(\.id), "same ids, same order")
         for (c, card) in zip(cards, Cards.all) {
             XCTAssertEqual(c[1], card.page.rawValue, card.id)
             XCTAssertEqual(c[2] ?? c[3], card.label, card.id)
             XCTAssertEqual(c[4] != nil, card.nutrition, card.id)
+            XCTAssertEqual(c[5] != nil, card.optional, card.id)
         }
+        XCTAssertEqual(Cards.optional, ["home.week", "home.timeline", "home.insights", "home.load", "home.activity", "home.food"])
         let pages = try groups(#"\{ page: '([^']+)', label: '([^']+)' \}"#)
         XCTAssertEqual(pages.map { $0[0]! }, CardPage.allCases.map(\.rawValue))
         XCTAssertEqual(pages.map { $0[1]! }, CardPage.allCases.map(\.label))
@@ -1153,9 +1157,9 @@ final class CardHidingTests: XCTestCase {
     }
 
     func testOnlyCardsTheAppShowsAreMapped() {
-        XCTAssertEqual(Cards.ids(in: .today), ["home.readiness", "home.spo2", "home.hrv", "home.sleep", "home.load", "home.activity", "home.timeline", "home.insights"])
+        XCTAssertEqual(Cards.ids(in: .today), ["home.spo2", "home.hrv", "home.sleep", "home.readiness", "home.week", "home.timeline", "home.insights", "home.load", "home.activity"])
         XCTAssertEqual(Cards.todayGrid.filter { Cards.card($0)?.place == .today }, Cards.todayGrid, "every grid card is a Today card")
-        XCTAssertEqual(Cards.ids(in: .trends(.sleep)), ["sleep.score", "sleep.total", "sleep.stages"])
+        XCTAssertEqual(Cards.ids(in: .trends(.sleep)), ["sleep.total", "sleep.score", "sleep.efficiency", "sleep.stages"])
         XCTAssertEqual(Cards.ids(in: .nutrition),
                        ["nutrition.energy", "nutrition.protein", "nutrition.water", "nutrition.logged", "nutrition.macros", "nutrition.insights"])
         // No food card on Today, and nothing of the Body overview in the app.
@@ -1178,7 +1182,7 @@ final class CardHidingTests: XCTestCase {
         XCTAssertTrue(d.cardsAvailable)
         XCTAssertFalse(d.cardShown("home.hrv"))
         XCTAssertTrue(d.cardShown("home.spo2"))
-        XCTAssertEqual(Cards.visible(Cards.todayGrid, hidden: d.hiddenCardSet), ["home.readiness", "home.spo2", "home.sleep", "home.load", "home.activity"])
+        XCTAssertEqual(Cards.visible(Cards.todayGrid, hidden: d.cardsOff), ["home.readiness", "home.spo2", "home.sleep", "home.load", "home.activity"])
     }
 
     func testAnOlderServerShowsEveryCard() throws {
@@ -1238,7 +1242,7 @@ final class CardHidingTests: XCTestCase {
         let off = Cards.pages(nutrition: false)
         XCTAssertEqual(off.map(\.page), [.home, .sleep, .body])
         XCTAssertFalse(off.flatMap(\.cards).contains { $0.nutrition })
-        XCTAssertEqual(off.flatMap(\.cards).count, 26)
+        XCTAssertEqual(off.flatMap(\.cards).count, 34)
         let on = Cards.pages(nutrition: true)
         XCTAssertEqual(on.map(\.page), [.home, .sleep, .body, .nutrition])
         XCTAssertEqual(on.flatMap(\.cards).map(\.id), Cards.all.map(\.id))
@@ -1256,7 +1260,7 @@ final class CardHidingTests: XCTestCase {
             return try self.status(hidden: stored)
         }
         XCTAssertEqual(bodies, [#"{"cardShown":{"id":"home.hrv","shown":false}}"#])
-        XCTAssertNil(d.pendingHiddenCards)
+        XCTAssertNil(d.pendingCards)
         XCTAssertEqual(d.hiddenCards, ["home.spo2", "sleep.rhr", "home.hrv"], "the server's list, the web's change kept")
     }
 
@@ -1269,7 +1273,7 @@ final class CardHidingTests: XCTestCase {
             }
             XCTFail("the error reaches the caller, to say so")
         } catch APIError.server(400, _) {}
-        XCTAssertNil(d.pendingHiddenCards)
+        XCTAssertNil(d.pendingCards)
         XCTAssertEqual(d.hiddenCards, ["home.spo2"])
         XCTAssertTrue(d.cardShown("home.hrv"))
     }
@@ -1312,7 +1316,7 @@ final class CardHidingTests: XCTestCase {
         XCTAssertEqual(bodies, [#"{"cardShown":{"id":"home.hrv","shown":false}}"#, #"{"cardShown":{"id":"home.hrv","shown":true}}"#])
         XCTAssertEqual(stored, [])
         XCTAssertEqual(d.hiddenCards, [])
-        XCTAssertNil(d.pendingHiddenCards)
+        XCTAssertNil(d.pendingCards)
     }
 }
 
@@ -1352,7 +1356,7 @@ final class CardHidingReviewTests: XCTestCase {
                        ["home.spo2", "sleep.rhr"], "in the registry's order")
         XCTAssertEqual(Cards.hiddenOffered([], nutrition: true), [])
         XCTAssertEqual(Cards.hiddenOffered(Set(Cards.all.map(\.id)), nutrition: true), Cards.all.map(\.id))
-        XCTAssertEqual(Cards.hiddenOffered(Set(Cards.all.map(\.id)), nutrition: false).count, 26)
+        XCTAssertEqual(Cards.hiddenOffered(Set(Cards.all.map(\.id)), nutrition: false).count, 34)
     }
 
     func testNutritionOverviewCardsFollowTheSetting() {
