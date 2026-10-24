@@ -102,7 +102,7 @@ export function bodyRouter(db: Db, hosted: boolean) {
   async function writable(scope: Scope, res: Response): Promise<string | null> {
     const { demo, today } = await requestContext(scope, hosted);
     if (!demo) return today;
-    res.status(409).json({ error: 'Turn off demo data in your Profile to add your own measurements.' });
+    res.status(409).json({ error: 'Turn off demo data on Integrations to add your own measurements.' });
     return null;
   }
 

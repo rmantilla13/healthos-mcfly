@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { AddressInfo } from 'node:net';
-import { CARDS, cleanHiddenCards, fillColumns, readHiddenCards } from '../shared/cards.ts';
+import { CARDS, cleanHiddenCards, fillColumns, readHiddenCards, withCardToggled } from '../shared/cards.ts';
 import { createApp } from '../server/app.ts';
 import { hashPassword } from '../server/auth.ts';
 import { getUserSetting } from '../server/db.ts';
@@ -133,7 +133,7 @@ test('optional cards are off until turned on, by the person or an admin, and Sho
   assert.deepEqual(s.shownCards, []);
   s = (await ana.call('PUT', '/api/settings', { cardShown: { id: 'home.timeline', shown: true } })).json.settings;
   assert.deepEqual(s.shownCards, ['home.timeline']);
-  // Turning an optional card on doesn't touch the hidden list, and Show all doesn't turn it off.
+  // Turning an optional card on leaves the other hidden cards as they are, and Show all doesn't turn it off.
   assert.deepEqual(s.hiddenCards, ['home.hrv']);
   s = (await ana.call('PUT', '/api/settings', { hiddenCards: [] })).json.settings;
   assert.deepEqual([s.hiddenCards, s.shownCards], [[], ['home.timeline']]);
@@ -144,4 +144,29 @@ test('optional cards are off until turned on, by the person or an admin, and Sho
   // Nutrition's optional card stays the person's own: an admin can't set it.
   assert.equal((await owner.call('PATCH', `/api/admin/users/${anaId}`, { cardShown: { id: 'home.food', shown: true } })).status, 400);
   assert.equal((await ana.call('PUT', '/api/settings', { shownCards: ['home.hrv'] })).status, 400);
+});
+
+test('an optional card hidden or shown one at a time moves in both lists, so the iPhone sees it in the first answer', () => {
+  const lists = { hidden: ['home.hrv'], shown: ['home.load'] };
+  // The iPhone app hides home.load (an ordinary card when it was built) and reads only hiddenCards.
+  assert.deepEqual(withCardToggled(lists, { id: 'home.load', shown: false }), { hidden: ['home.hrv', 'home.load'], shown: [] });
+  assert.deepEqual(withCardToggled({ hidden: ['home.hrv', 'home.load'], shown: [] }, { id: 'home.load', shown: true }), { hidden: ['home.hrv'], shown: ['home.load'] });
+  // An ordinary card still moves in its one list only.
+  assert.deepEqual(withCardToggled(lists, { id: 'home.spo2', shown: false }), { hidden: ['home.spo2', 'home.hrv'], shown: ['home.load'] });
+  assert.equal(withCardToggled(lists, { id: 'home.load', shown: 'no' }), null);
+});
+
+test('over HTTP: hiding an optional card shows in hiddenCards at once, for the person and for an admin', async () => {
+  await ana.call('PUT', '/api/settings', { hiddenCards: [], shownCards: ['home.activity'] });
+  let s = (await ana.call('PUT', '/api/settings', { cardShown: { id: 'home.activity', shown: false } })).json.settings;
+  assert.deepEqual([s.hiddenCards, s.shownCards], [['home.activity'], []]);
+  s = (await ana.call('PUT', '/api/settings', { cardShown: { id: 'home.activity', shown: true } })).json.settings;
+  assert.deepEqual([s.hiddenCards, s.shownCards], [[], ['home.activity']]);
+  // The same from the admin screen, which keeps Nutrition's cards out of it as before.
+  let a = (await owner.call('PATCH', `/api/admin/users/${anaId}`, { cardShown: { id: 'home.load', shown: false } })).json;
+  assert.deepEqual([a.hiddenCards, a.shownCards], [['home.load'], ['home.activity']]);
+  a = (await owner.call('PATCH', `/api/admin/users/${anaId}`, { cardShown: { id: 'home.load', shown: true } })).json;
+  assert.deepEqual([a.hiddenCards, a.shownCards], [[], ['home.load', 'home.activity']]);
+  s = (await ana.call('GET', '/api/status')).json.settings;
+  assert.deepEqual([s.hiddenCards, s.shownCards], [[], ['home.load', 'home.activity']]);
 });

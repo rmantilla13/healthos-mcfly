@@ -4,7 +4,7 @@
 import type { SleepNightDetail, SleepSegment, SleepStage } from '../shared/types.ts';
 import { addDays } from './dates.ts';
 import type { Scope } from './db.ts';
-import { loadDaily, mean, requestContext, sourceList, valueOn } from './query.ts';
+import { copyDaily, loadDaily, mean, requestContext, sourceList, valueOn, withDerivedEfficiency } from './query.ts';
 
 const round = (v: number, places = 0) => Math.round(v * 10 ** places) / 10 ** places;
 const STAGE_METRICS = ['sleep_awake', 'sleep_rem', 'sleep_light', 'sleep_deep'] as const;
@@ -92,14 +92,13 @@ export async function sleepNight(scope: Scope, hosted: boolean, dateParam?: stri
 
   const performance = at('sleep_performance', 'whoop', date) ?? at('sleep_performance', 'demo', date);
   const asleep = hours?.value ?? null;
-  // Efficiency only from one device's own two numbers, and only when it measured sleep (not just time in bed).
-  const effSource = hours && hours.source !== 'apple+whoop' ? hours.source : undefined;
-  const effBed = at('sleep_in_bed', effSource, date);
-  const efficiency = asleep !== null && effBed && effBed - asleep > 1 / 60 ? (asleep / effBed) * 100 : null;
+  // The night's efficiency as its sheet picks it (metricsheet.ts): a device's own figure (WHOOP, a Fitbit export), else
+  // one device's time asleep over its own time in bed, never two devices' numbers mixed, WHOOP's first on a night both
+  // recorded. Worked out on a copy, since deriving adds to the index it's given, and at() and the insights read this one.
+  const derived = withDerivedEfficiency(copyDaily(daily, ['sleep_hours', 'sleep_in_bed', 'sleep_efficiency']));
+  const efficiency = valueOn({ daily: derived, demo }, 'sleep_efficiency', date)?.value ?? null;
   const score: SleepNightDetail['score'] =
     performance !== undefined ? { kind: 'performance', value: Math.round(performance) } : efficiency !== null ? { kind: 'efficiency', value: Math.round(efficiency) } : null;
-  // The night's own device's efficiency when it reports one (WHOOP, a Fitbit export), else the one worked out above.
-  const ownEfficiency = at('sleep_efficiency', device, date);
 
   return {
     date,
@@ -112,7 +111,7 @@ export async function sleepNight(scope: Scope, hosted: boolean, dateParam?: stri
     stages,
     score,
     performance: performance !== undefined ? Math.round(performance) : null,
-    efficiency: ownEfficiency !== undefined ? Math.round(ownEfficiency) : efficiency !== null ? Math.round(efficiency) : null,
+    efficiency: efficiency !== null ? Math.round(efficiency) : null,
     lastNight: last?.d ?? null,
     segments,
     latencyMin: latency(segments),

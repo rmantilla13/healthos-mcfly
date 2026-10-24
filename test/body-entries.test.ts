@@ -49,7 +49,7 @@ test('while the demo data shows, entries are refused rather than hidden as they 
   await setUserSetting(db, OWNER_ID, 'timezone', 'UTC');
   const r = await owner.post('/api/body/entries', { metric: 'weight', value: 72, date: today });
   assert.equal(r.status, 409);
-  assert.equal(r.json.error, 'Turn off demo data in your Profile to add your own measurements.');
+  assert.equal(r.json.error, 'Turn off demo data on Integrations to add your own measurements.');
   assert.deepEqual((await owner.get('/api/body/entries')).json, { entries: [] });
 });
 

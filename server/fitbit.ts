@@ -5,7 +5,7 @@
 //   POST /import          one chunk of whole days: daily rows are upserted (so the parts of a split export can arrive
 //                         on different days); each night's stretches and sleep record replace the night's Fitbit ones.
 //                         Merges, so a failure halfway loses nothing.
-//   POST /import/finish   the import's summary, shown on Integrations (Status.fitbit.lastImport)
+//   POST /import/finish   the summary of every Fitbit day stored, shown on Integrations (Status.fitbit.lastImport)
 //   POST /clear           every Fitbit row and the summary go; other sources are untouched
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { FITBIT_METRICS, type FitbitFinish, type FitbitMetric } from '../shared/fitbit.ts';
@@ -137,6 +137,18 @@ function parseFinish(body: unknown): FitbitFinish {
   return { days: b.days, firstDate: optDate(b.firstDate, 'firstDate'), lastDate: optDate(b.lastDate, 'lastDate'), metrics: [...new Set(metrics)] };
 }
 
+/** This person's Fitbit days as stored, in fitbitFinish's terms (src/import/fitbit.ts): distinct dates and metrics of the day rows. */
+async function storedSummary(db: Db, userId: string): Promise<FitbitFinish> {
+  const [[span], metrics] = await Promise.all([
+    db.query<{ days: number; first: string | null; last: string | null }>(
+      'SELECT COUNT(DISTINCT date)::int AS days, MIN(date) AS first, MAX(date) AS last FROM daily WHERE user_id = $1 AND source = $2',
+      [userId, FITBIT],
+    ),
+    db.query<{ metric: string }>('SELECT DISTINCT metric FROM daily WHERE user_id = $1 AND source = $2', [userId, FITBIT]),
+  ]);
+  return { days: Number(span?.days) || 0, firstDate: span?.first ?? null, lastDate: span?.last ?? null, metrics: metrics.map((m) => m.metric).sort() };
+}
+
 export function fitbitRouter(db: Db, _hosted: boolean) {
   const router = express.Router();
   const json = express.json({ limit: MAX_BODY });
@@ -155,15 +167,17 @@ export function fitbitRouter(db: Db, _hosted: boolean) {
   });
 
   router.post('/import/finish', json, async (req, res) => {
-    let finish: FitbitFinish;
+    // The browser's own summary is still checked, so a body that isn't one is refused as before, but it isn't kept.
     try {
-      finish = parseFinish(req.body);
+      parseFinish(req.body);
     } catch (err) {
       if (err instanceof ChunkError) return void res.status(400).json({ error: err.message });
       throw err;
     }
-    const lastImport: FitbitImportSummary = { ...finish, importedAt: new Date().toISOString() };
     const userId = userOf(res);
+    // The browser's summary covers only the parts sent this time, so a split export imported one .zip at a time would
+    // replace the last part's with this one's. Kept is what's stored: every part so far, counted as fitbitFinish does.
+    const lastImport: FitbitImportSummary = { ...(await storedSummary(db, userId)), importedAt: new Date().toISOString() };
     await setUserSetting(db, userId, 'fitbit_last_import', JSON.stringify(lastImport));
     await bumpDataVersion(db, userId);
     res.json({ ok: true, lastImport });
