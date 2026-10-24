@@ -1,0 +1,107 @@
+[
+ {
+  "dateTime": "09/14/26 04:59:00",
+  "value": {
+   "bpm": 99,
+   "confidence": 2
+  }
+ },
+ {
+  "dateTime": "09/14/26 05:00:00",
+  "value": {
+   "bpm": 60,
+   "confidence": 3
+  }
+ },
+ {
+  "dateTime": "09/14/26 12:00:00",
+  "value": {
+   "bpm": 60,
+   "confidence": 3
+  }
+ },
+ {
+  "dateTime": "09/14/26 12:01:00",
+  "value": {
+   "bpm": 61,
+   "confidence": 3
+  }
+ },
+ {
+  "dateTime": "09/14/26 12:02:00",
+  "value": {
+   "bpm": 62,
+   "confidence": 3
+  }
+ },
+ {
+  "dateTime": "09/14/26 12:03:00",
+  "value": {
+   "bpm": 63,
+   "confidence": 3
+  }
+ },
+ {
+  "dateTime": "09/14/26 12:04:00",
+  "value": {
+   "bpm": 64,
+   "confidence": 3
+  }
+ },
+ {
+  "dateTime": "09/14/26 12:05:00",
+  "value": {
+   "bpm": 65,
+   "confidence": 3
+  }
+ },
+ {
+  "dateTime": "09/14/26 12:06:00",
+  "value": {
+   "bpm": 66,
+   "confidence": 3
+  }
+ },
+ {
+  "dateTime": "09/14/26 12:07:00",
+  "value": {
+   "bpm": 67,
+   "confidence": 3
+  }
+ },
+ {
+  "dateTime": "09/14/26 12:08:00",
+  "value": {
+   "bpm": 68,
+   "confidence": 3
+  }
+ },
+ {
+  "dateTime": "09/14/26 12:09:00",
+  "value": {
+   "bpm": 69,
+   "confidence": 3
+  }
+ },
+ {
+  "dateTime": "09/14/26 12:10:00",
+  "value": {
+   "bpm": 70,
+   "confidence": 3
+  }
+ },
+ {
+  "dateTime": "09/14/26 12:11:00",
+  "value": {
+   "bpm": 71,
+   "confidence": 3
+  }
+ },
+ {
+  "dateTime": "09/15/26 03:00:00",
+  "value": {
+   "bpm": 120,
+   "confidence": 1
+  }
+ }
+]
