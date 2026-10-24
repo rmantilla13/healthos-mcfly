@@ -227,6 +227,9 @@ function NutritionChat({
   const [busy, setBusy] = useState(false);
   const [sheet, setSheet] = useState<Sheets | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
+  // What a screen reader hears as the conversation moves on (the thread itself isn't a live region: the review's
+  // fields change as people type, and would be read out again each time).
+  const [said, setSaid] = useState('');
   // Each estimate's drafts as it came back, shown until the day is read again (which a save or the next sync does).
   const [fresh, setFresh] = useState<Record<string, FoodEntry[]>>({});
   // The last estimate's full photo, in memory only, so a correction can send it again.
@@ -334,6 +337,7 @@ function NutritionChat({
     setText('');
     setPhoto(null);
     setBusy(true);
+    setSaid('McFly is estimating…');
     try {
       const r = await sendJson<FoodEstimate>('POST', '/nutrition/estimate', { description, image, ...at });
       if (r.drafts.length) {
@@ -355,16 +359,19 @@ function NutritionChat({
         };
         // The server replaced the estimate a correction was for.
         setTurns((t) => [...t.map((x) => (open && x.id === open.id ? { ...x, state: 'replaced' as const } : x)), turn]);
+        setSaid(`McFly's estimate is ready to check: ${turn.items.join(', ')}.`);
       } else {
         // Nothing found: the server still dropped the estimate a correction was for.
         setTurns((t) => [
           ...t.map((x) => (open && x.id === open.id ? { ...x, state: 'discarded' as const } : x)),
           { id: uid(), role: 'mcfly', kind: 'note', text: r.note || "McFly didn't find food or drink to estimate." },
         ]);
+        setSaid(r.note || "McFly didn't find food or drink to estimate.");
       }
       notifyDataChanged();
     } catch (err) {
       setTurns((t) => [...t, { id: uid(), role: 'mcfly', kind: 'note', text: (err as Error).message, error: true }]);
+      setSaid((err as Error).message);
       // What was sent comes back, to try again.
       setText(sent.words);
       setPhoto(sent.photo);
@@ -373,10 +380,12 @@ function NutritionChat({
     }
   }
 
-  const finish = (id: string, saved: number | null) =>
+  const finish = (id: string, saved: number | null) => {
+    setSaid(saved === null ? 'Discarded. Nothing was saved.' : 'Saved to your food journal.');
     setTurns((t) =>
       t.map((x) => (x.id === id && x.role === 'mcfly' && x.kind === 'estimate' ? { ...x, state: saved === null ? 'discarded' : 'saved', saved: saved ?? undefined } : x)),
     );
+  };
 
   const ready = canEstimate && !busy && (Boolean(text.trim()) || Boolean(photo));
   const placeholder = open ? 'Anything to correct?' : 'I ate…';
@@ -396,7 +405,10 @@ function NutritionChat({
         )}
       </header>
 
-      <div className="nutri-thread" ref={thread} aria-live="polite">
+      <p className="sr-only" aria-live="polite">
+        {said}
+      </p>
+      <div className="nutri-thread" ref={thread}>
         {turns.length === 0 && !busy ? (
           <div className="nutri-empty">
             <Orb size={48} />
@@ -670,17 +682,22 @@ function ChatReview({
       </p>
       {turn.note && <p className="nutri-note">{turn.note}</p>}
       <ul className="nutri-items">
-        {kept.map((k) => {
+        {kept.map((k, i) => {
           const d = byId.get(k.id)!;
           const q = Number(k.quantity.replace(',', '.'));
           const line = numbers !== 'none' && q > 0 ? amounts(scaled(d.values, q / d.quantity), units) : '';
           return (
             <li key={k.id} className="nutri-item">
               <div className="nutri-item-row">
-                <input className="nutri-item-name" value={k.name} onChange={(e) => update(k.id, { name: e.target.value })} maxLength={100} aria-label="Name" />
+                <input className="nutri-item-name" value={k.name} onChange={(e) => update(k.id, { name: e.target.value })} maxLength={100} aria-label={`Item ${i + 1}, name`} />
                 <label className="nutri-item-qty">
                   <span className="muted small">How many</span>
-                  <input inputMode="decimal" value={k.quantity} onChange={(e) => update(k.id, { quantity: e.target.value })} />
+                  <input
+                    inputMode="decimal"
+                    value={k.quantity}
+                    onChange={(e) => update(k.id, { quantity: e.target.value })}
+                    aria-label={`How many of ${k.name || `item ${i + 1}`}`}
+                  />
                 </label>
                 <button type="button" className="btn btn-quiet small" onClick={() => leaveOut(k.id)} aria-label={`Leave out ${k.name}`}>
                   Leave out
