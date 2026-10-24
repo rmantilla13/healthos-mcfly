@@ -57,25 +57,27 @@ healthOS is multi-user and invite-only. There is no open sign-up.
 - **Inviting someone:** open **Admin → Invites** and create a code, such as `8DX7-X782`. You can lock it to one email address, but nothing is emailed: you share the code yourself. They enter it under **Have an invite code?** on the sign-in page, or in the iPhone app. The link shown with it carries the same code. A code creates one account and expires after the number of days you set (7 by default).
   - Codes are 8 characters with no look-alikes (0/O, 1/I/L). They work in any case, with or without the dash, or as a pasted link.
   - Failed attempts are rate-limited per address, like sign-in.
+- **First run:** a new account (and the first admin on a fresh install) goes through three short steps, **Make this space yours**: how Home and Body show you (your portrait, a digital human or just the statistics), a little about you (how you describe yourself, never used for health calculations, and your age), and whether to take part in anonymous peer comparisons. Each step saves as it goes (`Settings.onboarding` holds the step), so a refresh resumes where you were. Existing accounts never see it; anyone can run it again from **Profile → Edit preferences** (`#/welcome`). Nothing on the server waits for it, so the iPhone app works the same throughout.
 - **Forgotten passwords:** there's no email service. An admin creates a reset link under **Admin → People** and passes it on. Using it sets a new password and signs that person out everywhere else.
 - **Admins can:**
   - change roles
   - disable and enable accounts (disabling signs the person out at once)
-  - delete accounts (this removes all of that person's data)
+  - delete accounts (this removes all of that person's data: every table in `USER_TABLES`, server/db.ts, which `test/user-tables.test.ts` checks against the schema)
   - close sign-ups
   - set the default units and step goal
 
   There is always at least one active admin.
-- **What admins see:** each account's email, name, last sign-in, how many days of data it has, and whether its Apple Health and WHOOP syncs are healthy. The admin screens never show anyone's health values.
+- **What admins see:** each account's email, name, last sign-in, how many days of data it has, and whether its Apple Health and WHOOP syncs are healthy. The admin screens never show anyone's health values, journal, blood records, body measurements, portraits, age, keys or peer-comparison choice.
+- **Profile** (`#/profile`, also `#/settings`) holds everything a person sets: perspective and age, the chatbot and their own AI keys, units and step goal, cards, the Family board, cycle tracking, nutrition, the password, portraits, **Export your data** (a JSON download built only from their own session, `GET /api/me/export`, once a minute) and **Your age-group comparison** (`GET /api/peers`).
 - **Isolation:** every row in `daily`, `workouts`, `events`, `tokens`, `profile_assets` and `user_settings` carries a `user_id`, and every query filters on it. `test/multiuser.test.ts` checks this over HTTP with two accounts.
 - **Each person's data sources:**
   - WHOOP, connected from **Integrations**.
-  - The iPhone app, using a personal token created under **Integrations → iPhone app**. The token can only write to that person's account.
+  - The iPhone app, using a personal token created under **Integrations → Apple Watch / Health → Set up the iPhone app**. The token can only write to that person's account.
 - **Mac-only steps:** the Apple Health export import and photo processing run on the Mac. Both go to the owner's account. The terminal import can target someone else: `HEALTHOS_USER_ID=<id> npm run import:apple -- export.zip`.
 
 ## Ask McFly
 
-Ask McFly (`#/mcfly`) is a chat assistant, built on Claude, for questions about your own data. Each person who signs in gets their own.
+Ask McFly (`#/mcfly`, or the pill on Home) is a chat assistant for questions about your own data. It runs on Claude with the server's key, or on a person's own OpenAI, Claude or Gemini key (below). Each person who signs in gets their own.
 
 - **What it can read:** five read-only tools in `server/mcfly.ts`:
   - which metrics exist
@@ -100,6 +102,15 @@ vercel env add ANTHROPIC_API_KEY production
 
   Without the key, the page says McFly isn't set up yet. Locally, put the key in `.env`.
 
+### Your own AI keys (optional)
+
+Set `HEALTHOS_DATA_KEY` (generate it once with `openssl rand -hex 32`) to let people connect their own OpenAI, Claude or Gemini key under **Profile → Chatbot** and **Profile → OpenAI · Nutrition & portraits**. Keys are checked with the provider, then stored encrypted with it (AES-256-GCM, bound to the account, `server/ai/keys.ts`); the browser only ever sees the last 4 characters. Unset, nobody can store a key and everyone uses `ANTHROPIC_API_KEY` as before.
+
+- **Routing** (`server/ai/resolve.ts`): Ask McFly uses the provider the person chose when its key is stored, else the shared Claude key. Meal estimates use their own OpenAI key, else their own Claude key, else the shared key. Lab report reading uses their own Claude key, else the shared key. Voice notes (`POST /api/ai/transcribe`) and portraits need an OpenAI key: their own, or the server's optional `OPENAI_API_KEY`, which is never used for estimates.
+- **Limits:** the admin's daily limit applies only to the shared key. Questions on a person's own key are counted apart (`mcfly_usage.own_*`, up to 200 a day across chat, estimates and the digest) and never appear in the admin's cost view.
+- **Models** for people's own OpenAI and Gemini keys are platform settings: `openai_model`, `openai_vision_model`, `openai_transcribe_model`, `gemini_model`.
+- **Rotating `HEALTHOS_DATA_KEY`:** don't change or lose it casually: stored keys become unreadable and people have to paste them again. To rotate, set the new key as `HEALTHOS_DATA_KEY` and the old one as `HEALTHOS_DATA_KEY_PREVIOUS`; each stored key is re-encrypted the next time it's used, so keep the previous key set until everyone has used theirs. `scripts/setup-vercel.sh` doesn't set it: add it once with `vercel env add HEALTHOS_DATA_KEY production`.
+
 ## Apple Health
 
 Apple has no web API for HealthKit. Data reaches the dashboard through the export file:
@@ -119,6 +130,10 @@ How the export is interpreted:
 - **Days follow the wearer's local time.** Each record keeps its own UTC offset, so travel doesn't shift days.
 - **Steps, energy and distance:** when both iPhone and Watch log the same walk, the day uses the larger source rather than adding them together.
 - **Sleep counts toward the day you wake up.** When several apps log the same night, the source with the most sleep wins.
+
+### Fitbit / Google Health (file import)
+
+Request your data at takeout.google.com, choosing only Fitbit (or Google Health, for accounts moved to Google). Then open **Integrations → Import Fitbit data** and choose the .zip file(s) or the unzipped folder. The export is read in the browser, in a Web Worker (`src/import/`), and the file is never uploaded: per-day readings and each night's sleep stretches go to `POST /api/fitbit/import` in chunks of whole days under 3.5 MB, stored as source `fitbit`, which ranks after Apple Health and WHOOP. **Remove Fitbit data** deletes them. Google doesn't document the Takeout layout, so files are matched by name pattern; check a real export if something doesn't come through. There's no automatic Fitbit sync: the Fitbit Web API is being retired, and the Google Health API's scopes are restricted.
 
 ### The iPhone app
 
@@ -147,9 +162,13 @@ WHOOP data comes from the official [WHOOP API](https://developer.whoop.com) (v2)
 
 The first sync pulls the last year. After that it syncs every hour (a Vercel cron when hosted, a timer when local), and on demand. Each sync re-reads the last few days, because WHOOP rescores recent nights.
 
-## Profile photo
+## Profile photo and portraits
 
-Add a photo of yourself under **Settings → Profile photo**. The first run compiles a small Swift tool (`server/photo/cutout.swift`). It uses Apple's Vision framework, entirely on this Mac, to:
+Home and Body show you as your portrait, a digital human (`public/figures/digital-man.webp`; a `digital-woman.webp` dropped next to it is picked up, and each figure's callout points are in the `ART` table in `src/components/Figure.tsx`), or just the statistics, as chosen in onboarding or **Profile → Edit preferences**.
+
+**Portraits** (Profile → Your portrait photos): a person uploads private reference photos (`portraits` table, owner-only), and **Make my portrait** sends one, with the healthOS figure as the style reference, to OpenAI's image edit on their own OpenAI key or else the server's `OPENAI_API_KEY`. Nothing generated shows until they choose **Use this portrait**, which runs the usual in-browser cut-out and saves it as their photo. The style reference is copied into `server/portraitStyle.ts` so the hosted function has it: after replacing `digital-man.webp`, run `node scripts/portrait-style.mjs` (`npm test` fails until you do).
+
+**Use a photo as is** (the same section) adds a photo directly. Hosted, it's cut out in the browser. On the Mac, the first run compiles a small Swift tool (`server/photo/cutout.swift`). It uses Apple's Vision framework, entirely on this Mac, to:
 
 - cut you out of the background for the Home figure, cleaning the edges so no rim of the old backdrop shows
 - find your face, neck and shoulders, so the vitals callouts land on your forehead, throat and chest, with labels placed in the open space beside your outline
@@ -159,7 +178,6 @@ On the dashboard the photo and avatar are shown in black and white. In the light
 
 The cut-out, avatar and layout points are saved to the database, which is how the hosted copy shows them. The working files, including a downscaled copy of the original, stay in `data/profile/` on your Mac. That copy means an improved version of the tool reprocesses your photo automatically the next time the local server starts. **Remove photo** deletes all of it.
 
-Photos can only be added or replaced from the local copy, since Vision runs on macOS.
 
 ## When both sources are connected
 
@@ -167,12 +185,33 @@ Photos can only be added or replaced from the local copy, since Vision runs on m
 |---|---|
 | Recovery, strain, HRV, resting HR, SpO₂, respiratory rate, sleep | WHOOP, then Apple |
 | Steps, active energy, workouts, weight, body fat, VO₂ max | Apple, then WHOOP |
+| Weight, body fat, lean mass you add yourself | Yours, then the devices |
+
+A Fitbit export comes after both devices for every metric.
 
 WHOOP reports HRV as RMSSD and Apple Watch reports SDNN. The two aren't comparable, so the dashboard labels whichever one it's showing.
 
+## Body measurements
+
+Weight, body fat and lean body mass can be added by hand on Body (**+ Add entry**): `GET/POST /api/body/entries`, `PATCH`/`DELETE /api/body/entries/:id`, and `GET /api/body/latest`. Entries are stored in kg and % (`body_entries`) and each day's latest is mirrored into `daily` as source `manual`, so every chart, sheet and McFly sees it and it wins that day over a device's reading. Locally, entries can't be added while demo data is showing.
+
+## Blood records and the journal
+
+Blood records (`#/labs`) keeps each result as printed (`lab_results`) and, separately, the original reports (`lab_documents`): a PDF or a photo, HEIC turned into JPEG and shrunk to 4 MB in the browser, up to 200 per person. Reports are served only to their owner, inline, sandboxed and with `nosniff`. Reading a report's results with Claude (`POST /api/labs/extract?document=`) happens only when the person asks, and the rows come back as a draft to check.
+
+The journal (`#/journal`, `/api/journal`) holds private check-ins in `journal_entries`. Nothing else on the server reads that table; account deletion and the person's own export are the only other code that touches it.
+
+## Nutrition
+
+Nutrition (`#/nutrition`) is off until a person turns it on and chooses how much they see. Today is a conversation: tell McFly what you ate, in words, a photo or a voice note, check its estimate, then save it. Trends, Macros, Hydration and Log (`?tab=…`) show more days. The day is read with `POST /api/nutrition/log/day {date}`, since no nutrition URL carries a date or an amount.
+
+## Peer comparisons
+
+Profile → Your age-group comparison (`GET /api/peers`, `server/peers.ts`) needs sign-in, the person's own opt-in and an age of 18 or over. It compares 30-day averages for the same metric from the same source within an age band, and shows results only when at least 20 other participants each have 7 recorded days; only percentiles and rounded quartiles leave the server. At family scale it will mostly say there aren't enough people yet. Locally, the demo owner sees a made-up sample group.
+
 ## Cycle tracking
 
-Cycle tracking (`#/cycle`, `GET /api/cycle`) is off until a person turns on **Track my cycle** in Settings. It reads periods, ovulation tests, mucus, thermometer readings and symptoms from Apple Health and what's logged on the Cycle page, together with the nightly temperature Apple Watch (`wrist_temp`) and WHOOP (`skin_temp`) already record. The engine lives in `server/cycle/`:
+Cycle tracking (`#/cycle`, `GET /api/cycle`) is off until a person turns on **Track my cycle** in their Profile. It reads periods, ovulation tests, mucus, thermometer readings and symptoms from Apple Health and what's logged on the Cycle page, together with the nightly temperature Apple Watch (`wrist_temp`) and WHOOP (`skin_temp`) already record. The engine lives in `server/cycle/`:
 
 - `records.ts`: storage in the `cycle` table, one row per date, kind and source (symptoms take one row each), and input validation.
 - `temperature.ts`: each device's readings against the person's own level on that device (a rolling median), with outliers and mornings marked as disturbed left out. Devices are never mixed: each cycle uses the one that covered it best. A rise counts when three readings clear the cover line (the highest of the six low readings before), the third by 0.2 °C on a thermometer or 0.15 °C on a wearable, and the readings after stay high. A positive LH test lets two readings confirm it. Ovulation is the last low day.

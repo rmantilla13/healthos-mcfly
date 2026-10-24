@@ -115,7 +115,7 @@
         </div>
 
         <h1>Privacy Policy</h1>
-      <p class="updated">Last updated October 22, 2026</p>
+      <p class="updated">Last updated October 24, 2026</p>
 
       <p>
         healthOS is a private health dashboard at <strong>health.mcfly.bot</strong>, run by Ricky Mantilla. It is not open to the public:
@@ -139,6 +139,18 @@
           bed, awake, or in light, deep or REM sleep). The stages appear only on your own Sleep page; they're never on the Family board.
         </li>
         <li>
+          <strong>Fitbit and Google Health exports</strong>, if you import one on the Integrations page: healthOS reads the export (from Google
+          Takeout) in your browser, on your device, and the file itself is never uploaded. Only per-day readings and each night's sleep stretches
+          are sent to your account, marked as Fitbit: heart rate, resting heart rate, HRV, blood oxygen, breathing rate, steps, sleep times and
+          stages, weight and body fat. The rest of the export (your profile, calories, exercise, settings) is never opened, and nothing is sent to
+          Google or Fitbit.
+        </li>
+        <li>
+          <strong>About you</strong>, from the first-run setup ("Make this space yours") and your Profile: how Home and Body show you (your
+          portrait, a digital human or just the statistics), how you describe yourself (never used for health calculations), and your age,
+          stored as the age you gave and the day you gave it, so no birth date is kept.
+        </li>
+        <li>
           <strong>Your health profile</strong>, if you fill it in: the sex you choose for health calculations (female, male or prefer not to
           say).
         </li>
@@ -150,42 +162,85 @@
           section below.
         </li>
         <li>
-          <strong>Lab results</strong>, if you add them: each result as printed, with the reference range the lab printed, typed in or read
-          from a PDF or photo of a report you import. An imported report is sent to Anthropic to read the results and isn't kept; it counts
-          as an Ask McFly question, and only the rows you check and save are stored. Only you (and McFly, when you ask it) see them: never
-          the Family board, the admin screens, your summaries or the weekly digest. If you choose a sex in your health profile, it picks the
-          typical adult range shown, labelled as such, for a result whose report printed no range.
+          <strong>Body measurements you add</strong> (weight, body fat, lean body mass): each entry with its date, an optional time, where it
+          came from (scale, scan or records) and an optional note. Each day's latest entry is also saved alongside your device readings, so your
+          charts, the detail sheets and Ask McFly use it, and it takes the place of a device's reading for that day. Clearing Apple Health or
+          disconnecting WHOOP leaves them in place.
+        </li>
+        <li>
+          <strong>Blood records</strong>, if you add them: each result as printed, with the reference range the lab printed, typed in or read
+          from a report. A report you upload (a PDF or a photo, up to 4 MB) is kept in your account under Lab documents, where only you can
+          open it. Its results are read only when you choose <strong>Read results</strong>: the report is then sent to Anthropic, on your own
+          Claude key if you connected one, otherwise as one of your Ask McFly questions, and only the rows you check and save are stored as
+          results. Only you (and McFly, when you ask it) see your results: never the Family board, the admin screens, your summaries or the
+          weekly digest. If you choose a sex in your health profile, it picks the typical adult range shown, labelled as such, for a result whose
+          report printed no range.
+        </li>
+        <li>
+          <strong>Your journal</strong>, if you write in it: each check-in's words, an optional mood, and its date and time. Your journal is
+          private: it isn't shared on the Family board, in peer comparisons or with Ask McFly, and the admin screens never show it. Your own
+          Home shows today's latest check-in (its mood and first line). A check-in you haven't saved yet is kept only in that browser tab.
         </li>
         <li>
           An optional profile photo. It's cut out on your own device (in your browser, or on a Mac), and only the cut-out, a small
-          avatar and the points where your vitals are shown are uploaded, never the original photo.
+          avatar and the points where your vitals are shown are uploaded, never the original photo. Portrait reference photos are different:
+          see <strong>Portraits</strong> below.
         </li>
         <li>
           <strong>Ask McFly</strong>, the optional AI assistant: the questions you ask it. Your conversation is kept only in your browser tab,
           and healthOS stores just a daily count of your questions and how much processing they used.
+        </li>
+        <li>
+          <strong>Your own AI keys</strong>, if you connect one: described in its own section below.
         </li>
       </ul>
 
       <h2>How it is used</h2>
       <p>
         Your data is used to show you your own charts, trends and summaries and, while you share, your tile on the Family board. healthOS has
-        no advertising, no analytics or tracking, and no profiling. It does not sell or rent data, or share it outside healthOS.
+        no advertising, no analytics or tracking, and no profiling. It does not sell or rent data, or share it outside healthOS, apart from the
+        providers named below for the features you use. If you turn on peer comparisons, your 30-day averages also count toward anonymous group
+        figures, described below.
       </p>
 
       <h2>Ask McFly</h2>
       <p>
         When you ask McFly a question, healthOS sends your question, the conversation so far, and the parts of your health data McFly reads
-        to answer it to <strong>Anthropic</strong>'s API, which generates the reply. McFly can only read your own data, never other members',
-        and it can't change
-        anything. Anthropic handles this data under its commercial terms and privacy policy. If you don't use Ask McFly or import a lab report, nothing is
-        sent to Anthropic. McFly can read your cycle tracking data only while you have cycle tracking turned on, and your nutrition only while nutrition
-        is on, and only as much of it as you chose to see.
+        to answer it to the AI provider that answers for you: <strong>Anthropic</strong>'s API on healthOS's shared key, unless you connected
+        your own key and chose its provider (see <strong>Your own AI keys</strong>). McFly can only read your own data, never other members',
+        and it can't change anything. Each provider handles this data under its own terms and privacy policy. If you don't use Ask McFly,
+        estimate a meal or ask healthOS to read a lab report, nothing is sent to an AI provider. McFly can read your cycle tracking data only while
+        you have cycle tracking turned on, and your nutrition only while nutrition is on, and only as much of it as you chose to see. It never
+        reads your journal.
       </p>
+
+      <h2>Your own AI keys</h2>
+      <ul>
+        <li>
+          <strong>Storing a key</strong>: you can connect your own OpenAI, Anthropic (Claude) or Google (Gemini) API key in your Profile.
+          healthOS checks it with that provider once, then stores it encrypted (AES-256-GCM, bound to your account). It is never shown again
+          (you see its last 4 characters), never logged, and never included in your data export. Removing the key, or deleting your account,
+          deletes it.
+        </li>
+        <li>
+          <strong>Who receives what</strong>: without a key of your own, Ask McFly and meal estimates use healthOS's shared Claude key
+          (Anthropic), as before. With your own key, the provider you chose for the chatbot receives your Ask McFly questions and the data McFly
+          reads to answer them. Meal photos and descriptions go to your own OpenAI key if you connected one, otherwise your own Claude key,
+          otherwise the shared Claude key. OpenAI and Google receive nothing unless you connect them (or, for voice notes and portraits, unless
+          the admin set a server OpenAI key). Ask McFly and estimate requests to OpenAI are sent with its response storage turned off. On Gemini, use a paid-tier key: under Google's terms,
+          free-tier content may be used to improve its products and read by human reviewers.
+        </li>
+        <li>
+          <strong>Voice notes</strong>: a voice note is recorded in your browser and sent once to <strong>OpenAI</strong> to be turned into
+          words, using your own OpenAI key, or the server's if the admin set one. healthOS never stores or logs the recording. The words fill
+          the message box for you to check, and nothing is estimated until you send it.
+        </li>
+      </ul>
 
       <h2>Cycle tracking</h2>
       <p>
         Cycle tracking is reproductive-health data, so it has extra protections. It stays off until you turn on <strong>Track my cycle</strong>
-        in Settings. Anyone can turn it on: it doesn't depend on the sex you choose.
+        in your Profile. Anyone can turn it on: it doesn't depend on the sex you choose.
       </p>
       <ul>
         <li>
@@ -215,7 +270,7 @@
           Anthropic as described above.
         </li>
         <li>
-          <strong>Deleting it</strong>: <strong>Delete all cycle data</strong>, in Settings or on the Cycle page, removes every cycle entry at
+          <strong>Deleting it</strong>: <strong>Delete all cycle data</strong>, in your Profile or on the Cycle page, removes every cycle entry at
           once, whether tracking is on or off. Entries from Apple Health come back with your next import or iPhone sync unless you also delete
           them in the Health app or turn off healthOS's access to them in the iPhone's Health settings.
         </li>
@@ -224,7 +279,7 @@
       <h2>Nutrition</h2>
       <p>
         What you eat and drink is sensitive, so nutrition has the same kind of protections as cycle tracking. It stays off until you turn on
-        <strong>Nutrition</strong> in Settings or on the Nutrition page, and only you can turn it on.
+        <strong>Nutrition</strong> in your Profile or on the Nutrition page, and only you can turn it on.
       </p>
       <ul>
         <li>
@@ -244,11 +299,14 @@
               doesn't keep what you searched for. It keeps the foods they return, shared by everyone, so the next lookup needs no network.
             </li>
             <li>
-              <strong>Estimates from a photo or a description</strong>: Ask McFly can estimate a meal from a photo or a few words. The photo
-              (shrunk on your device first, which also removes its location) and the words are sent to <strong>Anthropic</strong> for that one
-              estimate, and to no one else. healthOS never stores or logs them. It counts as one McFly question toward the daily limit. The
-              estimate is a rough draft, often a third off on calories, so nothing is saved until you check it and save it. An estimate you
-              don't save or discard is kept for up to a day, counted nowhere, and then deleted.
+              <strong>Estimates from a photo, a description or a voice note</strong>: tell McFly what you ate and it answers with an estimate
+              to check. The photo (shrunk on your device first, which also removes its location) and the words go to one provider for that one
+              estimate: your own OpenAI key if you connected one, otherwise your own Claude key, otherwise healthOS's shared Claude key
+              (<strong>Anthropic</strong>). healthOS never stores or logs them. On the shared key it counts as one McFly question toward the daily
+              limit. The estimate is a rough draft, often a third off on calories, so nothing is saved until you check it and save it. An
+              estimate you don't save or discard is kept for up to a day, counted nowhere, and then deleted. The conversation itself, including
+              your words and small copies of your photos, is kept only in your browser tab and goes when you close it. Voice notes are described
+              under <strong>Your own AI keys</strong>.
             </li>
             <li>
               <strong>Apple Health</strong>: the iPhone app can save what you log there to Apple Health, if you allow it, with only the amounts
@@ -266,7 +324,7 @@
           together, not causes.
         </li>
         <li>
-          <strong>Targets</strong>: healthOS never suggests one. You can set your own for calories, protein and water in Settings; each shows
+          <strong>Targets</strong>: healthOS never suggests one. You can set your own for calories, protein and water in your Profile; each shows
           only as a plain line on your charts, never as a score.
         </li>
         <li>
@@ -282,7 +340,7 @@
           question are sent to Anthropic as described above.
         </li>
         <li>
-          <strong>Deleting it</strong>: <strong>Delete all nutrition data</strong> in Settings removes every food total and every entry you
+          <strong>Deleting it</strong>: <strong>Delete all nutrition data</strong> in your Profile removes every food total and every entry you
           logged in healthOS at once, whether nutrition is on or off. You can also delete a single entry. Removing your Apple Health data
           removes the totals read from it, but not what you logged in healthOS. With nutrition on, totals still in Apple Health come back with
           your next import or iPhone sync. Entries the iPhone saved to Apple Health stay there until you delete them in the Health app.
@@ -292,7 +350,7 @@
       <h2>Family board</h2>
       <p>
         Members see each other on the <strong>Family board</strong>. Sharing is on unless you turn off <strong>Share with family</strong> in
-        Settings, and it's mutual: turn it off and you neither see anyone nor are seen.
+        your Profile, and it's mutual: turn it off and you neither see anyone nor are seen.
       </p>
       <ul>
         <li>
@@ -303,8 +361,9 @@
           shows those 30 days as charts.
         </li>
         <li>
-          <strong>Never on it</strong>: your email, step goal, workouts, weight, temperature, your sleep stages, anything about food, drink or
-          nutrition, anything older than 30 days, or anything you ask McFly.
+          <strong>Never on it</strong>: your email, step goal, workouts, weight and the body measurements you add, temperature, your sleep
+          stages, anything about food, drink or nutrition, your journal, your blood records, your age or how you describe yourself, anything
+          older than 30 days, or anything you ask McFly.
         </li>
         <li>
           <strong>Cycle phase</strong>: only if you also turn on <strong>Show my cycle phase to family</strong>. It shows one word (period,
@@ -313,6 +372,28 @@
         </li>
         <li>Changes reach pages that are already open within about 5 minutes. The status is a nudge to check in, not medical advice.</li>
       </ul>
+
+      <h2>Peer comparisons</h2>
+      <p>
+        Peer comparisons are off unless you turn them on, and only from age 18. While they're on, your 30-day averages count toward anonymous
+        figures for people in your age band (18–29, 30–39, … 70+) who also take part, for the same measurement from the same source (for
+        example resting heart rate from WHOOP). It's mutual: only people taking part see results. Results appear only when at least 20 other
+        people each have 7 recorded days, and show only your percentile and the group's rounded median and quartiles with a size range (20+,
+        50+, 100+): never names, photos, accounts, counts or anyone's own readings, and nobody can see who takes part. A percentile describes
+        your position in this group; a higher number doesn't necessarily mean better health. Turning it off takes effect immediately. Your
+        journal, nutrition, cycle and blood records are never used.
+      </p>
+
+      <h2>Portraits</h2>
+      <p>
+        If you choose "Your own portrait", you can upload reference photos of yourself. Your browser shrinks each one and removes its
+        metadata (location, time, camera) before upload. They are stored in your account and only you can open them; admins cannot. Unlike the
+        profile photo above, a reference photo does leave your device. It is sent to <strong>OpenAI</strong> only when you choose
+        <strong>Make my portrait</strong>, and only for that request, on your own OpenAI key if you connected one, otherwise on this server's
+        OpenAI key. Portraits made from it, including attempts that failed, are stored in your account until you delete them. None of them
+        appears on your dashboard until you choose <strong>Use this portrait</strong>: it's then cut out on your device, like any profile photo,
+        and becomes the figure and avatar on Home, Body, the Family board and the iPhone app.
+      </p>
 
       <h2>Who can see it</h2>
       <ul>
@@ -323,8 +404,9 @@
           Admins manage accounts. They can see your email, name, role, when you last signed in, and the health of your syncs: how many days of
           data you have and its date range, when Apple Health and WHOOP last synced, whether a sync failed, and how many questions you asked
           McFly. The admin screens don't show your health values or your questions. In the admin screens, admins never see your cycle
-          tracking data, your nutrition, your health profile, or whether you have cycle tracking or nutrition turned on. An admin who shares sees the Family board like
-          any other member, including a phase you share.
+          tracking data, your nutrition, your health profile, your age or how you describe yourself, your journal, your blood records or lab
+          documents, your body measurements, your portraits, your AI keys, whether you take part in peer comparisons, or whether you have cycle
+          tracking or nutrition turned on. An admin who shares sees the Family board like any other member, including a phase you share.
         </li>
         <li>
           Admins can disable or delete your account and create a password-reset link for you. They never see or set your password.
@@ -338,28 +420,46 @@
         <li>All traffic is encrypted in transit (HTTPS).</li>
         <li>Reading any data requires signing in. The only cookie is a sign-in session cookie, which is strictly necessary.</li>
         <li>WHOOP access tokens and iPhone app tokens are stored server-side and are never exposed to other people.</li>
+        <li>Your own AI keys are stored encrypted, with a key the server holds separately from the database.</li>
+        <li>
+          Lab reports and portrait photos you upload are stored in the same database and served only to you; reports are served in a sandbox,
+          so a file can't run anything on the site.
+        </li>
+        <li>The app's fonts are served by healthOS itself, so loading a page contacts no one else.</li>
       </ul>
 
       <h2>Service providers</h2>
       <p>
         These providers handle data only to run the service: <strong>WHOOP</strong> (a data source), <strong>Vercel</strong> (hosting),
-        <strong>Neon</strong> (database) and <strong>Anthropic</strong> (answers for Ask McFly, its food estimates, and reading lab reports
-        you import). With nutrition on, food searches and barcodes go to <strong>USDA FoodData Central</strong> and
-        <strong>Open Food Facts</strong>, without anything that identifies you. Their own privacy policies apply to their services.
+        <strong>Neon</strong> (database) and <strong>Anthropic</strong> (answers for Ask McFly and food estimates on the shared key, and
+        reading a lab report when you ask it to). <strong>OpenAI</strong> and <strong>Google (Gemini)</strong> receive data only for people who
+        connect their own key for them; OpenAI also transcribes voice notes and makes portraits, on your key or a server key the admin set.
+        With nutrition on, food searches and barcodes go to <strong>USDA FoodData Central</strong> and <strong>Open Food Facts</strong>,
+        without anything that identifies you. Their own privacy policies apply to their services.
       </p>
 
       <h2>Keeping and deleting data</h2>
       <ul>
         <li>Your data is kept until you remove it or your account is deleted.</li>
-        <li>You can remove your Apple Health data from the Integrations page at any time.</li>
-        <li>You can delete all your cycle tracking data from Settings or the Cycle page at any time.</li>
-        <li>You can delete all your nutrition data, including the food you logged in healthOS, from Settings at any time.</li>
+        <li>You can remove your Apple Health data, or your Fitbit data, from the Integrations page at any time.</li>
+        <li>You can delete all your cycle tracking data from your Profile or the Cycle page at any time.</li>
+        <li>You can delete all your nutrition data, including the food you logged in healthOS, from your Profile at any time.</li>
+        <li>
+          You can delete any body measurement you added (on Body), any lab report (Blood records → Lab documents), one journal check-in or all
+          of them (Journal), any portrait or reference photo (Profile → Your portrait photos), and any AI key you connected (Profile).
+        </li>
+        <li>
+          You can download all your data as a JSON file from your Profile (<strong>Export your data</strong>): your readings, sleep, workouts,
+          food log, cycle entries, blood records, journal, body measurements, settings, and a list of your files (name, type, size and dates;
+          not the files themselves). Passwords, keys and connection tokens are never included.
+        </li>
         <li>
           Disconnecting WHOOP in healthOS revokes the app's access with WHOOP and deletes the stored tokens. You can also revoke access from
           WHOOP's own account settings.
         </li>
         <li>
-          To delete your account, ask the admin. Deleting an account removes everything stored for it: health data, settings, tokens and photo.
+          To delete your account, ask the admin. Deleting an account removes everything stored for it: health data, journal, blood records and
+          lab documents, body measurements, portraits, settings, keys, tokens and photo.
         </li>
       </ul>
 
