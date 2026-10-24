@@ -167,20 +167,42 @@ const styleBytes = () => (style ??= new Uint8Array(Buffer.from(STYLE_REFERENCE_B
 
 const utcDay = () => new Date().toISOString().slice(0, 10);
 
-/** Portraits started today (UTC). Kept apart from the rows, so deleting portraits doesn't make room for more. */
-async function usedToday(q: Queryable, userId: string): Promise<number> {
+/** The day's count from its stored value: 0 when it's from an earlier day, or can't be read. */
+function countOn(raw: string | undefined, day: string): number {
   try {
-    const u = JSON.parse((await getUserSetting(q, userId, 'portrait_usage')) ?? 'null') as { day?: unknown; count?: unknown } | null;
-    return u?.day === utcDay() && typeof u.count === 'number' ? u.count : 0;
+    const u = JSON.parse(raw ?? 'null') as { day?: unknown; count?: unknown } | null;
+    return u?.day === day && typeof u.count === 'number' ? u.count : 0;
   } catch {
     return 0;
   }
 }
 
-async function addUsage(q: Queryable, userId: string, n: number, day: string) {
-  if (day !== utcDay()) return;
-  const count = Math.max(0, (await usedToday(q, userId)) + n);
-  await setUserSetting(q, userId, 'portrait_usage', JSON.stringify({ day, count }));
+/**
+ * Changes the count of portraits started today (UTC), which is kept apart from the rows so deleting portraits doesn't
+ * make room for more. Its row is locked while it's read and written: requests in parallel can't both take the day's
+ * last portrait, or lose each other's change. False, with nothing changed, when it would go past PORTRAITS_PER_DAY.
+ */
+async function changeUsage(db: Db, userId: string, day: string, n: 1 | -1): Promise<boolean> {
+  return db.tx(async (q) => {
+    // A row to lock, when there isn't one yet.
+    await q.query(`INSERT INTO user_settings (user_id, key, value) VALUES ($1, 'portrait_usage', $2) ON CONFLICT (user_id, key) DO NOTHING`, [
+      userId,
+      JSON.stringify({ day, count: 0 }),
+    ]);
+    const [row] = await q.query<{ value: string }>(`SELECT value FROM user_settings WHERE user_id = $1 AND key = 'portrait_usage' FOR UPDATE`, [userId]);
+    const count = countOn(row?.value, day) + n;
+    if (count > PORTRAITS_PER_DAY) return false;
+    await setUserSetting(q, userId, 'portrait_usage', JSON.stringify({ day, count: Math.max(0, count) }));
+    return true;
+  });
+}
+
+/** Counts a portrait toward today's; false when today's are used up. */
+export const claimPortrait = (db: Db, userId: string, day: string) => changeUsage(db, userId, day, 1);
+
+/** One that wasn't made doesn't count toward the day's. After midnight there's nothing to give back. */
+async function refundPortrait(db: Db, userId: string, day: string) {
+  if (day === utcDay()) await changeUsage(db, userId, day, -1);
 }
 
 const photoVersion = (raw: string | undefined) => {
@@ -299,8 +321,7 @@ async function makePortrait(db: Db, fetchFn: AiFetch, { userId, id, reference, o
     console.error('portraits:', logKind(err));
     await noteOwnUse(db, userId, 'openai', openai.source, err);
     await db.query(`UPDATE portraits SET status = 'failed', error = $3 WHERE user_id = $1 AND id = $2 AND status = 'pending'`, [userId, id, failureText(err, openai.source)]);
-    // One that wasn't made doesn't count toward the day's.
-    await addUsage(db, userId, -1, day);
+    await refundPortrait(db, userId, day);
   }
   await bumpDataVersion(db, userId);
 }
@@ -391,27 +412,38 @@ export function portraitsRouter(db: Db, _hosted: boolean, aiFetch: AiFetch = fet
       const openai = await openaiKeyFor(db, userId);
       if (!openai) throw new HttpError(409, NO_KEY);
       await expireStale(db, userId);
-      const day = utcDay();
-      if ((await usedToday(db, userId)) >= PORTRAITS_PER_DAY) {
-        throw new HttpError(429, `You've made ${PORTRAITS_PER_DAY} portraits today, the most in a day. Try again tomorrow.`);
-      }
+      // The count includes the one being made, and only one can be (below), so two requests can't pass it together.
       const [made] = await db.query<{ n: number }>(`SELECT count(*)::integer AS n FROM portraits WHERE user_id = $1 AND kind = 'generated'`, [userId]);
       if (Number(made?.n) >= MAX_GENERATED) throw new HttpError(409, `You have ${MAX_GENERATED} portraits. Delete one you don't need to make another.`);
-      // One at a time: the new one goes in only when none is being made, checked in the same statement.
-      const rows = await db.query<Row>(
-        `INSERT INTO portraits (user_id, id, kind, status, mime, bytes, reference_id, model, created_at)
-         SELECT $1, $2, 'generated', 'pending', $3, 0, $4, $5, $6::double precision
-         WHERE NOT EXISTS (SELECT 1 FROM portraits WHERE user_id = $1 AND kind = 'generated' AND status = 'pending')
-         RETURNING ${COLS}`,
-        [userId, randomUUID(), `image/${OUTPUT.format}`, referenceId, PORTRAIT_MODEL, Date.now()],
-      );
-      if (!rows.length) throw new HttpError(409, 'Your portrait is still being made. It can take a minute or two.');
-      await addUsage(db, userId, 1, day);
-      await bumpDataVersion(db, userId);
+      const day = utcDay();
+      if (!(await claimPortrait(db, userId, day))) {
+        throw new HttpError(429, `You've made ${PORTRAITS_PER_DAY} portraits today, the most in a day. Try again tomorrow.`);
+      }
+      // One at a time: the new one goes in only when none is being made. The unique index on pending portraits (migration
+      // 16) holds that for requests in parallel too: the one that loses inserts nothing, and gets the same answer.
+      const rows = await db
+        .query<Row>(
+          `INSERT INTO portraits (user_id, id, kind, status, mime, bytes, reference_id, model, created_at)
+           SELECT $1, $2, 'generated', 'pending', $3, 0, $4, $5, $6::double precision
+           WHERE NOT EXISTS (SELECT 1 FROM portraits WHERE user_id = $1 AND kind = 'generated' AND status = 'pending')
+           ON CONFLICT DO NOTHING
+           RETURNING ${COLS}`,
+          [userId, randomUUID(), `image/${OUTPUT.format}`, referenceId, PORTRAIT_MODEL, Date.now()],
+        )
+        .catch(async (err) => {
+          await refundPortrait(db, userId, day).catch(() => {});
+          throw err;
+        });
+      if (!rows.length) {
+        await refundPortrait(db, userId, day);
+        throw new HttpError(409, 'Your portrait is still being made. It can take a minute or two.');
+      }
       const portrait = portraitOf(rows[0]);
-      // Background work must outlive the response on Vercel; waitUntil keeps the function alive for it.
+      // Background work must outlive the response on Vercel; waitUntil keeps the function alive for it. Started first:
+      // from here on, a portrait that isn't made is given back by makePortrait.
       const job: Job = { userId, id: portrait.id, reference: new Uint8Array(ref.data), openai, day };
       waitUntil(makePortrait(db, aiFetch, job).catch((err) => console.error('portraits: saving failed:', logKind(err))));
+      await bumpDataVersion(db, userId);
       res.status(202).json({ portrait } satisfies PortraitCreated);
     }),
   );

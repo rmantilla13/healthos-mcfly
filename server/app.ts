@@ -67,8 +67,9 @@ export function createApp({ db, hosted, ingestToken, mcflyClient = defaultClient
       const host = (req.headers.host ?? '').replace(/:\d+$/, '');
       if (!['localhost', '127.0.0.1', '[::1]'].includes(host)) return void res.status(403).send('Forbidden host');
     }
-    // Writes need a custom header, which a form or link on another website can't send.
-    if (!['GET', 'HEAD'].includes(req.method) && req.path.startsWith('/api/') && req.headers['x-healthos'] !== '1') {
+    // Writes need a custom header, which a form or link on another website can't send. Express routes /API/... to the
+    // api router too (its paths ignore case), so the check does as well.
+    if (!['GET', 'HEAD'].includes(req.method) && /^\/api(\/|$)/i.test(req.path) && req.headers['x-healthos'] !== '1') {
       return void res.status(403).json({ error: 'Missing X-HealthOS header' });
     }
     next();

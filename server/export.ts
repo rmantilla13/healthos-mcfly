@@ -3,15 +3,18 @@
 //
 // Every column is listed by name (never SELECT *), so what leaves is what's written here: no password or token
 // hashes, session versions, WHOOP tokens, invites, key ciphertext, file or photo bytes, or settings internals
-// (sync state, the data version, OAuth state). Demo rows are left out. USER_TABLES (server/db.ts) is the list of
-// one person's tables: test/export.test.ts checks every one is either exported here or excluded on purpose.
+// (sync state, the data version, OAuth state). Demo rows are left out, and so are the nutrition amounts the person's
+// Nutrition setting hides. USER_TABLES (server/db.ts) is the list of one person's tables: test/export.test.ts checks
+// every one is either exported here or excluded on purpose.
 //
 // Hourly readings over years run to tens of MB, over Vercel's limit for a response sent in one piece, so the file is
 // streamed: each section (and the biggest, a year at a time) is read in full and then written.
 import { once } from 'node:events';
 import express, { type NextFunction, type Request, type Response } from 'express';
+import type { FoodValues, NutritionNumbers } from '../shared/types.ts';
 import { currentUser } from './auth.ts';
 import { type Db, type Scope, type USER_TABLES, getUserSettings, setUserSetting } from './db.ts';
+import { shownValues } from './foodlog.ts';
 import { readSettings, requestContext } from './query.ts';
 
 type UserTable = (typeof USER_TABLES)[number];
@@ -30,14 +33,50 @@ type RowList = {
 
 const NOT_DEMO = "source <> 'demo'";
 
-/** food_log.per is one portion's amounts as JSON text: exported as the object it is. */
-function parsePer(row: Row): Row {
-  try {
-    return { ...row, per: JSON.parse(String(row.per)) };
-  } catch {
-    return row;
-  }
-}
+/** The Nutrition setting hides some amounts: the file leaves them out too, as every other nutrition response does. */
+const hides = (numbers: NutritionNumbers | null): numbers is 'no_energy' | 'none' => numbers === 'no_energy' || numbers === 'none';
+
+/**
+ * food_log.per is one portion's amounts as JSON text: exported as the object it is, as stored, or with only the amounts the
+ * person sees (shownValues, as the food log shows them). Name, portion, time and quantity stay either way.
+ */
+const perOf =
+  (numbers: NutritionNumbers | null) =>
+  (row: Row): Row => {
+    let per: unknown;
+    try {
+      per = JSON.parse(String(row.per));
+    } catch {
+      return hides(numbers) ? { ...row, per: {} } : row;
+    }
+    if (!hides(numbers)) return { ...row, per };
+    const values: FoodValues = {};
+    if (typeof per === 'object' && per !== null) {
+      for (const [k, v] of Object.entries(per)) if (typeof v === 'number' && Number.isFinite(v)) values[k as keyof FoodValues] = v;
+    }
+    return { ...row, per: shownValues(values, numbers) };
+  };
+
+/**
+ * Saved food entries and the food apps' daily totals. nutrition_daily holds nutrients only (water from Health is a reading,
+ * in readings.daily), so every row is an amount: none for 'none', and no calories for 'no_energy'.
+ */
+const nutritionLists = (numbers: NutritionNumbers | null): Record<string, RowList> => ({
+  // Saved entries only: a draft is McFly's estimate the person never saved, deleted after a day.
+  log: {
+    table: 'food_log',
+    cols: 'id, date, time, name, portion, quantity, per, method, ref, origin, created_at AS "createdAt", updated_at AS "updatedAt"',
+    where: 'NOT draft',
+    order: 'date, time, id',
+    map: perOf(numbers),
+  },
+  daily: {
+    table: 'nutrition_daily',
+    cols: 'date, nutrient, source, app, value',
+    where: numbers === 'none' ? 'false' : numbers === 'no_energy' ? `${NOT_DEMO} AND nutrient <> 'energy_kcal'` : NOT_DEMO,
+    order: 'date, nutrient, source, app',
+  },
+});
 
 /** The file's lists, in the order they're written. Nested objects are written as objects of lists. */
 const LISTS: Record<string, RowList | Record<string, RowList>> = {
@@ -57,17 +96,8 @@ const LISTS: Record<string, RowList | Record<string, RowList>> = {
     where: NOT_DEMO,
     order: 'start, id',
   },
-  nutrition: {
-    // Saved entries only: a draft is McFly's estimate the person never saved, deleted after a day.
-    log: {
-      table: 'food_log',
-      cols: 'id, date, time, name, portion, quantity, per, method, ref, origin, created_at AS "createdAt", updated_at AS "updatedAt"',
-      where: 'NOT draft',
-      order: 'date, time, id',
-      map: parsePer,
-    },
-    daily: { table: 'nutrition_daily', cols: 'date, nutrient, source, app, value', where: NOT_DEMO, order: 'date, nutrient, source, app' },
-  },
+  // Replaced per export by the person's own setting (listsFor).
+  nutrition: nutritionLists(null),
   cycle: { table: 'cycle', cols: 'date, kind, source, value', where: NOT_DEMO, order: 'date, kind, source' },
   labs: {
     table: 'lab_results',
@@ -97,10 +127,13 @@ const LISTS: Record<string, RowList | Record<string, RowList>> = {
   usage: {
     table: 'mcfly_usage',
     cols: `day, questions, input_tokens::float8 AS "inputTokens", output_tokens::float8 AS "outputTokens", own_questions AS "ownQuestions",
-      own_input_tokens::float8 AS "ownInputTokens", own_output_tokens::float8 AS "ownOutputTokens"`,
+      own_input_tokens::float8 AS "ownInputTokens", own_output_tokens::float8 AS "ownOutputTokens", voice_notes AS "voiceNotes"`,
     order: 'day',
   },
 };
+
+/** The lists for one person's export: the same, in the same order, with nutrition as much as their setting shows. */
+const listsFor = (numbers: NutritionNumbers | null): typeof LISTS => ({ ...LISTS, nutrition: nutritionLists(numbers) });
 
 const isList = (x: RowList | Record<string, RowList>): x is RowList => typeof (x as RowList).table === 'string';
 const allLists = Object.values(LISTS).flatMap((x) => (isList(x) ? [x] : Object.values(x)));
@@ -236,7 +269,7 @@ export function exportRouter(db: Db, hosted: boolean) {
         ...top,
       };
       await write(JSON.stringify(intro).slice(0, -1));
-      for (const [key, part] of Object.entries(LISTS)) {
+      for (const [key, part] of Object.entries(listsFor(top.settings.nutritionNumbers))) {
         await write(`,${JSON.stringify(key)}:`);
         if (isList(part)) await writeList(write, scope, part);
         else {

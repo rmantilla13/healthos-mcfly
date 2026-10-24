@@ -45,3 +45,6 @@ export type ChatChoiceInput = { provider: ChatChoice; model?: string | null };
 
 /** POST /api/ai/transcribe (raw audio body, Content-Type audio/webm or audio/mp4): the words, for the person to check before estimating. */
 export type Transcript = { text: string };
+
+/** Voice notes a person can send in a day (UTC) on the server's OpenAI key. On their own key there's no limit. */
+export const VOICE_NOTES_PER_DAY = 40;

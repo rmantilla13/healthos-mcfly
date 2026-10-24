@@ -320,6 +320,24 @@ export const MIGRATIONS: { id: number; name: string; statements: string[] }[] = 
       'CREATE INDEX portraits_user_kind ON portraits (user_id, kind, created_at)',
     ],
   },
+  {
+    id: 16,
+    name: 'Limits that hold with requests in parallel: voice notes on the shared key, one portrait at a time',
+    statements: [
+      // Voice notes on the server's OPENAI_API_KEY, per person per day like questions (server/ai/routes.ts). Apart from
+      // questions, so a note that becomes a meal estimate isn't counted twice.
+      'ALTER TABLE mcfly_usage ADD COLUMN voice_notes INTEGER NOT NULL DEFAULT 0',
+      // One portrait being made per person, held by the index below rather than by a check two requests could both pass.
+      // Any person with more than one already keeps the newest (by created_at, then id, so exactly one) for the index to build,
+      // with writes held off until then (the lock ends with the migration's transaction), so none can slip in between.
+      'LOCK TABLE portraits IN SHARE ROW EXCLUSIVE MODE',
+      `UPDATE portraits p SET status = 'failed', error = 'Making this portrait was interrupted. Try again.'
+        WHERE p.kind = 'generated' AND p.status = 'pending' AND EXISTS (
+          SELECT 1 FROM portraits n WHERE n.user_id = p.user_id AND n.kind = 'generated' AND n.status = 'pending'
+            AND (n.created_at > p.created_at OR (n.created_at = p.created_at AND n.id > p.id)))`,
+      "CREATE UNIQUE INDEX IF NOT EXISTS portraits_one_pending ON portraits (user_id) WHERE kind = 'generated' AND status = 'pending'",
+    ],
+  },
 ];
 
 async function migrate(db: Db) {
