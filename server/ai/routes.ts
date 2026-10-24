@@ -10,7 +10,7 @@ import { platformSettings } from '../admin.ts';
 import { HttpError, currentUser } from '../auth.ts';
 import { type Db, bumpDataVersion, setUserSetting } from '../db.ts';
 import { GEMINI_API, geminiError } from './gemini.ts';
-import { deleteKey, isProvider, keyProblem, keysAvailable, ownKeys, saveKey } from './keys.ts';
+import { deleteKey, isProvider, keyInfos, keyProblem, keysAvailable, ownKeys, saveKey, setKeyModel } from './keys.ts';
 import { OPENAI_API, openaiError } from './openai.ts';
 import { AiError, type AiFetch, MODEL_ID, PROVIDER_LABEL, send } from './provider.ts';
 import { type SharedClient, aiStatus, noteOwnUse, openaiKeyFor } from './resolve.ts';
@@ -94,10 +94,17 @@ export function aiRouter(db: Db, { client, aiFetch = fetch }: { hosted: boolean;
       const userId = currentUser(res).id;
       const b = (req.body ?? {}) as { key?: unknown; model?: unknown };
       const key = typeof b.key === 'string' ? b.key.trim() : '';
+      const stored = (await keyInfos(db, userId)).find((k) => k.provider === provider);
+      // No key: just the model for the one already stored (Profile → Chatbot). Left out, a new key keeps the model.
+      const model = b.model === undefined ? (stored?.model ?? null) : modelFrom(provider, b.model);
+      if (!key && stored) {
+        await setKeyModel(db, userId, provider, model);
+        await bumpDataVersion(db, userId);
+        return void (await status(res));
+      }
       if (!key) throw new HttpError(400, 'Paste your API key.');
       const problem = keyProblem(provider, key);
       if (problem) throw new HttpError(400, problem);
-      const model = modelFrom(provider, b.model);
       const label = PROVIDER_LABEL[provider];
       const check = await verifyKey(aiFetch, provider, key);
       if (check === 'rejected') throw new HttpError(400, `That key wasn't accepted by ${label}.`);

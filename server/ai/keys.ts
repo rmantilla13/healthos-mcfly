@@ -103,6 +103,11 @@ export async function saveKey(q: Queryable, userId: string, provider: AiProvider
   );
 }
 
+/** The model to use with a stored key (null for the admin's default). */
+export async function setKeyModel(q: Queryable, userId: string, provider: AiProvider, model: string | null) {
+  await q.query('UPDATE ai_keys SET model = $3, updated_at = $4 WHERE user_id = $1 AND provider = $2', [userId, provider, model, Date.now()]);
+}
+
 export async function deleteKey(q: Queryable, userId: string, provider: AiProvider) {
   const rows = await q.query('DELETE FROM ai_keys WHERE user_id = $1 AND provider = $2 RETURNING 1', [userId, provider]);
   return rows.length > 0;

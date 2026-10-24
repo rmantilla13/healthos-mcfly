@@ -1,0 +1,287 @@
+/* ---------- your own AI keys (src/components/ai/AiSheets.tsx) and Ask McFly's unavailable card ----------
+   Profile's Chatbot and OpenAI sheets: what Ask McFly uses now, the providers as choice cards (a sage edge over a faint
+   wash when chosen, as onboarding's), a masked key field, the stored key's last 4, and where questions go. Built on the
+   theme tokens only, so dark mode follows them with no values of its own. */
+
+.ai-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+/* What Ask McFly uses right now: the orb, then the words and the model in small type. */
+.ai-using {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--r-field);
+  background: var(--surface);
+  box-shadow: var(--shadow-pill);
+}
+.ai-using > div {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.ai-using strong {
+  font-size: 14px;
+  font-weight: 500;
+}
+.ai-using .small {
+  overflow-wrap: anywhere;
+}
+
+/* The providers: one row of cards on a computer, two by two on a phone. */
+.ai-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.ai-choices legend {
+  margin-bottom: 8px;
+  padding: 0;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+.ai-choice {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-height: 68px;
+  padding: 12px 12px 11px 36px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-field);
+  background: var(--surface);
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+.ai-choice:hover {
+  box-shadow: var(--shadow-pill);
+}
+.ai-choice.is-on {
+  border-color: var(--choice-border);
+  background: var(--choice-wash);
+}
+.ai-choice input {
+  position: absolute;
+  top: 13px;
+  left: 12px;
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+.ai-choice:has(input:focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.ai-choice input:focus-visible {
+  outline: none;
+}
+.ai-choice-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.ai-choice-sub {
+  margin-top: -3px;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.ai-choice .badge {
+  margin-top: auto;
+}
+.ai-choices:disabled .ai-choice {
+  cursor: default;
+  opacity: 0.7;
+}
+
+/* A field: its label above, a soft white input. The key field is masked and never remembered. */
+.ai-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+.ai-field input {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-field);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 400;
+}
+.ai-field input::placeholder {
+  color: var(--ink-3);
+}
+.ai-field input:focus-visible {
+  border-radius: var(--r-field);
+  border-color: var(--choice-border);
+}
+
+/* A stored key: its last 4 with Replace and Remove beside it. */
+.ai-connected {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  padding: 12px 12px 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-field);
+  background: var(--surface);
+}
+.ai-connected-text {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 13.5px;
+  color: var(--ink);
+}
+.ai-ok {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--badge-sage-bg);
+  color: var(--badge-sage-ink);
+}
+.ai-last4 {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+.ai-connected-actions {
+  display: flex;
+  gap: 6px;
+}
+.ai-connected-actions .btn {
+  min-height: 32px;
+  padding: 0 13px;
+}
+.ai-remove,
+.ai-remove:hover:not(:disabled) {
+  color: var(--badge-bad-ink);
+}
+.ai-problem {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--badge-peach-ink);
+}
+
+/* Remove a key: a short question and two buttons, in place of the stored key. */
+.ai-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border-radius: var(--r-field);
+  background: var(--badge-bad-bg);
+  color: var(--ink);
+  font-size: 13.5px;
+}
+.ai-confirm p {
+  margin: 0;
+}
+.btn.ai-danger,
+.btn.ai-danger:hover:not(:disabled) {
+  background: var(--surface);
+  color: var(--badge-bad-ink);
+}
+
+/* Where questions go, and the Gemini tip. */
+.ai-where {
+  display: flex;
+  gap: 10px;
+  padding-top: 2px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+.ai-where > .icon {
+  margin-top: 2px;
+  color: var(--accent-text);
+}
+.ai-where p {
+  margin: 0;
+}
+.ai-where p + p {
+  margin-top: 4px;
+}
+.ai-tip {
+  color: var(--badge-peach-ink);
+}
+.ai-lede {
+  margin: 0;
+  font-size: 14px;
+  color: var(--ink-2);
+}
+.ai-feedback {
+  min-height: 1px;
+  margin: 0;
+}
+.ai-feedback:empty {
+  display: none;
+}
+
+/* This server can't store keys: what happens instead. */
+.ai-not-here {
+  display: flex;
+  gap: 12px;
+  padding: 14px;
+  border-radius: var(--r-field);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: 13.5px;
+}
+.ai-not-here > .icon {
+  margin-top: 1px;
+  color: var(--accent-text);
+}
+.ai-not-here p {
+  margin: 0;
+}
+.ai-not-here p + p {
+  margin-top: 4px;
+}
+.ai-not-here strong {
+  font-weight: 500;
+  color: var(--ink);
+}
+
+/* Ask McFly with nothing to answer on: the words, and the way to connect a key. */
+.mcfly-unavailable {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+@media (max-width: 560px) {
+  .ai-choices {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .ai-connected-actions {
+    width: 100%;
+  }
+}

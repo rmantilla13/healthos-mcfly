@@ -220,6 +220,18 @@ test("the chat's provider: only one with a stored key; removing that key goes ba
   assert.equal((await db.query("SELECT 1 FROM user_settings WHERE user_id = $1 AND key IN ('chat_provider', 'chat_model')", [bobId])).length, 0);
 });
 
+test("a stored key's model can change without the key, and a replaced key keeps it", async () => {
+  checks.length = 0;
+  const changed = await bob.call('PUT', '/api/ai/keys/openai', { model: 'gpt-6-astra' });
+  assert.equal(changed.status, 200);
+  assert.equal(changed.json.keys.find((k: { provider: string }) => k.provider === 'openai').model, 'gpt-6-astra');
+  assert.equal(checks.length, 0, 'nothing to check with OpenAI');
+  const replaced = await bob.call('PUT', '/api/ai/keys/openai', { key: OPENAI_KEY });
+  assert.equal(replaced.json.keys.find((k: { provider: string }) => k.provider === 'openai').model, 'gpt-6-astra');
+  assert.equal((await bob.call('PUT', '/api/ai/chat', { provider: 'openai' })).json.chat.model, 'gpt-6-astra');
+  assert.equal((await bob.call('PUT', '/api/ai/keys/gemini', {})).status, 400, 'no key stored there, and none sent');
+});
+
 test('an account deletion takes its keys', async () => {
   assert.ok((await db.query('SELECT 1 FROM ai_keys WHERE user_id = $1', [bobId])).length > 0);
   assert.equal((await owner.call('DELETE', `/api/admin/users/${bobId}`)).status, 200);

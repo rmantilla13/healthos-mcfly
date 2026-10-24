@@ -1,7 +1,10 @@
 // Ask McFly: a chat about your own data. Answers stream in from /api/mcfly/chat (server-sent events),
-// with a line for each piece of data McFly reads. The conversation lives only in this browser tab.
+// with a line for each piece of data McFly reads. The conversation lives only in this browser tab. It runs on the
+// server's shared Claude key, within its daily limit, or on the person's own key (Profile → Chatbot).
 import { Fragment, useEffect, useRef, useState } from 'react';
+import type { AiStatus } from '../../shared/ai.ts';
 import type { McflyStatus, McflyTurn, McflyVisual as Visual, SessionUser } from '../../shared/types.ts';
+import { ChatbotSheet } from '../components/ai/AiSheets.tsx';
 import { Icon } from '../components/Icon.tsx';
 import { McflyVisual, visualNote } from '../components/McflyVisual.tsx';
 import { PageIntro } from '../components/PageIntro.tsx';
@@ -25,6 +28,8 @@ const SUGGESTIONS = [
   'How active was I this month?',
   'When do I usually go to bed and wake up?',
 ];
+
+const PROVIDER = { anthropic: 'Claude', openai: 'OpenAI', gemini: 'Gemini' } as const;
 
 const storageKey = (userId: string) => `healthos-mcfly:${userId}`;
 const touch = () => matchMedia('(pointer: coarse)').matches;
@@ -64,6 +69,9 @@ function historyFor(msgs: Msg[], question: string): McflyTurn[] {
 
 export function McFly({ me }: { me: SessionUser }) {
   const { data: status, reload } = useApi<McflyStatus>('/mcfly');
+  // Whether people can connect their own key here, for the words when McFly isn't available.
+  const { data: ai, reload: reloadAi } = useApi<AiStatus>('/ai');
+  const [chatbot, setChatbot] = useState(false);
   const [msgs, setMsgs] = useState<Msg[]>(() => load(me.id));
   const [draft, setDraft] = useState('');
   // A question handed over from ⌘K search ("Ask McFly about …") fills the box.
@@ -165,8 +173,11 @@ export function McFly({ me }: { me: SessionUser }) {
     }
   }
 
-  const left = status && status.limit > 0 ? Math.max(status.limit - status.usedToday, 0) : null;
-  const unavailable = status && (!status.configured ? 'not-configured' : status.limit <= 0 ? 'off' : null);
+  // Questions left today are the shared key's; a person's own key has only a high cap, shown once it's reached.
+  const own = status?.source === 'own';
+  const left = !status ? null : own ? (status.usedToday >= status.limit ? 0 : null) : status.limit > 0 ? Math.max(status.limit - status.usedToday, 0) : null;
+  const unavailable = status && (!status.configured ? 'not-configured' : !own && status.limit <= 0 ? 'off' : null);
+  const byok = Boolean(ai?.byok);
 
   return (
     <div className="page mcfly">
@@ -189,16 +200,36 @@ export function McFly({ me }: { me: SessionUser }) {
         }
       />
 
+      {chatbot && (
+        <ChatbotSheet
+          onClose={() => {
+            setChatbot(false);
+            reload();
+            reloadAi();
+          }}
+        />
+      )}
+
       {unavailable ? (
-        <section className="card">
+        <section className="card mcfly-unavailable">
           <h2>{unavailable === 'off' ? 'Ask McFly is turned off' : "Ask McFly isn't set up yet"}</h2>
           <p className="muted">
             {me.role === 'admin'
               ? unavailable === 'off'
                 ? 'Set a daily question limit above 0 in Admin → Settings.'
                 : 'Add ANTHROPIC_API_KEY (from the Claude Console) to the Vercel project, then redeploy.'
-              : 'Ask the admin to turn it on.'}
+              : byok
+                ? unavailable === 'off'
+                  ? 'The shared assistant is off right now.'
+                  : "There's no shared assistant on this server."
+                : 'Ask the admin to turn it on.'}
+            {byok && ' You can connect your own AI key in Profile → Chatbot: OpenAI, Claude or Gemini.'}
           </p>
+          {byok && (
+            <button className="btn btn-primary" onClick={() => setChatbot(true)}>
+              Connect your own key
+            </button>
+          )}
         </section>
       ) : (
         <>
@@ -285,7 +316,15 @@ export function McFly({ me }: { me: SessionUser }) {
               aria-label="Your question"
             />
             <div className="mcfly-composer-row">
-              <span className="muted small">{left === null ? '' : `${left} question${left === 1 ? '' : 's'} left today`}</span>
+              <span className="muted small">
+                {own && left !== 0
+                  ? `On your ${status?.provider ? PROVIDER[status.provider] : ''} key`
+                  : left === null
+                    ? ''
+                    : own
+                      ? "You've reached today's limit on your own key."
+                      : `${left} question${left === 1 ? '' : 's'} left today`}
+              </span>
               {busy ? (
                 <button type="button" className="btn" onClick={() => abort.current?.abort()}>
                   Stop
