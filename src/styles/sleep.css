@@ -1,0 +1,26 @@
+/* ---------- Sleep (src/pages/Sleep.tsx) ----------
+   Three short signal cards first (VitalCard's compact size), then the night's stages and insights, and its timeline
+   beside resting heart rate. Colours are the shared tokens only, so the dark theme needs nothing of its own here. */
+
+/* With a reading a card holds a chart too: it grows to fit rather than keep the empty card's proportions. */
+.sleep-cards .vital-compact:not(.is-empty) {
+  aspect-ratio: auto;
+}
+.sleep-cards .vital-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sleep-cards .vital-chart .scorebar {
+  margin-top: 0;
+  padding-top: 0;
+}
+.sleep-lower {
+  grid-template-columns: minmax(0, 1.9fr) minmax(0, 1fr);
+}
+
+@media (max-width: 1080px) {
+  .sleep-lower {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

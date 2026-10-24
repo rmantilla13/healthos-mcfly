@@ -37,3 +37,12 @@ export type BodyEntries = { entries: BodyEntry[] };
 export type BodyEntryInput = { metric: BodyMetric; value: number; unit?: 'kg' | 'lb' | '%'; date: string; time?: string | null; method?: BodyMethod; note?: string };
 
 export const LB_PER_KG = 1 / 0.45359237;
+
+/** Where a day's value came from: typed in by the person, a device, a Fitbit export, or the local demo. */
+export type BodySource = 'manual' | 'apple' | 'whoop' | 'fitbit' | 'demo';
+
+/**
+ * GET /api/body/latest?date=: each metric's latest value in the 120 days to `date` (today by default), as the charts
+ * show it (a typed entry wins its day), and where it came from; null when there's none in that window.
+ */
+export type BodyLatest = Record<BodyMetric, { date: string; value: number; source: BodySource } | null>;

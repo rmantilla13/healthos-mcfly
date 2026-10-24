@@ -1,0 +1,292 @@
+/* ---------- Body (src/pages/Body.tsx, src/components/body/) ----------
+   The figure card beside a column of the three measurement cards and the story card, the figure as tall as the
+   column. With 'Just the statistics' (or the figure hidden) the measurements go in a row with the story under them.
+   Colours are the shared tokens only, so the dark theme needs nothing of its own here. */
+.body-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.17fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: stretch;
+}
+.body-hero.no-figure {
+  grid-template-columns: minmax(0, 1fr);
+}
+.body-measures {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+.no-figure .body-measures {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.no-figure .body-story {
+  grid-column: 1 / -1;
+}
+
+/* the figure card (FigureCard.tsx) */
+.body-figure-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  padding: 32px 24px 28px;
+}
+.body-figure {
+  width: 100%;
+  max-width: 460px;
+}
+.body-figure .figure {
+  margin: 0 auto;
+}
+.body-figure-caption {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.body-figure-caption a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.body-figure-caption a:hover {
+  color: var(--ink);
+}
+
+/* a measurement card (MeasurementCard.tsx): the value on the left, its change or "when you're ready" on the right */
+.measure-card {
+  flex: 1 0 auto;
+  gap: 0;
+  min-height: 132px;
+}
+.measure-main {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+.measure-note {
+  max-width: 150px;
+  text-align: right;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+.measure-chart {
+  margin-top: 10px;
+}
+.measure-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-top: auto;
+  padding-top: 14px;
+  font-size: 11.5px;
+  color: var(--ink-2);
+}
+.measure-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 12px 0 10px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  box-shadow: var(--shadow-pill);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.measure-add:hover {
+  color: var(--ink);
+}
+.measure-add:focus-visible {
+  border-radius: var(--r-pill);
+}
+
+/* the story card */
+.body-story {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 22px 20px 20px;
+}
+.body-story h2 {
+  margin-top: 4px;
+}
+.body-story p:not(.eyebrow) {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+.body-story .body-story-fine {
+  margin-top: 4px;
+  font-size: 10.5px;
+  color: var(--ink-3);
+}
+
+/* what devices recorded, under the hero once there's any */
+.body-devices {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 12px;
+}
+.body-devices-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+}
+.body-devices-head h2 {
+  font-size: 15px;
+  font-weight: 500;
+}
+
+/* the Add entry sheet (AddEntrySheet.tsx) */
+.settings.entry-form {
+  max-width: none;
+}
+.entry-form label > span small,
+.entry-form .settings-row > span small {
+  margin-left: 4px;
+  font-weight: 400;
+}
+.entry-value {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.entry-value input {
+  flex: 1;
+  min-width: 0;
+  padding-right: 48px;
+}
+.entry-unit {
+  position: absolute;
+  right: 14px;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--ink-3);
+  pointer-events: none;
+}
+.entry-when {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.entry-when input {
+  min-width: 0;
+}
+.entry-form .filters {
+  align-self: flex-start;
+}
+.entry-demo {
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  border-radius: var(--r-field);
+  background: var(--badge-peach-bg);
+  color: var(--badge-peach-ink);
+  font-size: 13px;
+}
+.entry-demo a {
+  color: inherit;
+  font-weight: 600;
+}
+.entry-list {
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.entry-list h3 {
+  margin-bottom: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+.entry-list ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.entry-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+.entry-list li:last-child {
+  border-bottom: 0;
+}
+.entry-list-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.entry-list-main b {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.entry-list-main small {
+  font-size: 12px;
+  color: var(--ink-3);
+  overflow-wrap: anywhere;
+}
+.entry-list-confirm {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+}
+.entry-list .btn {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 12.5px;
+}
+.entry-list .btn-danger,
+.entry-list .btn-danger:hover:not(:disabled) {
+  color: var(--critical);
+}
+.entry-list-more {
+  margin-top: 4px;
+}
+
+@media (max-width: 1080px) {
+  .body-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .body-figure {
+    max-width: 380px;
+  }
+}
+@media (max-width: 820px) {
+  .no-figure .body-measures {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 560px) {
+  .body-figure-card {
+    padding: 24px 14px 22px;
+  }
+  .entry-when {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
