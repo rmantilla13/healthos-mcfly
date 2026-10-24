@@ -35,6 +35,9 @@ Cards hide or switch to fit your sources, as on the web: no WHOOP means VO₂ ma
 - **Invites:** someone invited taps **Have an invite code?** and enters the code, or pastes the whole invite link. They pick a name, email and password, and land on their own dashboard. No email is ever sent.
 - **Session:** the 30-day session cookie lives in the Keychain.
 - **Local servers:** one with no password set needs no sign-in.
+- **Time zone:** after each status read, if the server's `settings.timeZone` isn't this iPhone's, the app sends it (`PUT /api/settings {timeZone}`), as the web does, so the hosted server's "today" is yours. A zone is sent once per session: a server that keeps its own isn't asked again, and one that couldn't be reached is asked on the next read.
+- **Signing out pauses the Apple Health sync.** The ingest token belongs to one account, whoever is signed in, so the app remembers which account it was set under (or, for a token from an older build, the first account seen signed in). After a sign-out nothing is read or sent, in the app or in the background, until someone signs in. The same account resumes the sync. Anyone else signing in, or a new account from an invite, removes the token and Settings asks to set this iPhone up again in Integrations, so a phone that changes hands never sends the new person's data to the last account. The next token starts the upload from the beginning. Servers without sign-in work as before.
+- **Errors:** when the server refuses something with a message written for people (400, 403, 409 or 429), the app shows that message as it is, as the web does; otherwise it says "Server answered" with the code.
 - **Offline:** the last summary is cached on the phone, so the app opens with numbers even offline.
 - **Fresh data without re-downloading:** the app checks `GET /api/version` on open, on return, after syncs and every minute while open. It downloads the summary and trends again only when the version changed or the day rolled over, or on pull to refresh. Servers without `/api/version` get a reload on open, on return and after syncs.
 
@@ -48,7 +51,7 @@ Cards hide or switch to fit your sources, as on the web: no WHOOP means VO₂ ma
   - Sleep counts toward the wake day (6 h rollover). Overlapping segments are merged, and the source with the most sleep wins.
   - Each night's stages also go up as a timeline (`sleepStages`) for the Sleep page: one stage at a time, the main sleep only (a same-day nap counts in the totals but isn't drawn), from the source that won the night. A night with no sleep is sent empty, which clears it, but only when the window had any sleep at all, so a phone without sleep access never erases nights from an export import. The first sync with a server that stores stages sends the last month again once, so recent nights have them; older nights get theirs with "Upload all history".
   - Days use each record's own time zone (`HKMetadataKeyTimeZone`, or the device's).
-- **Uploads** a week of days per request to `POST /api/apple/ingest` with the bearer token, newest week first. A day whose upload fails stays queued for the next sync.
+- **Uploads** a week of days per request to `POST /api/apple/ingest` with the bearer token, newest week first. A day whose upload fails stays queued for the next sync. Nothing goes up while signed out (see Sign-in above).
   - Every sync sends today, plus any changed day in the last 30.
   - Older days (the first upload, or the one-time hourly backfill) wait in a saved queue. They go up newest first, four weeks per pass, only while the app is open and not in Low Power Mode. Settings shows how many are left.
 - **Cycle tracking:** menstrual flow, spotting, ovulation tests, cervical mucus, sexual activity, basal body temperature and Health's cycle symptoms (cramps, bloating, headache and the rest; one logged as "not present" is left out). The app reads these only after you turn cycle tracking on in healthOS settings and the server answers that it stores cycle days. Each day sent replaces that day on the server.
@@ -121,7 +124,7 @@ Then enter `http://localhost:8790` and that token in the app's Settings.
 Build and test from the terminal:
 
 ```bash
-xcodebuild -project ios/HealthOSSync.xcodeproj -scheme HealthOSSync -destination 'platform=iOS Simulator,name=iPhone 17' test
+xcodebuild -project ios/HealthOSSync.xcodeproj -scheme HealthOSSync -destination 'platform=iOS Simulator,name=iPhone 18 Pro' test
 ```
 
 For scripted runs, `xcrun simctl launch booted health.mcfly.sync -healthosToken <token>` sets the token (simulator builds only).

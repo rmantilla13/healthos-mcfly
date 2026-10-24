@@ -124,10 +124,23 @@ private struct ServerSection: View {
 
 private struct SyncSection: View {
     @Environment(AppModel.self) private var model
+    @Environment(Dashboard.self) private var dashboard
 
     var body: some View {
         @Bindable var model = model
         Section {
+            // The token sends to one account (IngestTokenOwner): say why nothing goes up.
+            if dashboard.ingestOwner.paused {
+                Label("Signed out. This iPhone's Health data isn't sent until someone signs in.", systemImage: "pause.circle")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("syncPaused")
+            } else if dashboard.ingestOwner.setUpAgain, model.token.isEmpty {
+                Label("Someone else signed in, so this iPhone stopped sending Health data to the last account. Set this iPhone up again for your account in Integrations on the dashboard (Integrations → iPhone app), then paste the new token below.", systemImage: "exclamationmark.triangle")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("setUpAgain")
+            }
             Button {
                 Task { await model.syncAll(force: true) }
             } label: {

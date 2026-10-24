@@ -111,6 +111,18 @@ final class Dashboard {
     /// Counts board reads, so a slower, older one can't replace a newer one (or land after a sign-out).
     private var familyRequest = 0
 
+    /// Whose account the ingest token sends to, and whether the sync waits for a sign-in, as Settings shows it.
+    private(set) var ingestOwner: IngestTokenOwner
+    /// Where the token and its owner are kept: the app passes the Keychain's.
+    private let tokenStore: IngestTokenStore
+    /// The time zone sent this session, so a server that keeps another one isn't sent it on every load.
+    private var timeZoneSent: String?
+
+    init(tokenStore: IngestTokenStore = MemoryTokenStore()) {
+        self.tokenStore = tokenStore
+        ingestOwner = tokenStore.owner
+    }
+
     var units: Units { Units(rawValue: status?.settings?.units ?? "") ?? .metric }
     var stepGoal: Double { summary?.stepGoal ?? status?.settings?.stepGoal ?? 10_000 }
     /// Cycle tracking is on (set on the web or in Settings): the Cycle card, the Cycle trends section and GET /api/cycle.
@@ -167,6 +179,8 @@ final class Dashboard {
             case "required": phase = auth.authenticated ? .ready : .signIn
             default: phase = .unavailable("Sign-in isn't set up on \(client.base.host ?? "the server") yet.")
             }
+            // Signed in at launch (the first launch after an update included): a token with no known owner is theirs.
+            checkIngestToken(signedInAs: account?.id)
         } catch is CancellationError {
             return
         } catch {
@@ -203,12 +217,21 @@ final class Dashboard {
         } else if includeStatus, let status = try? await client.status() {
             apply(status: status)
             if date == nil, let summary { SummaryCache.save(summary: summary, status: status, version: dataVersion, loadedOn: loadedOn, for: client.base) }
+            if await statusRead() { await load() }
         }
     }
 
     /// Downloads the summary and status. Pull to refresh and changing day call it directly.
     func load(knownVersion: String?? = .none) async {
-        guard let client = APIClient.current() else { return }
+        guard await download(knownVersion: knownVersion) else { return }
+        // The server's "today" moved with the time zone sent: read the day again, once (a zone is sent once).
+        if await statusRead() { await download(knownVersion: .none) }
+    }
+
+    /// One read of the summary and status; true when it came.
+    @discardableResult
+    private func download(knownVersion: String??) async -> Bool {
+        guard let client = APIClient.current() else { return false }
         loading = true
         defer { loading = false }
         do {
@@ -231,6 +254,7 @@ final class Dashboard {
                 loadedOn = Day.today()
                 SummaryCache.save(summary: summary, status: status, version: version, loadedOn: loadedOn, for: client.base)
             }
+            return true
         } catch APIError.signInRequired {
             phase = .signIn
         } catch is CancellationError {
@@ -238,6 +262,14 @@ final class Dashboard {
         } catch {
             self.error = error.localizedDescription
         }
+        return false
+    }
+
+    /// After every status read, never a settings change's own answer: who's signed in against the ingest token's
+    /// owner, then the time zone. True when the server's "today" moved, so the caller reads the day again.
+    private func statusRead() async -> Bool {
+        checkIngestToken(signedInAs: status?.user?.id ?? account?.id)
+        return await followTimeZone()
     }
 
 
@@ -245,11 +277,13 @@ final class Dashboard {
         guard let client = APIClient.current() else { throw APIError.network("Enter the server address in Settings.") }
         try await client.signIn(email: email, password: password)
         Config.lastEmail = email
-        if let auth = try? await client.authState() {
+        let auth = try? await client.authState()
+        if let auth {
             authMode = auth.mode
             usesAccounts = auth.usesAccounts
-            account = auth.user
         }
+        // Never the last person's, when the server can't say just now: the first status read says who it is.
+        account = auth?.user
         signedIn()
         await load()
     }
@@ -259,18 +293,22 @@ final class Dashboard {
         try await client.acceptInvite(code: code, email: email, name: name, password: password)
         Config.lastEmail = email
         account = (try? await client.authState())?.user
-        signedIn()
+        signedIn(newAccount: true)
         await load()
     }
 
     /// A new session (sign-in or a new account from an invite), maybe as someone else after the last one expired:
-    /// nothing of the last person's Family board, photos or dismissed notice carries over.
-    func signedIn() {
+    /// nothing of the last person's Family board, photos or dismissed notice carries over, and the ingest token is
+    /// checked against who it is.
+    func signedIn(newAccount: Bool = false) {
         resetFamily()
+        timeZoneSent = nil
         phase = .ready
+        checkIngestToken(signedInAs: account?.id, newAccount: newAccount)
     }
 
     func signOut() async {
+        ingestSignedOut()
         if let client = APIClient.current() {
             await client.signOut()
             SummaryCache.clear(for: client.base)
@@ -485,6 +523,79 @@ final class Dashboard {
 
     func hideFamilyNotice() { familyNoticeDismissed = true }
 
+    // MARK: Time zone
+
+    /// The hosted server runs in UTC: tell it this phone's time zone, so its "today" is the person's (src/App.tsx does it
+    /// on every load). After a status read only, and a zone is sent once: a server that answered and kept its own zone
+    /// isn't asked again this session. One that couldn't be reached is asked on the next read. True when the server
+    /// now has `zone`. `send` is PUT /api/settings; tests pass their own.
+    func followTimeZone(_ zone: String = TimeZone.current.identifier, send: (@MainActor ([String: Any]) async throws -> ServerStatus)? = nil) async -> Bool {
+        guard phase == .ready, let settings = status?.settings, settings.timeZone != zone, timeZoneSent != zone else { return false }
+        let send = send ?? { fields in try await self.fetch { try await $0.updateSettings(fields) } }
+        timeZoneSent = zone
+        do {
+            show(settings: try await send(["timeZone": zone]))
+        } catch {
+            if APIClient.isCancellation(error) { timeZoneSent = nil }
+            if case .network? = error as? APIError { timeZoneSent = nil }
+            return false
+        }
+        return status?.settings?.timeZone == zone
+    }
+
+    // MARK: Ingest token
+
+    /// The account signed in now, as the token's owner is kept.
+    private func ingestAccount(_ id: String?) -> IngestTokenOwner.Account? {
+        id.map { IngestTokenOwner.Account(server: server?.absoluteString ?? "", id: $0) }
+    }
+
+    private func updateIngestOwner(_ change: (inout IngestTokenOwner, Bool) -> Bool) {
+        var owner = tokenStore.owner
+        let remove = change(&owner, tokenStore.hasToken)
+        tokenStore.owner = owner
+        if remove { tokenStore.removeToken() }
+        ingestOwner = owner
+    }
+
+    /// Someone is signed in as `id` (a sign-in, a new account, or a status read): the same account as the token's
+    /// resumes the sync, anyone else's removes the token. On a server with accounts and no id yet, nothing changes
+    /// until a read says who it is. A server without sign-in never pauses.
+    func checkIngestToken(signedInAs id: String?, newAccount: Bool = false) {
+        guard phase == .ready else { return }
+        switch authMode {
+        case "open":
+            updateIngestOwner { owner, _ in
+                owner.noSignIn()
+                return false
+            }
+        case "required":
+            if usesAccounts, id == nil, !newAccount { return }
+            updateIngestOwner { $0.signedIn(ingestAccount(id), hasToken: $1, newAccount: newAccount) }
+        default:
+            break
+        }
+    }
+
+    /// Signing out: nothing of this phone's Health data goes up until someone signs in.
+    func ingestSignedOut() {
+        guard authMode == "required" else { return }
+        let who = ingestAccount(account?.id ?? status?.user?.id)
+        updateIngestOwner { owner, hasToken in
+            owner.signedOut(who, hasToken: hasToken)
+            return false
+        }
+    }
+
+    /// The token was typed, pasted or removed in Settings: it's the signed-in account's, if anyone's.
+    func ingestTokenChanged() {
+        let who = authMode == "required" && phase == .ready ? ingestAccount(account?.id ?? status?.user?.id) : nil
+        updateIngestOwner { owner, hasToken in
+            owner.tokenChanged(hasToken: hasToken, signedIn: who)
+            return false
+        }
+    }
+
     // MARK: Cards
 
     /// Both card lists while changes are on their way to the server; nil shows the server's lists.
@@ -598,6 +709,7 @@ final class Dashboard {
         dataVersion = nil
         loadedOn = nil
         foodLogAvailable = nil
+        timeZoneSent = nil
         clearCaches()
         resetFamily()
     }

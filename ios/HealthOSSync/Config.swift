@@ -52,6 +52,13 @@ enum Config {
         set { Keychain.write(newValue) }
     }
 
+    /// Whose account the token sends to, and whether the sync waits for a sign-in (IngestTokenOwner). Read by
+    /// background wakes too, so it's kept here rather than with the dashboard.
+    static var ingestOwner: IngestTokenOwner {
+        get { defaults.data(forKey: "ingestTokenOwner").flatMap { try? JSONDecoder().decode(IngestTokenOwner.self, from: $0) } ?? IngestTokenOwner() }
+        set { defaults.set(try? JSONEncoder().encode(newValue), forKey: "ingestTokenOwner") }
+    }
+
     static var history: History {
         get { defaults.string(forKey: "history").flatMap(History.init(rawValue:)) ?? .all }
         set { defaults.set(newValue.rawValue, forKey: "history") }
@@ -110,6 +117,106 @@ enum Config {
         guard let url = URL(string: s), let scheme = url.scheme, ["http", "https"].contains(scheme), url.host != nil else { return nil }
         return url
     }
+}
+
+/// The ingest token belongs to one account on the server, whoever is signed in here: Health data sent with it lands in
+/// that account. So a phone that changes hands would keep sending the new person's Health data to the last person.
+/// To stop that, signing out pauses the sync, in the app and in the background; the same account signing back in
+/// resumes it; anyone else signing in removes the token, and Settings asks to set this iPhone up again. A server
+/// without sign-in (authMode "open") has one person, so nothing pauses there.
+struct IngestTokenOwner: Codable, Equatable {
+    /// An account on one server: ids repeat across servers ("owner" is the first account on each).
+    struct Account: Codable, Equatable {
+        let server: String
+        let id: String
+    }
+
+    /// Who the token was set under, or first seen with while signed in; nil when not known, or there's no token.
+    var account: Account?
+    /// Signed out on a server with sign-in: no Health data goes up until someone signs in.
+    var paused = false
+    /// The token was removed because someone else signed in: Settings asks to set this iPhone up again.
+    var setUpAgain = false
+
+    /// The token was typed, pasted or removed while `signedIn` (nil: signed out, or a server without accounts).
+    mutating func tokenChanged(hasToken: Bool, signedIn: Account?) {
+        account = hasToken ? signedIn : nil
+        if hasToken { setUpAgain = false }
+    }
+
+    /// Someone is signed in: a sign-in, a new account from an invite, or any status read while signed in. `who` is nil
+    /// on an older server with one password and no accounts: one person, so the token is theirs. A token whose owner
+    /// isn't known yet (set before owners were kept) is taken as this account's, except after an invite: an account
+    /// made a moment ago can't have made a token, so the one here is someone else's. Returns true when the token is
+    /// someone else's and has to go.
+    mutating func signedIn(_ who: Account?, hasToken: Bool, newAccount: Bool = false) -> Bool {
+        paused = false
+        guard hasToken else {
+            account = nil
+            return false
+        }
+        if !newAccount {
+            guard let who else { return false }
+            if account == nil { account = who }
+            if account == who { return false }
+        }
+        account = nil
+        setUpAgain = true
+        return true
+    }
+
+    /// The person signed out: nothing goes up until someone signs in. A token whose owner isn't known yet is theirs.
+    mutating func signedOut(_ who: Account?, hasToken: Bool) {
+        if hasToken, account == nil { account = who }
+        paused = true
+    }
+
+    /// A server without sign-in: one person, so nothing waits.
+    mutating func noSignIn() { paused = false }
+}
+
+/// Where the ingest token and its owner are kept.
+protocol IngestTokenStore: AnyObject {
+    var hasToken: Bool { get }
+    var owner: IngestTokenOwner { get set }
+    /// Removes the token because it's someone else's.
+    func removeToken()
+}
+
+/// The app's: the token in the Keychain, its owner in UserDefaults, where background syncs read them.
+final class KeychainTokenStore: IngestTokenStore {
+    var hasToken: Bool { !Config.token.isEmpty }
+
+    var owner: IngestTokenOwner {
+        get { Config.ingestOwner }
+        set { Config.ingestOwner = newValue }
+    }
+
+    func removeToken() {
+        Config.token = ""
+        // The next token is another person's: their history goes up from the start, not from where the last one's stopped.
+        Task { await SyncEngine.shared.reset() }
+        NotificationCenter.default.post(name: .healthOSTokenRemoved, object: nil)
+    }
+}
+
+/// Kept in memory only: a dashboard made without the app's store (tests, previews) never touches the real token.
+final class MemoryTokenStore: IngestTokenStore {
+    var token: String
+    var owner: IngestTokenOwner
+
+    init(token: String = "", owner: IngestTokenOwner = IngestTokenOwner()) {
+        self.token = token
+        self.owner = owner
+    }
+
+    var hasToken: Bool { !token.isEmpty }
+    func removeToken() { token = "" }
+}
+
+extension Notification.Name {
+    /// Posted when the ingest token was removed because someone else signed in, so Settings' field follows.
+    static let healthOSTokenRemoved = Notification.Name("healthOSTokenRemoved")
 }
 
 enum Keychain {

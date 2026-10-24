@@ -14,7 +14,7 @@ struct HealthOSSyncApp: App {
 }
 
 struct RootView: View {
-    @State private var dashboard = Dashboard()
+    @State private var dashboard = Dashboard(tokenStore: KeychainTokenStore())
     @State private var sync = AppModel()
     @Environment(\.scenePhase) private var scenePhase
 

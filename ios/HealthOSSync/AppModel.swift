@@ -51,7 +51,14 @@ struct SourcesSyncStatus: Equatable {
 @Observable
 final class AppModel {
     var serverText = Config.serverText { didSet { Config.serverText = serverText } }
-    var token = Config.token { didSet { Config.token = token } }
+    var token = Config.token {
+        didSet {
+            guard token != oldValue else { return }
+            Config.token = token
+            // Set while signed in: it's that account's (IngestTokenOwner).
+            dashboard?.ingestTokenChanged()
+        }
+    }
     var history = Config.history { didSet { Config.history = history } }
     var backgroundSync = Config.backgroundSync {
         didSet {
@@ -81,6 +88,10 @@ final class AppModel {
                 await MainActor.run { self?.handle(event) }
             }
             await SyncEngine.shared.setBackfillGate { await Background.backfillAllowed() }
+        }
+        // The token was removed because someone else signed in: the field follows.
+        NotificationCenter.default.addObserver(forName: .healthOSTokenRemoved, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.token = Config.token }
         }
     }
 
@@ -147,8 +158,12 @@ final class AppModel {
         let apple: SourcesSyncStatus.Part
         if Config.serverURL() == nil {
             apple = .skipped("Add your healthOS address in Settings.")
+        } else if Config.ingestOwner.paused {
+            apple = .skipped("Signed out. Sign in, and this iPhone's Health data goes up again.")
         } else if Config.token.isEmpty {
-            apple = .skipped("Paste your ingest token in Settings (dashboard → Integrations → iPhone app).")
+            apple = .skipped(Config.ingestOwner.setUpAgain
+                ? "Set this iPhone up again for your account: dashboard → Integrations → iPhone app, then paste the token in Settings."
+                : "Paste your ingest token in Settings (dashboard → Integrations → iPhone app).")
         } else {
             await syncNow()
             apple = last.map { $0.ok ? .ok : .failed($0.message) } ?? .failed("Didn't run.")
@@ -254,6 +269,8 @@ enum Background {
     /// One background wake: changed recent days only (never the history backfill), then a throttled server refresh.
     /// Skipped in Low Power Mode; the anchors don't move, so the next wake or open catches up.
     static func wake() async {
+        // Signed out: nothing is read or sent until someone signs in.
+        if Config.ingestOwner.paused { return }
         let foreground = await MainActor.run { UIApplication.shared.applicationState == .active }
         if !foreground, ProcessInfo.processInfo.isLowPowerModeEnabled { return }
         await SyncEngine.shared.sync()
