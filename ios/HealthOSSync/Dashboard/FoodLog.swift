@@ -299,7 +299,8 @@ extension Error {
     /// The server's own words for a refused request ("Turn on Nutrition to log food."), else the usual description.
     var foodMessage: String {
         switch self as? APIError {
-        case .server(_, let message)?, .misconfigured(let message)?: message
+        case .server(_, let message)? where !message.isEmpty: message
+        case .misconfigured(let message)?: message
         default: localizedDescription
         }
     }

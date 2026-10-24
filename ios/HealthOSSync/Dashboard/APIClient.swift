@@ -3,14 +3,22 @@ import Foundation
 enum APIError: LocalizedError {
     case signInRequired
     case misconfigured(String)
+    /// The status code and the server's own message, "" when it sent none.
     case server(Int, String)
     case network(String)
+
+    /// Answers whose message the server writes for people (a bad entry, a wrong password, a clash, too many tries):
+    /// shown as they are, as the web shows them.
+    static let plainWords: Set<Int> = [400, 403, 409, 429]
 
     var errorDescription: String? {
         switch self {
         case .signInRequired: "Sign in to see your dashboard."
         case .misconfigured(let message): message
-        case .server(let code, let message): "Server answered \(code): \(message)"
+        case .server(let code, let message):
+            if message.isEmpty { "Server answered \(code): \(HTTPURLResponse.localizedString(forStatusCode: code))" }
+            else if Self.plainWords.contains(code) { message }
+            else { "Server answered \(code): \(message)" }
         case .network(let message): message
         }
     }
@@ -65,17 +73,24 @@ struct APIClient {
         }
         if (200..<300).contains(http.statusCode) { return data }
 
-        let message = (try? JSONDecoder().decode(ErrorBody.self, from: data))?.error ?? HTTPURLResponse.localizedString(forStatusCode: http.statusCode)
-        let accountForm = path == "/auth/login" || path == "/auth/invite"
-        // A 401 from the sign-in itself is a wrong password; anywhere else the session is gone.
-        if http.statusCode == 401, !accountForm {
-            SessionStore.clear()
-            throw APIError.signInRequired
-        }
-        if http.statusCode == 503 { throw APIError.misconfigured(message) }
-        // Sign-in errors (wrong password, too many attempts) are written for people; show them as they are.
-        if accountForm, (400..<500).contains(http.statusCode) { throw APIError.network(message) }
-        throw APIError.server(http.statusCode, message)
+        let error = Self.error(status: http.statusCode, message: (try? JSONDecoder().decode(ErrorBody.self, from: data))?.error, path: path)
+        if case .signInRequired = error { SessionStore.clear() }
+        throw error
+    }
+
+    /// The error for a refused request to `path`, from its status and the server's message (nil when it sent none).
+    static func error(status: Int, message serverMessage: String?, path: String) -> APIError {
+        let said = serverMessage ?? ""
+        let message = said.isEmpty ? HTTPURLResponse.localizedString(forStatusCode: status) : said
+        // A 401 from the sign-in itself is a wrong password. Anywhere else the session is gone, changing the password
+        // included: that route needs a session.
+        let signInForm = path == "/auth/login" || path == "/auth/invite"
+        if status == 401, !signInForm { return .signInRequired }
+        if status == 503 { return .misconfigured(message) }
+        // Account forms' errors (wrong password, too many attempts) are written for people; show them as they are.
+        let accountForm = signInForm || path == "/auth/password"
+        if accountForm, (400..<500).contains(status) { return .network(message) }
+        return .server(status, said)
     }
 
     func getJSON<T: Decodable>(_ path: String) async throws -> T { try await get(path) }
