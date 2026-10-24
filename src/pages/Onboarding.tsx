@@ -3,14 +3,29 @@
 // Edit preferences) runs the same steps again, prefilled and without the onboarding marker, and returns to Profile.
 // Nothing on the server waits for it: the API and the iPhone app work the same before, during and after.
 import { useEffect, useRef, useState, type FormEvent, type RefObject } from 'react';
+import type { AiStatus } from '../../shared/ai.ts';
 import { PEER_MIN_AGE, PEER_MIN_DAYS, PEER_MIN_OTHERS, PEER_WINDOW_DAYS } from '../../shared/peers.ts';
 import type { PortraitList } from '../../shared/portraits.ts';
 import type { FigureVariant, Gender, OnboardingStep, Perspective, PhotoMeta, Status } from '../../shared/types.ts';
+import { useDrawnVariant } from '../components/Figure.tsx';
 import { Icon } from '../components/Icon.tsx';
 import { WelcomeFoot, WelcomeShell } from '../components/WelcomeShell.tsx';
-import { getJson, href, notifyDataChanged, sendJson, signOut } from '../lib.ts';
+import { getJson, href, notifyDataChanged, sendJson, signOut, useApi } from '../lib.ts';
 import { shrinkReference, uploadReference } from '../portraits.ts';
-import { type Answers, type Mode, answersFrom, canJoinPeers, choosesFigure, figureOf, parseAge, preview, startStep, stepSave } from './onboardingFlow.ts';
+import {
+  type Answers,
+  type Mode,
+  answersFrom,
+  canJoinPeers,
+  choosesFigure,
+  figureOf,
+  forwardSave,
+  parseAge,
+  portraitNext,
+  preview,
+  startStep,
+  stepsLeft,
+} from './onboardingFlow.ts';
 import '../styles/onboarding.css';
 
 const STEPS: { n: OnboardingStep; label: string; title: string; lede: string; hint: string }[] = [
@@ -42,6 +57,8 @@ export function Onboarding({ status, reload, signedIn, mode }: { status: Status;
   const reference = useReferencePhoto();
   const heading = useRef<HTMLHeadingElement>(null);
   const ageInput = useRef<HTMLInputElement>(null);
+  // Sent back to step 2 for its age: the field gets focus once it's there, not the heading.
+  const focusAge = useRef(false);
   const shown = useRef(step);
   const meta = STEPS[step - 1];
   const set = (patch: Partial<Answers>) => setAnswers((a) => ({ ...a, ...patch }));
@@ -50,22 +67,33 @@ export function Onboarding({ status, reload, signedIn, mode }: { status: Status;
   useEffect(() => {
     if (shown.current === step) return;
     shown.current = step;
-    heading.current?.focus();
     window.scrollTo({ top: 0 });
+    if (focusAge.current) {
+      focusAge.current = false;
+      ageInput.current?.focus();
+    } else heading.current?.focus();
   }, [step]);
 
-  /** Back keeps what's chosen here (saved when the person moves forward again); forward saves this step first. */
+  /**
+   * Back keeps what's chosen here (saved when the person moves forward again); forward saves every step it leaves
+   * behind in one go, so a tab that jumps past step 2 still saves its answers, and first asks for its age.
+   */
   async function go(to: OnboardingStep | 'done') {
     setError(null);
     if (to !== 'done' && to < step) return setStep(to);
-    if (step === 2 && parseAge(answers.age) === null) {
+    const target = to === 'done' ? null : to;
+    if (stepsLeft(step, target).includes(2) && parseAge(answers.age) === null) {
       setAgeError(true);
-      ageInput.current?.focus();
+      if (step === 2) ageInput.current?.focus();
+      else {
+        focusAge.current = true;
+        setStep(2);
+      }
       return;
     }
     setBusy(true);
     try {
-      await sendJson('PUT', '/settings', stepSave(step, answers, mode, to === 'done' ? null : to));
+      await sendJson('PUT', '/settings', forwardSave(step, answers, mode, target));
     } catch (e) {
       setBusy(false);
       return setError((e as Error).message);
@@ -122,7 +150,7 @@ export function Onboarding({ status, reload, signedIn, mode }: { status: Status;
           <p className="onb-lede">{meta.lede}</p>
         </div>
 
-        {step === 1 && <PerspectiveStep answers={answers} set={set} reference={reference} />}
+        {step === 1 && <PerspectiveStep answers={answers} set={set} reference={reference} hasPhoto={Boolean(status.photo)} />}
         {step === 2 && (
           <AboutStep
             answers={answers}
@@ -200,11 +228,11 @@ function StepTabs({ step, furthest, busy, onOpen }: { step: OnboardingStep; furt
 
 const VIEWS: { id: Perspective; title: string; text: string }[] = [
   { id: 'portrait', title: 'Your own portrait', text: 'Your likeness, rendered in the healthOS style from a photo.' },
-  { id: 'digital', title: 'Digital human', text: 'A modern Vitruvian figure. Woman and man versions, no photo needed.' },
+  { id: 'digital', title: 'Digital human', text: 'A modern Vitruvian figure, no photo needed.' },
   { id: 'stats', title: 'Just the statistics', text: 'Your measurements take the whole stage.' },
 ];
 
-function PerspectiveStep({ answers, set, reference }: { answers: Answers; set: (p: Partial<Answers>) => void; reference: ReferencePhoto }) {
+function PerspectiveStep({ answers, set, reference, hasPhoto }: { answers: Answers; set: (p: Partial<Answers>) => void; reference: ReferencePhoto; hasPhoto: boolean }) {
   return (
     <>
       {/* Native radios: the arrow keys move between the cards and choose, as in any radio group. */}
@@ -233,15 +261,17 @@ function PerspectiveStep({ answers, set, reference }: { answers: Answers; set: (
           </label>
         ))}
       </div>
-      {answers.perspective === 'portrait' && <ReferenceRow reference={reference} />}
+      {answers.perspective === 'portrait' && <ReferenceRow reference={reference} hasPhoto={hasPhoto} />}
     </>
   );
 }
 
-function ReferenceRow({ reference }: { reference: ReferencePhoto }) {
+function ReferenceRow({ reference, hasPhoto }: { reference: ReferencePhoto; hasPhoto: boolean }) {
   const input = useRef<HTMLInputElement>(null);
   const { photo, note, earlier, choose, remove } = reference;
   const saving = photo?.state === 'saving';
+  const { data: ai } = useApi<AiStatus>('/ai');
+  const next = portraitNext(ai, hasPhoto);
   return (
     <div className="onb-reference">
       <div className="onb-reference-row">
@@ -283,8 +313,7 @@ function ReferenceRow({ reference }: { reference: ReferencePhoto }) {
         </div>
       </div>
       <p className="onb-reference-after">
-        After saving, open the portrait studio in your Profile to generate and review your likeness with an OpenAI key (connect your own there). Your photo stays
-        private; it is not displayed on your dashboard. You can do this later.
+        {next && `${next} `}Your photo stays private; it is not displayed on your dashboard. You can do this later.
       </p>
     </div>
   );
@@ -373,8 +402,9 @@ function AboutStep({
   ageError: boolean;
   onAge: (age: string) => void;
 }) {
-  const card = preview(answers, Boolean(photo));
   const variant = figureOf(answers);
+  // The title names the figure drawn: the man's until the woman's artwork is there, whichever is chosen.
+  const card = preview(answers, Boolean(photo), useDrawnVariant(variant));
   return (
     <div className="onb-about">
       <div className="onb-question">
@@ -485,8 +515,8 @@ function CommunityStep({ answers, set }: { answers: Answers; set: (p: Partial<An
         <div className="onb-peers-copy">
           <p className="onb-peers-title">A private place in the bigger picture.</p>
           <p className="onb-peers-text">
-            Compare {PEER_WINDOW_DAYS}-day averages within your age group, using the same measurement and source. Your name, photo and individual readings are never
-            displayed to other members.
+            Compare {PEER_WINDOW_DAYS}-day averages within your age group, using the same measurement and source. In comparisons, your name, photo and individual
+            readings are never shown to anyone else: others see only group figures.
           </p>
         </div>
       </div>
@@ -505,8 +535,8 @@ function CommunityStep({ answers, set }: { answers: Answers; set: (p: Partial<An
             Include me in anonymous peer comparisons
           </span>
           <span className="onb-consent-text" id="onb-consent-text">
-            Your readings contribute to group averages and percentiles. Results need at least {PEER_MIN_OTHERS} other participating people and {PEER_MIN_DAYS} recorded
-            days per person. You can leave anytime in Profile.
+            Your {PEER_WINDOW_DAYS}-day averages count toward the group's median and quartiles. Results need at least {PEER_MIN_OTHERS} other participating people
+            and {PEER_MIN_DAYS} recorded days per person. You can leave anytime in Profile.
           </span>
           {!adult && (
             <span className="onb-consent-why" id="onb-consent-why">
@@ -516,7 +546,8 @@ function CommunityStep({ answers, set }: { answers: Answers; set: (p: Partial<An
         </span>
       </label>
       <p className="onb-note">
-        A percentile describes your position in this healthOS group. A higher number does not necessarily mean better health. No public profiles or global health scores.
+        You see which quarter of this healthOS group your average sits in. Sitting higher in the group does not necessarily mean better health. No public profiles
+        or global health scores.
       </p>
     </>
   );

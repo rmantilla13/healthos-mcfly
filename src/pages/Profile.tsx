@@ -5,12 +5,12 @@
 import '../styles/profile.css';
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { AI_PROVIDERS, type AiStatus } from '../../shared/ai.ts';
-import { PEER_MIN_DAYS, PEER_MIN_OTHERS, type PeerData, type PeerMetric, peerPair } from '../../shared/peers.ts';
+import { PEER_BANDS, PEER_MIN_DAYS, PEER_MIN_OTHERS, type PeerBand, type PeerData, type PeerMetric, peerPair } from '../../shared/peers.ts';
 import type { PortraitList } from '../../shared/portraits.ts';
-import type { Settings, Status } from '../../shared/types.ts';
+import type { FigureVariant, Settings, Status } from '../../shared/types.ts';
 import { ChatbotSheet, OpenAIKeySheet } from '../components/ai/AiSheets.tsx';
 import { CardChoices, useOwnCardEditor } from '../components/CardChoices.tsx';
-import { figureVariant } from '../components/Figure.tsx';
+import { figureVariant, useDrawnVariant } from '../components/Figure.tsx';
 import { Icon, type IconName } from '../components/Icon.tsx';
 import { PortraitStudio } from '../components/portraits/PortraitStudio.tsx';
 import { Sheet } from '../components/Sheet.tsx';
@@ -27,14 +27,17 @@ const LINKED: Record<string, SheetKey> = { openai: 'openai', chatbot: 'chatbot' 
 
 export function Profile({ status, refresh, signedIn, params }: { status: Status; refresh: () => void; signedIn: boolean; params?: URLSearchParams }) {
   const [sheet, setSheet] = useState<SheetKey | null>(() => LINKED[params?.get('connect') ?? ''] ?? null);
-  // Once opened from a link, drop the query, so a refresh or Back doesn't open the sheet again.
+  // Once opened from a link, drop the query, so a refresh or Back doesn't open the sheet again. location.replace fires
+  // hashchange, so the router's params drop it too: Profile remounts when the name changes, and stale params would
+  // open the sheet again. The page stays Profile, so this one stays open.
   useEffect(() => {
-    if (params?.has('connect')) history.replaceState(null, '', `${location.pathname}${location.search}#/profile`);
+    if (params?.has('connect')) location.replace('#/profile');
   }, [params]);
   const [password, setPassword] = useState(false);
   const passwordId = useId();
   const { data: ai, reload: reloadAi } = useApi<AiStatus>('/ai');
   const s = status.settings;
+  const drawn = useDrawnVariant(figureVariant(s));
   const close = () => setSheet(null);
   const closeAi = () => {
     setSheet(null);
@@ -61,7 +64,7 @@ export function Profile({ status, refresh, signedIn, params }: { status: Status;
               </a>
             }
           >
-            <p>{perspectiveLine(s)}</p>
+            <p>{perspectiveLine(s, drawn)}</p>
             <p>{s.peerComparison ? 'Peer comparisons enabled.' : 'Peer comparisons off.'} Change your image, age or participation anytime.</p>
           </Row>
           <Row title="Chatbot" action={manage('chatbot', 'Manage chatbot AI')}>
@@ -94,7 +97,11 @@ export function Profile({ status, refresh, signedIn, params }: { status: Status;
             </p>
           </Row>
           <Row title="OpenAI · Nutrition & portraits" action={manage('openai', openai ? 'Manage AI key' : 'Connect AI key')}>
-            <p>Connect your own OpenAI API key for meal photos, descriptions and voice notes.</p>
+            <p>
+              {ai && !ai.byok
+                ? "For meal photos, descriptions, voice notes and portraits. Storing your own AI keys isn't set up on this server."
+                : 'Connect your own OpenAI API key for meal photos, descriptions, voice notes and portraits.'}
+            </p>
             {openai && <p className="profile-ok">Connected · key ending ••••{openai.last4}</p>}
           </Row>
           <Row
@@ -201,10 +208,9 @@ const NUMBERS_SEEN: Record<NonNullable<Settings['nutritionNumbers']>, string> = 
 
 const providerLabel = (p: string) => AI_PROVIDERS.find((x) => x.provider === p)?.label ?? p;
 
-/** "Digital man · 33 years": how Home and Body show you, and your age. */
-function perspectiveLine(s: Settings) {
-  const look =
-    s.perspective === 'digital' ? (figureVariant(s) === 'woman' ? 'Digital woman' : 'Digital man') : s.perspective === 'stats' ? 'Just the statistics' : 'Your portrait';
+/** "Digital man · 33 years": how Home and Body show you (the digital human as drawn, useDrawnVariant), and your age. */
+function perspectiveLine(s: Settings, drawn: FigureVariant) {
+  const look = s.perspective === 'digital' ? `Digital ${drawn}` : s.perspective === 'stats' ? 'Just the statistics' : 'Your portrait';
   return s.age != null ? `${look} · ${s.age} years` : `${look} · no age given`;
 }
 
@@ -512,7 +518,7 @@ function PeerBody() {
   if (error) return <p className="profile-bad">Couldn't load your comparison: {error.message}</p>;
   if (!data) return <p className="muted small">Loading…</p>;
   const fine = (
-    <p className="profile-fine">A percentile describes your position in this healthOS group. A higher number does not necessarily mean better health.</p>
+    <p className="profile-fine">Your result says which quarter of this healthOS group your average sits in. Sitting higher in the group does not necessarily mean better health.</p>
   );
   if (!data.participating) {
     return (
@@ -548,11 +554,13 @@ function PeerBody() {
   );
 }
 
-/** 62 → "62nd". */
-function ordinal(n: number) {
-  const teen = n % 100 >= 11 && n % 100 <= 13;
-  return `${n}${teen ? 'th' : ({ 1: 'st', 2: 'nd', 3: 'rd' } as Record<number, string>)[n % 10] ?? 'th'}`;
-}
+/** Where your average sits, from the group's rounded quartiles (shared/peers.ts, peerBand): a quarter, never a rank. */
+const BAND_LABEL: Record<PeerBand, string> = {
+  below_p25: "Below the group's 25th percentile",
+  p25_median: 'Between the 25th percentile and the median',
+  median_p75: 'Between the median and the 75th percentile',
+  above_p75: 'Above the 75th percentile',
+};
 
 function PeerRow({ m }: { m: PeerMetric }) {
   const pair = peerPair(m.metric, m.source);
@@ -568,14 +576,12 @@ function PeerRow({ m }: { m: PeerMetric }) {
         <h3>
           {pair?.label ?? m.metric} · {SOURCE_LABEL[m.source] ?? m.source}
         </h3>
-        {m.status === 'ready' && m.percentile !== undefined && m.group ? (
+        {m.status === 'ready' && m.band && m.group ? (
           <>
-            <p className="profile-peer-figure">
-              {ordinal(m.percentile)} percentile · group median {show(m.group.median)}
-            </p>
+            <p className="profile-peer-figure">{BAND_LABEL[m.band]}</p>
             {yours && <p>{yours}</p>}
             <p>
-              Middle half of the group {range(m.group.p25, m.group.p75)} · {m.group.size} people
+              Group median {show(m.group.median)} · middle half {range(m.group.p25, m.group.p75)} · {m.group.size} people
             </p>
           </>
         ) : m.status === 'not_enough_days' ? (
@@ -586,11 +592,13 @@ function PeerRow({ m }: { m: PeerMetric }) {
           <p>{yours && `${yours}. `}Waiting for enough people in your age group to compare with.</p>
         )}
       </div>
-      {m.status === 'ready' && m.percentile !== undefined && (
-        // The group's middle half is the 25th to 75th percentile by definition, so the band sits there; the dot is you.
+      {m.status === 'ready' && m.band && (
+        // The group's four quarters, equal by definition, the middle two its middle half; yours is lit. No dot: the
+        // answer says which quarter, not where in it.
         <div className="profile-peer-bar" aria-hidden="true">
-          <span className="profile-peer-band" />
-          <span className="profile-peer-dot" style={{ left: `${m.percentile}%` }} />
+          {PEER_BANDS.map((b) => (
+            <span key={b} className={`profile-peer-q${b === m.band ? ' is-you' : ''}`} />
+          ))}
         </div>
       )}
     </li>

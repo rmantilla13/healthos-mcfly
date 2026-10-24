@@ -1,5 +1,6 @@
 // The rules behind "Make this space yours" (Onboarding.tsx), kept apart from the page so they can be tested without a
 // browser: where a person starts, what each step saves, and what the preview card on step 2 says.
+import type { AiStatus } from '../../shared/ai.ts';
 import { PEER_MIN_AGE } from '../../shared/peers.ts';
 import type { FigureVariant, Gender, OnboardingStep, Perspective, Settings } from '../../shared/types.ts';
 
@@ -62,12 +63,45 @@ export function stepSave(step: OnboardingStep, a: Answers, mode: Mode, to: Onboa
   return body;
 }
 
-/** Step 2's preview card: what Home and Body will show, for the view chosen on step 1. */
-export function preview(a: Answers, hasPhoto: boolean): { eyebrow: string; title: string; text: string } {
-  const human = `Digital ${figureOf(a)}`;
+/** The steps a move forward leaves behind: from the one open up to the one it opens (all of them, to finish). */
+export function stepsLeft(from: OnboardingStep, to: OnboardingStep | null): OnboardingStep[] {
+  const steps: OnboardingStep[] = [];
+  for (let k = from; k < (to ?? 4); k++) steps.push(k as OnboardingStep);
+  return steps;
+}
+
+/**
+ * The one PUT for moving forward, by Continue or a step tab: every step left behind, merged. A tab can jump past a step
+ * whose answers were changed and not saved (Back saves nothing), and they'd be lost, or a stale age would switch peer
+ * comparisons off. The page checks the age first whenever step 2 is among them.
+ */
+export function forwardSave(from: OnboardingStep, a: Answers, mode: Mode, to: OnboardingStep | null): Record<string, unknown> {
+  return Object.assign({}, ...stepsLeft(from, to).map((k) => stepSave(k, a, mode, to)));
+}
+
+/**
+ * Step 2's preview card: what Home and Body will show, for the view chosen on step 1. `drawn` is the digital human the
+ * page can actually draw (useDrawnVariant): the man's, while the woman's artwork isn't there, whatever was chosen.
+ */
+export function preview(a: Answers, hasPhoto: boolean, drawn: FigureVariant): { eyebrow: string; title: string; text: string } {
+  const human = `Digital ${drawn}`;
   if (a.perspective === 'digital') return { eyebrow: 'Your digital human', title: human, text: 'A Vitruvian-inspired view for your Home and Body pages.' };
   if (a.perspective === 'stats') return { eyebrow: 'Your view', title: 'Just the statistics', text: 'Your Home and Body pages show your measurements, without a figure.' };
   return hasPhoto
     ? { eyebrow: 'Your view', title: 'Your portrait', text: 'Your Home and Body pages show the portrait from your photo.' }
     : { eyebrow: 'Your view', title: 'Your portrait', text: `Until your portrait is made, your Home and Body pages show the ${human.toLowerCase()}.` };
+}
+
+/**
+ * Step 1's line under the portrait's reference photo, true for this server (GET /api/ai): a portrait is made on the
+ * person's own OpenAI key, on one they can connect, on the server's, or not yet at all. Null while that's loading or
+ * couldn't load, so nothing untrue shows first.
+ */
+export function portraitNext(ai: Pick<AiStatus, 'byok' | 'portraits' | 'keys'> | undefined, hasPhoto: boolean): string | null {
+  if (!ai) return null;
+  const studio = 'After saving, open the portrait studio in your Profile to generate and review your likeness';
+  if (ai.keys.some((k) => k.provider === 'openai')) return `${studio} on your OpenAI key.`;
+  if (ai.byok) return `${studio} with an OpenAI key (connect your own there).`;
+  if (ai.portraits) return `${studio} on this healthOS server's OpenAI key.`;
+  return `Portraits aren't available on this server yet, so your Home and Body pages show ${hasPhoto ? 'your cut-out photo' : 'the digital human'} meanwhile.`;
 }
