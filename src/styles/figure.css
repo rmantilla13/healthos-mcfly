@@ -1,0 +1,41 @@
+/* ---------- the figure's callouts (src/components/Figure.tsx) ---------- */
+/* In the dark theme the digital human is pale and some labels sit right over its arms (near-white on light grey, about
+   1.8:1, worst on a phone), so each label gets a soft dark glass plate behind it. The plate is a ::before drawn outside
+   the label's box, so the label's size, which DigitalFigure measures to place it, and its place don't change. Only the
+   dark blocks below give it content: the light theme stays as designed. */
+.figure-digital .callout::before {
+  position: absolute;
+  /* Labels stacked on one side are 6px apart (DigitalFigure), so the plates keep a gap between them. */
+  inset: -1px -8px;
+  z-index: -1;
+  border-radius: 10px;
+  border: 1px solid var(--card-edge);
+  /* The dark page's own colour, nearly opaque, the arm showing through only as a soft shape: against its brightest
+     pixel the value is over 13:1 and the status line (--ink-3) over 4.5:1. */
+  background: rgba(14, 16, 14, 0.88);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .figure-digital .callout {
+    /* Keeps the plate behind the label's text but in front of the artwork. */
+    isolation: isolate;
+  }
+  :root:not([data-theme='light']) .figure-digital .callout::before {
+    content: '';
+  }
+}
+/* Forced dark (data-theme='dark' on <html>): the same as the block above. Change both together. */
+:root[data-theme='dark'] .figure-digital .callout {
+  isolation: isolate;
+}
+:root[data-theme='dark'] .figure-digital .callout::before {
+  content: '';
+}
+@media (prefers-reduced-transparency: reduce) {
+  .figure-digital .callout::before {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--page);
+  }
+}

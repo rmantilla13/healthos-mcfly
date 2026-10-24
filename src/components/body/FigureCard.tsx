@@ -1,31 +1,10 @@
 // Body's figure card: the figure in the perspective the person chose (their portrait, or the digital woman or man),
 // with blood oxygen, breathing and heart pointing at it, a caption that says what it is (artwork, not a scan; a
 // portrait, not a measurement), and a way to change it (onboarding, in its edit mode). 'stats' has no card at all.
-import { useEffect, useState } from 'react';
 import type { FigureVariant, Perspective, PhotoMeta, Summary } from '../../../shared/types.ts';
 import { href } from '../../lib.ts';
-import { Figure } from '../Figure.tsx';
+import { Figure, useDrawnVariant } from '../Figure.tsx';
 import { Icon } from '../Icon.tsx';
-
-/** The woman's render, as in Figure.tsx's ART table. Until it's there the figure falls back to the man's. */
-const WOMAN_SRC = '/figures/digital-woman.webp';
-
-/** The digital human actually drawn: the woman only once her file loads (Figure falls back to the man without it). */
-function useDrawnVariant(variant: FigureVariant): FigureVariant {
-  const [woman, setWoman] = useState<boolean | null>(null);
-  useEffect(() => {
-    if (variant !== 'woman') return;
-    let alive = true;
-    const img = new Image();
-    img.onload = () => alive && setWoman(true);
-    img.onerror = () => alive && setWoman(false);
-    img.src = WOMAN_SRC;
-    return () => {
-      alive = false;
-    };
-  }, [variant]);
-  return variant === 'woman' && woman ? 'woman' : 'man';
-}
 
 export function FigureCard({ s, photo, perspective, figure }: { s: Summary; photo: PhotoMeta | null; perspective: Perspective; figure: FigureVariant }) {
   const drawn = useDrawnVariant(figure);

@@ -1,7 +1,8 @@
 // The figure beside your vitals, in the perspective you chose (Settings.perspective): your own photo ('portrait'), a
 // digital human ('digital', a woman or a man), or none at all ('stats'). Each callout points at its place on the body
 // (forehead or wrist, throat, shoulder, chest) with the latest reading, animated by it.
-import { type CSSProperties, type Ref, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import '../styles/figure.css';
+import { type CSSProperties, type Ref, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { FigureVariant, Perspective, PhotoMeta, Settings, Summary, Vital } from '../../shared/types.ts';
 import { useWidth } from '../charts/core.tsx';
 import { fmt, fmtDate, temp, useUnits } from '../lib.ts';
@@ -547,6 +548,34 @@ const ART: Record<FigureVariant, Art> = {
   // Until the woman's render arrives it uses the man's places; the file itself falls back to the man's (DigitalFigure).
   woman: { ...MAN, src: '/figures/digital-woman.webp' },
 };
+
+/** Whether the woman's file loaded, once anything asked: null until then. Kept while the page is open, so later labels don't flicker. */
+let womanLoads: boolean | null = null;
+
+/**
+ * The digital human actually drawn for `variant`: the woman only once her file loads, as DigitalFigure falls back to the
+ * man without it. Every label that names the figure uses this, so none says "woman" over the man's artwork, and
+ * dropping her file into public/figures/ makes them all say so.
+ */
+export function useDrawnVariant(variant: FigureVariant): FigureVariant {
+  const [woman, setWoman] = useState(womanLoads);
+  useEffect(() => {
+    if (variant !== 'woman' || womanLoads !== null) return;
+    let alive = true;
+    const img = new Image();
+    const done = (ok: boolean) => {
+      womanLoads = ok;
+      if (alive) setWoman(ok);
+    };
+    img.onload = () => done(true);
+    img.onerror = () => done(false);
+    img.src = ART.woman.src;
+    return () => {
+      alive = false;
+    };
+  }, [variant]);
+  return variant === 'woman' && woman ? 'woman' : 'man';
+}
 
 /**
  * The digital human: the artwork for `variant`, falling back to the man's when that file is missing, and to the drawn

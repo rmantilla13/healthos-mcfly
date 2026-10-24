@@ -2,26 +2,23 @@
 /* Cards of rows (a title and a muted line or two, a quiet pill on the right, hairlines between), two cards that open
    in place, and the settings that open in sheets. */
 :root {
-  /* The age-group comparison's bar: a track, the group's middle half, and you. */
+  /* The age-group comparison's bar: the group's outer quarters, its middle half, and the quarter you're in. */
   --peer-track: #ecebe6;
   --peer-band: #cbe0c0;
-  --peer-dot: #3d5a49;
-  --peer-dot-ring: #ffffff;
+  --peer-you: #3d5a49;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
     --peer-track: #2c2c2a;
     --peer-band: #34503f;
-    --peer-dot: #b5d1bb;
-    --peer-dot-ring: #1a1c1a;
+    --peer-you: #b5d1bb;
   }
 }
 /* Forced dark (data-theme='dark'): the same values as the block above. Change both together. */
 :root[data-theme='dark'] {
   --peer-track: #2c2c2a;
   --peer-band: #34503f;
-  --peer-dot: #b5d1bb;
-  --peer-dot-ring: #1a1c1a;
+  --peer-you: #b5d1bb;
 }
 
 .page.profile-page {
@@ -221,28 +218,25 @@
   color: var(--accent-text);
   font-weight: 500;
 }
+/* Four equal quarters, as quartiles make them: the outer two the track, the middle two the group's middle half, and
+   yours lit whole, since the answer says which quarter and not where in it. */
 .profile-peer-bar {
-  position: relative;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 3px;
   height: 6px;
-  margin: auto 5px 4px;
+  margin: auto 0 4px;
+}
+.profile-peer-q {
   border-radius: var(--r-pill);
   background: var(--peer-track);
 }
-.profile-peer-band {
-  position: absolute;
-  inset: 0 25%;
-  border-radius: var(--r-pill);
+.profile-peer-q:nth-child(2),
+.profile-peer-q:nth-child(3) {
   background: var(--peer-band);
 }
-.profile-peer-dot {
-  position: absolute;
-  top: 50%;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: var(--peer-dot);
-  box-shadow: 0 0 0 2px var(--peer-dot-ring);
-  transform: translate(-50%, -50%);
+.profile-peer-q.is-you {
+  background: var(--peer-you);
 }
 
 /* Use a photo as is, under the portrait studio. */

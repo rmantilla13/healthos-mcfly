@@ -1,9 +1,10 @@
 // The onboarding page's rules (src/pages/onboardingFlow.ts): where a person starts, what each step saves (and that
-// editing from Profile never writes the onboarding marker), the age it takes, and the step 2 preview card.
+// editing from Profile never writes the onboarding marker), what a step tab that jumps ahead saves, the age it takes,
+// step 1's portrait line and the step 2 preview card.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Settings } from '../shared/types.ts';
-import { type Answers, answersFrom, canJoinPeers, figureOf, parseAge, preview, startStep, stepSave } from '../src/pages/onboardingFlow.ts';
+import { type Answers, answersFrom, canJoinPeers, figureOf, forwardSave, parseAge, portraitNext, preview, startStep, stepSave, stepsLeft } from '../src/pages/onboardingFlow.ts';
 
 const answers = (a: Partial<Answers> = {}): Answers => ({ perspective: 'portrait', gender: null, figure: null, age: '', peer: false, ...a });
 
@@ -44,6 +45,24 @@ test('editing from Profile never touches the onboarding marker', () => {
   for (const step of [1, 2, 3] as const) assert.equal('onboarding' in stepSave(step, answers({ age: '40' }), 'edit', null), false);
 });
 
+test('a step tab that jumps ahead saves every step it passes, in one request', () => {
+  // Step 2 edited, Back to step 1 (nothing saved), then the 03 tab: the gender and age are saved with step 1's view.
+  const a = answers({ perspective: 'digital', gender: 'man', age: '40', peer: true });
+  assert.deepEqual(stepsLeft(1, 3), [1, 2]);
+  assert.deepEqual(forwardSave(1, a, 'edit', 3), { perspective: 'digital', gender: 'man', figure: null, age: 40 });
+  assert.deepEqual(forwardSave(1, a, 'new', 3), { perspective: 'digital', gender: 'man', figure: null, age: 40, onboarding: 3 });
+  // Continue saves only the step it leaves, and finishing from step 3 only step 3.
+  assert.deepEqual(stepsLeft(1, 2), [1]);
+  assert.deepEqual(forwardSave(1, a, 'edit', 2), { perspective: 'digital' });
+  assert.deepEqual(stepsLeft(3, null), [3]);
+  assert.deepEqual(forwardSave(3, a, 'edit', null), { peerComparison: true });
+  // From step 2 to finish (never a tab today, but the same rule): steps 2 and 3, the age before the switch.
+  assert.deepEqual(forwardSave(2, a, 'new', null), { gender: 'man', figure: null, age: 40, peerComparison: true, onboarding: null });
+  // Step 2 is among the steps a jump from 1 to 3 leaves, so the page asks for the age before it saves.
+  assert.ok(stepsLeft(1, 3).includes(2));
+  assert.ok(!stepsLeft(1, 2).includes(2));
+});
+
 test('taking part is only ever sent on with an adult age', () => {
   assert.equal(stepSave(3, answers({ age: '16', peer: true }), 'new', null).peerComparison, false);
   assert.equal(stepSave(3, answers({ age: '', peer: true }), 'edit', null).peerComparison, false);
@@ -58,10 +77,29 @@ test('the digital human follows Woman and Man, and is chosen for any other answe
   assert.equal(figureOf({ gender: null, figure: null }), 'man');
 });
 
-test('the preview card says what Home will show', () => {
-  assert.equal(preview(answers({ perspective: 'digital', gender: 'woman' }), false).title, 'Digital woman');
-  assert.equal(preview(answers({ perspective: 'digital' }), false).eyebrow, 'Your digital human');
-  assert.equal(preview(answers({ perspective: 'stats' }), true).title, 'Just the statistics');
-  assert.match(preview(answers({ gender: 'man' }), false).text, /Until your portrait is made.*digital man/);
-  assert.doesNotMatch(preview(answers(), true).text, /Until/);
+test('the preview card says what Home will show, naming the figure actually drawn', () => {
+  assert.equal(preview(answers({ perspective: 'digital', gender: 'woman' }), false, 'woman').title, 'Digital woman');
+  // The woman's artwork isn't there yet, so the man's is drawn, and that's what it's called.
+  assert.equal(preview(answers({ perspective: 'digital', gender: 'woman' }), false, 'man').title, 'Digital man');
+  assert.match(preview(answers({ gender: 'nonbinary', figure: 'woman' }), false, 'man').text, /Until your portrait is made.*digital man/);
+  assert.equal(preview(answers({ perspective: 'digital' }), false, 'man').eyebrow, 'Your digital human');
+  assert.equal(preview(answers({ perspective: 'stats' }), true, 'man').title, 'Just the statistics');
+  assert.match(preview(answers({ gender: 'man' }), false, 'man').text, /Until your portrait is made.*digital man/);
+  assert.doesNotMatch(preview(answers(), true, 'man').text, /Until/);
+});
+
+test("step 1's portrait line says where a portrait is made on this server, and nothing until it knows", () => {
+  const key = { provider: 'openai' as const, last4: '1234', model: null, addedAt: 1, lastUsedAt: null, lastError: null };
+  assert.equal(portraitNext(undefined, false), null);
+  assert.match(portraitNext({ byok: true, portraits: true, keys: [key] }, false) ?? '', /on your OpenAI key\.$/);
+  assert.match(portraitNext({ byok: true, portraits: false, keys: [] }, false) ?? '', /connect your own there/);
+  // The server's key, and no way to store one's own: no connect clause.
+  const shared = portraitNext({ byok: false, portraits: true, keys: [] }, false) ?? '';
+  assert.match(shared, /this healthOS server's OpenAI key/);
+  assert.doesNotMatch(shared, /connect/);
+  // Neither: no promise of a portrait studio that can't make one.
+  const none = portraitNext({ byok: false, portraits: false, keys: [] }, false) ?? '';
+  assert.match(none, /aren't available on this server yet.*the digital human meanwhile/);
+  assert.doesNotMatch(none, /OpenAI|connect/);
+  assert.match(portraitNext({ byok: false, portraits: false, keys: [] }, true) ?? '', /your cut-out photo meanwhile/);
 });

@@ -5,10 +5,11 @@
 //
 // For each measurement and source the viewer has in their last 30 days, the group is everyone else taking part in the
 // viewer's age band with at least 7 days of that same measurement from that same source in the same window. Results
-// need at least 20 of them, and the answer carries only the viewer's percentile and the group's rounded quartiles and
-// size bucket: never ids, names, counts below 20 or anyone else's own value.
+// need at least 20 of them, and the answer carries only the group's rounded quartiles and size bucket, and which quarter
+// the viewer sits in by those rounded figures: never ids, names, counts or anyone else's own value. The viewer is never
+// in their own group, so nothing they change in their own readings moves the group's figures.
 import express from 'express';
-import { PEER_MIN_AGE, PEER_MIN_DAYS, PEER_MIN_OTHERS, PEER_PAIRS, PEER_WINDOW_DAYS, type PeerData, type PeerMetric, ageBand } from '../shared/peers.ts';
+import { PEER_MIN_AGE, PEER_MIN_DAYS, PEER_MIN_OTHERS, PEER_PAIRS, PEER_WINDOW_DAYS, type PeerData, type PeerMetric, ageBand, peerBand } from '../shared/peers.ts';
 import { authMode, currentUser } from './auth.ts';
 import { addDays } from './dates.ts';
 import type { Db } from './db.ts';
@@ -72,27 +73,21 @@ function quantile(sorted: number[], p: number) {
   return sorted[lo] + (h - lo) * (sorted[hi] - sorted[lo]);
 }
 
-/** Where `you` sits in the group: the share below, ties counting half, 1–99 so nobody is ever "0" or "100". */
-export function percentileOf(you: number, group: number[]) {
-  const below = group.filter((v) => v < you).length;
-  const ties = group.filter((v) => v === you).length;
-  return Math.min(99, Math.max(1, Math.round((100 * (below + 0.5 * ties)) / group.length)));
-}
-
 const sizeBucket = (n: number) => (n >= 100 ? '100+' : n >= 50 ? '50+' : '20+') as '20+' | '50+' | '100+';
 
-/** One measurement's comparison, from the viewer's own average and the group's (unrounded) averages. */
+/**
+ * One measurement's comparison, from the viewer's own average and the others' (unrounded) averages. The viewer's place
+ * is a quarter, worked out from the rounded figures alone: a finer rank against everyone's exact averages would let
+ * someone who sets their own readings search out each other person's value, and the group's size, one step at a time.
+ */
 export function compare(metric: string, source: string, digits: number, own: Avg, group: number[]): PeerMetric {
-  const base = { metric, source, you: round(own.avg, digits), yourDays: own.days };
+  const you = round(own.avg, digits);
+  const base = { metric, source, you, yourDays: own.days };
   if (own.days < PEER_MIN_DAYS) return { ...base, status: 'not_enough_days' };
   if (group.length < PEER_MIN_OTHERS) return { ...base, status: 'gathering' };
   const sorted = [...group].sort((a, b) => a - b);
-  return {
-    ...base,
-    status: 'ready',
-    percentile: percentileOf(own.avg, sorted),
-    group: { size: sizeBucket(sorted.length), median: round(quantile(sorted, 0.5), digits), p25: round(quantile(sorted, 0.25), digits), p75: round(quantile(sorted, 0.75), digits) },
-  };
+  const quartiles = { median: round(quantile(sorted, 0.5), digits), p25: round(quantile(sorted, 0.25), digits), p75: round(quantile(sorted, 0.75), digits) };
+  return { ...base, status: 'ready', band: peerBand(you, quartiles), group: { size: sizeBucket(sorted.length), ...quartiles } };
 }
 
 // ---------- the local preview's sample group ----------

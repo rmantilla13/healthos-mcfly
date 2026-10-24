@@ -1,6 +1,7 @@
 // Anonymous peer comparisons (GET /api/peers): results only for someone taking part, only against 20 or more other
 // people taking part in the same age band with 7 days of the same measurement from the same source, and never an id,
-// a name or anyone else's own value. Everyone here is made up and inserted by SQL.
+// a name, anyone else's own value, or a place finer than the rounded quartiles give. Everyone here is made up and
+// inserted by SQL.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { AddressInfo } from 'node:net';
@@ -8,7 +9,8 @@ import { createApp } from '../server/app.ts';
 import { hashPassword } from '../server/auth.ts';
 import { addDays, todayLocal } from '../server/dates.ts';
 import { OWNER_ID, type Db, setUserSetting, upsertDaily } from '../server/db.ts';
-import { compare, peerComparison, percentileOf } from '../server/peers.ts';
+import { compare, peerComparison } from '../server/peers.ts';
+import { peerBand } from '../shared/peers.ts';
 import { openStore } from '../server/store.ts';
 
 process.env.SESSION_SECRET = 'peers-test-secret-'.padEnd(64, 'x');
@@ -78,7 +80,7 @@ test('19 others is still gathering, and only people who qualify count', async ()
   assert.deepEqual(r.window, { from: addDays(today, -29), to: today });
   const rhr = peers(r);
   assert.equal(rhr.status, 'gathering');
-  assert.equal(rhr.percentile, undefined);
+  assert.equal(rhr.band, undefined);
   assert.equal(rhr.group, undefined);
   assert.equal(rhr.you, 58);
   assert.equal(rhr.yourDays, 30);
@@ -106,16 +108,37 @@ test('with 20 others the comparison is ready, and the answer has no ids, names o
   const res = await call('GET', '/api/peers');
   const rhr = peers(res.json);
   assert.equal(rhr.status, 'ready');
-  // 58 sits above p01–p06 (51.2 … 57.4) and below the rest: 6 of 20.
-  assert.equal(rhr.percentile, 30);
   assert.equal(rhr.group.size, '20+');
   // The median of 20 is halfway between the 10th and 11th, rounded to whole bpm as the metric is shown.
   assert.equal(rhr.group.median, Math.round((value(10) + value(11)) / 2));
-  assert.ok(rhr.group.p25 <= rhr.group.median && rhr.group.median <= rhr.group.p75);
+  assert.deepEqual(rhr.group, { size: '20+', p25: 57, median: 63, p75: 69 });
+  // 58 is between the rounded 25th percentile (57) and median (63), and that quarter is all the answer says.
+  assert.equal(rhr.band, 'p25_median');
+  assert.equal('percentile' in rhr, false);
   for (let i = 1; i <= 20; i++) assert.ok(!res.text.includes(String(value(i))), `no one's own average (${value(i)})`);
   for (const id of ['p01', 'p20', 'six-days', 'whoop-only', 'older', 'not-in', 'disabled']) assert.ok(!res.text.includes(id), `no id (${id})`);
   assert.ok(!res.text.includes('example.com') && !res.text.includes('Name p'), 'no emails or names');
   assert.ok(!/"(?:n|count|users?|ids?)"/.test(res.text), 'no counts or id lists');
+});
+
+test('the viewer is not in their own group, and moving their own average within a quarter changes nothing else', async () => {
+  const at = async (v: number) => {
+    await upsertDaily(db, OWNER_ID, days(30).map((date) => ({ date, metric: 'resting_hr', source: 'apple', value: v })));
+    return call('GET', '/api/peers');
+  };
+  const before = await at(58);
+  // Within the same rounded value: not one character of the answer changes.
+  assert.equal((await at(58.3)).text, before.text);
+  assert.equal((await at(57.6)).text, before.text);
+  // Within the same quarter: only the viewer's own average does.
+  const moved = peers((await at(61)).json);
+  assert.deepEqual({ ...moved, you: 58 }, peers(before.json));
+  // Far away: another quarter, and the group's figures are exactly as they were, as the viewer isn't one of them.
+  const far = peers((await at(90)).json);
+  assert.equal(far.band, 'above_p75');
+  assert.deepEqual(far.group, peers(before.json).group);
+  assert.equal(peers((await at(10)).json).band, 'below_p25');
+  await at(58);
 });
 
 test('opting out takes effect at once, and it is mutual', async () => {
@@ -174,19 +197,33 @@ test('the local demo owner gets a made-up group, flagged demo', async () => {
   assert.ok(r.participating);
   assert.equal(r.demo, true);
   assert.equal(r.metrics[0].status, 'ready');
-  assert.equal(r.metrics[0].percentile, 50);
+  // 60 is the sample's median, which counts in the quarter below it.
+  assert.equal(r.metrics[0].group?.median, 60);
+  assert.equal(r.metrics[0].band, 'p25_median');
   // Never hosted.
   const hosted = await peerComparison(fresh, true, OWNER_ID);
   assert.ok(hosted.participating && !hosted.demo && hosted.metrics.length === 0);
   await fresh.close();
 });
 
-test('percentiles count ties as half and stay within 1–99; quartiles interpolate', () => {
-  assert.equal(percentileOf(5, [1, 2, 3, 4, 5, 5, 6, 7, 8, 9]), 50);
-  assert.equal(percentileOf(0, [1, 2, 3]), 1);
-  assert.equal(percentileOf(10, [1, 2, 3]), 99);
+test('quarters: equal to a quartile is inside the middle half, and at the median in its lower quarter', () => {
+  const g = { p25: 6, median: 11, p75: 15 };
+  assert.equal(peerBand(5.9, g), 'below_p25');
+  assert.equal(peerBand(6, g), 'p25_median');
+  assert.equal(peerBand(11, g), 'p25_median');
+  assert.equal(peerBand(11.1, g), 'median_p75');
+  assert.equal(peerBand(15, g), 'median_p75');
+  assert.equal(peerBand(15.1, g), 'above_p75');
+  // Quartiles that round to one value: never "above the 75th" for a value equal to it.
+  assert.equal(peerBand(97, { p25: 97, median: 97, p75: 97 }), 'p25_median');
+});
+
+test('the quarter comes from the rounded figures shown, and quartiles interpolate', () => {
   const group = Array.from({ length: 20 }, (_, i) => i + 1);
   const r = compare('steps', 'apple', 0, { avg: 15.2, days: 9 }, group);
   assert.deepEqual(r.group, { size: '20+', median: 11, p25: 6, p75: 15 });
+  // Shown as 15, the rounded p75: inside the middle half, as the numbers on screen say.
+  assert.equal(r.you, 15);
+  assert.equal(r.band, 'median_p75');
   assert.equal(compare('steps', 'apple', 0, { avg: 1, days: 9 }, Array.from({ length: 50 }, (_, i) => i)).group?.size, '50+');
 });
