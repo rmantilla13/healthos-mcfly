@@ -207,7 +207,7 @@ Nutrition (`#/nutrition`) is off until a person turns it on and chooses how much
 
 ## Peer comparisons
 
-Profile → Your age-group comparison (`GET /api/peers`, `server/peers.ts`) needs sign-in, the person's own opt-in and an age of 18 or over. It compares 30-day averages for the same metric from the same source within an age band, and shows results only when at least 20 other participants each have 7 recorded days; only percentiles and rounded quartiles leave the server. At family scale it will mostly say there aren't enough people yet. Locally, the demo owner sees a made-up sample group.
+Profile → Your age-group comparison (`GET /api/peers`, `server/peers.ts`) needs sign-in, the person's own opt-in and an age of 18 or over. It compares 30-day averages for the same metric from the same source within an age band, and shows results only when at least 20 other participants each have 7 recorded days; only the group's rounded quartiles, a size range, and which quarter the person's own average falls in leave the server (never a fine percentile, which repeated queries could turn into other people's values). At family scale it will mostly say there aren't enough people yet. Locally, the demo owner sees a made-up sample group.
 
 ## Cycle tracking
 
