@@ -99,8 +99,12 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         // Before launch finishes, so a tap that launches the app still reaches didReceive.
         UNUserNotificationCenter.current().delegate = self
         #if targetEnvironment(simulator)
-        // Scripted runs: `xcrun simctl launch booted health.mcfly.sync -healthosToken <token>`.
-        if let token = UserDefaults.standard.string(forKey: "healthosToken") { Config.token = token }
+        // Scripted runs: `xcrun simctl launch booted health.mcfly.sync -healthosToken <token>`. As if pasted while signed
+        // out: whoever signs in next is its owner, and nothing of an earlier run's owner or pause is kept.
+        if let token = UserDefaults.standard.string(forKey: "healthosToken") {
+            Config.token = token
+            Config.ingestOwner = IngestTokenOwner(claim: .nextSignIn)
+        }
         #endif
         // HealthKit relaunches the app in the background for new data; the observer queries have to be
         // registered again before launch finishes, or that delivery is missed.

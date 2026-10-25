@@ -483,10 +483,19 @@ actor SyncEngine {
         return !state.backfill.isEmpty
     }
 
-    /// Every push goes through `SyncState.push`, which leaves out rows the server wouldn't take.
+    /// Every push goes through `SyncState.push`, which leaves out rows the server wouldn't take. A sync sends many
+    /// pushes; one about to go after a sign-out, or after its token was removed or replaced, stops it instead, and
+    /// the days left stay queued for the next sync.
     @discardableResult
     private func push(_ payload: IngestPayload, via client: IngestClient, state: inout SyncState) async throws -> (reply: IngestClient.Response, rows: Int) {
-        try await state.push(payload, send: client.send)
+        guard Self.maySend(with: client.token) else { throw SyncError("Stopped: signed out, or the ingest token changed, while this sync ran.") }
+        return try await state.push(payload, send: client.send)
+    }
+
+    /// A push may still go with `token`, the one its sync started with: the sync isn't paused (IngestTokenOwner), and
+    /// the token here is still that one.
+    static func maySend(with token: String, owner: IngestTokenOwner = Config.ingestOwner, current: String = Config.token) -> Bool {
+        !owner.paused && current == token
     }
 
     private static func describe(_ error: Error) -> String {

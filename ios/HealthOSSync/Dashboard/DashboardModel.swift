@@ -47,7 +47,13 @@ final class Dashboard {
         case ready
     }
 
-    var phase: Phase = .starting
+    var phase: Phase = .starting {
+        didSet {
+            // Signed out however it happened (Sign out, a session that ran out or was ended elsewhere, none at launch):
+            // nothing of this phone's Health data goes up until someone signs in.
+            if phase == .signIn, oldValue != .signIn { ingestPaused(by: nil) }
+        }
+    }
     var summary: Summary?
     var status: ServerStatus?
     /// nil means today.
@@ -180,6 +186,7 @@ final class Dashboard {
             default: phase = .unavailable("Sign-in isn't set up on \(client.base.host ?? "the server") yet.")
             }
             // Signed in at launch (the first launch after an update included): a token with no known owner is theirs.
+            // Signed out, the sync is paused already (`phase`).
             checkIngestToken(signedInAs: account?.id)
         } catch is CancellationError {
             return
@@ -571,13 +578,14 @@ final class Dashboard {
 
     /// Someone is signed in as `id` (a sign-in, a new account, or a status read): the same account as the token's
     /// resumes the sync, anyone else's removes the token. On a server with accounts and no id yet, nothing changes
-    /// until a read says who it is. A server without sign-in never pauses.
+    /// until a read says who it is. A server without sign-in doesn't pause, unless the token is another server's.
     func checkIngestToken(signedInAs id: String?, newAccount: Bool = false) {
         guard phase == .ready else { return }
         switch authMode {
         case "open":
+            let here = server?.absoluteString ?? ""
             updateIngestOwner { owner, _ in
-                owner.noSignIn()
+                owner.noSignIn(on: here)
                 return false
             }
         case "required":
@@ -588,10 +596,13 @@ final class Dashboard {
         }
     }
 
-    /// Signing out: nothing of this phone's Health data goes up until someone signs in.
-    func ingestSignedOut() {
+    /// Signing out with the button: nothing of this phone's Health data goes up until someone signs in.
+    func ingestSignedOut() { ingestPaused(by: ingestAccount(account?.id ?? status?.user?.id)) }
+
+    /// Nobody is signed in on a server with sign-in: `who` signed out with the button, or (nil) the server says there's
+    /// no session. Never who a cached status names: that's who was signed in, not who holds the phone.
+    private func ingestPaused(by who: IngestTokenOwner.Account?) {
         guard authMode == "required" else { return }
-        let who = ingestAccount(account?.id ?? status?.user?.id)
         updateIngestOwner { owner, hasToken in
             owner.signedOut(who, hasToken: hasToken)
             return false

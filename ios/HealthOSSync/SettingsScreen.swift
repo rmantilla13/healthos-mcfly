@@ -136,7 +136,7 @@ private struct SyncSection: View {
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier("syncPaused")
             } else if dashboard.ingestOwner.setUpAgain, model.token.isEmpty {
-                Label("Someone else signed in, so this iPhone stopped sending Health data to the last account. Set this iPhone up again for your account in Integrations on the dashboard (Integrations → iPhone app), then paste the new token below.", systemImage: "exclamationmark.triangle")
+                Label("This iPhone's token may belong to another account, so it was removed and nothing more goes there. Set this iPhone up again for your account in Integrations on the dashboard (Integrations → iPhone app), then paste the new token below.", systemImage: "exclamationmark.triangle")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier("setUpAgain")
