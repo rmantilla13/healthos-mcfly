@@ -743,8 +743,9 @@ struct ServerStatus: Codable {
         /// Card ids (shared/cards.ts) this person hid. nil from servers older than card hiding.
         let hiddenCards: [String]?
         /// Optional cards (defaultHidden in shared/cards.ts) this person turned on. nil from servers older than
-        /// optional cards, where every card shows unless it's hidden.
-        let shownCards: [String]?
+        /// optional cards, where every card shows unless it's hidden. A var for SummaryCache, which fills it in for a
+        /// status cached by a build that didn't keep it.
+        var shownCards: [String]?
         /// How Home and Body show you: "portrait" | "digital" | "stats". nil from servers older than onboarding, which
         /// read it as "portrait".
         let perspective: String?

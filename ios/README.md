@@ -26,7 +26,7 @@ The app reads the same API as the website (`/api/summary`, `/api/trends`, `/api/
 - **Settings:**
   - server address and sign-in status;
   - the profile photo: **Change photo** picks one from Photos and cuts it out on the phone with Apple Vision, using the same steps as the Mac tool `server/photo/cutout.swift`. After a Save/Cancel preview it uploads to `POST /api/profile/photo/upload`;
-  - **Cards:** the web's card switches, one list for both. Optional cards are marked and stay off until turned on (the server's `shownCards`). **Show all** brings back every card you hid and leaves the optional ones as they are. A server older than optional cards sends no `shownCards`: there every card shows unless it's hidden, and Show all clears the whole list;
+  - **Cards:** the web's card switches, one list for both. Optional cards are marked and stay off until turned on (the server's `shownCards`). **Show all** brings back every card you hid and leaves the optional ones as they are. A server older than optional cards sends no `shownCards`: there every card shows unless it's hidden, Settings offers only the 33 cards that server knows (its sleep score hides sleep efficiency too), and Show all clears the whole list;
   - the Apple Health sync controls.
 
 Cards hide or switch to fit your sources, as on the web: no WHOOP means VO₂ max instead of recovery, active energy instead of strain, and HRV labelled SDNN.

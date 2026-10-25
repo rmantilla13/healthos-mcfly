@@ -1355,8 +1355,9 @@ final class CardHidingReviewTests: XCTestCase {
         XCTAssertEqual(Cards.hiddenOffered(["sleep.rhr", "future.card", "home.spo2", "nutrition.water"], nutrition: false),
                        ["home.spo2", "sleep.rhr"], "in the registry's order")
         XCTAssertEqual(Cards.hiddenOffered([], nutrition: true), [])
-        XCTAssertEqual(Cards.hiddenOffered(Set(Cards.all.map(\.id)), nutrition: true), Cards.all.map(\.id))
-        XCTAssertEqual(Cards.hiddenOffered(Set(Cards.all.map(\.id)), nutrition: false).count, 34)
+        // The optional cards are off, not hidden, so they don't count (CardVisibilityTests).
+        XCTAssertEqual(Cards.hiddenOffered(Set(Cards.all.map(\.id)), nutrition: true), Cards.all.filter { !$0.optional }.map(\.id))
+        XCTAssertEqual(Cards.hiddenOffered(Set(Cards.all.map(\.id)), nutrition: false).count, 29)
     }
 
     func testNutritionOverviewCardsFollowTheSetting() {

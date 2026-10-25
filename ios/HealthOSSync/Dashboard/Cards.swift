@@ -109,16 +109,27 @@ enum Cards {
     /// The optional cards (shared/cards.ts OPTIONAL_CARDS): off until the person turns them on.
     static let optional: Set<String> = Set(all.filter(\.optional).map(\.id))
 
+    /// The cards that came with the optional ones. A server older than optional cards (no shownCards, as on main)
+    /// doesn't know these ids and refuses a change to them, so Settings doesn't offer them there.
+    static let newerThanOlderServers: Set<String> = [
+        "home.rhr", "home.resp", "home.nutrition", "home.journal", "home.week", "sleep.efficiency", "body.figure", "body.story",
+    ]
+
     /// Whether a card shows (shared/cards.ts cardShown): an optional card only once it's turned on, any other unless
-    /// it's hidden. `shown` is nil from a server older than optional cards: there every card shows unless it's hidden.
+    /// it's hidden. `shown` is nil from a server older than optional cards: there every card shows unless it's hidden,
+    /// and sleep efficiency, which that server doesn't know, hides with the sleep score, as before it had its own card.
     static func shows(_ id: String, hidden: [String], shown: [String]?) -> Bool {
         if let shown, optional.contains(id) { return shown.contains(id) }
+        if shown == nil, id == "sleep.efficiency" { return !hidden.contains("sleep.score") }
         return !hidden.contains(id)
     }
 
     /// The cards that don't show, for the screens to leave out: the hidden ones, and the optional ones not turned on.
+    /// An optional card turned on shows even while it's still in the hidden list, as on the web. Hidden ids this app
+    /// doesn't know (a newer server's) are kept.
     static func off(hidden: [String], shown: [String]?) -> Set<String> {
-        Set(hidden).union(all.map(\.id).filter { !shows($0, hidden: hidden, shown: shown) })
+        let ids = all.map(\.id)
+        return Set(ids.filter { !shows($0, hidden: hidden, shown: shown) }).union(hidden.filter { !ids.contains($0) })
     }
 
     /// The hidden cards that are hidden from a default (shared/cards.ts hiddenDefaults). An optional card turned off is
@@ -151,20 +162,28 @@ enum Cards {
     /// Every one of these cards is off (and there is one).
     static func allHidden(_ ids: [String], hidden: Set<String>) -> Bool { !ids.isEmpty && visible(ids, hidden: hidden).isEmpty }
 
-    /// The cards Settings offers, by page: Nutrition's only to someone with it on, as on the web.
-    static func pages(nutrition: Bool) -> [CardGroup] {
+    /// The cards Settings offers, by page: Nutrition's only to someone with it on, as on the web. Without
+    /// `optionalCards` (a server older than them) only the cards that server knows.
+    static func pages(nutrition: Bool, optionalCards: Bool = true) -> [CardGroup] {
         CardPage.allCases.compactMap { page in
-            let cards = all.filter { $0.page == page && (nutrition || !$0.nutrition) }
+            let cards = all.filter { $0.page == page && (nutrition || !$0.nutrition) && (optionalCards || !newerThanOlderServers.contains($0.id)) }
             return cards.isEmpty ? nil : CardGroup(page: page, cards: cards)
         }
     }
 
+    /// A card's name in Settings. On a server older than optional cards the sleep score hides sleep efficiency too,
+    /// so it keeps the name it has there.
+    static func label(_ card: DashboardCard, optionalCards: Bool) -> String {
+        !optionalCards && card.id == "sleep.score" ? "Sleep score" : card.label
+    }
+
     /// The hidden cards Settings offers now, in the registry's order: no Nutrition card while Nutrition is off, no id
-    /// this app doesn't know (a newer server's), and, with `optionalCards`, no optional card (off by default, not
-    /// hidden). The Cards row counts these and Show all appears only for them, so the row never says "All shown"
-    /// beside a Show all whose switches are all on.
-    static func hiddenOffered(_ hidden: Set<String>, nutrition: Bool, optionalCards: Bool = false) -> [String] {
-        pages(nutrition: nutrition).flatMap(\.cards).map(\.id).filter { hidden.contains($0) && !(optionalCards && optional.contains($0)) }
+    /// this app or the server doesn't know, and, with `optionalCards`, no optional card (off by default, not hidden).
+    /// The Cards row counts these and Show all appears only for them, so the row never says "All shown" beside a
+    /// Show all whose switches are all on.
+    static func hiddenOffered(_ hidden: Set<String>, nutrition: Bool, optionalCards: Bool = true) -> [String] {
+        pages(nutrition: nutrition, optionalCards: optionalCards).flatMap(\.cards).map(\.id)
+            .filter { hidden.contains($0) && !(optionalCards && optional.contains($0)) }
     }
 
     /// The Nutrition overview's cards one setting shows (src/pages/Nutrition.tsx Overview), hidden ones left out.

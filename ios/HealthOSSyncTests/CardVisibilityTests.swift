@@ -77,9 +77,88 @@ final class CardVisibilityTests: XCTestCase {
         XCTAssertEqual(Cards.hiddenDefaults(hidden, optionalCards: false), hidden, "no optional cards on an older server")
         // The Settings row and Show all count the same: default cards offered there only.
         XCTAssertEqual(Cards.hiddenOffered(Set(hidden), nutrition: true, optionalCards: true), ["home.hrv", "sleep.rhr"])
-        XCTAssertEqual(Cards.hiddenOffered(Set(hidden), nutrition: true, optionalCards: false), ["home.hrv", "home.week", "home.food", "sleep.rhr"],
+        // On an older server every hidden card it knows counts. home.week isn't one of them: it came with the optional
+        // cards, so that server never stores it, and Settings doesn't offer it there.
+        XCTAssertEqual(Cards.hiddenOffered(Set(hidden), nutrition: true, optionalCards: false), ["home.hrv", "home.food", "sleep.rhr"],
                        "every hidden card on an older server, in the registry's order")
         XCTAssertEqual(Cards.hiddenOffered(["home.week", "home.load"], nutrition: false, optionalCards: true), [], "All shown, and no Show all")
+    }
+
+    /// main's shared/cards.ts, the registry of a server older than optional cards, in its order.
+    private let olderServerCards = [
+        "home.readiness", "home.spo2", "home.hrv", "home.sleep", "home.load", "home.activity", "home.food", "home.timeline", "home.insights",
+        "sleep.score", "sleep.total", "sleep.rhr", "sleep.stages", "sleep.insights", "sleep.timeline",
+        "body.rhr", "body.hrv", "body.strain", "body.recovery", "body.heart", "body.metrics", "body.energy", "body.steps", "body.workout",
+        "body.glucose", "body.composition", "body.biomarkers",
+        "nutrition.energy", "nutrition.protein", "nutrition.water", "nutrition.logged", "nutrition.macros", "nutrition.insights",
+    ]
+
+    func testAnOlderServerIsOfferedOnlyTheCardsItKnows() throws {
+        // It answers 400 to a change to any other card, and the switch would flip back with that error.
+        XCTAssertEqual(olderServerCards.count, 33)
+        let offered = Cards.pages(nutrition: true, optionalCards: false).flatMap(\.cards).map(\.id)
+        XCTAssertEqual(offered.count, 33)
+        XCTAssertEqual(Set(offered), Set(olderServerCards))
+        XCTAssertEqual(Set(Cards.all.map(\.id)).subtracting(olderServerCards), Cards.newerThanOlderServers, "the newer ones, and only those")
+        XCTAssertEqual(Cards.pages(nutrition: true).flatMap(\.cards).count, 41, "a current server is offered every card")
+
+        // There the sleep score still hides sleep efficiency too, as before it had its card, and keeps that server's name.
+        let d = try dashboard(hidden: ["sleep.score"], shown: nil)
+        XCTAssertFalse(d.cardShown("sleep.efficiency"))
+        XCTAssertEqual(Cards.visible(Cards.ids(in: .trends(.sleep)), hidden: d.cardsOff), ["sleep.total", "sleep.stages"])
+        XCTAssertTrue(try dashboard(hidden: [], shown: nil).cardShown("sleep.efficiency"))
+        let score = try XCTUnwrap(Cards.card("sleep.score"))
+        XCTAssertEqual(Cards.label(score, optionalCards: false), "Sleep score")
+        XCTAssertEqual(Cards.label(score, optionalCards: true), "Sleep performance")
+        // A current server keeps them apart (testSleepEfficiencyIsItsOwnCard).
+        XCTAssertTrue(try dashboard(hidden: ["sleep.score"], shown: []).cardShown("sleep.efficiency"))
+    }
+
+    func testAnOptionalCardTurnedOnShowsEvenWhileStillInHidden() throws {
+        // PUT /settings takes a whole shownCards list without touching hidden, so a card can be in both. On is on, as
+        // the web's cardShown has it.
+        let d = try dashboard(hidden: ["home.load"], shown: ["home.load"])
+        XCTAssertTrue(d.cardShown("home.load"))
+        XCTAssertFalse(d.cardsOff.contains("home.load"))
+        XCTAssertEqual(Cards.visible(Cards.todayGrid, hidden: d.cardsOff), ["home.readiness", "home.spo2", "home.hrv", "home.sleep", "home.load"])
+        // A newer server's card stays in the list of those off; no screen here shows it anyway.
+        XCTAssertTrue(Cards.off(hidden: ["future.card"], shown: []).contains("future.card"))
+    }
+
+    private func summaryJSON() throws -> Any {
+        let url = Bundle(for: Self.self).url(forResource: "summary", withExtension: "json")
+            ?? URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/summary.json")
+        return try JSONSerialization.jsonObject(with: Data(contentsOf: url))
+    }
+
+    func testAStatusCachedByTheLastBuildLeavesTheOptionalCardsOff() throws {
+        let base = try XCTUnwrap(URL(string: "https://cards-cache.invalid"))
+        defer { SummaryCache.clear(for: base) }
+        // The build before this one never kept shownCards, so its cache has none even from a server with optional cards.
+        func cacheAsTheLastBuild(_ settings: [String: Any]) throws {
+            let entry: [String: Any] = ["summary": try summaryJSON(), "status": ["settings": settings], "version": "v1", "loadedOn": "2026-10-24"]
+            try JSONSerialization.data(withJSONObject: entry).write(to: SummaryCache.file(for: base))
+        }
+        try cacheAsTheLastBuild(["name": "Sam", "hiddenCards": ["home.hrv"]])
+        let cached = try XCTUnwrap(SummaryCache.load(for: base))
+        XCTAssertEqual(cached.status?.settings?.shownCards, [], "off until the first status read says otherwise")
+        XCTAssertEqual(cached.status?.settings?.hiddenCards, ["home.hrv"])
+        XCTAssertEqual(cached.version, "v1")
+        let d = Dashboard()
+        d.apply(status: try XCTUnwrap(cached.status))
+        XCTAssertFalse(d.cardShown("home.week"))
+        XCTAssertFalse(d.cardShown("home.load"))
+
+        // A server older than card hiding has no lists at all: nothing to fill in.
+        try cacheAsTheLastBuild(["name": "Sam"])
+        XCTAssertNil(try XCTUnwrap(SummaryCache.load(for: base)).status?.settings?.shownCards)
+
+        // This build keeps what the server sent: no shownCards is an older server, where every card shows.
+        SummaryCache.save(summary: cached.summary, status: try status(hidden: [], shown: nil), version: "v2", loadedOn: "2026-10-25", for: base)
+        let older = try XCTUnwrap(SummaryCache.load(for: base))
+        XCTAssertNil(older.status?.settings?.shownCards)
+        SummaryCache.save(summary: cached.summary, status: try status(hidden: [], shown: ["home.week"]), version: "v3", loadedOn: "2026-10-25", for: base)
+        XCTAssertEqual(try XCTUnwrap(SummaryCache.load(for: base)).status?.settings?.shownCards, ["home.week"])
     }
 
     func testShowAllLeavesTheOptionalCardsOff() async throws {

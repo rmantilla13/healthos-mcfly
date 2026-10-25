@@ -355,12 +355,13 @@ struct CardsScreen: View {
                     Text(error).font(.footnote).foregroundStyle(.red)
                 }
             }
-            ForEach(Cards.pages(nutrition: nutrition)) { group in
+            // A server older than optional cards gets only the cards it knows: it refuses the newer ones.
+            ForEach(Cards.pages(nutrition: nutrition, optionalCards: optional)) { group in
                 Section(group.page.label) {
                     ForEach(group.cards) { card in
                         Toggle(isOn: Binding(get: { dashboard.cardShown(card.id) }, set: { set(card.id, shown: $0) })) {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(card.label)
+                                Text(Cards.label(card, optionalCards: optional))
                                 Text(note(for: card, optional: optional && card.optional))
                                     .font(.footnote)
                                     .foregroundStyle(.secondary)
@@ -390,7 +391,7 @@ struct CardsScreen: View {
                 try await dashboard.setCard(id, shown: shown)
             } catch is CancellationError {
             } catch {
-                let name = Cards.card(id)?.label ?? "that card"
+                let name = Cards.card(id).map { Cards.label($0, optionalCards: dashboard.optionalCards) } ?? "that card"
                 self.error = "Couldn't \(shown ? "show" : "hide") \(name). \(error.localizedDescription)"
             }
         }

@@ -764,24 +764,37 @@ enum FamilyDisplay {
 enum SummaryCache {
     private struct Entry: Codable {
         let summary: Summary
-        let status: ServerStatus?
+        var status: ServerStatus?
         var version: String?
         var loadedOn: String?
+        /// Which build wrote it (`format`); nil from builds before it was kept.
+        var format: Int?
     }
 
-    private static func file(for base: URL) -> URL {
+    /// 2: settings.shownCards is kept, so a cached status without it is from a server older than optional cards.
+    private static let format = 2
+
+    /// Where one server's is kept; tests write an older build's there.
+    static func file(for base: URL) -> URL {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent("summary-\(hashId(base.absoluteString)).json")
     }
 
     static func load(for base: URL) -> (summary: Summary, status: ServerStatus?, version: String?, loadedOn: String?)? {
-        guard let data = try? Data(contentsOf: file(for: base)), let e = try? JSONDecoder().decode(Entry.self, from: data) else { return nil }
+        guard let data = try? Data(contentsOf: file(for: base)), var e = try? JSONDecoder().decode(Entry.self, from: data) else { return nil }
+        // Cached by a build that never kept shownCards, so it can't say whether the server has optional cards. Take it
+        // that it does, as the hosted one does, until the first status read says: otherwise they'd show on the first
+        // launch after the update, then go (or stay, offline).
+        if e.format == nil, e.status?.settings?.hiddenCards != nil, e.status?.settings?.shownCards == nil {
+            e.status?.settings?.shownCards = []
+        }
         return (e.summary, e.status, e.version, e.loadedOn)
     }
 
     static func save(summary: Summary, status: ServerStatus?, version: String?, loadedOn: String?, for base: URL) {
-        try? JSONEncoder().encode(Entry(summary: summary, status: status, version: version, loadedOn: loadedOn)).write(to: file(for: base), options: [.atomic, .completeFileProtection])
+        let entry = Entry(summary: summary, status: status, version: version, loadedOn: loadedOn, format: format)
+        try? JSONEncoder().encode(entry).write(to: file(for: base), options: [.atomic, .completeFileProtection])
     }
 
     static func clear(for base: URL) { try? FileManager.default.removeItem(at: file(for: base)) }
