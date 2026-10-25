@@ -526,9 +526,10 @@ final class Dashboard {
     // MARK: Time zone
 
     /// The hosted server runs in UTC: tell it this phone's time zone, so its "today" is the person's (src/App.tsx does it
-    /// on every load). After a status read only, and a zone is sent once: a server that answered and kept its own zone
-    /// isn't asked again this session. One that couldn't be reached is asked on the next read. True when the server
-    /// now has `zone`. `send` is PUT /api/settings; tests pass their own.
+    /// on every load). After a status read only, and a zone is sent once: a server that took the request and kept its
+    /// own zone, or refused it (a 4xx), isn't asked again this session. One that couldn't be reached or failed (a 5xx,
+    /// a cold start) is asked on the next read. True when the server now has `zone`. `send` is PUT /api/settings; tests
+    /// pass their own.
     func followTimeZone(_ zone: String = TimeZone.current.identifier, send: (@MainActor ([String: Any]) async throws -> ServerStatus)? = nil) async -> Bool {
         guard phase == .ready, let settings = status?.settings, settings.timeZone != zone, timeZoneSent != zone else { return false }
         let send = send ?? { fields in try await self.fetch { try await $0.updateSettings(fields) } }
@@ -536,11 +537,21 @@ final class Dashboard {
         do {
             show(settings: try await send(["timeZone": zone]))
         } catch {
-            if APIClient.isCancellation(error) { timeZoneSent = nil }
-            if case .network? = error as? APIError { timeZoneSent = nil }
+            if Self.worthRetrying(error) { timeZoneSent = nil }
             return false
         }
         return status?.settings?.timeZone == zone
+    }
+
+    /// The request didn't reach a server that could answer it: offline, cancelled, or a server error (5xx, and the 503
+    /// that maps to `misconfigured`). Asking again later may work.
+    private static func worthRetrying(_ error: Error) -> Bool {
+        if APIClient.isCancellation(error) { return true }
+        switch error as? APIError {
+        case .network?, .misconfigured?: return true
+        case .server(let code, _)?: return code >= 500
+        default: return false
+        }
     }
 
     // MARK: Ingest token
