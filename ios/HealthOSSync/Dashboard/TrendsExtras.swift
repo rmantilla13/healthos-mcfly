@@ -154,7 +154,7 @@ struct BloodPressureCard: View {
     }
 }
 
-struct GlucoseCard: View {
+struct TrendsGlucoseCard: View {
     let points: [Point]
 
     var body: some View {

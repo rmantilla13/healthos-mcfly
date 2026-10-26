@@ -95,7 +95,7 @@ struct TodayContent: View {
                         TodayGrid(summary: summary, ids: Cards.visible(optionalRow, hidden: off), goal: dashboard.stepGoal, food: food)
                         if let timeline = summary.timeline, !off.contains("home.timeline") { TodayPath(timeline: timeline, scrubbed: scrub) }
                         if !off.contains("home.week") { WeekCard(week: summary.week, stepGoal: dashboard.stepGoal) }
-                        if !off.contains("home.insights") { InsightsCard(insights: summary.insights ?? [], today: summary.today) }
+                        if !off.contains("home.insights") { HomeInsightsCard(insights: summary.insights ?? [], today: summary.today) }
                         if Cards.allHidden(in: .home, hidden: off) { AllCardsHiddenNote(text: "All the cards on this page are hidden.") }
                         if stats { HomeTagline(compact: true) }
                     }

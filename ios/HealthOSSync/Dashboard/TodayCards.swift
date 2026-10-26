@@ -411,7 +411,7 @@ struct MiniBars: View {
 
 // MARK: - Timeline colours
 
-enum TimelineCard {
+enum HomeTimelineCard {
     /// Each kind of event's colour on the track and in the list (Home.tsx KIND_COLOR).
     static func color(_ kind: String) -> Color {
         switch kind {
@@ -441,7 +441,7 @@ enum TimelineCard {
 // MARK: - Insights
 
 /// Home.tsx InsightsCard: the latest insights, each opening its page.
-struct InsightsCard: View {
+struct HomeInsightsCard: View {
     let insights: [Insight]
     let today: String
     @Environment(Dashboard.self) private var dashboard

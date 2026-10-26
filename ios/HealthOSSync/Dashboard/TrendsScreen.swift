@@ -168,7 +168,7 @@ private struct VitalsTrends: View {
             if has("wrist_temp") { TrendCard(title: "Wrist temperature", points: t["wrist_temp"]!, format: temp, note: "Apple Watch, during sleep") }
             if has("skin_temp") { TrendCard(title: "Skin temperature", points: t["skin_temp"]!, format: temp, note: "WHOOP") }
             BloodPressureCard(systolic: t["blood_pressure_systolic"] ?? [], diastolic: t["blood_pressure_diastolic"] ?? [])
-            GlucoseCard(points: t["glucose"] ?? [])
+            TrendsGlucoseCard(points: t["glucose"] ?? [])
             BreathingDisturbancesCard(points: t["breathing_disturbances"] ?? [])
         }
         .task(id: "\(days)|\(dashboard.generation)") {

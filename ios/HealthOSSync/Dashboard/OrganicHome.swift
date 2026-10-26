@@ -556,7 +556,7 @@ struct TodayPath: View {
                 TimelineScrubber(events: events, date: timeline.date, isToday: isToday, day: hours,
                                  answered: load.answered(timeline.date), failed: load.failed(timeline.date),
                                  upper: upper, moment: moment, scrub: scrubBinding)
-                list(timeline.events, current: Set(moment.events.map(\.id)), isToday: isToday, now: TimelineCard.localNow(context.date))
+                list(timeline.events, current: Set(moment.events.map(\.id)), isToday: isToday, now: HomeTimelineCard.localNow(context.date))
                     .padding(.top, 6)
             }
             .card()
@@ -605,9 +605,9 @@ struct TodayPath: View {
         } else {
             VStack(alignment: .leading, spacing: 12) {
                 ForEach(events.suffix(4)) { e in
-                    let state = TimelineCard.state(e, isToday: isToday, now: now)
+                    let state = HomeTimelineCard.state(e, isToday: isToday, now: now)
                     HStack(spacing: 12) {
-                        Circle().fill(TimelineCard.color(e.kind)).frame(width: 10, height: 10)
+                        Circle().fill(HomeTimelineCard.color(e.kind)).frame(width: 10, height: 10)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(e.title).font(.app(.subheadline, weight: .medium)).foregroundStyle(Palette.ink)
                             Text("\(Fmt.clock(e.start)) – \(Fmt.clock(e.end))\(e.detail.map { " · \($0)" } ?? "")")

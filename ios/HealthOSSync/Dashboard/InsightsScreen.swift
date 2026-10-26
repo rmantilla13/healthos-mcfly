@@ -166,7 +166,7 @@ private struct PatternRow: View {
     }
 
     private func row(chevron: Bool) -> some View {
-        let (symbol, tone) = InsightsCard.style(pattern.icon ?? "")
+        let (symbol, tone) = HomeInsightsCard.style(pattern.icon ?? "")
         return HStack(spacing: 12) {
             Image(systemName: symbol)
                 .font(.subheadline.weight(.semibold))

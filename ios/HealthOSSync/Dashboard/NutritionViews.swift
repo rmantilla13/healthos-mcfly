@@ -576,7 +576,7 @@ private struct FoodInsightsCard: View {
                     .font(.app(.footnote)).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
             } else {
                 ForEach(insights) { p in
-                    let (symbol, tone) = InsightsCard.style(p.icon ?? "")
+                    let (symbol, tone) = HomeInsightsCard.style(p.icon ?? "")
                     HStack(alignment: .top, spacing: 12) {
                         Image(systemName: symbol)
                             .font(.subheadline.weight(.semibold))

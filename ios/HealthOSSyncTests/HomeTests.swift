@@ -543,10 +543,10 @@ final class HomeOtherCardsTests: XCTestCase {
 
     func testEachEventSaysWhereItStands() throws {
         let e = try decode(TimelineEvent.self, #"{"id":"w","kind":"workout","title":"Run","start":"2026-10-19T07:00:00-05:00","end":"2026-10-19T07:40:00-05:00","detail":null}"#)
-        XCTAssertEqual(TimelineCard.state(e, isToday: true, now: "2026-10-19T06:59"), "Upcoming")
-        XCTAssertEqual(TimelineCard.state(e, isToday: true, now: "2026-10-19T07:10"), "In progress")
-        XCTAssertEqual(TimelineCard.state(e, isToday: true, now: "2026-10-19T07:40"), "Completed")
-        XCTAssertEqual(TimelineCard.state(e, isToday: false, now: "2026-10-19T06:00"), "Completed", "every event of a past day")
+        XCTAssertEqual(HomeTimelineCard.state(e, isToday: true, now: "2026-10-19T06:59"), "Upcoming")
+        XCTAssertEqual(HomeTimelineCard.state(e, isToday: true, now: "2026-10-19T07:10"), "In progress")
+        XCTAssertEqual(HomeTimelineCard.state(e, isToday: true, now: "2026-10-19T07:40"), "Completed")
+        XCTAssertEqual(HomeTimelineCard.state(e, isToday: false, now: "2026-10-19T06:00"), "Completed", "every event of a past day")
         let tsx = try web("src/pages/Home.tsx")
         for words in ["'Completed'", "'In progress'", "'Upcoming'", "timeline.events.slice(-4)"] { XCTAssertTrue(tsx.contains(words), words) }
     }
@@ -665,7 +665,7 @@ final class HomeFitsTests: XCTestCase {
             }
             assertFits("load", LoadCard(summary: s))
             assertFits("activity", ActivityCard(summary: s, goal: 10_000))
-            assertFits("insights", InsightsCard(insights: s.insights ?? [], today: s.today))
+            assertFits("insights", HomeInsightsCard(insights: s.insights ?? [], today: s.today))
             assertFits("week", WeekCard(week: s.week, stepGoal: 10_000))
             assertFits("figure", DigitalFigure(vitals: s.vitals, asOf: s.date))
         }

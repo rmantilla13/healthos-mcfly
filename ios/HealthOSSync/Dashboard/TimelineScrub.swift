@@ -436,7 +436,7 @@ struct TimelineScrubber: View {
                     }
                     ForEach(moment.events) { e in
                         HStack(spacing: 5) {
-                            Circle().fill(TimelineCard.color(e.kind)).frame(width: 8, height: 8)
+                            Circle().fill(HomeTimelineCard.color(e.kind)).frame(width: 8, height: 8)
                             Text(TimelineScrub.doing(e)).foregroundStyle(Palette.ink)
                             Text("\(Fmt.clock(e.start))–\(Fmt.clock(e.end))").font(.app(.caption)).monospacedDigit().foregroundStyle(Palette.ink3)
                         }
@@ -493,7 +493,7 @@ struct TimelineScrubber: View {
                     .offset(y: Self.trackTop)
                 ForEach(events) { e in
                     let s = TimelineScrub.span(e, date: date)
-                    Capsule().fill(TimelineCard.color(e.kind))
+                    Capsule().fill(HomeTimelineCard.color(e.kind))
                         .frame(width: max(6, x(s.drawnTo - s.from) - 2), height: Self.trackHeight - 4)
                         .offset(x: x(s.from), y: Self.trackTop + 2)
                 }
