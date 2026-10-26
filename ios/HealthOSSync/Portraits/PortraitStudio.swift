@@ -147,6 +147,7 @@ struct PortraitStudioContent: View {
                 Text(PortraitWords.title)
                     .font(.app(size: 14, weight: .medium, relativeTo: .subheadline))
                     .foregroundStyle(Palette.ink)
+                    .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
                 Text(PortraitWords.intro(canGenerate: model.canGenerate, ownKey: ownKey))
                     .font(.app(size: 12.5, relativeTo: .footnote))
@@ -155,8 +156,10 @@ struct PortraitStudioContent: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Button(action: add) {
-                Label(model.busy == "add" ? PortraitWords.adding : PortraitWords.add, systemImage: "plus")
-                    .labelStyle(PlusLabel())
+                HStack(spacing: 7) {
+                    Image(systemName: "plus").imageScale(.small).accessibilityHidden(true)
+                    PillText(model.busy == "add" ? PortraitWords.adding : PortraitWords.add)
+                }
             }
             .buttonStyle(.quietPill(size: .compact))
             .disabled(model.full || model.locked)
@@ -187,6 +190,7 @@ private struct ReferenceRow: View {
                     Text(PortraitWords.reference)
                         .font(.app(size: 14, weight: .medium, relativeTo: .subheadline))
                         .foregroundStyle(Palette.ink)
+                        .fixedSize(horizontal: false, vertical: true)
                     Text(PortraitWords.referenceLine(ref, made: fromIt.count))
                         .font(.app(size: 12.5, relativeTo: .footnote))
                         .foregroundStyle(Palette.ink3)
@@ -196,8 +200,9 @@ private struct ReferenceRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityElement(children: .combine)
             }
-            HStack(spacing: 6) {
-                Button(model.isMaking(from: ref) ? PortraitWords.makingShort : PortraitWords.makeMine) { make(ref) }
+            let actions = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6)) : AnyLayout(HStackLayout(spacing: 6))
+            actions {
+                Button { make(ref) } label: { PillText(model.isMaking(from: ref) ? PortraitWords.makingShort : PortraitWords.makeMine) }
                     .buttonStyle(.quietPill(size: .compact))
                     .disabled(!model.canMake)
                     .accessibilityHint(keyNote ?? (model.making ? PortraitWords.oneAtATime : ""))
@@ -296,7 +301,7 @@ private struct PortraitTile: View {
     @ViewBuilder
     private func actions(chosen: Bool, using: Bool) -> some View {
         if p.status == "ready", !chosen {
-            Button(using ? PortraitWords.usingShort : PortraitWords.useThis) { use(p) }
+            Button { use(p) } label: { PillText(using ? PortraitWords.usingShort : PortraitWords.useThis) }
                 .buttonStyle(TilePillStyle())
                 .disabled(model.locked)
                 .accessibilityIdentifier("portraits.use.\(p.id)")
@@ -403,12 +408,13 @@ struct Hairline: View {
 struct QuietTextStyle: ButtonStyle {
     var height: CGFloat = 34
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.app(size: 13, weight: .medium, relativeTo: .footnote))
             .foregroundStyle(configuration.isPressed ? Palette.ink : Palette.ink3)
-            .lineLimit(1)
+            .lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
             .padding(.horizontal, 8)
             .frame(minHeight: height)
             .contentShape(Rectangle())
@@ -425,8 +431,6 @@ private struct TilePillStyle: ButtonStyle {
         configuration.label
             .font(.app(size: 12.5, weight: .medium, relativeTo: .footnote))
             .foregroundStyle(Palette.accentInk)
-            .lineLimit(1)
-            .minimumScaleFactor(0.8)
             .padding(.horizontal, 12)
             .frame(minHeight: 30)
             .background { GradientFill(configuration.isPressed ? .accentGradHover : .accentGrad).clipShape(Capsule()) }
@@ -436,12 +440,20 @@ private struct TilePillStyle: ButtonStyle {
     }
 }
 
-/// "+ Add a reference photo": the plus close before the words, as the web's icon in its pill.
-private struct PlusLabel: LabelStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        HStack(spacing: 7) {
-            configuration.icon.imageScale(.small).accessibilityHidden(true)
-            configuration.title
-        }
+
+/// A pill's words: one line, as the web's, shrinking a little before they'd be cut off; wrapped at the accessibility
+/// text sizes, so the whole label stays readable (the pill grows to fit).
+struct PillText: View {
+    let text: String
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        Text(text)
+            .lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
+            .minimumScaleFactor(typeSize.isAccessibilitySize ? 1 : 0.85)
+            .multilineTextAlignment(.center)
+            .padding(.vertical, typeSize.isAccessibilitySize ? 6 : 0)
     }
 }

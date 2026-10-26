@@ -74,6 +74,7 @@ private struct PhotoAsIs: View {
                 Text(PhotoWords.title)
                     .font(.app(size: 14, weight: .medium, relativeTo: .subheadline))
                     .foregroundStyle(Palette.ink)
+                    .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
                 Text(PhotoWords.line)
                     .font(.app(size: 12, relativeTo: .caption))
@@ -114,7 +115,7 @@ private struct PhotoAsIs: View {
             } else {
                 Image(systemName: "square.and.arrow.up").font(.system(size: 20)).foregroundStyle(Palette.ink2).accessibilityHidden(true)
                 PhotosPicker(selection: $item, matching: .images, photoLibrary: .shared()) {
-                    Text(hasPhoto ? PhotoWords.chooseAgain : PhotoWords.choose)
+                    PillText(hasPhoto ? PhotoWords.chooseAgain : PhotoWords.choose)
                 }
                 .buttonStyle(.quietPill(size: .compact))
                 .accessibilityIdentifier("photo.choose")
@@ -224,18 +225,24 @@ struct PhotoPreviewRow: View {
                     .foregroundStyle(Palette.ink3)
                     .lineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)
-                HStack(spacing: 8) {
-                    Button(saving ? PhotoWords.saving : PhotoWords.save, action: save)
-                        .buttonStyle(.accentPill(size: .compact))
-                        .disabled(saving)
-                        .accessibilityIdentifier("photo.save")
-                    Button(PhotoWords.cancel, action: cancel)
-                        .buttonStyle(QuietTextStyle())
-                        .disabled(saving)
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) { buttons }
+                    VStack(alignment: .leading, spacing: 8) { buttons }
                 }
             }
             .frame(maxWidth: 260, alignment: .leading)
         }
+    }
+
+    @ViewBuilder
+    private var buttons: some View {
+        Button(action: save) { PillText(saving ? PhotoWords.saving : PhotoWords.save) }
+            .buttonStyle(.accentPill(size: .compact))
+            .disabled(saving)
+            .accessibilityIdentifier("photo.save")
+        Button(PhotoWords.cancel, action: cancel)
+            .buttonStyle(QuietTextStyle())
+            .disabled(saving)
     }
 }
 

@@ -81,7 +81,8 @@ struct PeerContent: View {
                             .foregroundStyle(ColorToken.badgePeachInk.color)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 5)
-                            .background(ColorToken.badgePeachBg.color, in: Capsule())
+                            // A pill on one line; rounded corners, not a blob, when large text wraps it.
+                            .background(ColorToken.badgePeachBg.color, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     if data.gathering { PeerNote(markdown: PeerWords.gathering) }
@@ -143,10 +144,12 @@ struct PeerRow: View {
                 Text(PeerWords.heading(m))
                     .font(.app(size: 13, weight: .medium, relativeTo: .footnote))
                     .foregroundStyle(Palette.ink)
+                    .fixedSize(horizontal: false, vertical: true)
                 if m.status == "ready", let band = m.quarter, let group = m.group {
                     Text(PeerWords.bandLabel(band))
                         .font(.app(size: 13.5, weight: .medium, relativeTo: .footnote))
                         .foregroundStyle(Palette.accentText)
+                        .fixedSize(horizontal: false, vertical: true)
                     if let yours = PeerWords.yours(m) { line(yours) }
                     line(PeerWords.group(group, m))
                 } else if m.status == "not_enough_days" {
