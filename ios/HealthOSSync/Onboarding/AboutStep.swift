@@ -149,6 +149,8 @@ private struct GenderChip: View {
                 .font(.app(size: WelcomeLook.chipFont, relativeTo: .footnote))
                 .foregroundStyle(Palette.ink)
                 .padding(.horizontal, WelcomeLook.chipPadding)
+                // Only shows at the largest text sizes, where a chip's words wrap: they keep off its edges.
+                .padding(.vertical, 6)
                 .frame(minHeight: WelcomeLook.chipHeight)
                 .background(isOn ? WelcomeLook.chipOn.color : reduceTransparency ? Palette.surface : WelcomeLook.field.color, in: shape)
                 .overlay(shape.strokeBorder(isOn ? Palette.choiceBorder : WelcomeLook.fieldBorder.color))
