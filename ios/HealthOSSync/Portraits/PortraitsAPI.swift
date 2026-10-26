@@ -101,18 +101,21 @@ extension APIClient {
     }
 }
 
+// Each answer is for the person who asked, on the server they asked: one that lands after a Sign out, someone else's
+// sign-in or a change of server is dropped with a CancellationError (`fetchForThisSession`), so a reference photo,
+// a portrait or a list never reaches whoever is signed in now. Callers stay quiet about a CancellationError.
 extension Dashboard {
     /// The person's portraits; nil from a server without them. Tells Availability whether one can be made.
     func portraits() async throws -> PortraitList? {
         let who = signedInPerson
-        let list = try await fetch { try await $0.portraits() }
+        let list = try await fetchForThisSession { try await $0.portraits() }
         heardPortraits(list, for: who)
         return list
     }
 
     /// Keeps a reference photo (onboarding's first step, the portrait studio).
     func addReference(_ photo: PreparedPhoto) async throws -> Portrait {
-        try await fetch { try await $0.addReference(photo) }
+        try await fetchForThisSession { try await $0.addReference(photo) }
     }
 
     /// Deletes a reference photo or a portrait: onboarding's Change (after the new one is kept) and Remove, and the
@@ -120,28 +123,28 @@ extension Dashboard {
     @discardableResult
     func deletePortrait(id: String) async throws -> PortraitList {
         let who = signedInPerson
-        let list = try await fetch { try await $0.deletePortrait(id: id) }
+        let list = try await fetchForThisSession { try await $0.deletePortrait(id: id) }
         heardPortraits(list, for: who)
         return list
     }
 
     /// Starts a portrait from a reference (the portrait studio's Make my portrait).
     func generatePortrait(referenceId: String) async throws -> Portrait {
-        try await fetch { try await $0.generatePortrait(referenceId: referenceId) }
+        try await fetchForThisSession { try await $0.generatePortrait(referenceId: referenceId) }
     }
 
     /// Marks a portrait as the one in use, after it became the profile photo. Answers with the list, which tells
     /// Availability whether one can be made.
     func choosePortrait(id: String) async throws -> PortraitList {
         let who = signedInPerson
-        let list = try await fetch { try await $0.choosePortrait(id: id) }
+        let list = try await fetchForThisSession { try await $0.choosePortrait(id: id) }
         heardPortraits(list, for: who)
         return list
     }
 
     /// One photo's image, into memory only (the portrait studio's thumbnails, and Use this portrait).
     func portraitImage(id: String) async throws -> Data {
-        try await fetch { try await $0.portraitImage(id: id) }
+        try await fetchForThisSession { try await $0.portraitImage(id: id) }
     }
 
     /// Tells Availability whether a portrait can be made, from a list asked for while `person` was signed in: only if

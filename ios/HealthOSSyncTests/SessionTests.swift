@@ -156,4 +156,108 @@ final class SessionTests: XCTestCase {
         XCTAssertEqual(d.status?.user?.id, "u-alex")
         XCTAssertNotNil(d.summary)
     }
+
+    // MARK: Item 3: what the server can do, portraits and the food log
+
+    private func person(_ id: String) -> AuthState.User { AuthState.User(id: id, email: "\(id)@example.test", name: nil, role: "member") }
+
+    /// Alex signed in on the stub.
+    private func alexHere() -> Dashboard {
+        let d = Dashboard()
+        d.authMode = "required"
+        d.account = person("u-alex")
+        d.phase = .ready
+        return d
+    }
+
+    /// The ways a session ends while an answer is on its way.
+    private let endings: [(String, @MainActor (Dashboard) -> Void)] = [
+        ("signed out", { $0.phase = .signIn }),
+        ("someone else signed in", { d in
+            d.phase = .signIn
+            d.account = AuthState.User(id: "u-sam", email: "sam@example.test", name: nil, role: "member")
+            d.signedIn()
+        }),
+        // The account read again names someone else, with nothing forgotten in between (Availability's own
+        // generation can't see this one; the person in `session` does).
+        ("another person, nothing forgotten", { d in d.account = AuthState.User(id: "u-sam", email: "sam@example.test", name: nil, role: "member") }),
+    ]
+
+    /// Starts `call` on a stub whose answer to `key` takes a moment, ends the session while it's on its way, and hands
+    /// back what the call did.
+    private func whileOnItsWay(_ server: AIStubServer, _ key: String, end: @MainActor (Dashboard) -> Void, d: Dashboard,
+                               _ call: @escaping @MainActor () async throws -> Void) async -> Error? {
+        let asked = server.requests(key).count
+        let task = Task { @MainActor () -> Error? in
+            do {
+                try await call()
+                return nil
+            } catch {
+                return error
+            }
+        }
+        _ = await AIStubServer.wait { server.requests(key).count > asked }
+        end(d)
+        return await task.value
+    }
+
+    /// GET /api/ai answered once the person has gone: what the server can do for them says nothing for whoever is here.
+    func testWhatTheServerCanDoForOnePersonNeverReachesTheNext() async throws {
+        let server = try await AIStubServer.start(["GET /api/ai": .json(200, #"{"byok":true,"portraits":true,"voice":true}"#, delay: 0.3)])
+        use(server)
+        for (name, end) in endings {
+            let d = alexHere()
+            _ = await whileOnItsWay(server, "GET /api/ai", end: end, d: d) { await d.loadAI(force: true) }
+            XCTAssertEqual(d.availability.ai, .unknown, "\(name)")
+            XCTAssertNil(d.availability.byok, "\(name)")
+        }
+        // Still Alex: it's known.
+        let d = alexHere()
+        await d.loadAI(force: true)
+        XCTAssertEqual(d.availability.byok, true)
+    }
+
+    /// A reference photo kept, or a portrait deleted, answered once the person has gone: the caller hears a
+    /// CancellationError (which it stays quiet about) rather than the photo or the list, and Availability hears nothing.
+    func testAPortraitAnswerForOnePersonNeverReachesTheNext() async throws {
+        let list = try fixture("portraits")
+        let server = try await AIStubServer.start([
+            "POST /api/portraits/reference": .json(200, #"{"portrait":{"id":"r9","kind":"reference","status":"ready"}}"#, delay: 0.3),
+            "DELETE /api/portraits/r1": .json(200, list, delay: 0.3),
+        ])
+        use(server)
+        let photo = PreparedPhoto(jpeg: Data([0xFF, 0xD8, 0xFF, 0xD9]), width: 1, height: 1)
+        for (name, end) in endings {
+            let d = alexHere()
+            let added = await whileOnItsWay(server, "POST /api/portraits/reference", end: end, d: d) { _ = try await d.addReference(photo) }
+            XCTAssertTrue(added is CancellationError, "\(name): addReference, \(String(describing: added))")
+            let e = alexHere()
+            let deleted = await whileOnItsWay(server, "DELETE /api/portraits/r1", end: end, d: e) { try await e.deletePortrait(id: "r1") }
+            XCTAssertTrue(deleted is CancellationError, "\(name): deletePortrait, \(String(describing: deleted))")
+            XCTAssertNil(e.availability.portraits, "\(name): nothing said about the next person's portraits")
+        }
+        // Still Alex: the photo comes back with its id, and the list says whether one can be made.
+        let d = alexHere()
+        let kept = try await d.addReference(photo)
+        XCTAssertEqual(kept.id, "r9")
+        _ = try await d.deletePortrait(id: "r1")
+        XCTAssertNotNil(d.availability.portraits)
+    }
+
+    /// The food log's `can` (estimates, voice notes) answered once the person has gone says nothing for whoever is here.
+    func testAFoodLogDayForOnePersonNeverReachesTheNext() async throws {
+        let server = try await AIStubServer.start(["POST /api/nutrition/log/day": .json(200, try fixture("food-log-day"), delay: 0.3)])
+        use(server)
+        for (name, end) in endings {
+            let d = alexHere()
+            let error = await whileOnItsWay(server, "POST /api/nutrition/log/day", end: end, d: d) { _ = try await d.loadFoodLogDay(date: nil) }
+            XCTAssertTrue(error is CancellationError, "\(name): \(String(describing: error))")
+            XCTAssertNil(d.availability.estimate, "\(name)")
+            XCTAssertNil(d.availability.voice, "\(name)")
+        }
+        let d = alexHere()
+        let day = try await d.loadFoodLogDay(date: nil)
+        XCTAssertNotNil(day)
+        XCTAssertNotNil(d.availability.estimate, "still Alex: heard")
+    }
 }

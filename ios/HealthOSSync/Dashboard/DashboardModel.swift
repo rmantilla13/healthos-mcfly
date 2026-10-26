@@ -891,6 +891,17 @@ final class Dashboard {
         }
     }
 
+    /// `fetch`, for an answer that only means something for the person who asked: one that lands after a Sign out, a
+    /// 401, someone else's sign-in or a change of server (`session`) is dropped with a CancellationError, so it's never
+    /// shown to, or kept for, whoever is here now. What the server can do for them (GET /api/ai, the lab reader, a food
+    /// log's `can`), their portraits and their reference photos go through it.
+    func fetchForThisSession<T>(_ request: (APIClient) async throws -> T) async throws -> T {
+        let asked = session
+        let answer = try await fetch(request)
+        try keep(answeredUnder: asked)
+        return answer
+    }
+
     private func clearCaches() {
         trendCache = [:]
         workoutCache = [:]

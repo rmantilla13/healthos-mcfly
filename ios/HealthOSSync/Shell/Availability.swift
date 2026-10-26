@@ -272,16 +272,18 @@ extension APIClient {
 
 extension Dashboard {
     /// What this person's AI requests use (GET /api/ai). The shell reads it after every load while signed in; a page
-    /// that needs it sooner asks here, and it's read once until the next load (`force` reads again).
+    /// that needs it sooner asks here, and it's read once until the next load (`force` reads again). An answer that lands
+    /// once someone else is signed in, or another server is set, is dropped (`fetchForThisSession`), as one that lands
+    /// after `forget()` is (Availability's own generation).
     func loadAI(force: Bool = false) async {
         guard phase == .ready else { return }
-        await availability.loadAI(force: force) { try await self.fetch { try await $0.aiStatus() } }
+        await availability.loadAI(force: force) { try await self.fetchForThisSession { try await $0.aiStatus() } }
     }
 
     /// What reading a lab report would use now (GET /api/labs/reader), as `loadAI`.
     func loadLabReader(force: Bool = false) async {
         guard phase == .ready else { return }
-        await availability.loadLabReader(force: force) { try await self.fetch { try await $0.labReader() } }
+        await availability.loadLabReader(force: force) { try await self.fetchForThisSession { try await $0.labReader() } }
     }
 }
 

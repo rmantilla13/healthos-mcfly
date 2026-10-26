@@ -4,8 +4,10 @@ import Foundation
 /// Nutrition tabs show: healthOS's log is one of the apps a day's totals are picked from.
 extension Dashboard {
     /// The last `days` days of the log; nil from a server without it (the Log tab then hides).
+    /// An answer that lands once someone else is signed in (or after a Sign out, or on another server) is dropped,
+    /// so its `can` never says what the next person can do (`fetchForThisSession`).
     func loadFoodLog(days: Int = 14) async throws -> FoodLog? {
-        let log = try await fetch { try await $0.foodLog(days: days) }
+        let log = try await fetchForThisSession { try await $0.foodLog(days: days) }
         foodLogAvailable = log != nil
         availability.heard(foodCan: log?.can)
         return log
@@ -14,7 +16,7 @@ extension Dashboard {
     /// One day of the log (nil date: today), for Nutrition's Today; nil from a server older than it, which shows the
     /// Log tab's days instead (`loadFoodLog`).
     func loadFoodLogDay(date: String?) async throws -> FoodLogDay? {
-        let day = try await fetch { try await $0.foodLogDay(date: date) }
+        let day = try await fetchForThisSession { try await $0.foodLogDay(date: date) }
         availability.heard(foodCan: day?.can)
         return day
     }
