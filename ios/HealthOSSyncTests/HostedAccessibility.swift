@@ -9,7 +9,14 @@ import XCTest
 /// own libAccessibility, and puts back what it found when it's done (as MetricSheetTests does).
 @MainActor
 enum HostedAccessibility {
-    static func onScreen(_ view: some View, width: CGFloat = 402, height: CGFloat = 874, run: ([NSObject]) async throws -> Void) async throws {
+    static func onScreen(_ view: some View, width: CGFloat = 402, height: CGFloat = 874, run: @MainActor ([NSObject]) async throws -> Void) async throws {
+        try await whileOnScreen(view, width: width, height: height) { read in try await run(read()) }
+    }
+
+    /// The same, for a test that changes what's on screen as it goes: `read` walks the elements again, as they are now.
+    /// `presented` reads only what's presented over the view (a sheet), nothing when nothing is.
+    static func whileOnScreen(_ view: some View, width: CGFloat = 402, height: CGFloat = 874, presented: Bool = false,
+                              run: @MainActor (_ read: @MainActor () -> [NSObject]) async throws -> Void) async throws {
         let root = ProcessInfo.processInfo.environment["IPHONE_SIMULATOR_ROOT"] ?? ""
         guard let lib = dlopen(root + "/usr/lib/libAccessibility.dylib", RTLD_LOCAL) ?? dlopen("/usr/lib/libAccessibility.dylib", RTLD_LOCAL),
               let get = dlsym(lib, "_AXSAutomationEnabled"), let set = dlsym(lib, "_AXSSetAutomationEnabled") else {
@@ -38,7 +45,20 @@ enum HostedAccessibility {
             if !elements.isEmpty, elements.count == last { break }
             last = elements.count
         }
-        try await run(elements)
+        try await run {
+            var now: [NSObject] = []
+            if presented {
+                var over = host.presentedViewController
+                while let vc = over {
+                    if let view = vc.viewIfLoaded { walk(view, into: &now) }
+                    over = vc.presentedViewController
+                }
+            } else {
+                walk(host.view, into: &now)
+            }
+            return now
+        }
+        host.presentedViewController?.dismiss(animated: false)
     }
 
     /// Each element once: one reached both as a view's element and through its subviews, or from two views over the

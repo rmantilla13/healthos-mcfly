@@ -16,8 +16,9 @@ struct ProfileScreen: View {
     @State private var sheet: ProfileSheet?
     /// The sheet last shown, for what its closing does.
     @State private var shown: ProfileSheet?
-    /// ?connect= was acted on: it opens its sheet once, not each time Profile shows again.
-    @State private var linkHandled = false
+    /// The link acted on (`linkRequest`): its sheet opens once, not each time Profile shows again, and again only when
+    /// the same link is opened anew.
+    @State private var linkHandled: Int?
 
     var body: some View {
         ScrollView {
@@ -63,7 +64,7 @@ struct ProfileScreen: View {
         }
         // Again once the settings come (the status can land after the phase is ready) and once the server has said
         // whether it has keys at all.
-        .task(id: "\(dashboard.phase == .ready)|\(dashboard.status?.settings != nil)|\(ProfileSheet.aiKnown(dashboard.availability.ai))") {
+        .task(id: "\(dashboard.phase == .ready)|\(dashboard.status?.settings != nil)|\(ProfileSheet.aiKnown(dashboard.availability.ai))|\(linkRequest)") {
             await openLinked()
         }
         .alert(model.notice ?? "", isPresented: noticeShown) {
@@ -86,6 +87,13 @@ struct ProfileScreen: View {
 
     private func close() { sheet = nil }
 
+    /// Which opening of this Profile's link this is: the link's own request (`Dashboard.open`), so the same link opened
+    /// again while Profile is still up (its path doesn't change) is a new one; 0 when Profile wasn't opened by a link.
+    private var linkRequest: Int {
+        guard let request = dashboard.request(for: .profile), request.route.query == query else { return 0 }
+        return request.id
+    }
+
     /// A key sheet closed: what the person's AI uses is read again, as the web's closeAi.
     private func closed() {
         if shown == .chatbot || shown == .openai { Task { await dashboard.loadAI(force: true) } }
@@ -96,7 +104,8 @@ struct ProfileScreen: View {
     /// and their settings are here, and not on a server too old for keys. Whether it has them is asked first
     /// (GET /api/ai); a read that fails says nothing either way, so the sheet opens and says what it can.
     private func openLinked() async {
-        guard !linkHandled, ProfileSheet.linked(query) != nil else { return }
+        let request = linkRequest
+        guard linkHandled != request, ProfileSheet.linked(query) != nil else { return }
         let ready = dashboard.phase == .ready
         let settings = dashboard.status?.settings != nil
         var asked = false
@@ -109,9 +118,9 @@ struct ProfileScreen: View {
         switch ProfileSheet.link(query, ready: dashboard.phase == .ready, settings: dashboard.status?.settings != nil,
                                  ai: dashboard.availability.ai, asked: asked) {
         case .none, .wait: break
-        case .drop: linkHandled = true
+        case .drop: linkHandled = request
         case .open(let linked):
-            linkHandled = true
+            linkHandled = request
             sheet = linked
         }
     }

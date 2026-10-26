@@ -167,9 +167,10 @@ struct AppRoute: Hashable {
     }
 }
 
-/// A link to one of the tabs' own pages (Home, Vitals, Body, Nutrition), for that page to apply its query: the page
-/// is already on screen, so it watches for this. `id` changes every time, so the same link opened twice works twice.
-/// Pages under More get theirs in the route they're pushed with.
+/// A link to a page, for that page to apply its query. The tabs' own pages (Home, Vitals, Body, Nutrition) are already
+/// on screen, so they watch for this; a page under More gets its query in the route it's pushed with, and watches for
+/// this only for the same link opened again while it's still up (Profile's ?connect=). `id` changes every time, so the
+/// same link opened twice works twice.
 struct RouteRequest: Equatable {
     let route: AppRoute
     let id: Int

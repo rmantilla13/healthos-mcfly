@@ -253,6 +253,114 @@ final class ShellTests: XCTestCase {
     }
 
     /// Before sign-in, or with no server set, Profile still opens: it has the server address.
+    /// Sign out with Profile open under More, then "Change server" on the sign-in screen: Profile shows, with the
+    /// server address, rather than a blank page. Sign out empties the pushed pages while More isn't the tab showing; its
+    /// stack starts again from nothing, so pushing Profile anew draws it. Shown as the app shows it.
+    func testChangeServerAfterSigningOutFromProfileShowsProfile() async throws {
+        let saved = UserDefaults.standard.string(forKey: "serverURL")
+        defer {
+            if let saved { UserDefaults.standard.set(saved, forKey: "serverURL") } else { UserDefaults.standard.removeObject(forKey: "serverURL") }
+        }
+        // No server to ask: the shell and Profile only.
+        Config.serverText = ""
+        let d = Dashboard()
+        d.authMode = "required"
+        d.phase = .ready
+        func identifiers(_ elements: [NSObject]) -> [String] {
+            let get = NSSelectorFromString("accessibilityIdentifier")
+            return elements.compactMap { $0.responds(to: get) ? $0.perform(get)?.takeUnretainedValue() as? String : nil }
+        }
+        @MainActor func settle(_ read: @MainActor () -> [NSObject], until: ([String]) -> Bool) async throws -> [String] {
+            var ids: [String] = []
+            for _ in 0..<40 {
+                try await Task.sleep(for: .milliseconds(100))
+                ids = identifiers(read())
+                if until(ids) { break }
+            }
+            return ids
+        }
+        try await HostedAccessibility.whileOnScreen(AppShell().environment(d).environment(AppModel())) { read in
+            d.tab = .settings
+            let open = try await settle(read) { $0.contains("serverURL") }
+            XCTAssertTrue(open.contains("serverURL"), "Profile open under More: \(open)")
+
+            // Sign out, as Dashboard.signOut ends it (no server here to tell).
+            d.phase = .signIn
+            d.resetNavigation()
+            let signedOut = try await settle(read) { $0.contains("changeServer") }
+            XCTAssertTrue(signedOut.contains("changeServer"), "the sign-in screen on Home: \(signedOut)")
+
+            // Its "Change server".
+            d.tab = .settings
+            let profile = try await settle(read) { $0.contains("serverURL") }
+            XCTAssertEqual(d.paths[.more], [.profile])
+            XCTAssertTrue(profile.contains("serverURL"), "Profile, with the server address: \(profile)")
+        }
+    }
+
+    /// The same ?connect= link opened again while Profile is still up under More, where its path doesn't change, opens
+    /// its key sheet again, as each link is a request of its own. Profile showing again by itself (another tab, then
+    /// More) doesn't. Shown as the app shows it.
+    func testTheSameKeyLinkOpenedTwiceOpensItsSheetTwice() async throws {
+        let saved = UserDefaults.standard.string(forKey: "serverURL")
+        defer {
+            if let saved { UserDefaults.standard.set(saved, forKey: "serverURL") } else { UserDefaults.standard.removeObject(forKey: "serverURL") }
+        }
+        Config.serverText = ""
+        let d = Dashboard()
+        d.authMode = "required"
+        d.phase = .ready
+        d.apply(status: try status(#"{"perspective":"portrait","onboarding":null}"#))
+        // The server has said it stores keys: the link opens at once.
+        d.availability.heard(ai: AiStatus(byok: true))
+        let link = AppRoute(.profile, query: ["connect": "openai"])
+
+        let first = d.requestCount
+        d.open(link)
+        let request = try XCTUnwrap(d.request(for: .profile))
+        XCTAssertGreaterThan(request.id, first)
+        d.open(link)
+        XCTAssertNotEqual(d.request(for: .profile), request, "the same link again is a new request")
+        XCTAssertEqual(d.paths[.more], [link], "while Profile's path stays as it was")
+
+        d.paths = [:]
+        d.tab = .home
+        // What's presented over the shell: the key sheet's title, while it's up.
+        try await HostedAccessibility.whileOnScreen(AppShell().environment(d).environment(AppModel()), presented: true) { read in
+            @MainActor func sheetUp() async throws -> Bool {
+                for _ in 0..<30 {
+                    if read().contains(where: { $0.accessibilityLabel == "Connect AI key" }) { return true }
+                    try await Task.sleep(for: .milliseconds(100))
+                }
+                return false
+            }
+            @MainActor func close() async throws {
+                let button = try XCTUnwrap(read().first { $0.accessibilityLabel == "Close" }, "the sheet's close button")
+                XCTAssertTrue(button.accessibilityActivate())
+                for _ in 0..<30 where !read().isEmpty {
+                    try await Task.sleep(for: .milliseconds(100))
+                }
+                XCTAssertTrue(read().isEmpty, "closed")
+            }
+            d.open(link)
+            let opened = try await sheetUp()
+            XCTAssertTrue(opened, "the link opens its sheet")
+            try await close()
+
+            d.open(link)
+            XCTAssertEqual(d.paths[.more], [link])
+            let again = try await sheetUp()
+            XCTAssertTrue(again, "the same link again, Profile still up: its sheet again")
+            try await close()
+
+            d.tab = .home
+            try await Task.sleep(for: .milliseconds(500))
+            d.tab = .more
+            try await Task.sleep(for: .milliseconds(1500))
+            XCTAssertTrue(read().isEmpty, "Profile showing again by itself opens nothing")
+        }
+    }
+
     func testProfileOpensBeforeSignIn() {
         let d = Dashboard()
         d.phase = .noServer

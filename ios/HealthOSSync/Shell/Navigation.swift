@@ -18,10 +18,12 @@ extension Dashboard {
             return
         }
         let tab = route.page.tab
+        // Every link is a request of its own, so the same one opened twice works twice, on a tab's own page or on a page
+        // already open under More (whose path then doesn't change: Profile's ?connect=).
+        requestCount += 1
+        requests[route.page] = RouteRequest(route: route, id: requestCount)
         switch route.page {
         case .home, .vitals, .body, .nutrition:
-            requestCount += 1
-            requests[route.page] = RouteRequest(route: route, id: requestCount)
             paths[tab] = []
         case .family where route.query["member"] != nil:
             paths[tab] = [.family, route]
@@ -40,7 +42,8 @@ extension Dashboard {
         return true
     }
 
-    /// The last link to a tab's own page, for that page to apply its query (Body's tab=activity); nil until one comes.
+    /// The last link to a page, for that page to apply its query: a tab's own page (Body's tab=activity), or one under
+    /// More opened again while it's still up (Profile's ?connect=); nil until one comes.
     func request(for page: AppPage) -> RouteRequest? { requests[page] }
 
     /// A page of the server's website over the app (privacy.html, or "#/admin"). It has its own cookies, not the app's
@@ -81,12 +84,13 @@ extension Dashboard {
         }
     }
 
-    /// After Sign out: Home, with nothing pushed on any tab.
+    /// After Sign out: Home, with nothing pushed on any tab, each tab's navigation built again from nothing.
     func resetNavigation() {
         paths = [:]
         requests = [:]
         webPage = nil
         tab = .home
+        navigationResets += 1
     }
 
     /// Family or Cycle went away (another server, tracking turned off) while open under More: back to More.
