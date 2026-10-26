@@ -98,8 +98,6 @@ enum ProfileWords {
     static let stepGoalHint = "Between 500 and 100,000."
     /// The goal the server keeps: anything else it ignores without saying, so the phone says it first.
     static let stepGoalRange = 500...100_000
-    /// The most digits the goal field holds: one more than 100,000 has, so a goal too big is refused, not cut short.
-    static let stepGoalDigits = 7
     /// The longest name the server keeps (it trims and cuts the rest).
     static let nameLimit = 40
 

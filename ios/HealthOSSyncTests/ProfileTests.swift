@@ -214,9 +214,6 @@ final class ProfileTests: XCTestCase {
         XCTAssertTrue(huge.goalOutOfRange)
         XCTAssertTrue(huge.changed, "the sheet stays up to say so")
         XCTAssertNil(huge.goal)
-        // The field holds one digit more than 100,000 has, so whatever is cut off a pasted goal is still too big.
-        XCTAssertEqual(String(100_000).count + 1, ProfileWords.stepGoalDigits)
-        XCTAssertTrue(ProfileBasicsSheet.patch(name: "Ada", goal: String("12345678901234567890".prefix(ProfileWords.stepGoalDigits)), settings: s).goalOutOfRange)
         XCTAssertEqual(ProfileBasicsSheet.patch(name: "Ada", goal: "500", settings: s).goal, 500)
         XCTAssertEqual(ProfileBasicsSheet.patch(name: "Ada", goal: "100000", settings: s).goal, 100_000)
         // No name yet on the server: a blank one is no change.

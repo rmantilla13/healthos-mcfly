@@ -73,10 +73,8 @@ struct ProfileBasicsSheet: View {
         .onChange(of: name) { _, typed in
             if typed.count > ProfileWords.nameLimit { name = String(typed.prefix(ProfileWords.nameLimit)) }
         }
-        // Digits only, and no more than seven: any seven-digit goal is already over 100,000, so a longer one (pasted)
-        // is still refused, never cut down to a number that would be saved.
         .onChange(of: goal) { _, typed in
-            let digits = String(typed.filter(\.isASCIIDigit).prefix(ProfileWords.stepGoalDigits))
+            let digits = typed.filter(\.isASCIIDigit)
             if digits != typed { goal = digits }
         }
         .onDisappear { flash?.cancel() }
