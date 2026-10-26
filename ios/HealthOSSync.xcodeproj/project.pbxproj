@@ -45,6 +45,7 @@
 		40C7DA835A6CF7542609ACDD /* Keyboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 402B43C3EE24937825D62979 /* Keyboard.swift */; };
 		421871CDE11297C1B6C2D4FE /* Cards.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A5376F5B4BE6F8CD5BF48E6 /* Cards.swift */; };
 		4235342A47A876C689995E06 /* NutritionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD2F0A99D2A54D83358903BC /* NutritionTests.swift */; };
+		42AC90F65C94430785534474 /* HomeReads.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9D8A1996D92634B72660F32 /* HomeReads.swift */; };
 		42F76A9AA8571EC93462B091 /* Navigation.swift in Sources */ = {isa = PBXBuildFile; fileRef = D41A8AD9A4AD86ED9C50DB81 /* Navigation.swift */; };
 		430F35D95CF72B7FBB141375 /* VitalsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31168D0477EE9D1FE83A3078 /* VitalsScreen.swift */; };
 		43D9A7DBB266FA71E9BBF8D9 /* Badge.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC000579B285FDC18EEB6224 /* Badge.swift */; };
@@ -155,6 +156,7 @@
 		E8303FDBE547BD948B86751B /* SleepCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92F3618E009EE98A02397FB3 /* SleepCards.swift */; };
 		E8690456C11C59C246EEEAF9 /* HomeCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C44DD7D24D944427812524F /* HomeCards.swift */; };
 		EA8FBBE8EFF3A58E2815354E /* SleepScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02AFBC3BA30E53B1D38DA148 /* SleepScreen.swift */; };
+		F053550686D2E5C8906783EC /* HomeReadsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CAB7FF036699F17248D0E2E /* HomeReadsTests.swift */; };
 		F10AFAACB592CD5494351B93 /* ai-own-key.json in Resources */ = {isa = PBXBuildFile; fileRef = 889D5CAF7334BA122500E98A /* ai-own-key.json */; };
 		F2224C10CC1AFCE719940555 /* Welcome.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0DE5D33B140C96BB524233 /* Welcome.swift */; };
 		F2CF3049F540CE571BFB4FEB /* IngestClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3775E6E7872E65E05A16415F /* IngestClient.swift */; };
@@ -220,6 +222,7 @@
 		4A30213197BAD249D34D98FF /* PhotoSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoSection.swift; sourceTree = "<group>"; };
 		4BE7F09166E492DAC5E6B4B5 /* Nutrition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Nutrition.swift; sourceTree = "<group>"; };
 		4C3921ACCFB6D34E0458FEA9 /* workouts.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = workouts.json; sourceTree = "<group>"; };
+		4CAB7FF036699F17248D0E2E /* HomeReadsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeReadsTests.swift; sourceTree = "<group>"; };
 		4D432B8A7F33BB5B4B4BCC2F /* RowIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RowIcon.swift; sourceTree = "<group>"; };
 		4EB44AEBCB8666894C5B6AB9 /* SheetScaffold.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SheetScaffold.swift; sourceTree = "<group>"; };
 		4FE808F612408F51C01FB9A2 /* nutrition-none.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "nutrition-none.json"; sourceTree = "<group>"; };
@@ -294,6 +297,7 @@
 		C1E694F036A3D589AB6158D5 /* ServerErrorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerErrorTests.swift; sourceTree = "<group>"; };
 		C24970C7FB0FE6CB2CDC010A /* PhotoCutout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoCutout.swift; sourceTree = "<group>"; };
 		C8477505A0D2A223A6594503 /* BodyScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BodyScreen.swift; sourceTree = "<group>"; };
+		C9D8A1996D92634B72660F32 /* HomeReads.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeReads.swift; sourceTree = "<group>"; };
 		C9F873BE0B53305B19B50C0C /* CardPlacesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardPlacesTests.swift; sourceTree = "<group>"; };
 		CB191D78F6B17779F6ED3C1E /* ComponentsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComponentsTests.swift; sourceTree = "<group>"; };
 		CD2F0A99D2A54D83358903BC /* NutritionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NutritionTests.swift; sourceTree = "<group>"; };
@@ -455,6 +459,7 @@
 				D8457E60A4786255AE3EBB8F /* FoodLogTests.swift */,
 				DCB8EE7A62B1F4AB7B71786B /* HeartRateMeasurementTests.swift */,
 				55267702FE778537DAF18F27 /* HomeFigureTests.swift */,
+				4CAB7FF036699F17248D0E2E /* HomeReadsTests.swift */,
 				6CF00FE6CAC4FB940559D6D2 /* HomeTests.swift */,
 				1D16ADB4EAC1CF6BB06E7F64 /* IngestTokenTests.swift */,
 				557B903874008E25C2245C9B /* NutritionScreenTests.swift */,
@@ -483,6 +488,7 @@
 				8C44DD7D24D944427812524F /* HomeCards.swift */,
 				E81F51B43C844A1A076A3218 /* HomeFigure.swift */,
 				762A74EA5225E45BAE8A0B08 /* HomeHeader.swift */,
+				C9D8A1996D92634B72660F32 /* HomeReads.swift */,
 				255D822DE60BD6CEBB1899F7 /* JournalPromptCard.swift */,
 				A0B222368675F3A2634412E4 /* SignalCards.swift */,
 				5431457033D8089843F213F1 /* TodayNutritionCard.swift */,
@@ -867,6 +873,7 @@
 				AD2FCA0181439C67F109F750 /* FoodLogTests.swift in Sources */,
 				8901142952134DD35512BE8D /* HeartRateMeasurementTests.swift in Sources */,
 				8C2CB1B97BBC37FE2E70249E /* HomeFigureTests.swift in Sources */,
+				F053550686D2E5C8906783EC /* HomeReadsTests.swift in Sources */,
 				0F8A1DFE4BBDAE51D8777C27 /* HomeTests.swift in Sources */,
 				C5CA6CFB2FC4BA7F33A6EDFA /* IngestTokenTests.swift in Sources */,
 				44A5C2011D28476A534774B9 /* NutritionScreenTests.swift in Sources */,
@@ -936,6 +943,7 @@
 				E8690456C11C59C246EEEAF9 /* HomeCards.swift in Sources */,
 				91EC409B6E84B1D309274095 /* HomeFigure.swift in Sources */,
 				98F08954D8698241E1D4F762 /* HomeHeader.swift in Sources */,
+				42AC90F65C94430785534474 /* HomeReads.swift in Sources */,
 				F2CF3049F540CE571BFB4FEB /* IngestClient.swift in Sources */,
 				E67138F70386B271D1386659 /* InsightsScreen.swift in Sources */,
 				9587346F3F34DDC601585F5E /* IntegrationsScreen.swift in Sources */,

@@ -164,6 +164,7 @@ struct PortraitFigure: View {
     var onFailed: (() -> Void)?
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.homeReads) private var reads
     @State private var image: UIImage?
     @State private var revealStart: Date?
     @State private var revealed = false
@@ -293,7 +294,7 @@ struct PortraitFigure: View {
 
     private func loadPhoto() async {
         let key = photo.versionKey
-        guard let img = await ProfileImages.image(.cutout, version: key, dark: scheme == .dark) else {
+        guard let img = await reads.readCutout(photo, scheme == .dark) else {
             image = nil
             onFailed?()
             return

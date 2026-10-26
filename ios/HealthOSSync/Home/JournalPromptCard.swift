@@ -2,18 +2,14 @@ import SwiftUI
 
 /// Home's "Your health journal" (src/components/home/JournalPrompt.tsx): an invitation to write today's check-in
 /// (journal?new=1 opens a new one), or, once there is one today (GET /api/journal?days=1), its mood and first line, and
-/// an invitation to add another. Check-ins are private to the person and this is their own Home: what's read is held in
-/// memory only, for this card, never kept on disk or logged. A server without the journal (an older one) hides the card.
+/// an invitation to add another. Home reads the journal (HomeReads) and leaves the card out on a server without one (an
+/// older one). Check-ins are private to the person and this is their own Home: what's read is held in memory only, for
+/// this card, never kept on disk or logged.
 struct JournalPromptCard: View {
+    /// Today's latest check-in; nil while there's none (or it's still being read).
+    var latest: JournalEntry? = nil
     @Environment(Dashboard.self) private var dashboard
     @Environment(\.colorScheme) private var scheme
-    /// Today's latest check-in once read; nil while there's none (or it's still being read).
-    @State private var latest: JournalEntry?
-
-    /// `latest` is what shows before the journal is read (tests and previews draw a day with a check-in).
-    init(latest: JournalEntry? = nil) { _latest = State(initialValue: latest) }
-    /// The server answered that it has no journal.
-    @State private var missing = false
     /// The card's width inside its padding, for the words' two thirds.
     @State private var inner: CGFloat = 303
     @Environment(\.dynamicTypeSize) private var typeSize
@@ -35,24 +31,7 @@ struct JournalPromptCard: View {
         }
     }
 
-    var body: some View {
-        Group {
-            if !missing { card(Model(latest: latest)) }
-        }
-        .task(id: dashboard.generation) {
-            do {
-                if let data = try await dashboard.journal(days: 1) {
-                    latest = data.todays.first
-                    missing = false
-                } else {
-                    latest = nil
-                    missing = true
-                }
-            } catch {
-                // Offline or a server error: the invitation stays, as it shows while reading.
-            }
-        }
-    }
+    var body: some View { card(Model(latest: latest)) }
 
     private func card(_ m: Model) -> some View {
         let shape = RoundedRectangle(cornerRadius: Radius.card, style: .continuous)

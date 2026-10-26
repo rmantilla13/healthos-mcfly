@@ -11,6 +11,8 @@ struct TodayGrid: View {
     /// shared/cards.ts ids in order, hidden ones already removed.
     let ids: [String]
     let goal: Double
+    /// The food totals card's days, which Home reads (HomeReads); the card isn't drawn without them.
+    var food: NutritionData? = nil
 
     var body: some View {
         // Every card hidden: nothing at all, not an empty stack, which a parent stack would still space around.
@@ -28,7 +30,7 @@ struct TodayGrid: View {
             switch id {
             case "home.load": LoadCard(summary: summary)
             case "home.activity": ActivityCard(summary: summary, goal: goal)
-            case "home.food": FoodTotalsCard()
+            case "home.food": if let food { FoodTotalsCard(data: food) }
             default: EmptyView()
             }
         }

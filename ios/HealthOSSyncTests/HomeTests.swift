@@ -320,6 +320,31 @@ final class HomeFigureCalloutTests: XCTestCase {
         XCTAssertTrue(CalloutText.atWrist(try? decode(Summary.self, fullSummary).vitals))
     }
 
+    func testReduceMotionHoldsEveryDotStill() throws {
+        let s = try decode(Summary.self, fullSummary)
+        let heart = CalloutText.of(.heart, vitals: s.vitals, asOf: today)
+        let breathing = CalloutText.of(.breathing, vitals: s.vitals, asOf: today)
+        let temp = CalloutText.of(.temp, vitals: s.vitals, asOf: today)
+        let spo2 = CalloutText.of(.spo2, vitals: s.vitals, asOf: today)
+        XCTAssertEqual([heart, breathing, temp, spo2].map { CalloutMark.moves($0, reduceMotion: false) }, [true, true, true, false],
+                       "the heart beats, breathing breathes, temperature glows; blood oxygen doesn't move")
+        XCTAssertEqual([heart, breathing, temp, spo2].map { CalloutMark.moves($0, reduceMotion: true) }, [false, false, false, false])
+        let none = CalloutText.of(.heart, vitals: nil, asOf: today)
+        XCTAssertFalse(CalloutMark.moves(none, reduceMotion: false), "no reading, nothing to move at")
+    }
+
+    func testWhichFigureShows() throws {
+        let photo = try decode(PhotoMeta.self, #"{"version":3,"width":900,"height":1200,"face":[0.38,0.06,0.24,0.24],"shoulderY":0.36,"dots":{"temp":[0.5,0.1],"breathing":[0.5,0.3],"heart":[0.56,0.45]}}"#)
+        let noDots = try decode(PhotoMeta.self, #"{"version":3,"width":900,"height":1200,"face":[0.38,0.06,0.24,0.24]}"#)
+        XCTAssertEqual(HomeFigure.shown(.stats, photo: photo, failed: nil), .none)
+        XCTAssertEqual(HomeFigure.shown(.digital, photo: photo, failed: nil), .digital)
+        XCTAssertEqual(HomeFigure.shown(.portrait, photo: nil, failed: nil), .digital, "no photo yet")
+        XCTAssertEqual(HomeFigure.shown(.portrait, photo: photo, failed: nil), .portrait)
+        XCTAssertEqual(HomeFigure.shown(.portrait, photo: noDots, failed: nil), .digital, "metadata without the dots, without trying the image")
+        XCTAssertEqual(HomeFigure.shown(.portrait, photo: photo, failed: 3), .digital, "while its cut-out can't be loaded")
+        XCTAssertEqual(HomeFigure.shown(.portrait, photo: photo, failed: 2), .portrait, "an older photo's failure says nothing of a new one")
+    }
+
     func testThePerspectiveDecidesTheFigure() throws {
         func settings(_ perspective: String?) throws -> ServerStatus.Settings {
             try decode(ServerStatus.Settings.self, perspective.map { #"{"perspective":"\#($0)"}"# } ?? "{}")
@@ -663,5 +688,14 @@ final class HomeFitsTests: XCTestCase {
     func testTheHeaderFits() throws {
         let s = try decode(Summary.self, fullSummary)
         assertFits("header", HomeHeader(summary: s, editing: .constant(false)))
+    }
+
+    func testTheFoodTotalsCardFits() throws {
+        let data = try decode(NutritionData.self, #"""
+        {"enabled":true,"numbers":"all","today":"2026-10-19","start":"2026-10-13","end":"2026-10-19","apps":["MyFitnessPal"],"app":null,
+         "days":[{"date":"2026-10-18","app":"MyFitnessPal","values":{"energy_kcal":2100,"protein_g":90,"carbs_g":240,"fat_g":70,"fiber_g":30}}]}
+        """#)
+        assertFits("food totals", FoodTotalsCard(data: data))
+        XCTAssertGreaterThan(fit(FoodTotalsCard(data: data), .large).height, 100)
     }
 }

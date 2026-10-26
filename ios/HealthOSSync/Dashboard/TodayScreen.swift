@@ -38,13 +38,18 @@ struct TodayScreen: View {
 /// and the optional ones are off until turned on; hidden cards leave no gap. Two parts only the iPhone has stay: the day
 /// by hour (it opens the Day view) and, while cycle tracking is on, the cycle's phase. Live heart rate opens from the
 /// heart's callout.
-private struct TodayContent: View {
+struct TodayContent: View {
     let summary: Summary
     @Environment(Dashboard.self) private var dashboard
     @Environment(AppModel.self) private var sync
+    @Environment(\.homeReads) private var reads
     /// The day by hour (GET /api/day) and the cycle (GET /api/cycle): nil hides their cards.
     @State private var day: DayData?
     @State private var cycle: CycleData?
+    /// The food totals card's 7 days (nil: not placed) and the journal card's check-in, read here rather than by the
+    /// cards (HomeReads says why).
+    @State private var food: NutritionData?
+    @State private var journal = JournalCard.reading
     /// The timeline's marker, shared with the figure: while it's moved, the figure's heart shows that hour.
     @State private var scrub = TodayScrub()
     @State private var editing = false
@@ -58,8 +63,8 @@ private struct TodayContent: View {
         let phase = isToday && dashboard.cycleTrackingOn ? cycle?.phase : nil
         let off = dashboard.cardsOff
         let stats = HomePerspective.of(dashboard.status?.settings) == .stats
-        // Food totals only for people with Nutrition on.
-        let optionalRow = HomeCards.optionalRow.filter { $0 != "home.food" || dashboard.nutritionOn }
+        // Food totals only for people with Nutrition on, and once its days have come.
+        let optionalRow = HomeCards.optionalRow.filter { $0 != "home.food" || (dashboard.nutritionOn && food != nil) }
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 HomeHeader(summary: summary, editing: $editing).padding(.bottom, 18)
@@ -74,11 +79,11 @@ private struct TodayContent: View {
                     VStack(spacing: 14) {
                         TodayGrid(summary: summary, ids: Cards.visible(HomeCards.signals, hidden: off), goal: dashboard.stepGoal)
                         if !off.contains("home.nutrition") { TodayNutritionCard(date: summary.date, today: summary.today) }
-                        if !off.contains("home.journal") { JournalPromptCard() }
+                        if !off.contains("home.journal"), journal.shows { JournalPromptCard(latest: journal.latest) }
                         // Only the iPhone has these: the day by hour, which opens the Day view, and the cycle's phase.
                         if let day, !day.metrics.isEmpty { DayCard(data: day, date: isToday ? nil : summary.date) }
                         if let cycle, let phase { CycleCard(cycle: cycle, phase: phase) }
-                        TodayGrid(summary: summary, ids: Cards.visible(optionalRow, hidden: off), goal: dashboard.stepGoal)
+                        TodayGrid(summary: summary, ids: Cards.visible(optionalRow, hidden: off), goal: dashboard.stepGoal, food: food)
                         if let timeline = summary.timeline, !off.contains("home.timeline") { TodayPath(timeline: timeline, scrubbed: scrub) }
                         if !off.contains("home.week") { WeekCard(week: summary.week, stepGoal: dashboard.stepGoal) }
                         if !off.contains("home.insights") { InsightsCard(insights: summary.insights ?? [], today: summary.today) }
@@ -102,7 +107,21 @@ private struct TodayContent: View {
         .task(id: "\(dashboard.generation)|\(dashboard.cycleTrackingOn)") {
             cycle = try? await dashboard.cycle()
         }
+        // On the scroll view, which is always there: each read runs again after every load, and when its card is turned
+        // on, even while the card itself isn't drawn.
+        .task(id: "\(dashboard.generation)|\(foodWanted)|\(dashboard.nutritionMode?.rawValue ?? "off")") {
+            let read = await reads.food(wanted: foodWanted, dashboard: dashboard)
+            if !Task.isCancelled { food = read }
+        }
+        .task(id: "\(dashboard.generation)|\(journalWanted)") {
+            let read = await reads.journal(wanted: journalWanted, current: journal, dashboard: dashboard)
+            if !Task.isCancelled { journal = read }
+        }
     }
+
+    /// Food totals are asked for only while they'd show: Nutrition on and Food ticked in Edit widgets.
+    private var foodWanted: Bool { dashboard.nutritionOn && !dashboard.cardsOff.contains("home.food") }
+    private var journalWanted: Bool { !dashboard.cardsOff.contains("home.journal") }
 
     /// The lines above the page: a load that failed, nothing connected yet, the one-time family note, and the
     /// summary's heads-ups (only the iPhone shows these).

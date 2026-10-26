@@ -162,8 +162,14 @@ struct CalloutMark: View {
     let dot: CGFloat
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// Whether the dot moves: with a rate to move at (or temperature's glow, with any reading), and never with Reduce
+    /// Motion, which holds it still in its colours.
+    static func moves(_ text: CalloutText, reduceMotion: Bool) -> Bool {
+        !reduceMotion && (text.rate != nil || (text.key == .temp && text.value != nil))
+    }
+
     var body: some View {
-        let moves = !reduceMotion && (text.rate != nil || (text.key == .temp && text.value != nil))
+        let moves = Self.moves(text, reduceMotion: reduceMotion)
         TimelineView(.animation(paused: !moves)) { context in
             mark(t: moves ? context.date.timeIntervalSinceReferenceDate : nil)
         }
@@ -274,24 +280,38 @@ private struct LabelBacking: ViewModifier {
 // MARK: - Home's figure
 
 /// Home's figure in the person's perspective, with the note about where a portrait comes from (Home.tsx home-figure):
-/// nothing for 'stats', the photo for a portrait with one (the digital human if it can't be loaded), and the digital
+/// nothing for 'stats', the photo for a portrait with one (the digital human while it can't be loaded), and the digital
 /// human otherwise. The heart's callout opens live heart rate.
 struct HomeFigure: View {
     let summary: Summary
     /// The timeline's marker, while it's moved on this same day.
     let scrub: HeartScrub?
     @Environment(Dashboard.self) private var dashboard
+    @Environment(\.homeReads) private var reads
+    @Environment(\.colorScheme) private var scheme
     @State private var liveOpen = false
-    /// The photo's version that couldn't be loaded: the digital human stands in for it.
+    /// The photo's version whose cut-out couldn't be loaded (offline, say): the digital human stands in for it until a
+    /// later load reads it.
     @State private var failedPhoto: Double?
+
+    enum Shown: Equatable { case none, portrait, digital }
+
+    /// Which figure shows: none for 'stats'; the photo for a portrait with one whose metadata places the dots, unless
+    /// its cut-out couldn't be loaded; else the digital human.
+    static func shown(_ perspective: HomePerspective, photo: PhotoMeta?, failed: Double?) -> Shown {
+        guard perspective != .stats else { return .none }
+        guard perspective == .portrait, let photo, PhotoLabels.dots(photo) != nil, failed != photo.version else { return .digital }
+        return .portrait
+    }
 
     var body: some View {
         let settings = dashboard.status?.settings
         let perspective = HomePerspective.of(settings)
         let photo = dashboard.status?.photo
-        if perspective != .stats {
+        let shown = Self.shown(perspective, photo: photo, failed: failedPhoto)
+        if shown != .none {
             VStack(alignment: .leading, spacing: 14) {
-                if perspective == .portrait, let photo, failedPhoto != photo.version {
+                if shown == .portrait, let photo {
                     PortraitFigure(vitals: summary.vitals, asOf: summary.date, photo: photo, units: dashboard.units, scrub: scrub,
                                 onHeart: { liveOpen = true }, onFailed: { failedPhoto = photo.version })
                 } else {
@@ -302,6 +322,12 @@ struct HomeFigure: View {
                 if perspective == .portrait, photo == nil { PortraitNote() }
             }
             .sheet(isPresented: $liveOpen) { LiveHeartRateView() }
+            // A cut-out that couldn't be loaded is tried again after every load (pull to refresh, coming back online),
+            // behind the digital human, and the portrait comes back once it reads: the web loads its image again too.
+            .task(id: "\(dashboard.generation)|\(scheme == .dark)") {
+                guard let photo, let failed = failedPhoto, failed == photo.version else { return }
+                if await reads.readCutout(photo, scheme == .dark) != nil, !Task.isCancelled, failedPhoto == failed { failedPhoto = nil }
+            }
         }
     }
 }

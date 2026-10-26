@@ -2,11 +2,11 @@ import SwiftUI
 
 /// Home's optional "Food" card (home.food, src/pages/Nutrition.tsx NutritionCard): the latest logged day's totals, up to
 /// five of them, and which of the last 7 days have anything logged. Only while Nutrition is on (Home doesn't place it
-/// otherwise), from GET /api/nutrition?days=7, which already leaves out what the person chose not to see; with nothing
-/// to show it's not there at all, as on the web. Its ↗ opens Nutrition.
+/// otherwise), from GET /api/nutrition?days=7, which already leaves out what the person chose not to see. Home reads it
+/// (HomeReads) and places the card only once there's a reply, as on the web. Its ↗ opens Nutrition.
 struct FoodTotalsCard: View {
+    let data: NutritionData
     @Environment(Dashboard.self) private var dashboard
-    @State private var data: NutritionData?
 
     /// What the card shows from a reply: the latest day, its nutrients (in the web's order, without saturated fat and
     /// sodium, at most five), and each of the window's days, logged or not.
@@ -34,17 +34,7 @@ struct FoodTotalsCard: View {
         }
     }
 
-    var body: some View {
-        Group {
-            if let data {
-                card(Model(data))
-            }
-        }
-        .task(id: "\(dashboard.generation)|\(dashboard.nutritionMode?.rawValue ?? "off")") {
-            // Nothing is asked for while Nutrition is off; nil (off, or a server without it) hides the card.
-            data = try? await dashboard.nutrition(days: 7)
-        }
-    }
+    var body: some View { card(Model(data)) }
 
     private func card(_ m: Model) -> some View {
         Button { dashboard.open(.nutrition) } label: {
