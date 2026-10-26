@@ -24,7 +24,7 @@ struct AboutStep: View {
             WrapLayout(spacing: 10) {
                 ForEach(Gender.allCases) { gender in
                     // A choice, not a switch: tapping the one chosen keeps it.
-                    ChipToggle(gender.label, isOn: Binding(get: { model.answers.gender == gender }, set: { if $0 { model.answers.gender = gender } }))
+                    GenderChip(title: gender.label, isOn: model.answers.gender == gender) { model.answers.gender = gender }
                         .accessibilityIdentifier("gender.\(gender.rawValue)")
                 }
             }
@@ -130,6 +130,33 @@ struct AboutStep: View {
         .frame(minHeight: 136)
         .background { GradientLayers(layers: WelcomeLook.peach).clipShape(shape) }
         .overlay(shape.strokeBorder(Palette.cardEdge))
+    }
+}
+
+/// One answer to "How do you describe yourself?" (.onb .onb-chip): 13pt words, 22pt either side, at least 44pt tall,
+/// a soft field with a hairline edge, sage edge and pale green fill once chosen. Smaller than the shared ChipToggle, as
+/// the web's welcome draws its chips; the field is solid under Reduce Transparency.
+private struct GenderChip: View {
+    let title: String
+    let isOn: Bool
+    let choose: () -> Void
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: Radius.field, style: .continuous)
+        Button(action: choose) {
+            Text(title)
+                .font(.app(size: WelcomeLook.chipFont, relativeTo: .footnote))
+                .foregroundStyle(Palette.ink)
+                .padding(.horizontal, WelcomeLook.chipPadding)
+                .frame(minHeight: WelcomeLook.chipHeight)
+                .background(isOn ? WelcomeLook.chipOn.color : reduceTransparency ? Palette.surface : WelcomeLook.field.color, in: shape)
+                .overlay(shape.strokeBorder(isOn ? Palette.choiceBorder : WelcomeLook.fieldBorder.color))
+                .contentShape(shape)
+        }
+        .buttonStyle(.plain)
+        .sensoryFeedback(.selection, trigger: isOn) { _, now in now }
+        .accessibilityAddTraits(isOn ? [.isSelected] : [])
     }
 }
 

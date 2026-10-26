@@ -551,4 +551,16 @@ final class OnboardingTests: XCTestCase {
         let forced = try XCTUnwrap(sheet.firstMatch(of: /:root\[data-theme='dark'\] \{([^}]*)\}/)?.output.1)
         XCTAssertEqual(forced.replacing(/\s+/, with: " ").trimmingCharacters(in: .whitespaces), darkBlock.replacing(/\s+/, with: " ").trimmingCharacters(in: .whitespaces))
     }
+
+    /// Step 2's chips are the welcome's own, smaller than the shared ChipToggle: .onb .onb-chip's size, padding and
+    /// height (no phone-width rule changes them).
+    func testStep2sChipsAreSizedAsOnboardingCssSizesThem() throws {
+        let sheet = try web("src/styles/onboarding.css")
+        let rules = sheet.matches(of: /\.onb \.onb-chip \{([^}]*)\}/).map { String($0.output.1) }
+        XCTAssertEqual(rules.count, 1, "one rule sizes the chips, at every width")
+        let rule = try XCTUnwrap(rules.first)
+        XCTAssertTrue(rule.contains("font-size: \(Int(WelcomeLook.chipFont))px;"), rule)
+        XCTAssertTrue(rule.contains("padding: 0 \(Int(WelcomeLook.chipPadding))px;"), rule)
+        XCTAssertTrue(rule.contains("min-height: \(Int(WelcomeLook.chipHeight))px;"), rule)
+    }
 }

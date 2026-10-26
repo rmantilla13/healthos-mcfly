@@ -49,6 +49,11 @@ enum WelcomeLook {
          .radial(0.55, 0.55, at: 0.04, 0.98, [(.rgba(60, 92, 54, 0.2), 0), (.rgba(60, 92, 54, 0), 0.72)]),
          .radial(0.6, 0.6, at: 0.5, 0.3, [(ColorToken.pageGlow.value.dark, 0), (.rgba(22, 25, 22, 0), 0.7)])])
 
+    /// Step 2's chips (.onb .onb-chip): font-size 13px, padding 0 22px, min-height 44px.
+    static let chipFont: CGFloat = 13
+    static let chipPadding: CGFloat = 22
+    static let chipHeight: CGFloat = 44
+
     /// The tagline under every card.
     static let tagline = "Your health, in perspective. Only yours."
     /// The frame's top, where `scrollTop` goes back to.
