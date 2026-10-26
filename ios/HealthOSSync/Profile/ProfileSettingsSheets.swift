@@ -295,10 +295,9 @@ private struct ProfileNutritionTargets: View {
         ProfileField(ProfileWords.targetsTitle) {
             VStack(alignment: .leading, spacing: 12) {
                 ProfileFine(ProfileWords.targetsNote)
-                ViewThatFits(in: .horizontal) {
-                    HStack(alignment: .top, spacing: 12) { fields }
-                    VStack(alignment: .leading, spacing: 12) { fields }
-                }
+                // As many to a row as fit, as the web's .target-inputs wrap: two and one on a phone, one a row at the
+                // largest text sizes.
+                ProfileWrap { fields }
                 if let error { ProfileNote(text: error, good: false) }
             }
         }
