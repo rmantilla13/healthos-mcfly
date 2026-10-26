@@ -14,6 +14,7 @@
 		0BDF60A216902A26A4A8FE46 /* DayAggregatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF3AD1F8E32A8E71A82AA62D /* DayAggregatorTests.swift */; };
 		0FB626BE268BECC37DF88D1F /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B00CB598628622D59B7DB55 /* Theme.swift */; };
 		112B304995D1A35E0A97578A /* SettingsButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5F7DD13686D856FCA46009C /* SettingsButton.swift */; };
+		180452B0990805753969B688 /* ChartLegend.swift in Sources */ = {isa = PBXBuildFile; fileRef = E617E2FB9DFD894B406765C5 /* ChartLegend.swift */; };
 		1927B716006AE1725C3FE33A /* nutrition-no-energy.json in Resources */ = {isa = PBXBuildFile; fileRef = 05350E818E3C1D083459C737 /* nutrition-no-energy.json */; };
 		1DEB0D58FBB4C34B5097F48C /* AppFont.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29C1771A03EB3CB2D0A7C635 /* AppFont.swift */; };
 		1E1FC25B8B9BD709409AC048 /* cycle-v2.json in Resources */ = {isa = PBXBuildFile; fileRef = 3ABEA99C24FB4C804B7345E1 /* cycle-v2.json */; };
@@ -60,6 +61,7 @@
 		7FDD20C507BAC8317D1A2AF3 /* FamilyScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = D87B03EEADCD7E5C790A7D1B /* FamilyScreen.swift */; };
 		8901142952134DD35512BE8D /* HeartRateMeasurementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCB8EE7A62B1F4AB7B71786B /* HeartRateMeasurementTests.swift */; };
 		893219DBB963B31FB21FB6DA /* ChoiceCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75B40DEA45C3FC6610DFF261 /* ChoiceCard.swift */; };
+		8CD34E8AD2E3B21910F47A4C /* Unavailable.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3457D32DF1BFEF633264ADF /* Unavailable.swift */; };
 		93553A1B60FAEDD38F663A33 /* HealthOSSyncApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA10EABB4D8994CA0CEDBA4C /* HealthOSSyncApp.swift */; };
 		98AFDD35BF2A25BA1955B8E8 /* cycle.json in Resources */ = {isa = PBXBuildFile; fileRef = A376DF27CC036EEF54ED4978 /* cycle.json */; };
 		9922FA689E8C8465ECA64B8E /* Health.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FEC96C3667D657317BC171A /* Health.swift */; };
@@ -166,6 +168,7 @@
 		9B00CB598628622D59B7DB55 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		9BFE7D971846C7E6DEAEDEDE /* OFL.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = OFL.txt; sourceTree = "<group>"; };
 		A2F31692BC3B154539132A48 /* DashboardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardTests.swift; sourceTree = "<group>"; };
+		A3457D32DF1BFEF633264ADF /* Unavailable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Unavailable.swift; sourceTree = "<group>"; };
 		A376DF27CC036EEF54ED4978 /* cycle.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = cycle.json; sourceTree = "<group>"; };
 		A6B59C95F0280EE6C16251E7 /* NutritionScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NutritionScreen.swift; sourceTree = "<group>"; };
 		A7E250115D08EBBAA0A6C1BF /* SampleData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleData.swift; sourceTree = "<group>"; };
@@ -189,6 +192,7 @@
 		E1080B46A2122D62513147F8 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		E2D4DC272C98EBF51B099683 /* PageIntro.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageIntro.swift; sourceTree = "<group>"; };
 		E5F7DD13686D856FCA46009C /* SettingsButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsButton.swift; sourceTree = "<group>"; };
+		E617E2FB9DFD894B406765C5 /* ChartLegend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartLegend.swift; sourceTree = "<group>"; };
 		EBD579D9FB433BBE4FFDD20C /* DayAggregator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayAggregator.swift; sourceTree = "<group>"; };
 		ECDFD19245668DF440AB12D0 /* Orb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Orb.swift; sourceTree = "<group>"; };
 		EDFE71549B0A68674DB9E571 /* TrendsScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrendsScreen.swift; sourceTree = "<group>"; };
@@ -271,6 +275,7 @@
 			children = (
 				FC000579B285FDC18EEB6224 /* Badge.swift */,
 				9A475462832EEEBDED73A035 /* Buttons.swift */,
+				E617E2FB9DFD894B406765C5 /* ChartLegend.swift */,
 				75B40DEA45C3FC6610DFF261 /* ChoiceCard.swift */,
 				6F7E4E9F2C6F015DE5BC2D04 /* Collapsible.swift */,
 				ECDFD19245668DF440AB12D0 /* Orb.swift */,
@@ -278,6 +283,7 @@
 				8793376CEAFA2A02DC49EEAF /* ProfileRow.swift */,
 				509E5458B1A6201B625AD7CC /* SafariView.swift */,
 				4EB44AEBCB8666894C5B6AB9 /* SheetScaffold.swift */,
+				A3457D32DF1BFEF633264ADF /* Unavailable.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -516,6 +522,7 @@
 				43D9A7DBB266FA71E9BBF8D9 /* Badge.swift in Sources */,
 				2B51353BCB3C78544D6A25B6 /* Buttons.swift in Sources */,
 				421871CDE11297C1B6C2D4FE /* Cards.swift in Sources */,
+				180452B0990805753969B688 /* ChartLegend.swift in Sources */,
 				893219DBB963B31FB21FB6DA /* ChoiceCard.swift in Sources */,
 				A66A0C8C42FDC0672C3537F5 /* Collapsible.swift in Sources */,
 				B850D34258977AB1B8FE0181 /* Config.swift in Sources */,
@@ -568,6 +575,7 @@
 				2F7B2CD3EAA7C1870DA36832 /* Tokens.swift in Sources */,
 				56E67199B3850FBB6BF933F2 /* TrendsExtras.swift in Sources */,
 				FC3C5C525A00D4C42F8173FC /* TrendsScreen.swift in Sources */,
+				8CD34E8AD2E3B21910F47A4C /* Unavailable.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

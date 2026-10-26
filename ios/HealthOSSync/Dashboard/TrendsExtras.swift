@@ -76,7 +76,7 @@ struct TempDeviationCard: View {
                 .chartYScale(domain: -limit...limit)
                 .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 5)) { v in
                     AxisGridLine().foregroundStyle(Palette.grid)
-                    AxisValueLabel { if let d = v.as(Double.self) { Text(Fmt.signed(d, 1)).foregroundStyle(Palette.ink3) } }
+                    AxisValueLabel { if let d = v.as(Double.self) { Text(Fmt.signed(d, 1)).foregroundStyle(Palette.ink3) } }.font(.app(.caption2))
                 } }
                 .chartXAxis { extrasDateAxis() }
                 .frame(height: 150)
@@ -124,11 +124,11 @@ struct BloodPressureCard: View {
                         .accessibilityValue("\(Fmt.number(r.value)) mmHg")
                 }
                 .chartForegroundStyleScale(domain: ["Systolic", "Diastolic"], range: [Palette.series2, Palette.series1])
-                .chartLegend(position: .bottom, alignment: .leading)
+                .chartLegend(position: .bottom, alignment: .leading) { ChartLegend([("Systolic", Palette.series2), ("Diastolic", Palette.series1)]) }
                 .chartYScale(domain: lo...hi)
                 .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { _ in
                     AxisGridLine().foregroundStyle(Palette.grid)
-                    AxisValueLabel().foregroundStyle(Palette.ink3)
+                    AxisValueLabel().font(.app(.caption2)).foregroundStyle(Palette.ink3)
                 } }
                 .chartXAxis { extrasDateAxis() }
                 .frame(height: 180)
@@ -217,11 +217,11 @@ struct SleepConsistencyCard: View {
                     }
                 }
                 .chartForegroundStyleScale(domain: ["Weekdays", "Weekends"], range: [Palette.series1, Palette.series2])
-                .chartLegend(position: .bottom, alignment: .leading)
+                .chartLegend(position: .bottom, alignment: .leading) { ChartLegend([("Weekdays", Palette.series1), ("Weekends", Palette.series2)]) }
                 .chartYScale(domain: -hi...(-lo))
                 .chartYAxis { AxisMarks(position: .leading, values: Array(stride(from: -hi, through: -lo, by: step))) { v in
                     AxisGridLine().foregroundStyle(Palette.grid)
-                    AxisValueLabel { if let m = v.as(Double.self) { Text(Fmt.eveningClock(minutesAfter18: -m)).foregroundStyle(Palette.ink3) } }
+                    AxisValueLabel { if let m = v.as(Double.self) { Text(Fmt.eveningClock(minutesAfter18: -m)).foregroundStyle(Palette.ink3) } }.font(.app(.caption2))
                 } }
                 .chartXAxis { extrasDateAxis() }
                 .frame(height: 210)
@@ -393,7 +393,7 @@ struct WeeklyLoadCard: View {
                 }
                 .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { v in
                     AxisGridLine().foregroundStyle(Palette.grid)
-                    AxisValueLabel { if let n = v.as(Double.self) { Text(Fmt.compact(n)).foregroundStyle(Palette.ink3) } }
+                    AxisValueLabel { if let n = v.as(Double.self) { Text(Fmt.compact(n)).foregroundStyle(Palette.ink3) } }.font(.app(.caption2))
                 } }
                 .chartXAxis { extrasDateAxis() }
                 .frame(height: 170)
@@ -579,7 +579,7 @@ private struct DailyBarsBlock: View {
             }
             .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { v in
                 AxisGridLine().foregroundStyle(Palette.grid)
-                AxisValueLabel { if let n = v.as(Double.self) { Text(n >= 1000 ? Fmt.compact(n) : n.formatted()).foregroundStyle(Palette.ink3) } }
+                AxisValueLabel { if let n = v.as(Double.self) { Text(n >= 1000 ? Fmt.compact(n) : n.formatted()).foregroundStyle(Palette.ink3) } }.font(.app(.caption2))
             } }
             .chartXAxis { extrasDateAxis() }
             .frame(height: 140)
@@ -607,6 +607,6 @@ private enum ExtrasFormat {
 
 private func extrasDateAxis() -> some AxisContent {
     AxisMarks(values: .automatic(desiredCount: 4)) { _ in
-        AxisValueLabel(format: .dateTime.month(.abbreviated).day()).foregroundStyle(Palette.ink3)
+        AxisValueLabel(format: .dateTime.month(.abbreviated).day()).font(.app(.caption2)).foregroundStyle(Palette.ink3)
     }
 }

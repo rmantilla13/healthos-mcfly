@@ -567,6 +567,8 @@ private struct DataShape: View {
             .padding(.horizontal, 14).padding(.vertical, 10)
             .frame(width: 116, alignment: .leading)
             .frame(minHeight: 60)
+            // As the labels beside the figure: beyond this the words no longer fit the shape; VoiceOver has them in full.
+            .dynamicTypeSize(...DynamicTypeSize.xxLarge)
             .background { CardSurface(tint: tint, shape: UnevenRoundedRectangle(cornerRadii: radii, style: .continuous)) }
         }
         .buttonStyle(.plain)
@@ -685,6 +687,7 @@ private struct AsciiBand: View {
 
     var body: some View {
         Canvas { ctx, size in
+            // The reveal's characters sit on a monospaced grid, so they stay in the system face.
             let glyphs = Self.ramp.map { ctx.resolve(Text(String($0)).font(.system(size: cells.cellH, design: .monospaced)).foregroundStyle(Palette.ink)) }
             let sx = size.width / CGFloat(cells.cols), sy = size.height / CGFloat(cells.rows)
             let top = edge - RevealMath.band, below = edge + 0.02

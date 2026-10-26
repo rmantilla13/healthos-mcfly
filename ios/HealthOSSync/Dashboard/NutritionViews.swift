@@ -198,7 +198,7 @@ private struct NutritionLoader<Content: View>: View {
             if let data {
                 content(data)
             } else if let error {
-                ContentUnavailableView("Couldn't load your nutrition", systemImage: "fork.knife", description: Text(error))
+                Unavailable("Couldn't load your nutrition", systemImage: "fork.knife", description: error)
             } else if loaded {
                 Text("Nutrition isn't available from this server yet.")
                     .font(.app(.footnote)).foregroundStyle(Palette.ink3)
@@ -816,10 +816,10 @@ private struct FoodChartCard: View {
         .chartXSelection(value: $selected)
         .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { v in
             AxisGridLine().foregroundStyle(Palette.grid)
-            AxisValueLabel { if let n = v.as(Double.self) { Text(axis(n)) } }.foregroundStyle(Palette.ink3)
+            AxisValueLabel { if let n = v.as(Double.self) { Text(axis(n)) } }.font(.app(.caption2)).foregroundStyle(Palette.ink3)
         } }
         .chartXAxis { AxisMarks(values: .automatic(desiredCount: 4)) { _ in
-            AxisValueLabel(format: .dateTime.month(.abbreviated).day()).foregroundStyle(Palette.ink3)
+            AxisValueLabel(format: .dateTime.month(.abbreviated).day()).font(.app(.caption2)).foregroundStyle(Palette.ink3)
         } }
         .accessibilityLabel("\(title) by day")
     }

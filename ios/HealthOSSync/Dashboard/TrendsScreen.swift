@@ -5,6 +5,7 @@ import SwiftUI
 struct TrendsScreen: View {
     @Environment(Dashboard.self) private var dashboard
     @AppStorage("trendsDays") private var days = 30
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         @Bindable var dashboard = dashboard
@@ -13,14 +14,16 @@ struct TrendsScreen: View {
                 if dashboard.signInRequired {
                     SignInView()
                 } else if dashboard.phase == .noServer {
-                    ContentUnavailableView("No server yet", systemImage: "server.rack", description: Text("Add your healthOS address in Settings."))
+                    Unavailable("No server yet", systemImage: "server.rack", description: "Add your healthOS address in Settings.")
                 } else {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 14) {
                             TrendsSectionChips(selection: $dashboard.trendsSection, sections: TrendsSection.visible(cycleTracking: dashboard.cycleTrackingOn))
-                            HStack {
+                            // At the accessibility text sizes the range goes under the line, so "30 days" never breaks.
+                            let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4)) : AnyLayout(HStackLayout())
+                            layout {
                                 Text(subtitle).font(.app(.footnote)).foregroundStyle(Palette.ink3)
-                                Spacer()
+                                if !typeSize.isAccessibilitySize { Spacer() }
                                 // The cycle view has its own span.
                                 if dashboard.trendsSection != .cycle {
                                     Picker("Range", selection: $days) {
@@ -30,6 +33,7 @@ struct TrendsScreen: View {
                                         Text("1 year").tag(365)
                                     }
                                     .pickerStyle(.menu)
+                                    .fixedSize()
                                 }
                             }
                             switch dashboard.trendsSection {
@@ -112,7 +116,7 @@ private struct TrendsLoader<Content: View>: View {
             if let trends {
                 content(trends)
             } else if let error {
-                ContentUnavailableView("Couldn't load trends", systemImage: "chart.line.downtrend.xyaxis", description: Text(error))
+                Unavailable("Couldn't load trends", systemImage: "chart.line.downtrend.xyaxis", description: error)
             } else {
                 ProgressView().frame(maxWidth: .infinity, minHeight: 200)
             }
@@ -236,10 +240,10 @@ private struct SleepTrends: View {
                             .foregroundStyle(by: .value("Stage", b.stage))
                     }
                     .chartForegroundStyleScale(domain: SleepTrends.stages.map(\.label), range: SleepTrends.stages.map(\.color))
-                    .chartLegend(position: .bottom, alignment: .leading)
+                    .chartLegend(position: .bottom, alignment: .leading) { ChartLegend(SleepTrends.stages.map { ($0.label, $0.color) }) }
                     .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { v in
                         AxisGridLine().foregroundStyle(Palette.grid)
-                        AxisValueLabel { if let h = v.as(Double.self) { Text("\(Fmt.number(h))h") } }
+                        AxisValueLabel { if let h = v.as(Double.self) { Text("\(Fmt.number(h))h") } }.font(.app(.caption2))
                     } }
                     .chartXAxis { dateAxis() }
                     .frame(height: 200)
@@ -304,7 +308,7 @@ private struct ActivityTrends: View {
                     }
                     .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { v in
                         AxisGridLine().foregroundStyle(Palette.grid)
-                        AxisValueLabel { if let n = v.as(Double.self) { Text(Fmt.compact(n)) } }
+                        AxisValueLabel { if let n = v.as(Double.self) { Text(Fmt.compact(n)) } }.font(.app(.caption2))
                     } }
                     .chartXAxis { dateAxis() }
                     .frame(height: 200)
@@ -517,7 +521,7 @@ struct TrendCard: View {
         .chartXSelection(value: $selected)
         .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { _ in
             AxisGridLine().foregroundStyle(Palette.grid)
-            AxisValueLabel().foregroundStyle(Palette.ink3)
+            AxisValueLabel().font(.app(.caption2)).foregroundStyle(Palette.ink3)
         } }
         .chartXAxis { dateAxis() }
         .accessibilityLabel(smoothed == nil ? "\(title) trend" : "\(title) trend, each reading with a 7-day average line")
@@ -526,6 +530,6 @@ struct TrendCard: View {
 
 private func dateAxis() -> some AxisContent {
     AxisMarks(values: .automatic(desiredCount: 4)) { _ in
-        AxisValueLabel(format: .dateTime.month(.abbreviated).day()).foregroundStyle(Palette.ink3)
+        AxisValueLabel(format: .dateTime.month(.abbreviated).day()).font(.app(.caption2)).foregroundStyle(Palette.ink3)
     }
 }

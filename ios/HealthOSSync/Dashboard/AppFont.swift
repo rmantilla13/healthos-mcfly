@@ -75,16 +75,28 @@ enum AppFont {
     }
 
     /// Bar titles, tab labels and segmented pickers are drawn by UIKit: DM Sans there too, at the web's heading weight
-    /// (500). Set once at launch, before any bar is made.
+    /// (500). Set once at launch, before any bar is made. Bar titles follow the text size, as the system's do.
     @MainActor static func styleBars() {
         let bar = UINavigationBar.appearance()
         let ink = UIColor(Palette.ink)
         bar.titleTextAttributes = [.font: uiFont(size: 17, weight: .medium, relativeTo: .headline), .foregroundColor: ink]
         bar.largeTitleTextAttributes = [.font: uiFont(size: 34, weight: .medium, relativeTo: .largeTitle), .foregroundColor: ink]
-        UITabBarItem.appearance().setTitleTextAttributes([.font: uiFont(size: 10, weight: .medium, relativeTo: .caption2)], for: .normal)
+        // The tab bar takes its label font only from a tab bar appearance (UITabBarItem's own is ignored). Its labels stay
+        // at one size, as the system's do: at the large text sizes, a long press shows the label large instead. Only the
+        // standard appearance is set, so UIKit still makes it see-through when a page is scrolled to its end.
+        let tabs = UITabBarAppearance()
+        tabs.configureWithDefaultBackground()
+        let label = uiFont(size: 10, weight: .medium)
+        for item in [tabs.stackedLayoutAppearance, tabs.inlineLayoutAppearance, tabs.compactInlineLayoutAppearance] {
+            item.normal.titleTextAttributes = [.font: label]
+            item.selected.titleTextAttributes = [.font: label]
+        }
+        UITabBar.appearance().standardAppearance = tabs
+        // A segmented picker keeps its height whatever the text size, so its words stay at one size too, as the
+        // system's do (a scaled font would be cut off at the larger sizes).
         let segments = UISegmentedControl.appearance()
-        segments.setTitleTextAttributes([.font: uiFont(size: 13, weight: .medium, relativeTo: .footnote)], for: .normal)
-        segments.setTitleTextAttributes([.font: uiFont(size: 13, weight: .semibold, relativeTo: .footnote)], for: .selected)
+        segments.setTitleTextAttributes([.font: uiFont(size: 13, weight: .medium)], for: .normal)
+        segments.setTitleTextAttributes([.font: uiFont(size: 13, weight: .semibold)], for: .selected)
     }
 }
 

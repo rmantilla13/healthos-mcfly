@@ -12,17 +12,13 @@ struct NutritionScreen: View {
                 if dashboard.signInRequired {
                     SignInView()
                 } else if dashboard.phase == .noServer {
-                    ContentUnavailableView {
-                        Label("No server yet", systemImage: "server.rack")
-                    } description: {
-                        Text("Add your healthOS address in Settings.")
-                    } actions: {
+                    Unavailable("No server yet", systemImage: "server.rack", description: "Add your healthOS address in Settings.") {
                         Button("Open Settings") { dashboard.tab = .settings }
                     }
                 } else if dashboard.status == nil {
                     // Whether Nutrition is on comes with the status: until it arrives there's nothing honest to show.
                     if case .unavailable(let message) = dashboard.phase {
-                        ContentUnavailableView("Can't load your dashboard", systemImage: "wifi.exclamationmark", description: Text(message))
+                        Unavailable("Can't load your dashboard", systemImage: "wifi.exclamationmark", description: message)
                     } else {
                         ProgressView()
                     }

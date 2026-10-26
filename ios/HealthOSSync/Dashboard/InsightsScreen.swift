@@ -12,7 +12,7 @@ struct InsightsScreen: View {
                 if dashboard.signInRequired {
                     SignInView()
                 } else if dashboard.phase == .noServer {
-                    ContentUnavailableView("No server yet", systemImage: "server.rack", description: Text("Add your healthOS address in Settings."))
+                    Unavailable("No server yet", systemImage: "server.rack", description: "Add your healthOS address in Settings.")
                 } else {
                     ScrollView {
                         InsightsContent().padding(16)
@@ -49,7 +49,7 @@ private struct InsightsContent: View {
                 HrvScatter(trends: trends, end: end)
                 YearHeatmapCard(trends: trends, end: end, stepGoal: dashboard.stepGoal)
             } else if let trendsError {
-                ContentUnavailableView("Couldn't load your data", systemImage: "chart.dots.scatter", description: Text(trendsError))
+                Unavailable("Couldn't load your data", systemImage: "chart.dots.scatter", description: trendsError)
             } else {
                 ProgressView().frame(maxWidth: .infinity, minHeight: 200)
             }
@@ -383,11 +383,11 @@ private struct ScatterCard: View {
         .chartYScale(domain: Self.padded(ys))
         .chartXAxis { AxisMarks(values: .automatic(desiredCount: 4)) { value in
             AxisGridLine().foregroundStyle(Palette.grid)
-            AxisValueLabel { if let v = value.as(Double.self) { Text(xText(v)) } }.foregroundStyle(Palette.ink3)
+            AxisValueLabel { if let v = value.as(Double.self) { Text(xText(v)) } }.font(.app(.caption2)).foregroundStyle(Palette.ink3)
         } }
         .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { _ in
             AxisGridLine().foregroundStyle(Palette.grid)
-            AxisValueLabel().foregroundStyle(Palette.ink3)
+            AxisValueLabel().font(.app(.caption2)).foregroundStyle(Palette.ink3)
         } }
         .chartXAxisLabel(position: .bottom, alignment: .center) { Text(xLabel).font(.app(.caption2)).foregroundStyle(Palette.ink3) }
         .chartYAxisLabel(position: .leading, alignment: .center) { Text(yLabel).font(.app(.caption2)).foregroundStyle(Palette.ink3) }

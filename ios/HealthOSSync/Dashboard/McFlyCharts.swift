@@ -337,9 +337,9 @@ private func yAxis(_ f: McFlyFormat) -> some AxisContent {
 private func dateAxis(monthly: Bool) -> some AxisContent {
     AxisMarks(values: .automatic(desiredCount: 4)) { _ in
         if monthly {
-            AxisValueLabel(format: .dateTime.month(.abbreviated).year(.twoDigits)).foregroundStyle(Palette.ink3)
+            AxisValueLabel(format: .dateTime.month(.abbreviated).year(.twoDigits)).font(.app(.caption2)).foregroundStyle(Palette.ink3)
         } else {
-            AxisValueLabel(format: .dateTime.month(.abbreviated).day()).foregroundStyle(Palette.ink3)
+            AxisValueLabel(format: .dateTime.month(.abbreviated).day()).font(.app(.caption2)).foregroundStyle(Palette.ink3)
         }
     }
 }
@@ -660,7 +660,7 @@ private struct StagesCard: View {
                     .foregroundStyle(by: .value("Stage", b.stage))
             }
             .chartForegroundStyleScale(domain: keys.map(\.label), range: keys.map(\.color))
-            .chartLegend(position: .bottom, alignment: .leading)
+            .chartLegend(position: .bottom, alignment: .leading) { ChartLegend(keys.map { ($0.label, $0.color) }) }
             .chartYAxis {
                 AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { v in
                     AxisGridLine().foregroundStyle(Palette.grid)

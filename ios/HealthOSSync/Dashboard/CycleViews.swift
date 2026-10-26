@@ -57,7 +57,7 @@ struct CycleTrends: View {
             if let cycle {
                 CycleSections(cycle: cycle, units: dashboard.units)
             } else if let error {
-                ContentUnavailableView("Couldn't load your cycle", systemImage: "circle.dashed", description: Text(error))
+                Unavailable("Couldn't load your cycle", systemImage: "circle.dashed", description: error)
             } else if loaded {
                 Text("Your cycle shows here once cycle tracking is on and a period is logged, in Apple Health or on the web.")
                     .font(.app(.footnote)).foregroundStyle(Palette.ink3)
@@ -426,6 +426,7 @@ private struct CycleFertilityCard: View {
                         Text("\(Int(d.suffix(2)) ?? 0)")
                             .font(.app(.caption2, weight: d == cycle.today ? .bold : .regular)).monospacedDigit()
                             .foregroundStyle(d == cycle.today ? Palette.ink : Palette.ink3)
+                        // ○ and ● aren't in DM Sans's latin set, so these marks are in the system face.
                         Text(d == ovulation ? (found == nil ? "○" : "●") : " ").font(.system(size: 9)).foregroundStyle(Palette.fertilePeak)
                     }
                     .frame(maxWidth: .infinity)
@@ -586,13 +587,13 @@ private struct CycleTemperatureCard: View {
         .chartYScale(domain: lo...hi)
         .chartXAxis {
             AxisMarks(values: Array(stride(from: 1, through: length, by: length > 30 ? 7 : 5)).map(Double.init)) { v in
-                AxisValueLabel { if let d = v.as(Double.self) { Text("\(Int(d))").foregroundStyle(Palette.ink3) } }
+                AxisValueLabel { if let d = v.as(Double.self) { Text("\(Int(d))").foregroundStyle(Palette.ink3) } }.font(.app(.caption2))
             }
         }
         .chartYAxis {
             AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { v in
                 AxisGridLine().foregroundStyle(Palette.grid)
-                AxisValueLabel { if let d = v.as(Double.self) { Text(Fmt.signed(d, abs(d) < 0.1 && d != 0 ? 2 : 1)).foregroundStyle(Palette.ink3) } }
+                AxisValueLabel { if let d = v.as(Double.self) { Text(Fmt.signed(d, abs(d) < 0.1 && d != 0 ? 2 : 1)).foregroundStyle(Palette.ink3) } }.font(.app(.caption2))
             }
         }
         .frame(height: 190)

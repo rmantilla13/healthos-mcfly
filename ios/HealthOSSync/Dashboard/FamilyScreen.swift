@@ -17,7 +17,7 @@ struct FamilyScreen: View {
                 if dashboard.signInRequired {
                     SignInView()
                 } else if dashboard.phase == .noServer {
-                    ContentUnavailableView("No server yet", systemImage: "server.rack", description: Text("Add your healthOS address in Settings."))
+                    Unavailable("No server yet", systemImage: "server.rack", description: "Add your healthOS address in Settings.")
                 } else {
                     FamilyContent()
                 }
@@ -61,19 +61,11 @@ private struct FamilyContent: View {
         case .missing:
             FamilyNote(text: "Family isn't available on this server yet.")
         case .failed(let error):
-            ContentUnavailableView {
-                Label("Couldn't load the family board", systemImage: "wifi.exclamationmark")
-            } description: {
-                Text(error)
-            } actions: {
+            Unavailable("Couldn't load the family board", systemImage: "wifi.exclamationmark", description: error) {
                 Button("Try again") { Task { await dashboard.loadFamily(force: true) } }
             }
         case .unavailable(let message):
-            ContentUnavailableView {
-                Label("Can't load the family board", systemImage: "wifi.exclamationmark")
-            } description: {
-                Text(message)
-            } actions: {
+            Unavailable("Can't load the family board", systemImage: "wifi.exclamationmark", description: message) {
                 Button("Try again") { Task { await dashboard.start() } }
             }
         case .loading:
@@ -755,10 +747,10 @@ private struct FamilyChartCard: View {
         .chartXSelection(value: $selected)
         .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { v in
             AxisGridLine().foregroundStyle(Palette.grid)
-            AxisValueLabel { if let n = v.as(Double.self) { Text(chart.axis(n)).foregroundStyle(Palette.ink3) } }
+            AxisValueLabel { if let n = v.as(Double.self) { Text(chart.axis(n)).foregroundStyle(Palette.ink3) } }.font(.app(.caption2))
         } }
         .chartXAxis { AxisMarks(values: .automatic(desiredCount: 4)) { _ in
-            AxisValueLabel(format: .dateTime.month(.abbreviated).day()).foregroundStyle(Palette.ink3)
+            AxisValueLabel(format: .dateTime.month(.abbreviated).day()).font(.app(.caption2)).foregroundStyle(Palette.ink3)
         } }
         .accessibilityLabel(chart.label)
     }

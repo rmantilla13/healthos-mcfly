@@ -42,7 +42,7 @@ struct DayScreen: View {
                     .opacity(stale ? 0.6 : 1)
                     .animation(.easeInOut(duration: 0.2), value: stale)
                 } else if let error {
-                    ContentUnavailableView("Couldn't load this day", systemImage: "chart.xyaxis.line", description: Text(error))
+                    Unavailable("Couldn't load this day", systemImage: "chart.xyaxis.line", description: error)
                 } else if loaded {
                     Text("No hourly readings yet. They come from the healthOS app on your iPhone, after a sync.")
                         .font(.app(.footnote)).foregroundStyle(Palette.ink3)
@@ -539,14 +539,14 @@ private struct HoursAxes: ViewModifier {
                 .chartYAxis {
                     AxisMarks(position: .leading, values: ticks) { v in
                         AxisGridLine().foregroundStyle(Palette.grid)
-                        AxisValueLabel { if let n = v.as(Double.self) { Text(format(n)) } }
+                        AxisValueLabel { if let n = v.as(Double.self) { Text(format(n)) } }.font(.app(.caption2))
                     }
                 }
                 // Labels sit just after their hour, as in Health; the day's end needs none.
                 .chartXAxis {
                     AxisMarks(values: [0.0, 6, 12, 18]) { v in
                         AxisTick().foregroundStyle(Palette.grid)
-                        AxisValueLabel { Text(DayMath.clock(Int(v.as(Double.self) ?? 0))) }
+                        AxisValueLabel { Text(DayMath.clock(Int(v.as(Double.self) ?? 0))) }.font(.app(.caption2))
                             .foregroundStyle(Palette.ink3)
                     }
                 }

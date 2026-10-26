@@ -4,18 +4,20 @@ import SwiftUI
 // The six metric cards, the timeline and the insights from src/pages/Home.tsx.
 
 /// The metric cards that show (hidden ones left out), two to a row like the web's fill row: as many full rows as
-/// fit, and an odd last card spans both columns, so hiding a card never leaves a hole.
+/// fit, and an odd last card spans both columns, so hiding a card never leaves a hole. At the accessibility text
+/// sizes, one to a row, as the web's narrowest layout, so no word breaks in the middle.
 struct TodayGrid: View {
     let summary: Summary
     /// shared/cards.ts ids in order, hidden ones already removed (Cards.todayGrid).
     let ids: [String]
     let goal: Double
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         // Every card hidden: nothing at all, not an empty stack, which a parent stack would still space around.
         if !ids.isEmpty {
             VStack(spacing: 12) {
-                ForEach(Array(Cards.rows(ids, max: 2).enumerated()), id: \.offset) { _, row in
+                ForEach(Array(Cards.rows(ids, max: typeSize.isAccessibilitySize ? 1 : 2).enumerated()), id: \.offset) { _, row in
                     HStack(alignment: .top, spacing: 12) {
                         ForEach(row, id: \.self) { card($0) }
                     }
