@@ -170,19 +170,55 @@ struct ViewSwitch: View {
 /// The table twin: every value readable without touching the chart, newest first, as on the web (ChartCard's table in
 /// src/charts/Charts.tsx): the columns' names on a white band over hairlines, every cell on one line (td's nowrap), the
 /// columns sharing the width when they fit (SheetTableLayout) and the table scrolling sideways when they don't
-/// (.table-wrap's overflow), so no word is ever broken, at any text size. VoiceOver reads it a row at a time.
+/// (.table-wrap's overflow), so no word is ever broken. At the accessibility text sizes, where even two columns don't fit
+/// and a value would sit off the edge, each row stacks instead: its first cell over the rest, every value in view,
+/// with no inner scrolling (the sheet scrolls). VoiceOver reads it a row at a time.
 struct SheetTableView: View {
     let table: SheetTable
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            window { grid }
-            window {
-                ScrollView(.horizontal) { grid }
-                    .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
-                    .scrollIndicatorsFlash(onAppear: true)
+        if typeSize.isAccessibilitySize {
+            stacked
+        } else {
+            ViewThatFits(in: .horizontal) {
+                window { grid }
+                window {
+                    ScrollView(.horizontal) { grid }
+                        .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+                        .scrollIndicatorsFlash(onAppear: true)
+                }
             }
         }
+    }
+
+    /// Newest first, as the grid: each row's first cell (the date or hour), then its other values, wrapping if they must.
+    private var stacked: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(table.rows.reversed().enumerated()), id: \.offset) { _, row in
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(row.first ?? "").font(.app(size: 13, weight: .medium, relativeTo: .footnote)).foregroundStyle(Palette.ink3)
+                    ForEach(Array(Self.stackedValues(table.columns, row).enumerated()), id: \.offset) { _, line in
+                        Text(line).font(.app(size: 13, relativeTo: .footnote)).foregroundStyle(Palette.ink)
+                    }
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .overlay(alignment: .bottom) { Rectangle().fill(Palette.grid).frame(height: 1) }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(Self.spoken(table.columns, row))
+            }
+        }
+    }
+
+    /// A stacked row's lines under its first cell: the value alone when there's one ("55 bpm"), each with its column's
+    /// name when there are several ("Average: 57 bpm").
+    static func stackedValues(_ columns: [String], _ row: [String]) -> [String] {
+        let values = Array(row.dropFirst())
+        guard values.count > 1 else { return values }
+        return zip(columns.dropFirst(), values).map { "\($0): \($1)" }
     }
 
     /// A long table scrolls inside 360 points (.table-wrap's max-height), as the web's does; a short one is shown whole.

@@ -451,6 +451,33 @@ final class ShellTests: XCTestCase {
         XCTAssertFalse(d.welcomeEditing)
     }
 
+    /// At launch, a status kept from the last launch that says the welcome isn't done holds a plain page over the app
+    /// until the server says who's signed in, as the web shows nothing until the status is known: Home's frame never
+    /// shows first. Signed in, the welcome itself takes over; signed out, nothing is held over the sign-in screen.
+    func testAtLaunchAWelcomeNotDoneHoldsHomeBack() throws {
+        let d = Dashboard()
+        XCTAssertEqual(d.phase, .starting)
+        XCTAssertFalse(d.welcomeHeld, "nothing kept: nothing to hold")
+        d.apply(status: try status(#"{"perspective":"portrait","onboarding":2}"#))
+        XCTAssertTrue(d.welcomeHeld)
+        XCTAssertNil(d.onboarding, "not shown before the server says who's signed in")
+        d.phase = .ready
+        XCTAssertFalse(d.welcomeHeld)
+        XCTAssertEqual(d.onboarding, .new, "the welcome itself, in its place")
+
+        let done = Dashboard()
+        done.apply(status: try status(#"{"perspective":"portrait","onboarding":null}"#))
+        XCTAssertFalse(done.welcomeHeld, "a welcome done: Home as before")
+        let older = Dashboard()
+        older.apply(status: try status(#"{"onboarding":1}"#))
+        XCTAssertFalse(older.welcomeHeld, "a server older than the welcome never shows it")
+
+        let out = Dashboard()
+        out.apply(status: try status(#"{"perspective":"portrait","onboarding":1}"#))
+        out.phase = .signIn
+        XCTAssertFalse(out.welcomeHeld, "signed out: the sign-in screen, nothing over it")
+    }
+
     /// Any card's arrow opens its metric's sheet over the app, with the card's page for "Open {Page}".
     func testAMetricSheetOpensOverTheApp() throws {
         let d = Dashboard()

@@ -10,8 +10,42 @@ struct AppShell: View {
     @State private var chosen: AccountMenuItem?
 
     var body: some View {
+        // The welcome in place of the app, as the web shows it instead of the dashboard (App.tsx): a new account's until
+        // it's done, or its steps again from Profile; it goes with a sign-out or a 401. Not over the app, as a
+        // full-screen cover was (it slid up over Home at launch and slid its words down over Home when done) or an
+        // overlay (Home stayed under it for VoiceOver and the tab bar): while it's up there's no app behind it. Up at
+        // launch, or opened from Profile, it's simply there; done, it fades out over the app, which is back at once.
+        ZStack {
+            if dashboard.onboarding == nil && !dashboard.welcomeHeld {
+                tabs.transition(.identity)
+            }
+            if let mode = dashboard.onboarding {
+                OnboardingView(mode: mode)
+                    .background { Palette.page.ignoresSafeArea() }
+                    .id(mode)
+                    .transition(.asymmetric(insertion: .identity, removal: .opacity))
+                    .zIndex(1)
+            } else if dashboard.welcomeHeld {
+                // At launch, until the server says who's signed in: the welcome's page, not Home's frame first.
+                Palette.page.ignoresSafeArea().transition(.identity).zIndex(1)
+            }
+        }
+        .animation(.easeOut(duration: 0.25), value: dashboard.onboarding)
+        // Whether the server has McFly on and how many questions are left, and what this person's AI requests use
+        // (Availability): after every load, while signed in.
+        .task(id: "\(dashboard.generation)|\(dashboard.phase == .ready)") {
+            guard dashboard.phase == .ready else { return }
+            await dashboard.mcfly.refreshStatus()
+            await dashboard.loadAI(force: true)
+        }
+        // Family or Cycle went away (another server, tracking off) while open under More.
+        .onChange(of: dashboard.featurePages) { _, _ in dashboard.dropMissingPages() }
+    }
+
+    /// The tab bar and its pages, and the sheets over them.
+    private var tabs: some View {
         @Bindable var dashboard = dashboard
-        TabView(selection: $dashboard.tab) {
+        return TabView(selection: $dashboard.tab) {
             ForEach(AppTab.bar, id: \.self) { tab in
                 TabRoot(tab: tab)
                     .tabItem { Label(tab.title, systemImage: tab.symbol) }
@@ -29,24 +63,6 @@ struct AppShell: View {
                 dashboard.accountMenuOpen = false
             }
         }
-        // Whether the server has McFly on and how many questions are left, and what this person's AI requests use
-        // (Availability): after every load, while signed in.
-        .task(id: "\(dashboard.generation)|\(dashboard.phase == .ready)") {
-            guard dashboard.phase == .ready else { return }
-            await dashboard.mcfly.refreshStatus()
-            await dashboard.loadAI(force: true)
-        }
-        // Family or Cycle went away (another server, tracking off) while open under More.
-        .onChange(of: dashboard.featurePages) { _, _ in dashboard.dropMissingPages() }
-        // The welcome, over everything (the web shows it instead of the dashboard): a new account's until it's done,
-        // with no swipe away, or its steps again from Profile. It goes with a sign-out or a 401.
-        .fullScreenCover(item: welcome) { mode in
-            OnboardingView(mode: mode).interactiveDismissDisabled()
-        }
-    }
-
-    private var welcome: Binding<OnboardingMode?> {
-        Binding(get: { dashboard.onboarding }, set: { if $0 == nil { dashboard.welcomeEditing = false } })
     }
 }
 

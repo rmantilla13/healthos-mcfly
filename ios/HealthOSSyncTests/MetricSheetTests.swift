@@ -888,7 +888,8 @@ final class MetricSheetTests: XCTestCase {
 
     /// Every cell keeps to one line, as the web's td (white-space: nowrap) does, so no word or value is ever broken: a table
     /// too wide for the sheet scrolls sideways (.table-wrap's overflow) and stays inside the sheet. Its height is then
-    /// exactly the names' line and one line per row, with the web's padding and a hairline under each.
+    /// exactly the names' line and one line per row, with the web's padding and a hairline under each. At the
+    /// accessibility sizes the rows stack instead (testAtTheAccessibilitySizesEachTableRowStacks).
     func testTheTablesKeepEachCellToOneLineAtEveryTextSize() throws {
         let css = try web("src/styles.css")
         XCTAssertTrue(css.contains("  font-variant-numeric: tabular-nums;\n  white-space: nowrap;\n}"), "td keeps to one line")
@@ -903,13 +904,33 @@ final class MetricSheetTests: XCTestCase {
         XCTAssertEqual(steps.rows.count, 7)
         for table in [heart, steps, weekTable] {
             XCTAssertLessThanOrEqual(table.rows.count, 9, "a short table is shown whole")
-            for type: DynamicTypeSize in [.large, .xLarge, .xxxLarge, .accessibility1, .accessibility3, .accessibility5] {
+            for type: DynamicTypeSize in [.large, .xLarge, .xxxLarge] {
                 let name = measure(Text("Hour").font(.app(size: 12, weight: .medium, relativeTo: .caption)).fixedSize(), type, width: .greatestFiniteMagnitude).height
                 let line = measure(Text("57 bpm").font(.app(size: 13, relativeTo: .footnote)).fixedSize(), type, width: .greatestFiniteMagnitude).height
                 let size = measure(SheetTableView(table: table), type)
                 let rows = CGFloat(table.rows.count)
                 XCTAssertEqual(size.height, name + 16 + 1 + rows * (line + 16 + 1), accuracy: 1.5, "\(table.columns) at \(type): a cell wrapped")
                 XCTAssertLessThanOrEqual(size.width, sheetWidth + 0.5, "\(table.columns) at \(type): inside the sheet")
+            }
+        }
+    }
+
+    /// At the accessibility sizes, where a value would sit off the sheet's edge (the walk saw "55 bp" cut off at AX5),
+    /// each row stacks: its date or hour, then each value on a line of its own (named when there are several), every one
+    /// inside the sheet and none cut off, with no inner scrolling.
+    func testAtTheAccessibilitySizesEachTableRowStacks() throws {
+        XCTAssertEqual(SheetTableView.stackedValues(["Week of", "Heart rate"], ["Aug 10, 2026", "54 bpm"]), ["54 bpm"])
+        XCTAssertEqual(SheetTableView.stackedValues(["Hour", "Average", "Low"], ["2 AM–3 AM", "57 bpm", "52 bpm"]),
+                       ["Average: 57 bpm", "Low: 52 bpm"])
+        let year = SheetTable(columns: ["Week of", "Heart rate"], rows: (0..<52).map { ["Aug \($0 % 28 + 1), 2026", "\(50 + $0 % 9) bpm"] })
+        let heart = try dayTable(try fixture("metric-heart-rate-day"))
+        for table in [year, heart] {
+            for type: DynamicTypeSize in [.accessibility1, .accessibility3, .accessibility5] {
+                let line = measure(Text("57 bpm").font(.app(size: 13, relativeTo: .footnote)).fixedSize(), type, width: .greatestFiniteMagnitude).height
+                let size = measure(SheetTableView(table: table), type)
+                XCTAssertLessThanOrEqual(size.width, sheetWidth + 0.5, "\(table.columns) at \(type): inside the sheet")
+                let lines = CGFloat(table.rows.count * table.columns.count)
+                XCTAssertGreaterThanOrEqual(size.height, lines * line, "\(table.columns) at \(type): every row whole, none in an inner window")
             }
         }
     }

@@ -138,6 +138,67 @@ final class ComponentsTests: XCTestCase {
         }
     }
 
+    /// The accent pill, as the quiet pill: one line up to the largest standard size; at the accessibility sizes its words
+    /// wrap ("Enter my workspace" was cut off on the welcome's last step at AX5).
+    func testTheAccentPillsWordsWrapOnlyAtTheAccessibilitySizes() {
+        func size(_ title: String, _ type: DynamicTypeSize, width: CGFloat, arrow: Bool = true) -> CGSize {
+            UIHostingController(rootView: Button { } label: { WelcomeButtonLabel(title, arrow: arrow) }
+                .buttonStyle(.accentPill).environment(\.dynamicTypeSize, type))
+                .sizeThatFits(in: CGSize(width: width, height: 3000))
+        }
+        for type in [DynamicTypeSize.large, .xxxLarge] {
+            XCTAssertEqual(size("Enter my workspace", type, width: 340).height, 44, accuracy: 0.5, "\(type): the pill's own height")
+        }
+        let oneLine = size("OK", .accessibility5, width: 300, arrow: false)
+        let wrapped = size("Enter my workspace", .accessibility5, width: 300)
+        XCTAssertGreaterThan(wrapped.height, oneLine.height * 1.8, "every word shown, on more than one line")
+        XCTAssertLessThanOrEqual(wrapped.width, 300)
+    }
+
+    /// The radio mark grows with the card's name: 16 points at the default size, more at the accessibility sizes.
+    func testTheRadioMarkGrowsWithTheText() {
+        func side(_ type: DynamicTypeSize) -> CGFloat {
+            UIHostingController(rootView: RadioMark(isOn: true).environment(\.dynamicTypeSize, type)).sizeThatFits(in: CGSize(width: 400, height: 400)).width
+        }
+        XCTAssertEqual(side(.large), 16, accuracy: 0.5)
+        XCTAssertGreaterThan(side(.accessibility5), 16 * 2.5, "about as much bigger as the words beside it")
+    }
+
+    /// The range chips keep one row where they fit; at AX5 they wrap inside the well, so "90 days" isn't cut off at
+    /// the edge, and the well stays inside the page.
+    func testTheRangeChipsWrapRatherThanRunOffTheEdge() {
+        func size(_ type: DynamicTypeSize, width: CGFloat) -> CGSize {
+            UIHostingController(rootView: RangeFilters(days: .constant(30), ranges: ChartRange.standard.filter { $0.days <= 90 })
+                .environment(\.dynamicTypeSize, type)).sizeThatFits(in: CGSize(width: width, height: 3000))
+        }
+        let row = size(.large, width: 358)
+        XCTAssertLessThan(row.width, 358, "one row, as wide as its chips")
+        let wrapped = size(.accessibility5, width: 358)
+        XCTAssertLessThanOrEqual(wrapped.width, 358.5)
+        XCTAssertGreaterThan(wrapped.height, row.height * 3, "on more than one row")
+    }
+
+    /// The Macros, water and caffeine charts as the web's BarChart: an even slot per logged day, a bar the slot less 2
+    /// points (1 to 24), and 2 to 6 dates under them, first and last day included.
+    func testTheFoodChartsPlotTheLoggedDaysInEvenSlots() {
+        XCTAssertEqual(FoodChartCard.barWidth(plotWidth: 300, count: 3), 24, "three days: the widest bar, not a third of the width")
+        XCTAssertEqual(FoodChartCard.barWidth(plotWidth: 300, count: 30), 8)
+        XCTAssertEqual(FoodChartCard.barWidth(plotWidth: 300, count: 400), 1)
+        XCTAssertEqual(FoodChartCard.labelIndices(count: 3, width: 330), [0, 1, 2])
+        XCTAssertEqual(FoodChartCard.labelIndices(count: 30, width: 330), [0, 15, 29])
+        XCTAssertEqual(FoodChartCard.labelIndices(count: 1, width: 330), [0])
+        XCTAssertEqual(FoodChartCard.labelIndices(count: 0, width: 330), [])
+    }
+
+    /// A drag on a chart picks points only when it starts sideways; one that starts up or down is the page's scroll.
+    func testAChartPicksOnlyOnASidewaysDrag() {
+        XCTAssertTrue(ChartScrub.isSideways(CGPoint(x: 300, y: 40)))
+        XCTAssertTrue(ChartScrub.isSideways(CGPoint(x: -300, y: 40)))
+        XCTAssertFalse(ChartScrub.isSideways(CGPoint(x: 40, y: 300)))
+        XCTAssertFalse(ChartScrub.isSideways(CGPoint(x: 10, y: -300)))
+        XCTAssertFalse(ChartScrub.isSideways(.zero))
+    }
+
     /// The radio card's mark as the web's radio draws: empty, a grey ring on a grey disc in dark mode (not the card's
     /// own surface); chosen, an accent ring, a white band and an accent dot, in light and dark.
     func testTheRadioMarkIsTheWebsInLightAndDark() throws {

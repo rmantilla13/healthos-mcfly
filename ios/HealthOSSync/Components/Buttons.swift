@@ -14,28 +14,57 @@ enum PillSize {
 /// onboarding.
 ///
 ///     Button("Continue") { … }.buttonStyle(.accentPill(arrow: true))
+/// One line, as the web's; at the accessibility text sizes, where one line would cut its words off ("Enter my
+/// workspace" on the welcome's last step), they wrap instead, centred in a box with the pill's rounded corners, as the
+/// quiet pill's do.
 struct AccentPillStyle: ButtonStyle {
     var arrow = false
     var size: PillSize = .regular
-    @Environment(\.isEnabled) private var isEnabled
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func makeBody(configuration: Configuration) -> some View {
+        AccentPillBody(configuration: configuration, arrow: arrow, size: size)
+    }
+}
+
+private struct AccentPillBody: View {
+    let configuration: ButtonStyleConfiguration
+    let arrow: Bool
+    let size: PillSize
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    var body: some View {
+        if typeSize.isAccessibilitySize {
+            pill(words
+                .multilineTextAlignment(.center)
+                .lineLimit(nil)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.vertical, 8), shape: RoundedRectangle(cornerRadius: size.height / 2, style: .continuous))
+        } else {
+            pill(words.lineLimit(1), shape: Capsule())
+        }
+    }
+
+    private var words: some View {
         HStack(spacing: 7) {
             configuration.label
             if arrow { Image(systemName: "arrow.up.right").imageScale(.small).accessibilityHidden(true) }
         }
         .font(size.font)
         .foregroundStyle(Palette.accentInk)
-        .lineLimit(1)
-        .padding(.horizontal, size.padding)
-        .frame(minHeight: size.height)
-        .background { GradientFill(configuration.isPressed ? .accentGradHover : .accentGrad).clipShape(Capsule()) }
-        .tokenShadow(.pill, in: Capsule())
-        .contentShape(Capsule())
-        .opacity(isEnabled ? 1 : 0.5)
-        .scaleEffect(configuration.isPressed && !reduceMotion ? 0.98 : 1)
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: configuration.isPressed)
+    }
+
+    private func pill(_ words: some View, shape: some InsettableShape) -> some View {
+        words
+            .padding(.horizontal, size.padding)
+            .frame(minHeight: size.height)
+            .background { GradientFill(configuration.isPressed ? .accentGradHover : .accentGrad).clipShape(shape) }
+            .tokenShadow(.pill, in: shape)
+            .contentShape(shape)
+            .opacity(isEnabled ? 1 : 0.5)
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.98 : 1)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: configuration.isPressed)
     }
 }
 
