@@ -2,30 +2,11 @@ import Foundation
 import Observation
 import UIKit
 
-/// The tab bar's tabs. `settings` isn't one: asking for it opens Settings as a sheet over the tab showing (the gear on
-/// each tab, Today's avatar, every "Open Settings").
-enum AppTab: Hashable { case today, family, trends, nutrition, insights, settings }
-
+/// The charts of the pages not built in the app yet (TrendsPage, src/pages/Detail.tsx): Vitals, Sleep and Cycle show
+/// one each, Body shows Body and Activity.
 enum TrendsSection: String, CaseIterable, Identifiable {
     case vitals = "Vitals", sleep = "Sleep", activity = "Activity", body = "Body", cycle = "Cycle"
     var id: String { rawValue }
-
-    /// Web pages an insight can link to.
-    init?(page: String) {
-        switch page {
-        case "vitals": self = .vitals
-        case "sleep": self = .sleep
-        case "activity": self = .activity
-        case "body": self = .body
-        case "cycle": self = .cycle
-        default: return nil
-        }
-    }
-
-    /// The sections to offer: Cycle only while cycle tracking is on.
-    static func visible(cycleTracking: Bool) -> [TrendsSection] {
-        cycleTracking ? allCases : allCases.filter { $0 != .cycle }
-    }
 }
 
 extension Notification.Name {
@@ -52,6 +33,8 @@ final class Dashboard {
             // Signed out without Sign out (a session that ran out or was ended elsewhere, none at launch): a token
             // nobody can be told the owner of waits for a sign-in; one whose owner is known goes on (IngestTokenOwner).
             if phase == .signIn, oldValue != .signIn { ingestSessionEnded() }
+            // Signed out, or the server can't be reached: no page stays open on what it showed.
+            if phase != .ready, oldValue == .ready { dropPages() }
         }
     }
     var summary: Summary?
@@ -61,18 +44,26 @@ final class Dashboard {
     var loading = false
     /// Shown above the content, e.g. while offline with a cached summary on screen.
     var error: String?
-    var tab: AppTab = .today {
+    // Navigation (Shell/Navigation.swift).
+    /// The tab showing. Asking for `.settings` opens Profile under More, as the web's #/settings does.
+    var tab: AppTab = .home {
         didSet {
-            // Settings opens over the tab that asked for it, which stays selected underneath.
             if tab == .settings {
-                tab = oldValue == .settings ? .today : oldValue
-                showingSettings = true
+                tab = .more
+                paths[.more] = [.profile]
             }
         }
     }
-    /// The Settings sheet is up.
-    var showingSettings = false
-    var trendsSection: TrendsSection = .vitals
+    /// The pages each tab has pushed over its own, the top one last.
+    var paths: [AppTab: [AppRoute]] = [:]
+    /// The last link to each tab's own page, for its query (Body's tab=activity).
+    var requests: [AppPage: RouteRequest] = [:]
+    var requestCount = 0
+    /// A page of the server's website showing over the app, until it's closed.
+    var webPage: WebPage?
+    /// Ask McFly's conversation, for the Home pill's sheet and the page under More alike. In memory only, and gone with
+    /// a sign-out, another person's sign-in or another server.
+    let mcfly = McFlyChat()
     /// "open" (no sign-in, e.g. a local server) or "required" (the hosted dashboard).
     var authMode: String?
     /// The server signs in with email and password (per-person accounts), not a password alone.
@@ -117,7 +108,7 @@ final class Dashboard {
     /// Counts board reads, so a slower, older one can't replace a newer one (or land after a sign-out).
     private var familyRequest = 0
 
-    /// Whose account the ingest token sends to, and whether the sync waits for a sign-in, as Settings shows it.
+    /// Whose account the ingest token sends to, and whether the sync waits for a sign-in, as Profile shows it.
     private(set) var ingestOwner: IngestTokenOwner
     /// Where the token and its owner are kept: the app passes the Keychain's.
     private let tokenStore: IngestTokenStore
@@ -131,7 +122,7 @@ final class Dashboard {
 
     var units: Units { Units(rawValue: status?.settings?.units ?? "") ?? .metric }
     var stepGoal: Double { summary?.stepGoal ?? status?.settings?.stepGoal ?? 10_000 }
-    /// Cycle tracking is on (set on the web or in Settings): the Cycle card, the Cycle trends section and GET /api/cycle.
+    /// Cycle tracking is on (set on the web or in Profile): the Cycle card, the Cycle page and GET /api/cycle.
     var cycleTrackingOn: Bool { status?.settings?.cycleTracking == true }
     /// What the person chose to see of their nutrition, or nil while Nutrition is off (or the server has none).
     var nutritionMode: NutritionMode? {
@@ -144,7 +135,7 @@ final class Dashboard {
     /// The server has the Family board: its status names the setting, or the board itself was read.
     var familyAvailable: Bool { status?.settings?.familySharing != nil || familyBoard != nil }
     /// Show the one-time "your family can see your status" note on Today. Not without sign-in: no one else is on
-    /// the board there, and Settings has no Family section to change.
+    /// the board there, and Profile has no Family section to change.
     var showsFamilyNotice: Bool {
         status?.settings?.familySharing == true && status?.settings?.familyNoticeSeen == false && !familyNoticeDismissed && authMode != "open"
     }
@@ -288,7 +279,7 @@ final class Dashboard {
 
 
     func signIn(email: String, password: String) async throws {
-        guard let client = APIClient.current() else { throw APIError.network("Enter the server address in Settings.") }
+        guard let client = APIClient.current() else { throw APIError.network("Enter the server address in Profile.") }
         try await client.signIn(email: email, password: password)
         let auth = try? await client.authState()
         if let auth {
@@ -306,7 +297,7 @@ final class Dashboard {
     }
 
     func join(code: String, name: String, email: String, password: String) async throws {
-        guard let client = APIClient.current() else { throw APIError.network("Enter the server address in Settings.") }
+        guard let client = APIClient.current() else { throw APIError.network("Enter the server address in Profile.") }
         try await client.acceptInvite(code: code, email: email, name: name, password: password)
         // No need to look at the email before it: a new account never keeps the token here (IngestTokenOwner).
         tokenStore.lastEmail = email
@@ -320,6 +311,8 @@ final class Dashboard {
     /// checked against who it is.
     func signedIn(newAccount: Bool = false) {
         resetFamily()
+        forgetPerson()
+        dropPages()
         timeZoneSent = nil
         phase = .ready
         checkIngestToken(signedInAs: account, newAccount: newAccount)
@@ -332,18 +325,23 @@ final class Dashboard {
             SummaryCache.clear(for: client.base)
         }
         clearData()
+        forgetPerson()
         account = nil
         phase = .signIn
+        // Back to Home with nothing open, as the web reloads to its sign-in page.
+        resetNavigation()
+    }
+
+    /// What the app keeps of the person signed in beyond their data: the McFly conversation, and the profile photo
+    /// kept in Caches.
+    private func forgetPerson() {
+        mcfly.forget()
+        ProfileImages.clear()
     }
 
     func show(date newDate: String?) async {
         date = newDate == summary?.today ? nil : newDate
         await load()
-    }
-
-    func open(_ section: TrendsSection) {
-        trendsSection = section == .cycle && !cycleTrackingOn ? .vitals : section
-        tab = .trends
     }
 
     func trends(_ metrics: [String], days: Int) async throws -> Trends {
@@ -633,7 +631,7 @@ final class Dashboard {
         }
     }
 
-    /// The token was typed, pasted or removed in Settings: it's the signed-in account's, if anyone's.
+    /// The token was typed, pasted or removed in Profile: it's the signed-in account's, if anyone's.
     func ingestTokenChanged() {
         let who = authMode == "required" && phase == .ready ? ingestAccount(signedInUser) : nil
         updateIngestOwner { owner, hasToken in
@@ -654,7 +652,7 @@ final class Dashboard {
     /// The last card change sent. Each waits for the one before, so they reach the server in the order they were made.
     private var cardQueue: Task<Void, Never>?
 
-    /// The server can hide cards (its status names the list). Older servers can't: every card shows, and Settings
+    /// The server can hide cards (its status names the list). Older servers can't: every card shows, and Profile
     /// has no Cards section.
     var cardsAvailable: Bool { status?.settings?.hiddenCards != nil }
     /// The cards hidden now (shared/cards.ts ids), changes on their way included. An optional card turned off can be
@@ -669,7 +667,7 @@ final class Dashboard {
     var cardsOff: Set<String> { Cards.off(hidden: hiddenCards, shown: shownCards) }
     func cardShown(_ id: String) -> Bool { Cards.shows(id, hidden: hiddenCards, shown: shownCards) }
 
-    /// Shows or hides one card (Settings → Cards). Throws when the server refuses, after the switch went back.
+    /// Shows or hides one card (Profile → Cards). Throws when the server refuses, after the switch went back.
     func setCard(_ id: String, shown: Bool) async throws { try await changeCards(.card(id, shown: shown)) }
 
     /// Every default card back on (the web's Show all). The optional cards stay as they are: the list sent keeps the
@@ -723,7 +721,6 @@ final class Dashboard {
         }
         // Cycle tracking turned on (on the web): the next Sync asks Health for those types, then sends their history.
         if let on = status.settings?.cycleTracking { Config.cycleTracking = on }
-        if !cycleTrackingOn, trendsSection == .cycle { trendsSection = .vitals }
         // Sharing changed (here, on the web or on another phone) since the board was read: that board, and the photos
         // on it, go at once, so turned off nobody stays on screen, offline or not. The next look reads it again.
         if let on = status.settings?.familySharing, let board = familyBoard, board.sharing != on { dropFamilyBoard() }
@@ -761,6 +758,8 @@ final class Dashboard {
         timeZoneSent = nil
         clearCaches()
         resetFamily()
+        // Another server's conversation, or nobody's yet: it doesn't carry over.
+        mcfly.forget()
     }
 
     /// Forgets the board and its photos; a read already on its way is dropped when it lands.

@@ -35,6 +35,13 @@ enum ProfileImages {
         return graded
     }
 
+    /// Signing out (or someone else signing in): nothing of this person's photo stays on the phone, in memory or in
+    /// Caches. A load already on its way may still keep its image in memory; the next sign-out clears it.
+    static func clear() {
+        memory = [:]
+        try? FileManager.default.removeItem(at: file(.avatar, "x").deletingLastPathComponent())
+    }
+
     /// A new photo version makes the old files useless.
     private static func removeOld(_ kind: Kind) {
         let dir = file(kind, "x").deletingLastPathComponent()

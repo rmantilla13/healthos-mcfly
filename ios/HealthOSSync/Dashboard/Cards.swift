@@ -1,11 +1,11 @@
 import SwiftUI
 
 // The dashboard cards a person can hide (shared/cards.ts), and where this app shows each one. Cards are hidden in
-// Settings → Cards, here or on the web, and the server keeps the lists for both (settings.hiddenCards in GET
+// Profile → Cards, here or on the web, and the server keeps the lists for both (settings.hiddenCards in GET
 // /api/status, and shownCards for the optional cards, which are off until turned on). Only layout: hiding a card
 // changes what a screen shows, never what's stored.
 
-/// The web dashboard's pages with cards to hide, named as its Settings names them.
+/// The web dashboard's pages with cards to hide, named as its Profile names them.
 enum CardPage: String, CaseIterable, Identifiable {
     case home, sleep, body, nutrition
     var id: String { rawValue }
@@ -28,8 +28,10 @@ enum CardPlace: Equatable {
 
     var label: String {
         switch self {
-        case .today: "Today"
-        case .trends(let section): "Trends · \(section.rawValue)"
+        case .today: "Home"
+        // Each section is its page's, Activity a tab of Body.
+        case .trends(.activity): "Body · Activity"
+        case .trends(let section): section.rawValue
         case .nutrition: "Nutrition · Overview"
         }
     }
@@ -48,7 +50,7 @@ struct DashboardCard: Identifiable, Equatable {
     var place: CardPlace?
 }
 
-/// One page's cards in Settings.
+/// One page's cards in Profile.
 struct CardGroup: Identifiable {
     let page: CardPage
     let cards: [DashboardCard]
@@ -110,7 +112,7 @@ enum Cards {
     static let optional: Set<String> = Set(all.filter(\.optional).map(\.id))
 
     /// The cards that came with the optional ones. A server older than optional cards (no shownCards, as on main)
-    /// doesn't know these ids and refuses a change to them, so Settings doesn't offer them there.
+    /// doesn't know these ids and refuses a change to them, so Profile doesn't offer them there.
     static let newerThanOlderServers: Set<String> = [
         "home.rhr", "home.resp", "home.nutrition", "home.journal", "home.week", "sleep.efficiency", "body.figure", "body.story",
     ]
@@ -162,7 +164,7 @@ enum Cards {
     /// Every one of these cards is off (and there is one).
     static func allHidden(_ ids: [String], hidden: Set<String>) -> Bool { !ids.isEmpty && visible(ids, hidden: hidden).isEmpty }
 
-    /// The cards Settings offers, by page: Nutrition's only to someone with it on, as on the web. Without
+    /// The cards Profile offers, by page: Nutrition's only to someone with it on, as on the web. Without
     /// `optionalCards` (a server older than them) only the cards that server knows.
     static func pages(nutrition: Bool, optionalCards: Bool = true) -> [CardGroup] {
         CardPage.allCases.compactMap { page in
@@ -171,13 +173,13 @@ enum Cards {
         }
     }
 
-    /// A card's name in Settings. On a server older than optional cards the sleep score hides sleep efficiency too,
+    /// A card's name in Profile. On a server older than optional cards the sleep score hides sleep efficiency too,
     /// so it keeps the name it has there.
     static func label(_ card: DashboardCard, optionalCards: Bool) -> String {
         !optionalCards && card.id == "sleep.score" ? "Sleep score" : card.label
     }
 
-    /// The hidden cards Settings offers now, in the registry's order: no Nutrition card while Nutrition is off, no id
+    /// The hidden cards Profile offers now, in the registry's order: no Nutrition card while Nutrition is off, no id
     /// this app or the server doesn't know, and, with `optionalCards`, no optional card (off by default, not hidden).
     /// The Cards row counts these and Show all appears only for them, so the row never says "All shown" beside a
     /// Show all whose switches are all on.
@@ -292,7 +294,7 @@ struct AllCardsHiddenNote: View {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "rectangle.grid.2x2").font(.subheadline.weight(.semibold)).foregroundStyle(Palette.ink3)
                     .accessibilityHidden(true)
-                Text("\(text) Choose the ones to show in **Settings → Cards**.")
+                Text("\(text) Choose the ones to show in **Profile → Cards**.")
                     .font(.app(.footnote))
                     .foregroundStyle(Palette.ink2)
                     .multilineTextAlignment(.leading)
@@ -305,6 +307,6 @@ struct AllCardsHiddenNote: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityHint("Opens Settings")
+        .accessibilityHint("Opens Profile")
     }
 }

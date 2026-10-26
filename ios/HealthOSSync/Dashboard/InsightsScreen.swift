@@ -1,30 +1,27 @@
 import Charts
 import SwiftUI
 
-/// McFly's weekly digest, patterns from the person's own history, two scatter plots and a year heatmap.
+/// Insights, under More (only the iPhone has it): McFly's weekly digest, patterns from the person's own history, two
+/// scatter plots and a year heatmap.
 /// Everything here is correlational: "tends to", never "causes".
 struct InsightsScreen: View {
     @Environment(Dashboard.self) private var dashboard
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if dashboard.signInRequired {
-                    SignInView()
-                } else if dashboard.phase == .noServer {
-                    Unavailable("No server yet", systemImage: "server.rack", description: "Add your healthOS address in Settings.")
-                } else {
-                    ScrollView {
-                        InsightsContent().padding(16)
-                    }
-                    .refreshable { await dashboard.load() }
+        Group {
+            if dashboard.signInRequired {
+                SignInView()
+            } else if dashboard.phase == .noServer {
+                Unavailable("No server yet", systemImage: "server.rack", description: "Add your healthOS address in Profile.")
+            } else {
+                ScrollView {
+                    InsightsContent().padding(16)
                 }
+                .refreshable { await dashboard.load() }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Palette.page)
-            .navigationTitle("Insights")
-            .settingsButton()
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Palette.page)
     }
 }
 
@@ -166,8 +163,8 @@ private struct PatternRow: View {
     @Environment(Dashboard.self) private var dashboard
 
     var body: some View {
-        if let section = pattern.page.flatMap(TrendsSection.init(page:)) {
-            Button { dashboard.open(section) } label: { row(chevron: true) }
+        if let route = pattern.page.flatMap({ AppRoute(page: $0) }) {
+            Button { dashboard.open(route) } label: { row(chevron: true) }
                 .buttonStyle(.plain)
         } else {
             row(chevron: false)

@@ -64,9 +64,8 @@ final class NutritionScreenTests: XCTestCase {
         XCTAssertEqual(d.nutritionMode, .noEnergy)
         XCTAssertTrue(d.nutritionAvailable)
         XCTAssertEqual(d.status?.settings?.nutritionTargets, NutritionTargets(energy_kcal: nil, protein_g: 120, water_ml: nil))
-        // Its own tab now: Trends has no Nutrition section, and a "nutrition" page isn't one of Trends'.
-        XCTAssertEqual(TrendsSection.visible(cycleTracking: true), [.vitals, .sleep, .activity, .body, .cycle])
-        XCTAssertNil(TrendsSection(page: "nutrition"))
+        // Its own tab: a link to the "nutrition" page opens it.
+        XCTAssertEqual(AppRoute(page: "nutrition")?.page.tab, .nutrition)
 
         // Turned off on the web: the tab offers to turn it on again.
         d.apply(status: try status(#"{"units":"metric","nutrition":false,"nutritionNumbers":"all"}"#))
@@ -82,18 +81,6 @@ final class NutritionScreenTests: XCTestCase {
         d.apply(status: try status(#"{"units":"metric"}"#))
         XCTAssertNil(d.nutritionMode)
         XCTAssertFalse(d.nutritionAvailable)
-    }
-
-    func testSettingsOpensOverTheTabThatAskedForIt() {
-        let d = Dashboard()
-        d.tab = .nutrition
-        d.tab = .settings
-        XCTAssertEqual(d.tab, .nutrition, "the tab underneath stays")
-        XCTAssertTrue(d.showingSettings)
-        d.showingSettings = false
-        d.tab = .trends
-        XCTAssertFalse(d.showingSettings)
-        XCTAssertEqual(d.tab, .trends)
     }
 
     func testTheChoicesAreTheWebsInItsOrder() {

@@ -26,12 +26,9 @@ struct OrganicHeader: View {
                 }
                 .disabled(isToday)
                 .accessibilityLabel("Next day")
-                // Today hides its navigation bar, so Settings' gear sits here, top right like on the other tabs.
-                Button { dashboard.tab = .settings } label: {
-                    Image(systemName: "gearshape").frame(width: 44, height: 44)
-                }
-                .accessibilityLabel("Settings")
-                .accessibilityIdentifier("settingsGear")
+                // Home hides its navigation bar, so your avatar and its account menu sit here, top right as on the
+                // other pages.
+                AccountMenu(size: 32).padding(.leading, 6)
             }
             .foregroundStyle(Palette.ink2)
             .buttonStyle(.plain)
@@ -573,7 +570,7 @@ private struct DataShape: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(a11y)
-        .accessibilityHint("Opens trends")
+        .accessibilityHint("Opens its page")
     }
 }
 
@@ -860,7 +857,7 @@ struct TodayPath: View {
                         .position(x: point(i).x, y: point(i).y + 24)
                         .animation(TimelineScrub.motion(.easeOut(duration: 0.2), reduceMotion: reduceMotion), value: now)
                         .accessibilityLabel("\(e.title), \(Fmt.clock(e.start)) to \(Fmt.clock(e.end))")
-                        .accessibilityHint("Opens trends")
+                        .accessibilityHint("Opens its page")
                     }
                 }
             }

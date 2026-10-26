@@ -1,63 +1,72 @@
 import Charts
 import SwiftUI
 
-/// Vitals, Sleep, Activity and Body over 7 days, 30 days, 90 days or a year (src/pages/Detail.tsx), and Cycle while tracking is on.
-struct TrendsScreen: View {
+/// Charts over 7 days, 30 days, 90 days or a year (src/pages/Detail.tsx): what the Vitals, Body, Sleep and Cycle pages
+/// show until each is built here. One section, or Body's two (Body and Activity) as chips.
+struct TrendsPage: View {
+    let sections: [TrendsSection]
+    @Binding var selection: TrendsSection
     @Environment(Dashboard.self) private var dashboard
     @AppStorage("trendsDays") private var days = 30
     @Environment(\.dynamicTypeSize) private var typeSize
 
+    /// One section, no chips.
+    init(_ section: TrendsSection) {
+        sections = [section]
+        _selection = .constant(section)
+    }
+
+    init(sections: [TrendsSection], selection: Binding<TrendsSection>) {
+        self.sections = sections
+        _selection = selection
+    }
+
     var body: some View {
-        @Bindable var dashboard = dashboard
-        NavigationStack {
-            Group {
-                if dashboard.signInRequired {
-                    SignInView()
-                } else if dashboard.phase == .noServer {
-                    Unavailable("No server yet", systemImage: "server.rack", description: "Add your healthOS address in Settings.")
-                } else {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 14) {
-                            TrendsSectionChips(selection: $dashboard.trendsSection, sections: TrendsSection.visible(cycleTracking: dashboard.cycleTrackingOn))
-                            // At the accessibility text sizes the range goes under the line, so "30 days" never breaks.
-                            let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4)) : AnyLayout(HStackLayout())
-                            layout {
-                                Text(subtitle).font(.app(.footnote)).foregroundStyle(Palette.ink3)
-                                if !typeSize.isAccessibilitySize { Spacer() }
-                                // The cycle view has its own span.
-                                if dashboard.trendsSection != .cycle {
-                                    Picker("Range", selection: $days) {
-                                        Text("7 days").tag(7)
-                                        Text("30 days").tag(30)
-                                        Text("90 days").tag(90)
-                                        Text("1 year").tag(365)
-                                    }
-                                    .pickerStyle(.menu)
-                                    .fixedSize()
+        Group {
+            if dashboard.signInRequired {
+                SignInView()
+            } else if dashboard.phase == .noServer {
+                Unavailable("No server yet", systemImage: "server.rack", description: "Add your healthOS address in Profile.")
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        if sections.count > 1 { TrendsSectionChips(selection: $selection, sections: sections) }
+                        // At the accessibility text sizes the range goes under the line, so "30 days" never breaks.
+                        let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4)) : AnyLayout(HStackLayout())
+                        layout {
+                            Text(subtitle).font(.app(.footnote)).foregroundStyle(Palette.ink3)
+                            if !typeSize.isAccessibilitySize { Spacer() }
+                            // The cycle view has its own span.
+                            if selection != .cycle {
+                                Picker("Range", selection: $days) {
+                                    Text("7 days").tag(7)
+                                    Text("30 days").tag(30)
+                                    Text("90 days").tag(90)
+                                    Text("1 year").tag(365)
                                 }
-                            }
-                            switch dashboard.trendsSection {
-                            case .vitals: VitalsTrends(days: days)
-                            case .sleep: SleepTrends(days: days)
-                            case .activity: ActivityTrends(days: days)
-                            case .body: BodyTrends(days: days)
-                            case .cycle: CycleTrends()
+                                .pickerStyle(.menu)
+                                .fixedSize()
                             }
                         }
-                        .padding(16)
+                        switch selection {
+                        case .vitals: VitalsTrends(days: days)
+                        case .sleep: SleepTrends(days: days)
+                        case .activity: ActivityTrends(days: days)
+                        case .body: BodyTrends(days: days)
+                        case .cycle: CycleTrends()
+                        }
                     }
-                    .refreshable { await dashboard.load() }
+                    .padding(16)
                 }
+                .refreshable { await dashboard.load() }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Palette.page)
-            .navigationTitle("Trends")
-            .settingsButton()
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Palette.page)
     }
 
     private var subtitle: String {
-        switch dashboard.trendsSection {
+        switch selection {
         case .vitals: "Overnight readings from WHOOP and Apple Watch."
         case .sleep: "Each night counts on the day you wake up."
         case .activity: "Movement from iPhone and Apple Watch, strain from WHOOP."
@@ -67,7 +76,7 @@ struct TrendsScreen: View {
     }
 }
 
-/// The sections as a row of chips that scrolls sideways, so a fifth (Cycle) still fits at phone width.
+/// The sections as a row of chips that scrolls sideways, so more of them would still fit at phone width.
 private struct TrendsSectionChips: View {
     @Binding var selection: TrendsSection
     let sections: [TrendsSection]
@@ -190,7 +199,7 @@ private struct SleepTrends: View {
     var body: some View {
         TrendsLoader(metrics: ["sleep_hours", "sleep_deep", "sleep_light", "sleep_rem", "sleep_awake", "sleep_performance", "sleep_efficiency"], days: days) { t in
             let hours = t["sleep_hours"] ?? []
-            // The web Sleep overview's cards hidden in Settings → Cards (shared/cards.ts) are left out here too.
+            // The web Sleep overview's cards hidden in Profile → Cards (shared/cards.ts) are left out here too.
             let hidden = dashboard.cardsOff
             let performance = t["sleep_performance"] ?? []
             // Sleep performance is WHOOP's alone: without any, its card has nothing to show, so it doesn't count below.

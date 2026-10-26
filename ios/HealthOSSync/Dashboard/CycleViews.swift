@@ -5,7 +5,7 @@ import SwiftUI
 // only while cycle tracking is on; nothing here reaches the summary, flags, patterns or the digest. Every estimate
 // is worded as one: no day is ever shown as safe, and nothing is fit to use as contraception.
 
-/// Where today sits in the cycle, on Today. Opens the Cycle section of Trends.
+/// Where today sits in the cycle, on Home. Opens the Cycle page.
 struct CycleCard: View {
     let cycle: CycleData
     let phase: CyclePhase

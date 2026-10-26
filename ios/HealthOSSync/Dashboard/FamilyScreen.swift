@@ -4,34 +4,25 @@ import UIKit
 
 /// The Family board (GET /api/family), as on the web: everyone who shares, at a glance, each against their own last
 /// 30 days and never against each other. Sharing is mutual, so turned off, you see no one and no one sees you.
+///
+/// Under More. A person's page is pushed over it (AppRoute.familyMember); the shell drops it whenever the board can't be
+/// shown (asked to sign in again, another server), so no one's page outlives the board it came from.
 struct FamilyScreen: View {
     @Environment(Dashboard.self) private var dashboard
     @Environment(\.scenePhase) private var scenePhase
-    /// The person page on screen, if any. Emptied whenever the board can't be shown (asked to sign in again, another
-    /// server), so no one's page outlives the board it came from.
-    @State private var path: [FamilyPersonRoute] = []
 
     var body: some View {
-        NavigationStack(path: $path) {
-            Group {
-                if dashboard.signInRequired {
-                    SignInView()
-                } else if dashboard.phase == .noServer {
-                    Unavailable("No server yet", systemImage: "server.rack", description: "Add your healthOS address in Settings.")
-                } else {
-                    FamilyContent()
-                }
+        Group {
+            if dashboard.signInRequired {
+                SignInView()
+            } else if dashboard.phase == .noServer {
+                Unavailable("No server yet", systemImage: "server.rack", description: "Add your healthOS address in Profile.")
+            } else {
+                FamilyContent()
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Palette.page)
-            .navigationTitle("Family")
-            .navigationBarTitleDisplayMode(.inline)
-            .settingsButton()
-            .navigationDestination(for: FamilyPersonRoute.self) { FamilyPersonScreen(id: $0.id) }
         }
-        .onChange(of: dashboard.phase) { _, phase in
-            if phase != .ready { path = [] }
-        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Palette.page)
         // Other people's changes don't move your data version, so the board re-reads itself: on opening the tab, on
         // returning to the app, after your own data reloads, then every five minutes while it's on screen. The task
         // ends when the tab is left or the app goes to the background.
@@ -141,14 +132,11 @@ private struct FamilyFoot: View {
     @Environment(Dashboard.self) private var dashboard
 
     var body: some View {
-        Text("Statuses compare each person with their own last 30 days. They're a nudge to check in, not medical advice. Change what you share in **[Settings](healthos://settings)**.")
+        Text("Statuses compare each person with their own last 30 days. They're a nudge to check in, not medical advice. Change what you share in **[your Profile](healthos://profile)**.")
             .font(.app(.footnote))
             .foregroundStyle(Palette.ink3)
             .fixedSize(horizontal: false, vertical: true)
-            .environment(\.openURL, OpenURLAction { _ in
-                dashboard.tab = .settings
-                return .handled
-            })
+            .environment(\.openURL, OpenURLAction { url in dashboard.open(url: url) ? .handled : .systemAction })
     }
 }
 
@@ -195,7 +183,7 @@ private struct SharingOff: View {
 
 /// One person: photo or initial, name, devices, status, then last night's sleep, recovery or HRV, today's steps and
 /// resting heart rate, each against their own usual with its last 7 days below. Every tile opens that person's last
-/// 30 days. From a server older than that (no history): the three figures only, and your own tile opens Today.
+/// 30 days. From a server older than that (no history): the three figures only, and your own tile opens Home.
 struct FamilyTile: View {
     let member: FamilyMember
     /// The viewer's today: a member a day ahead or behind gets "their Sun".
@@ -205,15 +193,15 @@ struct FamilyTile: View {
     var body: some View {
         let label = FamilyText.accessibilitySummary(member, boardToday: boardToday)
         if member.history != nil {
-            NavigationLink(value: FamilyPersonRoute(id: member.id)) { card.contentShape(Rectangle()) }
+            NavigationLink(value: AppRoute.familyMember(member.id)) { card.contentShape(Rectangle()) }
                 .buttonStyle(.plain)
                 .accessibilityLabel(label)
                 .accessibilityHint(member.isYou ? "Opens your last 30 days" : "Opens their last 30 days")
         } else if member.isYou {
-            Button { dashboard.tab = .today } label: { card.contentShape(Rectangle()) }
+            Button { dashboard.open(.home) } label: { card.contentShape(Rectangle()) }
                 .buttonStyle(.plain)
                 .accessibilityLabel(label)
-                .accessibilityHint("Opens Today")
+                .accessibilityHint("Opens Home")
         } else {
             card
                 .accessibilityElement(children: .ignore)
@@ -523,14 +511,10 @@ struct FamilyAvatar: View {
 
 // MARK: - One person, bigger
 
-/// What the stack pushes: only an id. The page looks the person up on the board on screen, so it follows each
-/// re-read and is gone the moment they (or you) stop sharing, or the board can't be shown.
-struct FamilyPersonRoute: Hashable {
-    let id: String
-}
-
-/// A person's last 30 days, as on the web's #/family?member=<id>.
-private struct FamilyPersonScreen: View {
+/// A person's last 30 days, as on the web's #/family?member=<id>. Pushed with only an id: the page looks the person up
+/// on the board on screen, so it follows each re-read and is gone the moment they (or you) stop sharing, or the board
+/// can't be shown.
+struct FamilyPersonScreen: View {
     let id: String
     @Environment(Dashboard.self) private var dashboard
 
@@ -628,10 +612,7 @@ struct FamilyPersonPage: View {
                 .font(.app(.footnote))
                 .foregroundStyle(Palette.ink3)
                 .fixedSize(horizontal: false, vertical: true)
-                .environment(\.openURL, OpenURLAction { _ in
-                    dashboard.tab = .today
-                    return .handled
-                })
+                .environment(\.openURL, OpenURLAction { url in dashboard.open(url: url) ? .handled : .systemAction })
         }
     }
 }
@@ -966,7 +947,7 @@ enum FamilyText {
 
     static func pageFoot(_ m: FamilyMember) -> AttributedString {
         let lines = "Dashed lines are the median of these 30 days; “usual” lines are \(m.isYou ? "your" : "their") average of the 30 days before the latest reading. "
-        let more = m.isYou ? "**[Open your full dashboard](healthos://today)**" : "Only what they share is here."
+        let more = m.isYou ? "**[Open your full dashboard](healthos://home)**" : "Only what they share is here."
         return (try? AttributedString(markdown: lines + more)) ?? AttributedString(lines + more)
     }
 

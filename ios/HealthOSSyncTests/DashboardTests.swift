@@ -227,13 +227,6 @@ final class DashboardTests: XCTestCase {
         XCTAssertTrue(try JSONDecoder().decode(Summary.self, from: JSONSerialization.data(withJSONObject: json)).flags.isEmpty)
     }
 
-    func testCycleIsASectionOnlyWhenTracking() {
-        XCTAssertEqual(TrendsSection(page: "cycle"), .cycle)
-        XCTAssertEqual(TrendsSection.cycle.rawValue, "Cycle")
-        XCTAssertEqual(TrendsSection.visible(cycleTracking: false), [.vitals, .sleep, .activity, .body])
-        XCTAssertEqual(TrendsSection.visible(cycleTracking: true), [.vitals, .sleep, .activity, .body, .cycle])
-    }
-
     func testRollingMeanCountsCalendarDays() {
         let points = [
             Point(date: "2026-10-01", value: 80),
@@ -1085,7 +1078,7 @@ final class PhotoCutoutTests: XCTestCase {
     }
 }
 
-// MARK: - Card hiding (shared/cards.ts, Settings → Cards)
+// MARK: - Card hiding (shared/cards.ts, Profile → Cards)
 
 @MainActor
 final class CardHidingTests: XCTestCase {

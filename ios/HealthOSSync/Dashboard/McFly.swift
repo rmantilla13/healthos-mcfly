@@ -229,9 +229,23 @@ final class McFlyChat {
     var status: McFlyStatus?
     var streaming = false
     var lookingAt: String?
+    /// Goes up when the conversation is forgotten, so an answer still streaming stops writing into it.
+    private var thread = 0
 
     func refreshStatus() async {
-        status = try? await APIClient.current()?.mcflyStatus()
+        let thread = thread
+        let status = try? await APIClient.current()?.mcflyStatus()
+        if thread == self.thread { self.status = status }
+    }
+
+    /// Signed out, someone else signed in, or another server: the conversation and the status go, an answer on its way
+    /// included.
+    func forget() {
+        thread += 1
+        messages = []
+        status = nil
+        streaming = false
+        lookingAt = nil
     }
 
     func newChat() {
@@ -247,13 +261,18 @@ final class McFlyChat {
         messages.append(McFlyMessage(role: .user, content: q))
         messages.append(McFlyMessage(role: .assistant, content: ""))
         let index = messages.count - 1
+        let thread = thread
         streaming = true
         defer {
-            streaming = false
-            lookingAt = nil
+            if thread == self.thread {
+                streaming = false
+                lookingAt = nil
+            }
         }
         do {
             for try await event in client.mcflyChat(turns) {
+                // Forgotten while it streamed: leaving the loop ends the request.
+                guard thread == self.thread else { return }
                 switch event {
                 case .tool(let label): lookingAt = label
                 case .text, .visual: lookingAt = nil
@@ -261,8 +280,10 @@ final class McFlyChat {
                 }
                 messages[index].apply(event)
             }
+            guard thread == self.thread else { return }
             messages[index].finishAnswer()
         } catch {
+            guard thread == self.thread else { return }
             messages[index].fail(error.localizedDescription)
         }
         await refreshStatus()
@@ -398,65 +419,84 @@ private struct PillPress: ButtonStyle {
     }
 }
 
+/// Ask McFly over Home, from the pill: the conversation in a sheet, with Done.
 struct McFlySheet: View {
     @Bindable var chat: McFlyChat
     @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            McFlyThread(chat: chat)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
+                }
+        }
+    }
+}
+
+/// Ask McFly as a page (More → Ask McFly, the web's #/mcfly): the same conversation as the pill's sheet.
+struct McFlyPage: View {
+    @Environment(Dashboard.self) private var dashboard
+
+    var body: some View { McFlyThread(chat: dashboard.mcfly) }
+}
+
+/// The conversation and its composer, for the sheet and the page. Its NavigationStack is theirs.
+struct McFlyThread: View {
+    @Bindable var chat: McFlyChat
     @State private var draft = ""
     @State private var follow = McFlyFollow()
     @FocusState private var focused: Bool
 
     var body: some View {
-        NavigationStack {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 14) {
-                        if chat.messages.isEmpty {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("Ask about your health data").font(.app(.headline)).foregroundStyle(Palette.ink)
-                                Text("For example: How did I sleep this week? Is my resting heart rate trending down?")
-                                    .font(.app(.subheadline)).foregroundStyle(Palette.ink3)
-                            }
-                            .padding(.top, 24)
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 14) {
+                    if chat.messages.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Ask about your health data").font(.app(.headline)).foregroundStyle(Palette.ink)
+                            Text("For example: How did I sleep this week? Is my resting heart rate trending down?")
+                                .font(.app(.subheadline)).foregroundStyle(Palette.ink3)
                         }
-                        ForEach(chat.messages) { m in
-                            Bubble(message: m).id(m.id)
-                        }
-                        if let label = chat.lookingAt {
-                            Label("Looking at \(label)…", systemImage: "magnifyingglass")
-                                .font(.app(.caption)).foregroundStyle(Palette.ink3)
-                        }
-                        Color.clear.frame(height: 1).id("end")
+                        .padding(.top, 24)
                     }
-                    .padding(16)
-                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(threadSpace)) } action: { [follow] frame in
-                        follow.contentMoved(top: frame.minY, bottom: frame.maxY)
+                    ForEach(chat.messages) { m in
+                        Bubble(message: m).id(m.id)
                     }
+                    if let label = chat.lookingAt {
+                        Label("Looking at \(label)…", systemImage: "magnifyingglass")
+                            .font(.app(.caption)).foregroundStyle(Palette.ink3)
+                    }
+                    Color.clear.frame(height: 1).id("end")
                 }
-                .scrollDismissesKeyboard(.interactively)
-                .environment(\.mcflyChartTouched, { [follow] in follow.chartTouched() })
-                .onChange(of: followKey) { _, _ in
-                    // Only while the reader is at the bottom: an earlier paragraph or chart stays put to be read.
-                    guard follow.following else { return }
-                    withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("end", anchor: .bottom) }
-                }
-            }
-            .background(Palette.page)
-            .safeAreaInset(edge: .bottom) {
-                composer.onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(threadSpace)).minY } action: { [follow] y in
-                    follow.viewportBottom = y
+                .padding(16)
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(threadSpace)) } action: { [follow] frame in
+                    follow.contentMoved(top: frame.minY, bottom: frame.maxY)
                 }
             }
-            .coordinateSpace(.named(threadSpace))
-            .navigationTitle("Ask McFly")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
-                ToolbarItem(placement: .primaryAction) {
-                    Button("New chat") { chat.newChat() }.disabled(chat.messages.isEmpty || chat.streaming)
-                }
+            .scrollDismissesKeyboard(.interactively)
+            .environment(\.mcflyChartTouched, { [follow] in follow.chartTouched() })
+            .onChange(of: followKey) { _, _ in
+                // Only while the reader is at the bottom: an earlier paragraph or chart stays put to be read.
+                guard follow.following else { return }
+                withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("end", anchor: .bottom) }
             }
-            .task { await chat.refreshStatus() }
         }
+        .background(Palette.page)
+        .safeAreaInset(edge: .bottom) {
+            composer.onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(threadSpace)).minY } action: { [follow] y in
+                follow.viewportBottom = y
+            }
+        }
+        .coordinateSpace(.named(threadSpace))
+        .navigationTitle("Ask McFly")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button("New chat") { chat.newChat() }.disabled(chat.messages.isEmpty || chat.streaming)
+            }
+        }
+        .task { await chat.refreshStatus() }
     }
 
     private var composer: some View {

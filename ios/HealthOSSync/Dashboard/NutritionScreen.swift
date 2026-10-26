@@ -1,55 +1,51 @@
 import SwiftUI
 
-/// The Nutrition tab (src/pages/Nutrition.tsx). Everyone sees the tab; while Nutrition is off it explains what turning
-/// it on means and turns it on the way the web's Settings card does: first a choice of what to see, nothing chosen in
+/// The Nutrition page, a tab (src/pages/Nutrition.tsx). Everyone sees it; while Nutrition is off it explains what turning
+/// it on means and turns it on the way the web's Nutrition settings do: first a choice of what to see, nothing chosen in
 /// advance, then on. Nothing is read from Health or kept until then.
 struct NutritionScreen: View {
     @Environment(Dashboard.self) private var dashboard
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if dashboard.signInRequired {
-                    SignInView()
-                } else if dashboard.phase == .noServer {
-                    Unavailable("No server yet", systemImage: "server.rack", description: "Add your healthOS address in Settings.") {
-                        Button("Open Settings") { dashboard.tab = .settings }
-                    }
-                } else if dashboard.status == nil {
-                    // Whether Nutrition is on comes with the status: until it arrives there's nothing honest to show.
-                    if case .unavailable(let message) = dashboard.phase {
-                        Unavailable("Can't load your dashboard", systemImage: "wifi.exclamationmark", description: message)
-                    } else {
-                        ProgressView()
-                    }
-                } else if dashboard.nutritionOn {
-                    // Each of its tabs scrolls on its own (the Log is a List).
-                    NutritionTrends()
+        Group {
+            if dashboard.signInRequired {
+                SignInView()
+            } else if dashboard.phase == .noServer {
+                Unavailable("No server yet", systemImage: "server.rack", description: "Add your healthOS address in Profile.") {
+                    Button("Open Profile") { dashboard.tab = .settings }
+                }
+            } else if dashboard.status == nil {
+                // Whether Nutrition is on comes with the status: until it arrives there's nothing honest to show.
+                if case .unavailable(let message) = dashboard.phase {
+                    Unavailable("Can't load your dashboard", systemImage: "wifi.exclamationmark", description: message)
                 } else {
-                    ScrollViewReader { proxy in
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 14) {
-                            Text("From the food app you log in, through Apple Health. Only you can see it.")
-                                .font(.app(.footnote)).foregroundStyle(Palette.ink3)
-                            if dashboard.nutritionAvailable {
-                                NutritionOptIn { withAnimation { proxy.scrollTo(NutritionOptIn.choicesID, anchor: .bottom) } }
-                            } else {
-                                Text("This healthOS server doesn't have Nutrition yet.")
-                                    .font(.app(.footnote)).foregroundStyle(Palette.ink2)
-                                    .card()
-                            }
+                    ProgressView()
+                }
+            } else if dashboard.nutritionOn {
+                // Each of its tabs scrolls on its own (the Log is a List).
+                NutritionTrends()
+            } else {
+                ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text("From the food app you log in, through Apple Health. Only you can see it.")
+                            .font(.app(.footnote)).foregroundStyle(Palette.ink3)
+                        if dashboard.nutritionAvailable {
+                            NutritionOptIn { withAnimation { proxy.scrollTo(NutritionOptIn.choicesID, anchor: .bottom) } }
+                        } else {
+                            Text("This healthOS server doesn't have Nutrition yet.")
+                                .font(.app(.footnote)).foregroundStyle(Palette.ink2)
+                                .card()
                         }
-                        .padding(16)
                     }
-                    .refreshable { await dashboard.load() }
-                    }
+                    .padding(16)
+                }
+                .refreshable { await dashboard.load() }
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Palette.page)
-            .navigationTitle("Nutrition")
-            .settingsButton()
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Palette.page)
     }
 }
 

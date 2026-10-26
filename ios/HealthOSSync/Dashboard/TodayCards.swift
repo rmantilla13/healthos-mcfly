@@ -41,16 +41,16 @@ struct TodayGrid: View {
     }
 }
 
-/// A tappable card that opens the matching Trends section.
+/// A tappable card that opens the page its metric is on.
 private struct MetricCard<Content: View>: View {
     let title: String
-    let section: TrendsSection
+    let route: AppRoute
     var tint: CardTint = .plain
     @ViewBuilder let content: Content
     @Environment(Dashboard.self) private var dashboard
 
     var body: some View {
-        Button { dashboard.open(section) } label: {
+        Button { dashboard.open(route) } label: {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text(title).font(.app(.subheadline, weight: .medium)).foregroundStyle(Palette.ink2)
@@ -63,7 +63,7 @@ private struct MetricCard<Content: View>: View {
             .card(tint)
         }
         .buttonStyle(.plain)
-        .accessibilityHint("Opens \(section.rawValue)")
+        .accessibilityHint("Opens \(route.title)")
     }
 }
 
@@ -105,7 +105,7 @@ struct ReadinessCard: View {
 
     var body: some View {
         if let r = summary.readiness, r.kind == "vo2max" {
-            MetricCard(title: "Cardio fitness", section: .body, tint: .green) {
+            MetricCard(title: "Cardio fitness", route: .body, tint: .green) {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 6) {
                         BigValue(value: Fmt.number(r.latest.value, 1), unit: "VO₂ max", size: 30)
@@ -119,7 +119,7 @@ struct ReadinessCard: View {
             }
         } else if let r = summary.readiness, r.kind == "recovery" {
             let zone = r.zone ?? (r.latest.value >= 67 ? "green" : r.latest.value >= 34 ? "yellow" : "red")
-            MetricCard(title: "Recovery", section: .vitals, tint: .green) {
+            MetricCard(title: "Recovery", route: .vitals, tint: .green) {
                 BigValue(value: Fmt.number(r.latest.value), unit: "%", size: 30)
                 if let avg = r.average { Chip(text: "\(Fmt.signed(r.latest.value - avg)) vs 30-day avg") }
                 Rings(value: r.latest.value / 100).frame(height: 56).frame(maxWidth: .infinity)
@@ -132,7 +132,7 @@ struct ReadinessCard: View {
                 } trailing: { Stale(date: r.latest.date, asOf: summary.date) }
             }
         } else {
-            MetricCard(title: "Recovery", section: .vitals, tint: .green) {
+            MetricCard(title: "Recovery", route: .vitals, tint: .green) {
                 Empty(text: "Recovery comes from WHOOP; cardio fitness from Apple Watch.")
             }
         }
@@ -197,7 +197,7 @@ struct Spo2Card: View {
     let summary: Summary
 
     var body: some View {
-        MetricCard(title: "Blood oxygen", section: .vitals, tint: .peach) {
+        MetricCard(title: "Blood oxygen", route: .vitals, tint: .peach) {
             if let l = summary.spo2?.latest {
                 HStack(alignment: .firstTextBaseline) {
                     BigValue(value: Fmt.number(l.value, l.value.truncatingRemainder(dividingBy: 1) == 0 ? 0 : 1), unit: "%", size: 30)
@@ -225,7 +225,7 @@ struct HrvCard: View {
     let summary: Summary
 
     var body: some View {
-        MetricCard(title: "HRV", section: .vitals) {
+        MetricCard(title: "HRV", route: .vitals) {
             if let hrv = summary.hrv, let l = hrv.latest {
                 BigValue(value: Fmt.number(l.value), unit: "ms", size: 30)
                 MiniDots(points: hrv.series ?? [], baseline: hrv.baseline).frame(height: 64)
@@ -257,7 +257,7 @@ struct SleepCard: View {
     let summary: Summary
 
     var body: some View {
-        MetricCard(title: "Sleep", section: .sleep) {
+        MetricCard(title: "Sleep", route: .sleep) {
             if let l = summary.sleep?.latest {
                 BigValue(value: Fmt.number(l.value, 1), unit: "hours", size: 30)
                 MiniLine(points: summary.sleep?.series ?? [], color: Palette.series1).frame(height: 56)
@@ -288,7 +288,7 @@ struct LoadCard: View {
             let v = l.latest.value
             let max = strain ? 21 : Swift.max(800, (l.average ?? 0) * 1.6)
             let band = strain ? (v < 10 ? "Light" : v < 14 ? "Moderate" : v < 18 ? "High" : "All out") : v >= (l.average ?? 0) ? "Above usual" : "Below usual"
-            MetricCard(title: strain ? "Strain" : "Active energy", section: .activity, tint: .pink) {
+            MetricCard(title: strain ? "Strain" : "Active energy", route: .activity, tint: .pink) {
                 BigValue(value: strain ? Fmt.number(v, 1) : Fmt.number(v), unit: strain ? "of 21" : "kcal", size: 30)
                 ArcGauge(fraction: v / max).frame(height: 62).frame(maxWidth: .infinity)
                 Spacer(minLength: 0)
@@ -302,7 +302,7 @@ struct LoadCard: View {
                 }
             }
         } else {
-            MetricCard(title: "Strain", section: .activity, tint: .pink) {
+            MetricCard(title: "Strain", route: .activity, tint: .pink) {
                 Empty(text: "Strain comes from WHOOP; active energy from Apple Health.")
             }
         }
@@ -338,7 +338,7 @@ struct ActivityCard: View {
     let goal: Double
 
     var body: some View {
-        MetricCard(title: "Activity", section: .activity) {
+        MetricCard(title: "Activity", route: .activity) {
             if let l = summary.activity?.latest {
                 BigValue(value: Fmt.number(l.value), unit: "steps", size: 30)
                 MiniBars(points: summary.activity?.series ?? []).frame(height: 48)
@@ -549,7 +549,7 @@ struct InsightsCard: View {
             ForEach(insights) { insight in
                 let (symbol, tone) = Self.style(insight.icon)
                 Button {
-                    if let section = TrendsSection(page: insight.page) { dashboard.open(section) }
+                    if let route = AppRoute(page: insight.page) { dashboard.open(route) }
                 } label: {
                     HStack(spacing: 12) {
                         Image(systemName: symbol)

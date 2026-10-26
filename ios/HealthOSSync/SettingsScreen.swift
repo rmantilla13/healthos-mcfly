@@ -1,68 +1,63 @@
 import PhotosUI
 import SwiftUI
 
-/// Server, sign-in, and the Apple Health sync that feeds the dashboard.
-struct SettingsScreen: View {
+/// Profile, under More and in the account menu (src/pages/Profile.tsx, the web's #/profile and #/settings). Until it's
+/// rebuilt as the web's, it's the app's settings: server, sign-in, and the Apple Health sync that feeds the dashboard.
+/// Shown in every phase, so the server address can be changed before sign-in. `query` is the web's
+/// (?connect=openai, ?connect=chatbot).
+struct ProfileScreen: View {
+    var query: [String: String] = [:]
     @Environment(AppModel.self) private var model
     @Environment(Dashboard.self) private var dashboard
     @State private var confirmReupload = false
     @State private var confirmSample = false
 
     var body: some View {
-        NavigationStack {
-            // One section per view: a single Form builder this size is too slow for the Release type checker.
-            Form {
-                ServerSection()
-                if dashboard.phase == .ready { PhotoSection() }
-                // Servers with card hiding name the list (nil from older ones, where every card shows).
-                if dashboard.phase == .ready, dashboard.cardsAvailable { CardsSection() }
-                // Servers with the Family board name the setting; it needs sign-in, so each person has their own account.
-                if dashboard.phase == .ready, dashboard.status?.settings?.familySharing != nil, dashboard.authMode != "open" { FamilySection() }
-                if dashboard.phase == .ready, let mode = dashboard.nutritionMode, mode != .none { NutritionTargetsSection(mode: mode) }
-                SyncSection()
-                HealthSection()
-                if dashboard.phase == .ready || DigestNotifications.enabled { DigestSection() }
-                #if targetEnvironment(simulator)
-                Section {
-                    Button("Add sample Health data") { confirmSample = true }
-                        .disabled(model.working)
-                        .accessibilityIdentifier("addSampleData")
-                } header: {
-                    Text("Simulator")
-                } footer: {
-                    Text("Fake data for testing. Use a scratch server only, never your real dashboard.")
-                }
-                #endif
-                Section {
-                    Button("Upload all history again", role: .destructive) { confirmReupload = true }
-                        .disabled(model.syncing)
-                } footer: {
-                    Text("Use this after clearing Apple Health data on the server, or after deleting old entries in Health.")
-                }
-            }
-            .navigationTitle("Settings")
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dashboard.showingSettings = false }
-                        .accessibilityIdentifier("settingsDone")
-                }
-            }
-            .keyboardDismissal()
-            .alert(model.notice ?? "", isPresented: noticeShown) {
-                Button("OK", role: .cancel) {}
-            }
+        // One section per view: a single Form builder this size is too slow for the Release type checker.
+        Form {
+            ServerSection()
+            if dashboard.phase == .ready { PhotoSection() }
+            // Servers with card hiding name the list (nil from older ones, where every card shows).
+            if dashboard.phase == .ready, dashboard.cardsAvailable { CardsSection() }
+            // Servers with the Family board name the setting; it needs sign-in, so each person has their own account.
+            if dashboard.phase == .ready, dashboard.status?.settings?.familySharing != nil, dashboard.authMode != "open" { FamilySection() }
+            if dashboard.phase == .ready, let mode = dashboard.nutritionMode, mode != .none { NutritionTargetsSection(mode: mode) }
+            SyncSection()
+            HealthSection()
+            if dashboard.phase == .ready || DigestNotifications.enabled { DigestSection() }
             #if targetEnvironment(simulator)
-            .confirmationDialog("Add fake Health data?", isPresented: $confirmSample, titleVisibility: .visible) {
-                Button("Add sample data", role: .destructive) { Task { await model.addSampleData() } }
-            } message: {
-                Text(sampleWarning)
+            Section {
+                Button("Add sample Health data") { confirmSample = true }
+                    .disabled(model.working)
+                    .accessibilityIdentifier("addSampleData")
+            } header: {
+                Text("Simulator")
+            } footer: {
+                Text("Fake data for testing. Use a scratch server only, never your real dashboard.")
             }
             #endif
-            .confirmationDialog("Upload all history again?", isPresented: $confirmReupload, titleVisibility: .visible) {
-                Button("Upload all history") { Task { await model.uploadAllHistory() } }
-            } message: {
-                Text("Every day back to \"\(model.history.label)\" is read from Health and sent again. Nothing is deleted.")
+            Section {
+                Button("Upload all history again", role: .destructive) { confirmReupload = true }
+                    .disabled(model.syncing)
+            } footer: {
+                Text("Use this after clearing Apple Health data on the server, or after deleting old entries in Health.")
             }
+        }
+        .keyboardDismissal()
+        .alert(model.notice ?? "", isPresented: noticeShown) {
+            Button("OK", role: .cancel) {}
+        }
+        #if targetEnvironment(simulator)
+        .confirmationDialog("Add fake Health data?", isPresented: $confirmSample, titleVisibility: .visible) {
+            Button("Add sample data", role: .destructive) { Task { await model.addSampleData() } }
+        } message: {
+            Text(sampleWarning)
+        }
+        #endif
+        .confirmationDialog("Upload all history again?", isPresented: $confirmReupload, titleVisibility: .visible) {
+            Button("Upload all history") { Task { await model.uploadAllHistory() } }
+        } message: {
+            Text("Every day back to \"\(model.history.label)\" is read from Health and sent again. Nothing is deleted.")
         }
         .onDisappear { Task { await dashboard.startIfNeeded() } }
     }
@@ -94,10 +89,8 @@ private struct ServerSection: View {
                 .accessibilityIdentifier("serverURL")
             LabeledContent("Dashboard", value: accountText)
             if dashboard.phase == .signIn {
-                Button("Sign in") {
-                    dashboard.showingSettings = false
-                    dashboard.tab = .today
-                }
+                // The sign-in screen is on Home.
+                Button("Sign in") { dashboard.open(.home) }
             } else if dashboard.authMode == "required", dashboard.phase == .ready {
                 Button("Sign out", role: .destructive) { Task { await dashboard.signOut() } }
             }
@@ -304,7 +297,7 @@ struct NutritionTargetField: Identifiable {
     ]
 }
 
-/// Which cards show, the web's Settings → Cards: one list for the app and the web dashboard.
+/// Which cards show, the web's Profile → Cards: one list for the app and the web dashboard.
 private struct CardsSection: View {
     @Environment(Dashboard.self) private var dashboard
 
@@ -328,7 +321,7 @@ private struct CardsSection: View {
     }
 }
 
-/// A switch per card, grouped by the web's pages as its Settings groups them (Nutrition's only with it on). Each
+/// A switch per card, grouped by the web's pages as its Profile groups them (Nutrition's only with it on). Each
 /// switch moves at once and its change goes to the server on its own, after any still on their way; one the server
 /// refuses goes back. Under each card, where this app shows it, or that only the web dashboard hides it. Optional
 /// cards say so: they're off until turned on.
@@ -339,7 +332,7 @@ struct CardsScreen: View {
     var body: some View {
         let nutrition = dashboard.status?.settings?.nutrition == true
         let optional = dashboard.optionalCards
-        // Show all only when a default card's switch here is off, as the Settings row counts. It brings back every
+        // Show all only when a default card's switch here is off, as the Profile row counts. It brings back every
         // default card, as on the web, so also ones not listed (Nutrition's while it's off, or a newer server's), and
         // leaves the optional ones as they are.
         let offeredHidden = Cards.hiddenOffered(Set(dashboard.hiddenCards), nutrition: nutrition, optionalCards: optional)

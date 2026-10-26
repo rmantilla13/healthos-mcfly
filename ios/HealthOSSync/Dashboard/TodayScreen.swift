@@ -1,38 +1,36 @@
 import SwiftUI
 
-/// The home screen: the same cards as the web dashboard's Home page.
+/// The Home page: the same cards as the web dashboard's Home. Its header greets you and has your avatar, so the
+/// navigation bar is hidden here.
 struct TodayScreen: View {
     @Environment(Dashboard.self) private var dashboard
 
     var body: some View {
-        NavigationStack {
-            Group {
-                switch dashboard.phase {
-                case .starting:
+        Group {
+            switch dashboard.phase {
+            case .starting:
+                ProgressView()
+            case .noServer:
+                Unavailable("No server yet", systemImage: "server.rack", description: "Add your healthOS address in Profile.") {
+                    Button("Open Profile") { dashboard.tab = .settings }
+                }
+            case .signIn:
+                SignInView()
+            case .unavailable(let message):
+                Unavailable("Can't load your dashboard", systemImage: "wifi.exclamationmark", description: message) {
+                    Button("Try again") { Task { await dashboard.start() } }
+                }
+            case .ready:
+                if let summary = dashboard.summary {
+                    TodayContent(summary: summary)
+                } else {
                     ProgressView()
-                case .noServer:
-                    Unavailable("No server yet", systemImage: "server.rack", description: "Add your healthOS address in Settings.") {
-                        Button("Open Settings") { dashboard.tab = .settings }
-                    }
-                case .signIn:
-                    SignInView()
-                case .unavailable(let message):
-                    Unavailable("Can't load your dashboard", systemImage: "wifi.exclamationmark", description: message) {
-                        Button("Try again") { Task { await dashboard.start() } }
-                    }
-                case .ready:
-                    if let summary = dashboard.summary {
-                        TodayContent(summary: summary)
-                    } else {
-                        ProgressView()
-                    }
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Palette.page)
-            .toolbar(.hidden, for: .navigationBar)
-            .navigationDestination(for: DayScreen.Route.self) { DayScreen(date: $0.date) }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Palette.page)
+        .toolbar(.hidden, for: .navigationBar)
         .task { await dashboard.startIfNeeded() }
         .onReceive(NotificationCenter.default.publisher(for: .healthOSSynced)) { _ in
             Task { await dashboard.refreshIfChanged(includeStatus: false) }
@@ -44,8 +42,6 @@ private struct TodayContent: View {
     let summary: Summary
     @Environment(Dashboard.self) private var dashboard
     @Environment(AppModel.self) private var sync
-    @State private var mcfly = McFlyChat()
-    @State private var chatOpen = false
     /// The day by hour (GET /api/day) and the cycle (GET /api/cycle): nil hides their cards.
     @State private var day: DayData?
     @State private var cycle: CycleData?
@@ -59,7 +55,7 @@ private struct TodayContent: View {
         let isToday = summary.date == summary.today
         // The phase is about today, so it says nothing about a past day on screen.
         let phase = isToday && dashboard.cycleTrackingOn ? cycle?.phase : nil
-        // Cards hidden in Settings → Cards (here or on the web), and optional ones not turned on, leave no gap; the
+        // Cards hidden in Profile → Cards (here or on the web), and optional ones not turned on, leave no gap; the
         // rest move up.
         let hidden = dashboard.cardsOff
         let gridIds = Cards.visible(Cards.todayGrid, hidden: hidden)
@@ -90,76 +86,13 @@ private struct TodayContent: View {
             .animation(.easeInOut(duration: 0.2), value: dashboard.loading)
         }
         .refreshable { await sync.syncAll(force: true) }
-        // In the safe area, so it floats above the tab bar instead of under it, with room to breathe; the inset also pads
-        // the scroll content, so the last card scrolls clear of it.
-        .safeAreaInset(edge: .bottom) {
-            if mcfly.status?.available == true {
-                AskMcFlyPill { chatOpen = true }.padding(.top, 8).padding(.bottom, 18)
-            }
-        }
-        .sheet(isPresented: $chatOpen) { McFlySheet(chat: mcfly) }
-        .task(id: dashboard.generation) { await mcfly.refreshStatus() }
+        // Ask McFly's pill floats over this, from the shell (Shell/AppShell.swift).
         // Newer endpoints: a server without them, or a failed fetch, just hides the card.
         .task(id: "\(summary.date)|\(dashboard.generation)") {
             day = try? await dashboard.day(date: summary.date == summary.today ? nil : summary.date)
         }
         .task(id: "\(dashboard.generation)|\(dashboard.cycleTrackingOn)") {
             cycle = try? await dashboard.cycle()
-        }
-    }
-}
-
-// MARK: - Header
-
-private struct Header: View {
-    let summary: Summary
-    let name: String?
-    @Environment(Dashboard.self) private var dashboard
-
-    var body: some View {
-        let isToday = summary.date == summary.today
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Hello,").font(.app(fixedSize: 26)).foregroundStyle(Palette.ink2)
-                    Text("\(name ?? "there").").font(.app(fixedSize: 40, weight: .bold)).foregroundStyle(Palette.ink)
-                        .lineLimit(1).minimumScaleFactor(0.6)
-                    Text(isToday ? "Here's your health today." : "Here's your health on \(Fmt.day(summary.date, "EEEEMMMMd")).")
-                        .font(.app(.subheadline))
-                        .foregroundStyle(Palette.ink3)
-                }
-                Spacer(minLength: 8)
-                Button { dashboard.tab = .settings } label: {
-                    Avatar(photo: dashboard.status?.photo, name: name)
-                }
-                .buttonStyle(.plain)
-                .accessibilityHint("Opens Settings")
-            }
-            HStack(spacing: 6) {
-                Button { Task { await dashboard.show(date: Day.add(summary.date, -1)) } } label: {
-                    Image(systemName: "chevron.left").frame(width: 34, height: 34)
-                }
-                .accessibilityLabel("Previous day")
-                Button { Task { await dashboard.show(date: nil) } } label: {
-                    Text(Fmt.day(summary.date, "EEEMMMdyyyy")).font(.app(.subheadline, weight: .medium)).monospacedDigit()
-                }
-                .disabled(isToday)
-                .accessibilityHint("Back to today")
-                Button { Task { await dashboard.show(date: Day.add(summary.date, 1)) } } label: {
-                    Image(systemName: "chevron.right").frame(width: 34, height: 34)
-                }
-                .disabled(isToday)
-                .accessibilityLabel("Next day")
-                Spacer()
-                if let latest = summary.latestDataDate, latest < summary.date {
-                    Text("Latest data \(Fmt.day(latest))").font(.app(.caption)).foregroundStyle(Palette.ink3)
-                }
-            }
-            .foregroundStyle(Palette.ink)
-            .buttonStyle(.plain)
-            .padding(4)
-            .background(Palette.surface, in: Capsule())
-            .overlay(Capsule().strokeBorder(Palette.border))
         }
     }
 }
@@ -179,7 +112,8 @@ private struct Banner: View {
     }
 }
 
-/// A gentle heads-up from the summary (resting heart rate up, maybe with a raised temperature). Opens Vitals.
+/// A gentle heads-up from the summary (resting heart rate up, maybe with a raised temperature). Opens its page, Vitals
+/// unless it names another.
 private struct FlagBanner: View {
     let flag: Flag
     /// Cycle context the app adds itself.
@@ -188,8 +122,8 @@ private struct FlagBanner: View {
 
     var body: some View {
         let tone: Tone = flag.caution ? .peach : .blue
-        let section = flag.page.flatMap(TrendsSection.init(page:)) ?? .vitals
-        Button { dashboard.open(section) } label: {
+        let route = flag.page.flatMap { AppRoute(page: $0) } ?? .vitals
+        Button { dashboard.open(route) } label: {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: flag.caution ? "heart.text.square" : "waveform.path.ecg").font(.subheadline.weight(.semibold))
                 VStack(alignment: .leading, spacing: 3) {
@@ -210,7 +144,7 @@ private struct FlagBanner: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
-        .accessibilityHint("Opens \(section.rawValue)")
+        .accessibilityHint("Opens \(route.title)")
     }
 }
 
@@ -222,14 +156,11 @@ private struct FamilyNotice: View {
         let tone = Tone.blue
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "person.2").font(.subheadline.weight(.semibold)).accessibilityHidden(true)
-            Text("Your family can see your daily status and your last 30 days on the **[Family](healthos://family)** board. Change this in **[Settings](healthos://settings)**.")
+            Text("Your family can see your daily status and your last 30 days on the **[Family](healthos://family)** board. Change this in **[your Profile](healthos://profile)**.")
                 .font(.app(.footnote))
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .environment(\.openURL, OpenURLAction { url in
-                    dashboard.tab = url.host == "settings" ? .settings : .family
-                    return .handled
-                })
+                .environment(\.openURL, OpenURLAction { url in dashboard.open(url: url) ? .handled : .systemAction })
             Button("Got it") { Task { await dashboard.dismissFamilyNotice() } }
                 .font(.app(.footnote, weight: .semibold))
                 .buttonStyle(.plain)

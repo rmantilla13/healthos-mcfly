@@ -73,7 +73,7 @@ final class AppModel {
     var last: SyncReport? = SyncState.load().last
     var notice: String?
     var working = false
-    /// The last Sync (Apple Health + WHOOP), shown on Today and in Settings.
+    /// The last Sync (Apple Health + WHOOP), shown on Home and in Profile.
     var sources: SourcesSyncStatus?
     var syncingSources = false
     /// Older days still going up in the background of the open app (first upload, or the hourly backfill).
@@ -157,13 +157,13 @@ final class AppModel {
 
         let apple: SourcesSyncStatus.Part
         if Config.serverURL() == nil {
-            apple = .skipped("Add your healthOS address in Settings.")
+            apple = .skipped("Add your healthOS address in Profile.")
         } else if Config.ingestOwner.paused {
             apple = .skipped("Signed out. Sign in, and this iPhone's Health data goes up again.")
         } else if Config.token.isEmpty {
             apple = .skipped(Config.ingestOwner.setUpAgain
-                ? "Set this iPhone up again for your account: dashboard → Integrations → iPhone app, then paste the token in Settings."
-                : "Paste your ingest token in Settings (dashboard → Integrations → iPhone app).")
+                ? "Set this iPhone up again for your account: dashboard → Integrations → iPhone app, then paste the token in Profile."
+                : "Paste your ingest token in Profile (dashboard → Integrations → iPhone app).")
         } else {
             await syncNow()
             apple = last.map { $0.ok ? .ok : .failed($0.message) } ?? .failed("Didn't run.")
@@ -189,7 +189,7 @@ final class AppModel {
     }
 
     private func syncWhoop() async -> SourcesSyncStatus.Part {
-        guard let client = APIClient.current() else { return .skipped("Add your healthOS address in Settings.") }
+        guard let client = APIClient.current() else { return .skipped("Add your healthOS address in Profile.") }
         if dashboard?.phase == .signIn {
             return .skipped("Sign in to refresh it now. The server also syncs WHOOP every hour.")
         }

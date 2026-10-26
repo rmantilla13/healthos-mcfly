@@ -2,15 +2,10 @@ import Charts
 import SwiftUI
 
 // The Day view (src/pages/Detail.tsx DayCard, src/charts/Day.tsx): one day hour by hour next to a typical day,
-// from GET /api/day. Today's card ("Steps so far today", named for its metric) pushes it onto Today's NavigationStack.
+// from GET /api/day. Home's card ("Steps so far today", named for its metric) pushes it over Home (AppRoute.day).
 
 /// Steps, active energy and heart rate by hour for one day, with a date stepper that never goes past today.
 struct DayScreen: View {
-    /// Pushed from Today; nil means today.
-    struct Route: Hashable {
-        let date: String?
-    }
-
     /// The day to open on; nil means today.
     var date: String?
     @Environment(Dashboard.self) private var dashboard
@@ -120,7 +115,7 @@ struct DayCard: View {
             let reading = DayReading(metric: metric, series: series, data: data)
             let isToday = data.date >= data.today
             let title = Self.title(metric.title, running: metric.kind == .running, isToday: isToday)
-            NavigationLink(value: DayScreen.Route(date: date)) {
+            NavigationLink(value: AppRoute.day(date)) {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(alignment: .firstTextBaseline) {
                         VStack(alignment: .leading, spacing: 2) {

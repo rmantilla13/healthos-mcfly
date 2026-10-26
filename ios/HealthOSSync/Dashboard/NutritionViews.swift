@@ -230,7 +230,7 @@ private struct NutritionOverview: View {
     var body: some View {
         let week = FoodMath.dates(to: data.end, count: 7)
         let latest = data.days.last
-        // Cards hidden in Settings → Cards (shared/cards.ts) are left out, and the rest close up.
+        // Cards hidden in Profile → Cards (shared/cards.ts) are left out, and the rest close up.
         let layout = Cards.nutritionOverview(mode: data.mode, hidden: dashboard.cardsOff)
         if latest == nil && data.water.isEmpty {
             FoodNothingLoggedCard()
@@ -445,7 +445,7 @@ private struct FoodNoAmountsCard: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(latest.map { Fmt.relativeDay($0.date, today: today) } ?? "Nothing logged lately").font(.app(.headline)).foregroundStyle(Palette.ink)
             Text((latest.map { "You logged food \($0.app == "healthOS" ? "here" : "in \($0.app)"). " } ?? "")
-                + "You chose to see no amounts, so this shows only the days you logged\(logging ? ", and the Log tab what you logged" : ""). Change it on the web, in Settings.")
+                + "You chose to see no amounts, so this shows only the days you logged\(logging ? ", and the Log tab what you logged" : ""). Change it on the web, in Profile.")
                 .font(.app(.footnote)).foregroundStyle(Palette.ink2)
                 .fixedSize(horizontal: false, vertical: true)
         }
