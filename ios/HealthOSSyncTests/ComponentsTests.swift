@@ -138,6 +138,23 @@ final class ComponentsTests: XCTestCase {
         }
     }
 
+    /// The accent pill, as the quiet pill: one line up to the largest standard size; at the accessibility sizes its words
+    /// wrap ("Enter my workspace" was cut off on the welcome's last step at AX5).
+    func testTheAccentPillsWordsWrapOnlyAtTheAccessibilitySizes() {
+        func size(_ title: String, _ type: DynamicTypeSize, width: CGFloat, arrow: Bool = true) -> CGSize {
+            UIHostingController(rootView: Button { } label: { WelcomeButtonLabel(title, arrow: arrow) }
+                .buttonStyle(.accentPill).environment(\.dynamicTypeSize, type))
+                .sizeThatFits(in: CGSize(width: width, height: 3000))
+        }
+        for type in [DynamicTypeSize.large, .xxxLarge] {
+            XCTAssertEqual(size("Enter my workspace", type, width: 340).height, 44, accuracy: 0.5, "\(type): the pill's own height")
+        }
+        let oneLine = size("OK", .accessibility5, width: 300, arrow: false)
+        let wrapped = size("Enter my workspace", .accessibility5, width: 300)
+        XCTAssertGreaterThan(wrapped.height, oneLine.height * 1.8, "every word shown, on more than one line")
+        XCTAssertLessThanOrEqual(wrapped.width, 300)
+    }
+
     /// The radio card's mark as the web's radio draws: empty, a grey ring on a grey disc in dark mode (not the card's
     /// own surface); chosen, an accent ring, a white band and an accent dot, in light and dark.
     func testTheRadioMarkIsTheWebsInLightAndDark() throws {
