@@ -484,6 +484,17 @@ final class PortraitsTests: XCTestCase {
         XCTAssertTrue(process.contains("Couldn't separate you from the background."))
     }
 
+    func testAFailedTileIsSurfaceAndEveryOtherOnTheCream() throws {
+        let css = try web("src/styles/portraits.css")
+        XCTAssertNotNil(css.firstMatch(of: /\.portrait-tile-art \{[^}]*background: var\(--grad-cream\);/))
+        XCTAssertNotNil(css.firstMatch(of: /\.portrait-tile\.is-failed \.portrait-tile-art \{\s*background: var\(--surface-2\);/))
+        // The sheen is see-through but for its band, over the cream.
+        XCTAssertTrue(css.contains("background: linear-gradient(105deg, transparent 30%, var(--surface-hover) 50%, transparent 70%) 0 0 / 250% 100%;"))
+        XCTAssertEqual(TileArt.wash("ready"), .cream)
+        XCTAssertEqual(TileArt.wash("pending"), .cream)
+        XCTAssertEqual(TileArt.wash("failed"), .failed)
+    }
+
     // MARK: Look
 
     /// The studio in each state, and the photo's preview, draw light and dark, at the default and the largest text size.

@@ -317,10 +317,13 @@ private struct PortraitTile: View {
             .aspectRatio(2 / 3, contentMode: .fit)
             .frame(maxWidth: .infinity)
             .background {
-                switch p.status {
-                case "ready": GradientFill(.gradCream)
-                case "pending": PortraitSheen()
-                default: Palette.surface2
+                ZStack {
+                    switch TileArt.wash(p.status) {
+                    case .cream: GradientFill(.gradCream)
+                    case .failed: Palette.surface2
+                    }
+                    // .portrait-making: the sheen moves over the tile's own cream.
+                    if p.status == "pending" { PortraitSheen() }
                 }
             }
             .overlay {
@@ -356,7 +359,16 @@ private struct PortraitTile: View {
     }
 }
 
-/// Being made: a slow sheen across the tile, still with Reduce Motion.
+/// A tile picture's own wash (.portrait-tile-art): the cream, for a portrait ready or being made alike; surface-2 for
+/// one that failed (.portrait-tile.is-failed).
+enum TileArt: Equatable {
+    case cream, failed
+
+    static func wash(_ status: String) -> TileArt { status == "failed" ? .failed : .cream }
+}
+
+/// Being made: a slow sheen across the tile's cream (the web's transparent gradient over it); with Reduce Motion, a
+/// still wash of surface-hover over the whole picture instead.
 private struct PortraitSheen: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var moved = false
@@ -375,7 +387,6 @@ private struct PortraitSheen: View {
                     }
             }
         }
-        .background(Palette.surface)
         .clipped()
         .accessibilityHidden(true)
     }
