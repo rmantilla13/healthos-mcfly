@@ -242,7 +242,8 @@ struct SyncStatusLine: View {
                 }
                 .font(.app(.caption))
                 .foregroundStyle(Palette.ink3)
-                .lineLimit(2)
+                // In full at every text size: each source's state is in it.
+                .fixedSize(horizontal: false, vertical: true)
                 if !sync.syncingSources, let notes = sync.sources?.notes, !notes.isEmpty {
                     ForEach(notes, id: \.self) { Text($0).font(.app(.caption)).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true) }
                 }
@@ -259,7 +260,9 @@ struct HomeQuietButtonStyle: ButtonStyle {
         configuration.label
             .font(.app(.footnote, weight: .medium))
             .foregroundStyle(configuration.isPressed ? Palette.ink : Palette.ink3)
-            .lineLimit(1)
+            // Its words wrap rather than being cut off, at the largest text sizes.
+            .multilineTextAlignment(.trailing)
+            .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, 12)
             .frame(minHeight: 44)
             .contentShape(Rectangle())
@@ -356,6 +359,8 @@ struct FamilyNotice: View {
     private var gotIt: some View {
         Button("Got it") { Task { await dashboard.dismissFamilyNotice() } }
             .buttonStyle(HomeQuietButtonStyle())
+            // Beside the words, it keeps its own width; they wrap.
+            .layoutPriority(1)
             .accessibilityHint("Hides this note")
             .accessibilityIdentifier("familyNoticeGotIt")
     }

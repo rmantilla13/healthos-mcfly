@@ -35,14 +35,35 @@ struct EditWidgetsSheet: View {
                     .accessibilityIdentifier("editWidgetsError")
             }
         } footer: {
-            Button("Every page's cards") {
+            Self.Footer(everyPage: {
                 dismiss()
                 onEveryPage()
+            }, done: { dismiss() })
+        }
+    }
+
+    /// The sheet's two buttons (.sheet-foot: on the right, wrapping): side by side when they fit, else Done on a line of
+    /// its own under Every page's cards, whose words wrap rather than being cut off.
+    struct Footer: View {
+        let everyPage: () -> Void
+        let done: () -> Void
+
+        var body: some View {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 10) { everyPageButton; doneButton }
+                VStack(alignment: .trailing, spacing: 10) { everyPageButton; doneButton }
             }
-            .buttonStyle(HomeQuietButtonStyle())
-            .accessibilityHint("Opens Profile")
-            .accessibilityIdentifier("everyPagesCards")
-            Button("Done") { dismiss() }
+        }
+
+        private var everyPageButton: some View {
+            Button("Every page's cards", action: everyPage)
+                .buttonStyle(HomeQuietButtonStyle())
+                .accessibilityHint("Opens Profile")
+                .accessibilityIdentifier("everyPagesCards")
+        }
+
+        private var doneButton: some View {
+            Button("Done", action: done)
                 .buttonStyle(.accentPill)
                 .accessibilityIdentifier("editWidgetsDone")
         }

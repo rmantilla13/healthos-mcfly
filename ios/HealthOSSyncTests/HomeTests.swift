@@ -688,6 +688,62 @@ final class HomeFitsTests: XCTestCase {
     func testTheHeaderFits() throws {
         let s = try decode(Summary.self, fullSummary)
         assertFits("header", HomeHeader(summary: s, editing: .constant(false)))
+        // With the demo note and Edit widgets (a server that hides cards), the parts that wrap at the largest sizes.
+        let d = Dashboard()
+        d.apply(status: try decode(ServerStatus.self, #"{"demo":true,"settings":{"name":"Sam","hiddenCards":[],"shownCards":[]}}"#))
+        XCTAssertTrue(d.cardsAvailable)
+        let sync = AppModel()
+        sync.sources = SourcesSyncStatus(finishedAt: Date(), apple: .ok, whoop: .skipped("Not connected"), hint: nil)
+        for size in sizes {
+            let root = HomeHeader(summary: s, editing: .constant(false)).environment(d).environment(sync).environment(\.dynamicTypeSize, size)
+            let fitted = UIHostingController(rootView: root).sizeThatFits(in: CGSize(width: width, height: .greatestFiniteMagnitude))
+            XCTAssertLessThanOrEqual(fitted.width, width + 0.5, "the header with the demo note runs off the screen at \(size)")
+        }
+    }
+
+    /// The sync line is in full at every size: each source's state is in it.
+    func testTheSyncLineWrapsRatherThanBeingCutOff() {
+        let sync = AppModel()
+        // Both synced: no notes under the line, so its height is the line's own.
+        let status = SourcesSyncStatus(finishedAt: Date(), apple: .ok, whoop: .ok, hint: nil)
+        XCTAssertTrue(status.notes.isEmpty)
+        sync.sources = status
+        let narrow: CGFloat = 160
+        for size in [DynamicTypeSize.accessibility3, .accessibility5] {
+            let line = UIHostingController(rootView: SyncStatusLine().environment(sync).environment(\.dynamicTypeSize, size))
+                .sizeThatFits(in: CGSize(width: narrow, height: .greatestFiniteMagnitude))
+            // Its words alone, given the line's whole width (more than they get beside the icon): a lower bound.
+            let words = Text("Synced \(status.finishedAt.formatted(.relative(presentation: .named))) · \(status.summary)")
+                .font(.app(.caption)).fixedSize(horizontal: false, vertical: true).environment(\.dynamicTypeSize, size)
+            let needed = UIHostingController(rootView: words).sizeThatFits(in: CGSize(width: narrow, height: .greatestFiniteMagnitude))
+            XCTAssertGreaterThanOrEqual(line.height, needed.height - 0.5, "the sync line is cut off at \(size)")
+        }
+    }
+
+    /// The quiet buttons (Every page's cards, Got it) wrap their words where they're narrow, never cutting them off.
+    func testAQuietButtonWraps() {
+        let button = Button("Every page's cards") {}.buttonStyle(HomeQuietButtonStyle()).environment(\.dynamicTypeSize, .accessibility5)
+        let wide = UIHostingController(rootView: button).sizeThatFits(in: CGSize(width: 2000, height: CGFloat.greatestFiniteMagnitude))
+        let narrow = UIHostingController(rootView: button).sizeThatFits(in: CGSize(width: wide.width / 2, height: .greatestFiniteMagnitude))
+        XCTAssertLessThanOrEqual(narrow.width, wide.width / 2 + 0.5)
+        XCTAssertGreaterThan(narrow.height, wide.height + 1, "on two lines, not one cut short")
+    }
+
+    /// Edit widgets' buttons fit the sheet (18pt sides) at every size: Done goes under Every page's cards when they don't
+    /// fit side by side.
+    func testEditWidgetsFooterFits() {
+        let sheet = width + 32 - 36
+        for size in sizes {
+            let footer = EditWidgetsSheet.Footer(everyPage: {}, done: {}).environment(\.dynamicTypeSize, size)
+            let fitted = UIHostingController(rootView: footer).sizeThatFits(in: CGSize(width: sheet, height: .greatestFiniteMagnitude))
+            XCTAssertLessThanOrEqual(fitted.width, sheet + 0.5, "Edit widgets' buttons run off the sheet at \(size)")
+        }
+        let large = UIHostingController(rootView: EditWidgetsSheet.Footer(everyPage: {}, done: {}).environment(\.dynamicTypeSize, .large))
+            .sizeThatFits(in: CGSize(width: sheet, height: .greatestFiniteMagnitude))
+        let ax5 = UIHostingController(rootView: EditWidgetsSheet.Footer(everyPage: {}, done: {}).environment(\.dynamicTypeSize, .accessibility5))
+            .sizeThatFits(in: CGSize(width: sheet, height: .greatestFiniteMagnitude))
+        XCTAssertLessThan(large.height, 60, "side by side at the default size")
+        XCTAssertGreaterThan(ax5.height, large.height * 2, "one under the other at the largest")
     }
 
     /// The journal card with a long check-in: the line wraps inside the card, which grows to hold it, rather than running
