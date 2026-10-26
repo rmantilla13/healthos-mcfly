@@ -1,42 +1,36 @@
 import Charts
 import SwiftUI
 
-// The six metric cards, the timeline and the insights from src/pages/Home.tsx.
+// Home's cards from src/pages/Home.tsx: the grid of signal cards (Home/SignalCards.swift) and the optional ones (strain or
+// active energy, activity, food totals), the card frame they share with Vitals and Sleep, and Recent insights.
 
-/// The metric cards that show (hidden ones left out), two to a row like the web's fill row: as many full rows as
-/// fit, and an odd last card spans both columns, so hiding a card never leaves a hole. At the accessibility text
-/// sizes, one to a row, as the web's narrowest layout, so no word breaks in the middle.
+/// Home's cards that show (hidden ones left out), one to a row, as the web's phone layout has them at every text size
+/// (styles.css: `.cards.fill-row { --cols: 1 }` at 560px and below).
 struct TodayGrid: View {
     let summary: Summary
-    /// shared/cards.ts ids in order, hidden ones already removed (Cards.todayGrid).
+    /// shared/cards.ts ids in order, hidden ones already removed.
     let ids: [String]
     let goal: Double
-    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         // Every card hidden: nothing at all, not an empty stack, which a parent stack would still space around.
         if !ids.isEmpty {
-            VStack(spacing: 12) {
-                ForEach(Array(Cards.rows(ids, max: typeSize.isAccessibilitySize ? 1 : 2).enumerated()), id: \.offset) { _, row in
-                    HStack(alignment: .top, spacing: 12) {
-                        ForEach(row, id: \.self) { card($0) }
-                    }
-                    // Both cards in a row as tall as the taller one.
-                    .fixedSize(horizontal: false, vertical: true)
-                }
+            VStack(spacing: 14) {
+                ForEach(ids, id: \.self) { card($0) }
             }
         }
     }
 
     @ViewBuilder private func card(_ id: String) -> some View {
-        switch id {
-        case "home.readiness": ReadinessCard(summary: summary)
-        case "home.spo2": Spo2Card(summary: summary)
-        case "home.hrv": HrvCard(summary: summary)
-        case "home.sleep": SleepCard(summary: summary)
-        case "home.load": LoadCard(summary: summary)
-        case "home.activity": ActivityCard(summary: summary, goal: goal)
-        default: EmptyView()
+        if let signal = Signal.of(id, summary) {
+            SignalCard(signal: signal, date: summary.date)
+        } else {
+            switch id {
+            case "home.load": LoadCard(summary: summary)
+            case "home.activity": ActivityCard(summary: summary, goal: goal)
+            case "home.food": FoodTotalsCard()
+            default: EmptyView()
+            }
         }
     }
 }
@@ -46,12 +40,13 @@ struct TodayGrid: View {
 enum MetricCardVariant {
     case home, compact
 
-    var minHeight: CGFloat { self == .home ? 196 : 176 }
+    var minHeight: CGFloat { self == .home ? 214 : 176 }
 }
 
-/// A tappable card for one metric (the web's VitalCard): Home's, and the compact ones on Vitals and Sleep. With a
-/// `metric`, a tap opens its detail sheet, whose "Open {Page}" goes to `route`, as the web's arrow does; without one, it
-/// opens `route`. Slice B's signal cards take the same `variant`, so Vitals (H) and Sleep (J) show them compact.
+/// A tappable card for one metric (the web's .card.metric with its CardHead): Home's, and the compact ones on Vitals and
+/// Sleep. With a `metric`, a tap opens its detail sheet, whose "Open {Page}" goes to `route`, as the web's arrow does;
+/// without one, it opens `route`. Home's signal cards (SignalCard) take the same `variant`, so Vitals (H) and Sleep (J)
+/// show them compact.
 struct MetricCard<Content: View>: View {
     let title: String
     let route: AppRoute
@@ -60,335 +55,306 @@ struct MetricCard<Content: View>: View {
     var metric: MetricKey?
     /// The sheet's line above the metric's name.
     var section = "Your signals"
+    /// The day the card shows, where the sheet's window ends; nil is today.
+    var date: String?
+    /// At least this tall; the variant's own height when nil.
+    var minHeight: CGFloat?
+    /// What VoiceOver reads for the card; its own words when nil.
+    var spoken: String?
     @ViewBuilder let content: Content
     @Environment(Dashboard.self) private var dashboard
 
     init(title: String, route: AppRoute, tint: CardTint = .plain, variant: MetricCardVariant = .home, metric: MetricKey? = nil,
-         section: String = "Your signals", @ViewBuilder content: () -> Content) {
+         section: String = "Your signals", date: String? = nil, minHeight: CGFloat? = nil, spoken: String? = nil,
+         @ViewBuilder content: () -> Content) {
         self.title = title
         self.route = route
         self.tint = tint
         self.variant = variant
         self.metric = metric
         self.section = section
+        self.date = date
+        self.minHeight = minHeight
+        self.spoken = spoken
         self.content = content()
     }
 
     var body: some View {
         Button {
-            if let metric { dashboard.showMetric(metric, section: section, page: route) } else { dashboard.open(route) }
+            if let metric { dashboard.showMetric(metric, section: section, page: route, date: date) } else { dashboard.open(route) }
         } label: {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text(title).font(.app(.subheadline, weight: .medium)).foregroundStyle(Palette.ink2)
-                    Spacer()
-                    Image(systemName: "arrow.up.right").font(.caption.weight(.semibold)).foregroundStyle(Palette.ink3)
+            // The web's min-height is the whole card's (border-box): the card's padding (20 top, 18 bottom) comes off.
+            CardMinHeight(min: (minHeight ?? variant.minHeight) - 38) {
+                VStack(alignment: .leading, spacing: 6) {
+                    CardHead(title: title)
+                    content.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }
-                content
             }
-            .frame(maxWidth: .infinity, minHeight: variant.minHeight, maxHeight: .infinity, alignment: .topLeading)
             .card(tint)
+            .contentShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(CardPressStyle())
+        .accessibilityElement(children: .combine)
+        .modifier(SpokenLabel(text: spoken))
         .accessibilityHint(metric == nil ? "Opens \(route.title)" : "Opens \(title) details")
     }
 }
 
-private struct Empty: View {
-    let text: String
+/// A card's title and its ↗ (Home.tsx CardHead, .metric-head: 13px, 500, ink; the arrow in a 26pt circle, ink-2).
+struct CardHead: View {
+    let title: String
+
     var body: some View {
-        Text(text).font(.app(.footnote)).foregroundStyle(Palette.ink3).frame(maxHeight: .infinity, alignment: .center)
+        HStack(alignment: .center, spacing: 8) {
+            Text(title).font(.app(.footnote, weight: .medium)).foregroundStyle(Palette.ink).fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            Image(systemName: "arrow.up.right").font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.ink2)
+                .frame(width: 26, height: 26)
+                .padding(.vertical, -4)
+                .padding(.trailing, -6)
+                .accessibilityHidden(true)
+        }
     }
 }
 
-/// The date of a value when it isn't from the day on screen.
+/// A card's label for VoiceOver when one is given.
+private struct SpokenLabel: ViewModifier {
+    let text: String?
+    func body(content: Content) -> some View {
+        if let text { content.accessibilityLabel(text) } else { content }
+    }
+}
+
+/// A card pressed: a shade dimmer, without moving under Reduce Motion.
+struct CardPressStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(configuration.isPressed ? 0.92 : 1)
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.99 : 1)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: configuration.isPressed)
+    }
+}
+
+/// At least `min` tall, else as tall as its content, and the content is laid out in that height, so a Spacer in it
+/// pushes the foot to the bottom (the web's `margin-top: auto` in a card with a min-height).
+struct CardMinHeight: Layout {
+    var min: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let child = subviews.first else { return .zero }
+        let ideal = child.sizeThatFits(ProposedViewSize(width: proposal.width, height: nil))
+        return CGSize(width: proposal.width ?? ideal.width, height: Swift.max(min, ideal.height))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(width: bounds.width, height: bounds.height))
+    }
+}
+
+// MARK: - A link inside a card
+
+/// Where a link inside a tappable card sits (an empty card's Connect), so a button of its own can be drawn over it:
+/// a button inside the card's own button wouldn't get its taps.
+struct CardLinkSpot: PreferenceKey {
+    static let defaultValue: Anchor<CGRect>? = nil
+    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) { value = value ?? nextValue() }
+}
+
+extension View {
+    /// Marks where the card's link goes: this is drawn hidden in its place, and the real button over it.
+    func cardLinkSpot() -> some View { hidden().anchorPreference(key: CardLinkSpot.self, value: .bounds) { $0 } }
+
+    /// Draws the card's link over the spot marked with `cardLinkSpot()`.
+    func cardLink<Label: View>(_ spoken: String, hint: String, id: String, action: @escaping () -> Void, @ViewBuilder label: @escaping () -> Label) -> some View {
+        overlayPreferenceValue(CardLinkSpot.self) { spot in
+            GeometryReader { geo in
+                if let spot {
+                    let r = geo[spot]
+                    Button(action: action) {
+                        label().frame(minWidth: Swift.max(44, r.width), minHeight: 44).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .position(x: r.midX, y: r.midY)
+                    .accessibilityLabel(spoken)
+                    .accessibilityHint(hint)
+                    .accessibilityIdentifier(id)
+                }
+            }
+        }
+    }
+}
+
+/// An optional card without data (Home.tsx Empty): its words, and Connect data, to Integrations.
+private struct EmptyMetric: View {
+    let text: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Spacer(minLength: 0)
+            Text(text).font(.app(.footnote)).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
+            ConnectData().cardLinkSpot()
+        }
+    }
+}
+
+private struct ConnectData: View {
+    var body: some View { Text("Connect data").font(.app(.footnote, weight: .semibold)).foregroundStyle(Palette.ink) }
+}
+
+/// The date of a value when it isn't from the day on screen (Signals.tsx Stale).
 private struct Stale: View {
     let date: String
     let asOf: String
     var body: some View {
-        if date != asOf { Text(Fmt.day(date)).font(.app(.caption2)).foregroundStyle(Palette.ink3) }
+        if date != asOf { Text(Fmt.day(date)).font(.app(size: 11, relativeTo: .caption2)).foregroundStyle(Palette.ink3) }
     }
 }
 
-private struct Foot<Leading: View, Trailing: View>: View {
-    @ViewBuilder let leading: Leading
-    @ViewBuilder let trailing: Trailing
-    var body: some View {
-        HStack(alignment: .firstTextBaseline) {
-            leading
-            Spacer(minLength: 4)
-            trailing
-        }
-        .font(.app(.caption))
-        .foregroundStyle(Palette.ink3)
-        .lineLimit(1)
-    }
-}
-
-// MARK: - Readiness
-
-struct ReadinessCard: View {
-    let summary: Summary
+/// The big figure of an optional card, its unit on the line below (.metric-value: 40px, 500; small 13px).
+private struct MetricValue: View {
+    let value: String
+    let unit: String
 
     var body: some View {
-        if let r = summary.readiness, r.kind == "vo2max" {
-            MetricCard(title: "Cardio fitness", route: .body, tint: .green) {
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        BigValue(value: Fmt.number(r.latest.value, 1), unit: "VO₂ max", size: 30)
-                        if let prev = r.previous { Chip(text: "\(Fmt.signed(r.latest.value - prev, 1)) vs last month") }
-                    }
-                    Spacer(minLength: 0)
-                }
-                Rings(value: min(1, (r.latest.value - 25) / 35)).frame(height: 64).frame(maxWidth: .infinity)
-                Spacer(minLength: 0)
-                Foot { Text("mL/kg·min") } trailing: { Stale(date: r.latest.date, asOf: summary.date) }
-            }
-        } else if let r = summary.readiness, r.kind == "recovery" {
-            let zone = r.zone ?? (r.latest.value >= 67 ? "green" : r.latest.value >= 34 ? "yellow" : "red")
-            MetricCard(title: "Recovery", route: .vitals, tint: .green) {
-                BigValue(value: Fmt.number(r.latest.value), unit: "%", size: 30)
-                if let avg = r.average { Chip(text: "\(Fmt.signed(r.latest.value - avg)) vs 30-day avg") }
-                Rings(value: r.latest.value / 100).frame(height: 56).frame(maxWidth: .infinity)
-                ZoneScale(value: r.latest.value, range: 0...100, zones: [(33, Palette.critical), (66, Palette.warning), (100, Palette.good)])
-                Foot {
-                    HStack(spacing: 4) {
-                        Circle().fill(Self.zoneColor(zone)).frame(width: 7, height: 7)
-                        Text(Self.zoneText(zone)).font(.app(.caption, weight: .medium)).foregroundStyle(Palette.ink)
-                    }
-                } trailing: { Stale(date: r.latest.date, asOf: summary.date) }
-            }
-        } else {
-            MetricCard(title: "Recovery", route: .vitals, tint: .green) {
-                Empty(text: "Recovery comes from WHOOP; cardio fitness from Apple Watch.")
-            }
+        VStack(alignment: .leading, spacing: 6) {
+            Text(value).font(.app(size: 40, weight: .medium, relativeTo: .largeTitle)).tracking(-0.03 * 40).foregroundStyle(Palette.ink)
+                .lineLimit(1).minimumScaleFactor(0.6)
+            Text(unit).font(.app(.footnote)).foregroundStyle(Palette.ink2)
         }
-    }
-
-    static func zoneText(_ zone: String) -> String { ["red": "Low", "yellow": "Moderate", "green": "High"][zone] ?? zone.capitalized }
-    static func zoneColor(_ zone: String) -> Color { ["red": Palette.critical, "yellow": Palette.warning, "green": Palette.good][zone] ?? Palette.ink3 }
-}
-
-/// Decorative concentric rings; the dot sits at the score's position on the outer ring (the web's Rings).
-struct Rings: View {
-    let value: Double
-
-    var body: some View {
-        Canvas { ctx, size in
-            let scale = min(size.width, size.height) / 120
-            let c = CGPoint(x: size.width / 2, y: size.height / 2)
-            for r in [56.0, 44, 32, 20] {
-                let rr = r * scale
-                ctx.stroke(Path(ellipseIn: CGRect(x: c.x - rr, y: c.y - rr, width: rr * 2, height: rr * 2)), with: .color(Palette.ink.opacity(0.15)), lineWidth: 1)
-            }
-            let a = Double.pi * (0.75 - 1.5 * min(1, max(0, value)))
-            let p = CGPoint(x: c.x + 56 * scale * cos(a), y: c.y - 56 * scale * sin(a))
-            ctx.fill(Path(ellipseIn: CGRect(x: p.x - 4, y: p.y - 4, width: 8, height: 8)), with: .color(Palette.ink))
-        }
-        .accessibilityHidden(true)
-    }
-}
-
-/// A segmented range bar with a marker at the value.
-struct ZoneScale: View {
-    let value: Double
-    let range: ClosedRange<Double>
-    let zones: [(Double, Color)]
-
-    var body: some View {
-        GeometryReader { geo in
-            let w = geo.size.width
-            let span = range.upperBound - range.lowerBound
-            ZStack(alignment: .leading) {
-                HStack(spacing: 2) {
-                    ForEach(Array(zones.enumerated()), id: \.offset) { i, zone in
-                        let from = i == 0 ? range.lowerBound : zones[i - 1].0
-                        Capsule().fill(zone.1.opacity(0.55)).frame(width: max(0, (zone.0 - from) / span * w - 2))
-                    }
-                }
-                Circle()
-                    .fill(Palette.ink)
-                    .overlay(Circle().stroke(Palette.surface, lineWidth: 2))
-                    .frame(width: 10, height: 10)
-                    .offset(x: min(max(0, (value - range.lowerBound) / span), 1) * (w - 10))
-            }
-        }
-        .frame(height: 10)
-        .accessibilityHidden(true)
-    }
-}
-
-// MARK: - Blood oxygen
-
-struct Spo2Card: View {
-    let summary: Summary
-
-    var body: some View {
-        MetricCard(title: "Blood oxygen", route: .vitals, tint: .peach) {
-            if let l = summary.spo2?.latest {
-                HStack(alignment: .firstTextBaseline) {
-                    BigValue(value: Fmt.number(l.value, l.value.truncatingRemainder(dividingBy: 1) == 0 ? 0 : 1), unit: "%", size: 30)
-                    Spacer(minLength: 0)
-                }
-                Text(summary.spo2?.status == "low" ? "Below your range" : "Normal").font(.app(.caption, weight: .medium)).foregroundStyle(Palette.ink2)
-                MiniLine(points: summary.spo2?.series ?? [], color: Palette.series2, domain: 90...100).frame(height: 56)
-                Spacer(minLength: 0)
-                Foot { Text("90") } trailing: {
-                    HStack(spacing: 8) {
-                        Stale(date: l.date, asOf: summary.date)
-                        Text("100")
-                    }
-                }
-            } else {
-                Empty(text: "No blood oxygen readings yet.")
-            }
-        }
-    }
-}
-
-// MARK: - HRV
-
-struct HrvCard: View {
-    let summary: Summary
-
-    var body: some View {
-        MetricCard(title: "HRV", route: .vitals) {
-            if let hrv = summary.hrv, let l = hrv.latest {
-                BigValue(value: Fmt.number(l.value), unit: "ms", size: 30)
-                MiniDots(points: hrv.series ?? [], baseline: hrv.baseline).frame(height: 64)
-                Spacer(minLength: 0)
-                Foot {
-                    Text(Self.statusText(hrv.status)).font(.app(.caption, weight: .medium)).foregroundStyle(Palette.ink)
-                } trailing: {
-                    Text("usual · \(hrv.metric == "hrv_sdnn" ? "SDNN" : "RMSSD")")
-                }
-            } else {
-                Empty(text: "No HRV readings yet.")
-            }
-        }
-    }
-
-    static func statusText(_ s: String?) -> String {
-        switch s {
-        case "optimal": "Optimal"
-        case "normal": "Normal"
-        case "low": "Below baseline"
-        default: "Building baseline"
-        }
-    }
-}
-
-// MARK: - Sleep
-
-struct SleepCard: View {
-    let summary: Summary
-
-    var body: some View {
-        MetricCard(title: "Sleep", route: .sleep) {
-            if let l = summary.sleep?.latest {
-                BigValue(value: Fmt.number(l.value, 1), unit: "hours", size: 30)
-                MiniLine(points: summary.sleep?.series ?? [], color: Palette.series1).frame(height: 56)
-                Spacer(minLength: 0)
-                Foot {
-                    HStack(spacing: 6) {
-                        Text(l.value >= 7 ? "Good" : l.value >= 6 ? "Fair" : "Short").font(.app(.caption, weight: .medium)).foregroundStyle(Palette.ink)
-                        Stale(date: l.date, asOf: summary.date)
-                    }
-                } trailing: {
-                    if let change = summary.sleep?.change { Text("\(Fmt.signed(change * 100))% wk") }
-                }
-            } else {
-                Empty(text: "No sleep recorded yet.")
-            }
-        }
+        .padding(.top, 6)
     }
 }
 
 // MARK: - Strain / active energy
 
+/// Home.tsx LoadCard: WHOOP's strain on its 21 scale, or Apple's active energy against the 7-day average.
 struct LoadCard: View {
     let summary: Summary
+    @Environment(Dashboard.self) private var dashboard
+
+    /// The words under the gauge: strain's band, or active energy against the average.
+    static func band(_ l: Summary.Load) -> String {
+        let v = l.latest.value
+        if l.kind == "strain" { return v < 10 ? "Light" : v < 14 ? "Moderate" : v < 18 ? "High" : "All out" }
+        return v >= (l.average ?? 0) ? "Above usual" : "Below usual"
+    }
 
     var body: some View {
         if let l = summary.load {
             let strain = l.kind == "strain"
             let v = l.latest.value
             let max = strain ? 21 : Swift.max(800, (l.average ?? 0) * 1.6)
-            let band = strain ? (v < 10 ? "Light" : v < 14 ? "Moderate" : v < 18 ? "High" : "All out") : v >= (l.average ?? 0) ? "Above usual" : "Below usual"
-            MetricCard(title: strain ? "Strain" : "Active energy", route: .activity, tint: .pink) {
-                BigValue(value: strain ? Fmt.number(v, 1) : Fmt.number(v), unit: strain ? "of 21" : "kcal", size: 30)
-                ArcGauge(fraction: v / max).frame(height: 62).frame(maxWidth: .infinity)
-                Spacer(minLength: 0)
-                Foot {
-                    HStack(spacing: 6) {
-                        Text(band).font(.app(.caption, weight: .medium)).foregroundStyle(Palette.ink)
-                        Stale(date: l.latest.date, asOf: summary.date)
+            MetricCard(title: strain ? "Strain" : "Active energy", route: .activity, tint: .pink, metric: strain ? .strain : .activeEnergy,
+                       date: summary.date, spoken: "\(strain ? "Strain \(Fmt.number(v, 1)) of 21" : "Active energy \(Fmt.number(v)) kilocalories"), \(Self.band(l))") {
+                VStack(alignment: .leading, spacing: 6) {
+                    MetricValue(value: strain ? Fmt.number(v, 1) : Fmt.number(v), unit: strain ? "of 21" : "kcal")
+                    HalfGauge(fraction: v / max).frame(width: 168, height: 92).frame(maxWidth: .infinity).padding(.top, -6)
+                    Spacer(minLength: 0)
+                    SignalFootRow {
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text(Self.band(l)).font(.app(.footnote, weight: .medium)).foregroundStyle(Palette.ink)
+                            Stale(date: l.latest.date, asOf: summary.date)
+                        }
+                    } trailing: {
+                        if let avg = l.average, avg > 0 { Text("\(Fmt.signed((v - avg) / avg * 100))% vs avg") }
                     }
-                } trailing: {
-                    if let avg = l.average, avg > 0 { Text("\(Fmt.signed((v - avg) / avg * 100))% vs avg") }
+                    .font(.app(.caption))
                 }
             }
+            .accessibilityIdentifier("card-home.load")
         } else {
-            MetricCard(title: "Strain", route: .activity, tint: .pink) {
-                Empty(text: "Strain comes from WHOOP; active energy from Apple Health.")
+            MetricCard(title: "Strain", route: .activity, tint: .pink, metric: .strain, date: summary.date) {
+                EmptyMetric(text: "Strain comes from WHOOP; active energy from Apple Health.")
             }
+            .cardLink("Connect data", hint: "Opens Integrations", id: "connect-home.load", action: { dashboard.open(.integrations) }) { ConnectData() }
+            .accessibilityIdentifier("card-home.load")
         }
     }
 }
 
-struct ArcGauge: View {
+/// Mini.tsx Gauge: a half circle, its track a lighter step of the fill's hue, 21 ticks inside, and a ringed dot at the
+/// value.
+struct HalfGauge: View {
     let fraction: Double
 
     var body: some View {
-        ZStack {
-            Arc(to: 1).stroke(Palette.gaugeTrack, style: StrokeStyle(lineWidth: 10, lineCap: .round))
-            Arc(to: min(1, max(0.02, fraction))).stroke(Palette.gaugeFill, style: StrokeStyle(lineWidth: 10, lineCap: .round))
+        Canvas { ctx, size in
+            let w: CGFloat = 168, h: CGFloat = 92, r: CGFloat = 72
+            let sx = size.width / w, sy = size.height / h
+            let c = CGPoint(x: w / 2 * sx, y: (h - 6) * sy)
+            let t = min(1, max(0, fraction))
+            func point(_ to: Double, radius: CGFloat) -> CGPoint {
+                let a = Double.pi * (1 - to)
+                return CGPoint(x: c.x + radius * sx * cos(a), y: c.y - radius * sy * sin(a))
+            }
+            func arc(_ to: Double) -> Path {
+                var p = Path()
+                p.addArc(center: c, radius: r * sx, startAngle: .degrees(180), endAngle: .degrees(180 + 180 * to), clockwise: false)
+                return p
+            }
+            ctx.stroke(arc(1), with: .color(Palette.gaugeTrack), style: StrokeStyle(lineWidth: 6, lineCap: .round))
+            if t > 0 { ctx.stroke(arc(t), with: .color(Palette.gaugeFill), style: StrokeStyle(lineWidth: 6, lineCap: .round)) }
+            for i in 0...20 {
+                var tick = Path()
+                tick.move(to: point(Double(i) / 20, radius: r - 12))
+                tick.addLine(to: point(Double(i) / 20, radius: r - (i % 5 == 0 ? 18 : 15)))
+                ctx.stroke(tick, with: .color(Palette.ink.opacity(0.18)), lineWidth: 1)
+            }
+            let e = point(t, radius: r)
+            let dot = Path(ellipseIn: CGRect(x: e.x - 5, y: e.y - 5, width: 10, height: 10))
+            ctx.stroke(dot, with: .color(Palette.ringOnCard), lineWidth: 4)
+            ctx.fill(dot, with: .color(Palette.gaugeFill))
         }
         .accessibilityHidden(true)
-    }
-
-    struct Arc: Shape {
-        var to: Double
-        func path(in rect: CGRect) -> Path {
-            let radius = min(rect.width / 2, rect.height) - 6
-            var p = Path()
-            p.addArc(center: CGPoint(x: rect.midX, y: rect.maxY - 2), radius: radius, startAngle: .degrees(180), endAngle: .degrees(180 + 180 * to), clockwise: false)
-            return p
-        }
     }
 }
 
 // MARK: - Activity
 
+/// Home.tsx ActivityCard: today's steps, the last 7 days as bars, and the step goal.
 struct ActivityCard: View {
     let summary: Summary
     let goal: Double
+    @Environment(Dashboard.self) private var dashboard
 
     var body: some View {
-        MetricCard(title: "Activity", route: .activity) {
-            if let l = summary.activity?.latest {
-                BigValue(value: Fmt.number(l.value), unit: "steps", size: 30)
-                MiniBars(points: summary.activity?.series ?? []).frame(height: 48)
-                Spacer(minLength: 0)
-                VStack(spacing: 5) {
-                    Foot { Text("\(Int((l.value / goal * 100).rounded()))% of goal") } trailing: { Text(Fmt.compact(goal)) }
-                    GeometryReader { geo in
-                        ZStack(alignment: .leading) {
-                            Capsule().fill(Palette.goalTrack)
-                            Capsule().fill(Palette.good).frame(width: geo.size.width * min(1, l.value / goal))
+        if let l = summary.activity?.latest {
+            let pct = Int((l.value / goal * 100).rounded())
+            MetricCard(title: "Activity", route: .activity, metric: .steps, date: summary.date,
+                       spoken: "Activity, \(Fmt.number(l.value)) steps, \(pct)% of your \(Fmt.number(goal)) step goal") {
+                VStack(alignment: .leading, spacing: 6) {
+                    MetricValue(value: Fmt.number(l.value), unit: "steps")
+                    MiniBars(points: summary.activity?.series ?? []).frame(height: 52)
+                    Spacer(minLength: 0)
+                    VStack(spacing: 6) {
+                        SignalFootRow { Text("\(pct)% of goal") } trailing: { Text(Fmt.compact(goal)) }
+                            .font(.app(.caption))
+                        GeometryReader { geo in
+                            ZStack(alignment: .leading) {
+                                Capsule().fill(Palette.goalTrack)
+                                Capsule().fill(Palette.good).frame(width: geo.size.width * min(1, l.value / goal))
+                            }
                         }
+                        .frame(height: 6)
                     }
-                    .frame(height: 6)
                 }
-            } else {
-                Empty(text: "No steps recorded yet.")
             }
+            .accessibilityIdentifier("card-home.activity")
+        } else {
+            MetricCard(title: "Activity", route: .activity, metric: .steps, date: summary.date) {
+                EmptyMetric(text: "No steps recorded yet.")
+            }
+            .cardLink("Connect data", hint: "Opens Integrations", id: "connect-home.activity", action: { dashboard.open(.integrations) }) { ConnectData() }
+            .accessibilityIdentifier("card-home.activity")
         }
     }
 }
 
 // MARK: - Mini charts
 
+/// A line over days, used by Trends (TrendsExtras.swift). Home's own are SignalLine and SignalDots.
 struct MiniLine: View {
     let points: [Point]
     let color: Color
@@ -415,84 +381,35 @@ struct MiniLine: View {
     }
 }
 
+/// Mini.tsx MiniBars, neutral: a bar a day with rounded tops, the latest in the darker step.
 struct MiniBars: View {
     let points: [Point]
 
     var body: some View {
-        Chart(Array(points.enumerated()), id: \.offset) { i, p in
-            BarMark(x: .value("Day", p.date), y: .value("Steps", p.value), width: .ratio(0.6))
-                .foregroundStyle(i == points.count - 1 ? Palette.barNeutralAccent : Palette.barNeutral)
-                .clipShape(RoundedRectangle(cornerRadius: 3))
+        Canvas { ctx, size in
+            let n = points.count
+            guard n > 0 else { return }
+            let top = max(points.map(\.value).max() ?? 1, 1)
+            let slot = size.width / CGFloat(n)
+            let w = max(3, min(10, slot - 2))
+            for (i, p) in points.enumerated() {
+                let y = size.height - CGFloat(p.value / top) * (size.height - 4)
+                let h = size.height - y
+                guard h > 0 else { continue }
+                let x = CGFloat(i) * slot + slot / 2 - w / 2
+                let r = min(4, w / 2, h)
+                let bar = Path(roundedRect: CGRect(x: x, y: y, width: w, height: h), cornerRadii: RectangleCornerRadii(topLeading: r, topTrailing: r))
+                ctx.fill(bar, with: .color(i == n - 1 ? Palette.barNeutralAccent : Palette.barNeutral))
+            }
         }
-        .chartXAxis(.hidden)
-        .chartYAxis(.hidden)
         .accessibilityHidden(true)
     }
 }
 
-/// HRV dots with the usual level as a dashed line.
-struct MiniDots: View {
-    let points: [Point]
-    let baseline: Double?
+// MARK: - Timeline colours
 
-    var body: some View {
-        let values = points.map(\.value) + (baseline.map { [$0] } ?? [])
-        let lo = (values.min() ?? 0) * 0.92
-        let hi = (values.max() ?? 1) * 1.08
-        Chart {
-            if let baseline {
-                RuleMark(y: .value("Usual", baseline))
-                    .foregroundStyle(Palette.ink3.opacity(0.6))
-                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
-            }
-            ForEach(Array(points.enumerated()), id: \.offset) { i, p in
-                PointMark(x: .value("Night", Fmt.chartDate(p.date)), y: .value("HRV", p.value))
-                    .symbolSize(i == points.count - 1 ? 44 : 18)
-                    .foregroundStyle(i == points.count - 1 ? Palette.series1 : Palette.series1.opacity(0.45))
-            }
-        }
-        .chartXAxis(.hidden)
-        .chartYAxis(.hidden)
-        .chartYScale(domain: lo...Swift.max(hi, lo + 1))
-        .accessibilityHidden(true)
-    }
-}
-
-// MARK: - Timeline
-
-struct TimelineCard: View {
-    let timeline: Summary.Timeline
-    let today: String
-
-    var body: some View {
-        let isToday = timeline.date == today
-        VStack(alignment: .leading, spacing: 14) {
-            Text(isToday ? "Today's timeline" : "Timeline · \(Fmt.day(timeline.date, "EEEMMMd"))").font(.app(.headline)).foregroundStyle(Palette.ink)
-            Track(timeline: timeline, isToday: isToday)
-            if timeline.events.isEmpty {
-                Text("Nothing recorded for this day.").font(.app(.footnote)).foregroundStyle(Palette.ink3)
-            }
-            ForEach(timeline.events.suffix(4)) { e in
-                HStack(spacing: 10) {
-                    Circle().fill(Self.color(e.kind)).frame(width: 9, height: 9)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(e.title).font(.app(.subheadline, weight: .medium)).foregroundStyle(Palette.ink)
-                        Text("\(Fmt.clock(e.start)) – \(Fmt.clock(e.end))\(e.detail.map { " · \($0)" } ?? "")")
-                            .font(.app(.caption)).foregroundStyle(Palette.ink3).monospacedDigit()
-                    }
-                    Spacer()
-                    let state = Self.state(e, isToday: isToday, today: today)
-                    Text(state)
-                        .font(.app(.caption2, weight: .medium))
-                        .padding(.horizontal, 8).padding(.vertical, 3)
-                        .background((state == "In progress" ? Tone.green : state == "Upcoming" ? Tone.blue : Tone.neutral).background, in: Capsule())
-                        .foregroundStyle((state == "In progress" ? Tone.green : state == "Upcoming" ? Tone.blue : Tone.neutral).ink)
-                }
-            }
-        }
-        .card()
-    }
-
+enum TimelineCard {
+    /// Each kind of event's colour on the track and in the list (Home.tsx KIND_COLOR).
     static func color(_ kind: String) -> Color {
         switch kind {
         case "sleep", "nap": Palette.series1
@@ -502,74 +419,35 @@ struct TimelineCard: View {
         }
     }
 
-    /// Compares wall times as recorded with the phone's local time, like the web.
-    static func state(_ e: TimelineEvent, isToday: Bool, today: String) -> String {
+    /// Completed, In progress or Upcoming (Home.tsx TimelineCard state): wall times as recorded against the phone's
+    /// local time, like the web; every event of a past day is completed.
+    static func state(_ e: TimelineEvent, isToday: Bool, now: String) -> String {
         guard isToday else { return "Completed" }
-        let nowLocal = localNow()
-        if String(e.end.prefix(16)) <= nowLocal { return "Completed" }
-        if String(e.start.prefix(16)) <= nowLocal { return "In progress" }
+        if String(e.end.prefix(16)) <= now { return "Completed" }
+        if String(e.start.prefix(16)) <= now { return "In progress" }
         return "Upcoming"
     }
 
-    static func localNow() -> String {
-        let c = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: Date())
+    /// Now as a local wall time, "YYYY-MM-DDTHH:MM".
+    static func localNow(_ date: Date = Date()) -> String {
+        let c = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: date)
         return String(format: "%04d-%02d-%02dT%02d:%02d", c.year!, c.month!, c.day!, c.hour!, c.minute!)
-    }
-
-    private struct Track: View {
-        let timeline: Summary.Timeline
-        let isToday: Bool
-
-        var body: some View {
-            VStack(spacing: 4) {
-                GeometryReader { geo in
-                    let w = geo.size.width
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(Palette.surface2).frame(height: 12)
-                        ForEach(timeline.events) { e in
-                            // An event that started the evening before is drawn from midnight.
-                            let start = e.start.prefix(10) < timeline.date ? 0 : Fmt.minutesOfDay(e.start)
-                            let end = e.end.prefix(10) > timeline.date ? 1440 : Fmt.minutesOfDay(e.end)
-                            let span = Swift.max(end, start + 12) - start
-                            Capsule()
-                                .fill(TimelineCard.color(e.kind))
-                                .frame(width: Swift.max(4, w * Double(span) / 1440 - 2), height: 12)
-                                .offset(x: w * Double(start) / 1440)
-                        }
-                        if isToday {
-                            let c = Calendar.current.dateComponents([.hour, .minute], from: Date())
-                            Rectangle().fill(Palette.ink).frame(width: 2, height: 22)
-                                .offset(x: w * Double(c.hour! * 60 + c.minute!) / 1440 - 1)
-                        }
-                    }
-                    .frame(height: 22)
-                }
-                .frame(height: 22)
-                HStack {
-                    ForEach([0, 6, 12, 18, 24], id: \.self) { h in
-                        Text(String(format: "%02d:00", h))
-                        if h != 24 { Spacer() }
-                    }
-                }
-                .font(.app(.caption2).monospacedDigit())
-                .foregroundStyle(Palette.ink3)
-            }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(timeline.events.map { "\($0.title) \(Fmt.clock($0.start)) to \(Fmt.clock($0.end))" }.joined(separator: ", "))
-        }
     }
 }
 
 // MARK: - Insights
 
+/// Home.tsx InsightsCard: the latest insights, each opening its page.
 struct InsightsCard: View {
     let insights: [Insight]
     let today: String
     @Environment(Dashboard.self) private var dashboard
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Recent insights").font(.app(.headline)).foregroundStyle(Palette.ink)
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Recent insights").font(.app(size: 15, weight: .medium, relativeTo: .subheadline)).foregroundStyle(Palette.ink)
+                .accessibilityAddTraits(.isHeader)
+                .padding(.bottom, 14)
             if insights.isEmpty {
                 Text("Insights appear after a week or two of data.").font(.app(.footnote)).foregroundStyle(Palette.ink3)
             }
@@ -580,23 +458,25 @@ struct InsightsCard: View {
                 } label: {
                     HStack(spacing: 12) {
                         Image(systemName: symbol)
-                            .font(.subheadline.weight(.semibold))
+                            .font(.system(size: 15, weight: .semibold))
                             .foregroundStyle(tone.ink)
-                            .frame(width: 34, height: 34)
+                            .frame(width: 36, height: 36)
                             .background(tone.background, in: Circle())
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(insight.text).font(.app(.subheadline)).foregroundStyle(Palette.ink).multilineTextAlignment(.leading)
+                            Text(insight.text).font(.app(.footnote, weight: .medium)).foregroundStyle(Palette.ink).multilineTextAlignment(.leading)
                             Text(Fmt.relativeDay(insight.date, today: today)).font(.app(.caption)).foregroundStyle(Palette.ink3)
                         }
                         Spacer(minLength: 0)
-                        Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(Palette.ink3)
+                        Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.ink3)
                     }
+                    .padding(.vertical, 8)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
         }
         .card()
+        .accessibilityIdentifier("card-home.insights")
     }
 
     static func style(_ icon: String) -> (String, Tone) {

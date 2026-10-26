@@ -27,10 +27,16 @@ final class CardPlacesTests: XCTestCase {
     }
 
     func testHomePlaces() {
-        XCTAssertEqual(Cards.ids(in: .home), ["home.spo2", "home.hrv", "home.sleep", "home.readiness", "home.week", "home.timeline", "home.insights", "home.load", "home.activity"])
-        XCTAssertEqual(Cards.todayGrid.filter { Cards.card($0)?.place == .home }, Cards.todayGrid, "every grid card is a Home card")
-        // No food card on Home yet.
-        XCTAssertNil(Cards.card("home.food")?.place)
+        // Every card the web's Home has shows on the iPhone's Home, in the registry's order.
+        XCTAssertEqual(Cards.ids(in: .home), Cards.all.filter { $0.page == .home }.map(\.id))
+        XCTAssertEqual(Cards.ids(in: .home).count, 14)
+        // The rows, as Home.tsx lays them out: the signals, the pair, the optional row; then the timeline, the week and
+        // insights on their own.
+        XCTAssertEqual(HomeCards.signals, ["home.rhr", "home.spo2", "home.hrv", "home.sleep", "home.readiness", "home.resp"])
+        XCTAssertEqual(HomeCards.lower, ["home.nutrition", "home.journal"])
+        XCTAssertEqual(HomeCards.optionalRow, ["home.load", "home.activity", "home.food"])
+        XCTAssertTrue(HomeCards.optionalRow.allSatisfy { Cards.optional.contains($0) })
+        XCTAssertTrue((HomeCards.signals + HomeCards.lower).allSatisfy { !Cards.optional.contains($0) })
     }
 
     func testSleepPlaces() {
