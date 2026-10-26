@@ -684,8 +684,12 @@ final class ShellTests: XCTestCase {
         try FileManager.default.createDirectory(at: photos, withIntermediateDirectories: true)
         let photo = photos.appendingPathComponent("avatar-test.png")
         try Data([1, 2, 3]).write(to: photo)
+        // A voice note's recording a crash left behind.
+        let recording = FileManager.default.temporaryDirectory.appendingPathComponent("healthos-voice-test.m4a")
+        try Data([1, 2, 3]).write(to: recording)
 
         await d.signOut()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: recording.path), "the last person's recording goes with them")
         XCTAssertEqual(d.phase, .signIn)
         XCTAssertNil(d.status)
         XCTAssertTrue(d.mcfly.messages.isEmpty)
@@ -694,6 +698,15 @@ final class ShellTests: XCTestCase {
         XCTAssertEqual(d.tab, .home)
         XCTAssertTrue(d.paths.values.allSatisfy(\.isEmpty))
         XCTAssertNil(d.webPage)
+    }
+
+    /// A launch deletes what a closed app left in its temporary folder: a voice note's recording (a crash mid-note) and
+    /// an export waiting for its share sheet.
+    func testALaunchDeletesWhatAClosedAppLeftBehind() throws {
+        let recording = FileManager.default.temporaryDirectory.appendingPathComponent("healthos-voice-test.m4a")
+        try Data([1, 2, 3]).write(to: recording)
+        AppDelegate.removeLeftovers()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: recording.path))
     }
 
     /// Another person's sign-in or another server: Ask McFly starts a new conversation.

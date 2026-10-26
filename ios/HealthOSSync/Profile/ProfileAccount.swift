@@ -135,7 +135,9 @@ struct ProfilePasswordForm: View {
         defer { busy = false }
         do {
             let (old, new) = (current, next)
-            try await dashboard.fetch { try await $0.changePassword(current: old, next: new) }
+            // Only for the session it was asked under: answered after a Sign out or someone else's sign-in, it says
+            // nothing to whoever is here now (and its new session isn't kept, `APIClient.checked`).
+            try await dashboard.fetchForThisSession { try await $0.changePassword(current: old, next: new) }
             current = ""
             next = ""
             confirm = ""

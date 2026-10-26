@@ -457,6 +457,8 @@ final class Dashboard {
         mcfly.forget()
         availability.forget()
         ProfileImages.clear()
+        // A voice note's recording a crash left behind is theirs too (it's deleted once sent, or when the note stops).
+        MicrophoneRecorder.removeLeftovers()
         metricSheet = nil
         welcomeEditing = false
     }
