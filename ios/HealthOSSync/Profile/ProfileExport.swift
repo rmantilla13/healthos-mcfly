@@ -161,14 +161,15 @@ enum ProfileExport {
 }
 
 /// Profile's "Export your data" row: Download JSON (Preparing… while the server builds it), then the share sheet.
-/// Under the row, "Saved <name>." or what went wrong, read out as it changes.
+/// Under the row, "Saved <name>." or what went wrong, read out as it changes. A server that answers it has no export
+/// (older than it) gets no button again.
 struct ProfileExportRow: View {
-    /// The server answered that it has no export (older than it): the row goes.
-    @Binding var missing: Bool
     var divider = true
     @Environment(Dashboard.self) private var dashboard
     @State private var busy = false
     @State private var result: (ok: Bool, text: String)?
+    /// The server answered that it has no export: it's older than it.
+    @State private var missing = false
 
     var body: some View {
         ProfileRow("Export your data", divider: divider) {
@@ -178,10 +179,12 @@ struct ProfileExportRow: View {
                     .accessibilityIdentifier("exportResult")
             }
         } action: {
-            Button(busy ? "Preparing…" : "Download JSON") { Task { await export() } }
-                .buttonStyle(.quietPill(size: .compact))
-                .disabled(busy)
-                .accessibilityIdentifier("exportData")
+            if !missing {
+                Button(busy ? "Preparing…" : "Download JSON") { Task { await export() } }
+                    .buttonStyle(.quietPill(size: .compact))
+                    .disabled(busy)
+                    .accessibilityIdentifier("exportData")
+            }
         }
         .onChange(of: result?.text) { _, text in
             if let text { UIAccessibility.post(notification: .announcement, argument: text) }

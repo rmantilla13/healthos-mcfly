@@ -18,15 +18,13 @@ struct ProfileScreen: View {
     @State private var shown: ProfileSheet?
     /// ?connect= was acted on: it opens its sheet once, not each time Profile shows again.
     @State private var linkHandled = false
-    /// The server answered that it has no export: it's older than the export, so the row goes.
-    @State private var exportMissing = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 // Never the last person's: only while someone's signed in (or a server without sign-in is connected).
                 if dashboard.phase == .ready, let settings = dashboard.status?.settings {
-                    ProfileYoursCard(settings: settings, exportMissing: $exportMissing) { sheet = $0 }
+                    ProfileYoursCard(settings: settings) { sheet = $0 }
                     ProfileSettingsCard(settings: settings) { sheet = $0 }
                     PeersSection()
                     PortraitPhotosSection()
@@ -127,7 +125,6 @@ enum ProfileSheet: String, Identifiable {
 /// "Your profile": how you're shown, your AI, your account, your sources, the export, privacy, and signing out.
 private struct ProfileYoursCard: View {
     let settings: ServerStatus.Settings
-    @Binding var exportMissing: Bool
     let open: (ProfileSheet) -> Void
     @Environment(Dashboard.self) private var dashboard
 
@@ -175,7 +172,7 @@ private struct ProfileYoursCard: View {
                     .buttonStyle(.quietPill(size: .compact))
                     .accessibilityIdentifier("manageSources")
             }
-            if keys, !exportMissing { ProfileExportRow(missing: $exportMissing) }
+            if keys { ProfileExportRow() }
             ProfileRow("Privacy & data use", lines: ["Understand how files, food descriptions and recordings are handled."], divider: signedIn) {
                 Button("Read details") { dashboard.showWeb("privacy.html") }
                     .buttonStyle(.quietPill(size: .compact))
