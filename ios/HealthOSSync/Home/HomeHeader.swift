@@ -230,7 +230,8 @@ struct SyncStatusLine: View {
     var body: some View {
         if sync.syncingSources || sync.sources != nil {
             VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
+                // The mark beside the first line when the line wraps.
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
                     if sync.syncingSources {
                         ProgressView().controlSize(.mini)
                         Text(sync.progress.isEmpty ? "Syncing Apple Health and WHOOP…" : sync.progress)
