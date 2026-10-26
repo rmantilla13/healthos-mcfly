@@ -10,8 +10,8 @@ struct PhotoSection: View {
     @Environment(Dashboard.self) private var dashboard
 
     var body: some View {
-        if dashboard.phase == .ready {
-            PhotoAsIs().id("\(Config.serverURL()?.absoluteString ?? "")|\(dashboard.account?.id ?? dashboard.status?.user?.id ?? "")")
+        if let person = dashboard.signedInPerson {
+            PhotoAsIs(person: person).id(person)
         }
     }
 }
@@ -68,6 +68,8 @@ extension APIClient {
 }
 
 private struct PhotoAsIs: View {
+    /// Whose it is: a save or a remove checks they're still the one signed in before it's sent.
+    let person: String
     @Environment(Dashboard.self) private var dashboard
     @State private var item: PhotosPickerItem?
     /// Cutting out, saving or removing.
@@ -166,7 +168,7 @@ private struct PhotoAsIs: View {
         error = nil
         defer { busy = false }
         do {
-            try await PhotoPreview.upload(photo, dashboard)
+            try await PhotoPreview.upload(photo, dashboard, for: person)
             preview = nil
             await dashboard.load()
         } catch {
@@ -180,6 +182,7 @@ private struct PhotoAsIs: View {
         error = nil
         defer { busy = false }
         do {
+            try SignedInPerson.check(dashboard, is: person)
             let status = try await dashboard.fetch { try await $0.clearPhoto() }
             dashboard.showChanged(status)
             ProfileImages.clear()
@@ -265,6 +268,8 @@ struct PhotoPreview: View {
     @Environment(Dashboard.self) private var dashboard
     @State private var saving = false
     @State private var error: String?
+    /// Who it was opened for.
+    @State private var person: String?
 
     var body: some View {
         NavigationStack {
@@ -282,6 +287,7 @@ struct PhotoPreview: View {
         .font(.app(.body))
         .tint(Palette.tint)
         .interactiveDismissDisabled(saving)
+        .onAppear { if person == nil { person = dashboard.signedInPerson } }
     }
 
     private func save() async {
@@ -289,7 +295,7 @@ struct PhotoPreview: View {
         error = nil
         defer { saving = false }
         do {
-            try await Self.upload(photo, dashboard)
+            try await Self.upload(photo, dashboard, for: person)
             await saved()
             dismiss()
         } catch {
@@ -297,8 +303,10 @@ struct PhotoPreview: View {
         }
     }
 
-    /// Uploads a cut-out as the profile photo; a 401 drops to sign-in, as every request does.
-    @MainActor static func upload(_ photo: PhotoCutout, _ dashboard: Dashboard) async throws {
+    /// Uploads a cut-out as the profile photo, only while `person` is still the one signed in (it stops quietly
+    /// otherwise); a 401 drops to sign-in, as every request does.
+    @MainActor static func upload(_ photo: PhotoCutout, _ dashboard: Dashboard, for person: String?) async throws {
+        try SignedInPerson.check(dashboard, is: person)
         try await dashboard.fetch { try await $0.uploadPhoto(photo) }
     }
 }

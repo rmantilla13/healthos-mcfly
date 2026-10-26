@@ -385,6 +385,44 @@ final class PortraitsTests: XCTestCase {
         XCTAssertNil(m2.thumbs["made-ready"])
     }
 
+    func testAWriteStartedForOnePersonNeverGoesOutAsAnother() async throws {
+        let d = Dashboard()
+        d.phase = .ready
+        d.account = AuthState.User(id: "person-a", email: nil, name: nil, role: nil)
+        let a = try XCTUnwrap(d.signedInPerson)
+        XCTAssertNoThrow(try SignedInPerson.check(d, is: a))
+        let live = PortraitService.live(d)
+        let cut = cutout()
+        func refused(_ name: String, _ write: () async throws -> Void) async {
+            do {
+                try await write()
+                XCTFail("\(name) went out")
+            } catch {
+                XCTAssertTrue(error is CancellationError, "\(name): \(error)")
+            }
+        }
+        // Someone else signs in while a portrait is being used: nothing more is sent for the first person.
+        d.account = AuthState.User(id: "person-b", email: nil, name: nil, role: nil)
+        XCTAssertNotEqual(d.signedInPerson, a)
+        await refused("upload") { try await live.upload(cut) }
+        await refused("choose") { _ = try await live.choose("p1") }
+        await refused("perspective") { try await live.usePortraitPerspective() }
+        await refused("photo") { try await PhotoPreview.upload(cut, d, for: a) }
+        // Signed out: nobody's writes go.
+        d.phase = .signIn
+        XCTAssertNil(d.signedInPerson)
+        await refused("add") { _ = try await live.addReference(PreparedPhoto(jpeg: Data([0xFF, 0xD8]), width: 10, height: 10)) }
+        await refused("make") { _ = try await live.generate("r1") }
+        await refused("delete") { _ = try await live.delete("r1") }
+        XCTAssertThrowsError(try SignedInPerson.check(d, is: nil), "nobody's is never anybody's")
+        // The studio stays quiet about it: no note, no failure on the tile.
+        let m = PortraitStudioModel(service: live)
+        await m.add { PreparedPhoto(jpeg: Data([0xFF, 0xD8]), width: 10, height: 10) }
+        XCTAssertNil(m.note)
+        XCTAssertNil(m.busy)
+        XCTAssertEqual(m.successes, 0)
+    }
+
     func testAnIdIsOnePathSegment() {
         XCTAssertEqual(APIClient.pathPart("0f8a2c1e-9b7d-4c3a-8e2f-1a2b3c4d5e6f"), "0f8a2c1e-9b7d-4c3a-8e2f-1a2b3c4d5e6f")
         XCTAssertEqual(APIClient.pathPart("a/b c"), "a%2Fb%20c", "as encodeURIComponent")

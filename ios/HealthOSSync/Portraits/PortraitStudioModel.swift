@@ -26,18 +26,41 @@ struct PortraitService {
     /// The wait between checks while a portrait is being made.
     var sleep: @MainActor (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
 
+    /// The app's, for the person signed in now. Each write first checks that same person is still signed in on the
+    /// same server: one started for them (Use this portrait takes a few seconds) never goes out as whoever signs in
+    /// next. Otherwise it stops with a CancellationError, which the studio stays quiet about.
     @MainActor static func live(_ dashboard: Dashboard) -> PortraitService {
-        PortraitService(
+        let who = dashboard.signedInPerson
+        let still = { try SignedInPerson.check(dashboard, is: who) }
+        return PortraitService(
             list: { try await dashboard.portraits() },
-            addReference: { try await dashboard.addReference($0) },
-            generate: { try await dashboard.generatePortrait(referenceId: $0) },
-            delete: { try await dashboard.deletePortrait(id: $0) },
-            choose: { try await dashboard.choosePortrait(id: $0) },
+            addReference: { photo in try still(); return try await dashboard.addReference(photo) },
+            generate: { id in try still(); return try await dashboard.generatePortrait(referenceId: id) },
+            delete: { id in try still(); return try await dashboard.deletePortrait(id: id) },
+            choose: { id in try still(); return try await dashboard.choosePortrait(id: id) },
             image: { try await dashboard.portraitImage(id: $0) },
             cutOut: { data in try await Task.detached(priority: .userInitiated) { try PhotoCutout.process(data) }.value },
-            upload: { photo in try await dashboard.fetch { try await $0.uploadPhoto(photo) } },
-            usePortraitPerspective: { try await dashboard.save(settings: ["perspective": "portrait"]) },
-            photoChanged: { await dashboard.load() })
+            upload: { photo in try still(); try await dashboard.fetch { try await $0.uploadPhoto(photo) } },
+            usePortraitPerspective: { try still(); try await dashboard.save(settings: ["perspective": "portrait"]) },
+            photoChanged: { if (try? still()) != nil { await dashboard.load() } })
+    }
+}
+
+/// Who a card's reads and writes are for: the server and the account signed in there. Profile's portrait and
+/// comparison cards start afresh when it changes, and a write started for one person checks it's still them first.
+enum SignedInPerson {
+    /// Stops (CancellationError) unless `person` is still the one signed in, on the same server.
+    @MainActor static func check(_ dashboard: Dashboard, is person: String?) throws {
+        guard let person, dashboard.signedInPerson == person else { throw CancellationError() }
+    }
+}
+
+extension Dashboard {
+    /// "<server>|<account id>" while someone's signed in (the account id is empty on a server without sign-in); nil
+    /// otherwise.
+    var signedInPerson: String? {
+        guard phase == .ready else { return nil }
+        return "\(Config.serverURL()?.absoluteString ?? "")|\(account?.id ?? status?.user?.id ?? "")"
     }
 }
 

@@ -11,14 +11,10 @@ struct PortraitPhotosSection: View {
     @Environment(Dashboard.self) private var dashboard
 
     var body: some View {
-        if dashboard.phase == .ready {
+        // Whose card it is: another server or another account starts from nothing.
+        if let person = dashboard.signedInPerson {
             PortraitPhotosCard().id(person)
         }
-    }
-
-    /// Whose card it is: another server or another account starts from nothing.
-    private var person: String {
-        "\(Config.serverURL()?.absoluteString ?? "")|\(dashboard.account?.id ?? dashboard.status?.user?.id ?? "")"
     }
 }
 
