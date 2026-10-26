@@ -734,11 +734,14 @@ struct NutritionHydration: View {
 
 // MARK: - Charts
 
-/// One bar per logged day across the whole window (days with nothing logged stay empty, never zero), the median as a
-/// faint line, and the person's own target as a plain dashed one. Every bar is one colour.
+/// One bar per logged day, side by side in even slots as the web's BarChart (src/charts/Charts.tsx) draws them: days
+/// with nothing logged are left out, not drawn as zero or as a gap, so a few logged days fill the width instead of
+/// sitting apart on the whole window's axis. The median as a faint line, the person's own target as a plain dashed one,
+/// and the latest day (or the one picked) in the accent.
 struct FoodChartCard: View {
     let title: String
     let points: [Point]
+    /// The window asked for; the axis plots only the days logged in it.
     let start: String
     let end: String
     let target: Double?
@@ -749,7 +752,8 @@ struct FoodChartCard: View {
     var table: FoodChartTable?
     let format: (Double) -> String
     var axis: (Double) -> String = { Fmt.compact($0) }
-    @State private var selected: Date?
+    /// The picked day's date (a bar is the day's "yyyy-MM-dd").
+    @State private var selected: String?
     @State private var asTable = false
 
     var body: some View {
@@ -770,7 +774,7 @@ struct FoodChartCard: View {
                     FoodTableView(table: table ?? FoodChartTable(columns: ["Date", title]) { [Fmt.day($0.date, "MMMdyyyy"), format($0.value)] }, points: points)
                         .padding(.top, 6)
                 } else {
-                    chart.frame(height: 180).padding(.top, 6)
+                    GeometryReader { geo in chart(width: geo.size.width) }.frame(height: 180).padding(.top, 6)
                 }
             }
         }
@@ -783,13 +787,35 @@ struct FoodChartCard: View {
         return v.count % 2 == 1 ? v[v.count / 2] : (v[v.count / 2 - 1] + v[v.count / 2]) / 2
     }
 
-    private var chart: some View {
-        let from = Fmt.chartDate(start).addingTimeInterval(-12 * 3600)
-        let to = Fmt.chartDate(end).addingTimeInterval(12 * 3600)
-        let picked = selected.flatMap { s in points.min { abs(Fmt.chartDate($0.date).timeIntervalSince(s)) < abs(Fmt.chartDate($1.date).timeIntervalSince(s)) } }
+    /// The plot's width beside the value axis, roughly: what the bars' slots share.
+    private static let valueAxisWidth: CGFloat = 32
+
+    /// A bar's width in its slot, as the web's: the slot less 2 points, at least 1 and at most 24.
+    static func barWidth(plotWidth: CGFloat, count: Int) -> CGFloat {
+        guard count > 0, plotWidth > 0 else { return 1 }
+        return max(1, min(24, plotWidth / CGFloat(count) - 2))
+    }
+
+    /// Which days get a date under the axis (xLabels): 2 to 6 of them, one per 90 points, spread evenly from the first
+    /// logged day to the last.
+    static func labelIndices(count: Int, width: CGFloat) -> [Int] {
+        guard count > 0 else { return [] }
+        let n = max(2, min(6, Int(width / 90)))
+        var out: [Int] = []
+        for k in 0..<n {
+            let i = Int((Double(k) / Double(n - 1) * Double(count - 1)).rounded())
+            if !out.contains(i) { out.append(i) }
+        }
+        return out
+    }
+
+    private func chart(width: CGFloat) -> some View {
+        let picked = selected.flatMap { s in points.first { $0.date == s } }
+        let bar = Self.barWidth(plotWidth: width - Self.valueAxisWidth, count: points.count)
+        let labelled = Self.labelIndices(count: points.count, width: width).map { points[$0].date }
         return Chart {
             ForEach(points) { p in
-                BarMark(x: .value("Day", Fmt.chartDate(p.date), unit: .day), y: .value(title, p.value))
+                BarMark(x: .value("Day", p.date), y: .value(title, p.value), width: .fixed(bar))
                     .foregroundStyle(p.id == picked?.id || (picked == nil && p.id == points.last?.id) ? Palette.series1 : Palette.bar)
                     .cornerRadius(2)
                     .accessibilityLabel(Fmt.day(p.date))
@@ -811,7 +837,7 @@ struct FoodChartCard: View {
                     }
             }
             if let picked {
-                RuleMark(x: .value("Day", Fmt.chartDate(picked.date), unit: .day))
+                RuleMark(x: .value("Day", picked.date))
                     .foregroundStyle(Palette.ink3.opacity(0.3))
                     .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
                         VStack(spacing: 1) {
@@ -824,14 +850,13 @@ struct FoodChartCard: View {
                     }
             }
         }
-        .chartXScale(domain: from...to)
-        .chartXSelection(value: $selected)
+        .chartScrub($selected)
         .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { v in
             AxisGridLine().foregroundStyle(Palette.grid)
             AxisValueLabel { if let n = v.as(Double.self) { Text(axis(n)) } }.font(.axis).foregroundStyle(Palette.ink3)
         } }
-        .chartXAxis { AxisMarks(values: .automatic(desiredCount: 4)) { _ in
-            AxisValueLabel(format: .dateTime.month(.abbreviated).day()).font(.axis).foregroundStyle(Palette.ink3)
+        .chartXAxis { AxisMarks(values: labelled) { v in
+            AxisValueLabel { if let d = v.as(String.self) { Text(Fmt.day(d)) } }.font(.axis).foregroundStyle(Palette.ink3)
         } }
         .accessibilityLabel("\(title) by day")
     }

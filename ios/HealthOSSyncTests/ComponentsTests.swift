@@ -178,6 +178,18 @@ final class ComponentsTests: XCTestCase {
         XCTAssertGreaterThan(wrapped.height, row.height * 3, "on more than one row")
     }
 
+    /// The Macros, water and caffeine charts as the web's BarChart: an even slot per logged day, a bar the slot less 2
+    /// points (1 to 24), and 2 to 6 dates under them, first and last day included.
+    func testTheFoodChartsPlotTheLoggedDaysInEvenSlots() {
+        XCTAssertEqual(FoodChartCard.barWidth(plotWidth: 300, count: 3), 24, "three days: the widest bar, not a third of the width")
+        XCTAssertEqual(FoodChartCard.barWidth(plotWidth: 300, count: 30), 8)
+        XCTAssertEqual(FoodChartCard.barWidth(plotWidth: 300, count: 400), 1)
+        XCTAssertEqual(FoodChartCard.labelIndices(count: 3, width: 330), [0, 1, 2])
+        XCTAssertEqual(FoodChartCard.labelIndices(count: 30, width: 330), [0, 15, 29])
+        XCTAssertEqual(FoodChartCard.labelIndices(count: 1, width: 330), [0])
+        XCTAssertEqual(FoodChartCard.labelIndices(count: 0, width: 330), [])
+    }
+
     /// A drag on a chart picks points only when it starts sideways; one that starts up or down is the page's scroll.
     func testAChartPicksOnlyOnASidewaysDrag() {
         XCTAssertTrue(ChartScrub.isSideways(CGPoint(x: 300, y: 40)))
