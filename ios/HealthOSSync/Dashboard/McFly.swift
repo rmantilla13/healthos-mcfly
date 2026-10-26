@@ -372,6 +372,9 @@ final class McFlyChat {
         #endif
         let thread = thread
         guard let client = APIClient.current(), let status = try? await client.mcflyStatus() else { return }
+        #if targetEnvironment(simulator)
+        if let preview { return self.status = preview }
+        #endif
         if thread == self.thread { self.status = status }
     }
 
@@ -539,7 +542,7 @@ struct AskMcFlyPill: View {
                         .font(.app(size: 11, relativeTo: .caption2))
                         .foregroundStyle(Palette.ink3)
                 }
-                .lineLimit(1)
+                .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.leading, 10)
             .padding(.trailing, 16)
@@ -550,6 +553,12 @@ struct AskMcFlyPill: View {
             .contentShape(Capsule())
         }
         .buttonStyle(PillPress(animate: !reduceMotion))
+        // It floats over Home: past the largest standard size it stops growing, and a long press shows it large, as
+        // the tab bar does.
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+        .accessibilityShowsLargeContentViewer {
+            Label("Ask McFly", systemImage: "text.bubble")
+        }
         .sensoryFeedback(.impact(weight: .light), trigger: taps)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Ask McFly")

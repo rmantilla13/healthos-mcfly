@@ -24,6 +24,19 @@ final class AIKeysModel {
     /// GET /api/ai, fresh each time a sheet opens. Signed out, nothing is read.
     func load(_ dashboard: Dashboard) async {
         guard dashboard.phase == .ready else { return }
+        #if targetEnvironment(simulator)
+        switch UserDefaults.standard.string(forKey: "aiPreview") {
+        case "older":
+            missing = true
+            return
+        case let state?:
+            if let preview = Self.preview(state) {
+                status = preview
+                return
+            }
+        case nil: break
+        }
+        #endif
         let who = dashboard.personID
         do {
             let s = try await dashboard.fetch { try await $0.aiStatus() }
@@ -68,6 +81,30 @@ final class AIKeysModel {
         }
     }
 }
+
+#if targetEnvironment(simulator)
+extension AIKeysModel {
+    /// Scripted runs in the Simulator only, for screenshots of states a local server can't reach with made-up keys:
+    /// `-aiPreview keys` (an OpenAI key in use and a Claude key that needs attention, made up), `-aiPreview shared`
+    /// (keys can't be stored; the shared Claude answers), `-aiPreview older` (a server without own keys). Writes still
+    /// go to the server. Never in a device build.
+    static func preview(_ state: String) -> AiStatus? {
+        switch state {
+        case "keys":
+            return AiStatus(byok: true, shared: true,
+                            keys: [AiStatus.Key(provider: "openai", last4: "Q7xa", model: nil, addedAt: 1, lastUsedAt: 2, lastError: nil),
+                                   AiStatus.Key(provider: "anthropic", last4: "9fKe", model: "claude-sonnet-4-5", addedAt: 1, lastUsedAt: nil, lastError: "auth")],
+                            chat: AiStatus.Use(provider: "openai", source: "own", model: "gpt-5.1"), chatChoice: "openai",
+                            estimate: AiStatus.Use(provider: "openai", source: "own"), voice: true, portraits: true)
+        case "shared":
+            return AiStatus(byok: false, shared: true, chat: AiStatus.Use(provider: "anthropic", source: "shared", model: "claude-sonnet-4-5"),
+                            estimate: AiStatus.Use(provider: "anthropic", source: "shared"))
+        default:
+            return nil
+        }
+    }
+}
+#endif
 
 extension Dashboard {
     /// Who the server says is signed in, to tell a reply that lands after someone else signed in from one that didn't.
@@ -165,6 +202,7 @@ struct AIKeyField: View {
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .keyboardType(.asciiCapable)
+                .submitLabel(.go)
                 .privacySensitive()
                 .focused(focused)
                 .modifier(FieldBox())
@@ -253,8 +291,9 @@ struct AIConnectedKey: View {
 
     private var actions: some View {
         HStack(spacing: 6) {
-            Button("Replace", action: onReplace).buttonStyle(.quietPill(size: .compact))
+            Button("Replace", action: onReplace).buttonStyle(.quietPill(size: .compact)).accessibilityIdentifier("aiReplace")
             Button("Remove key", action: onRemove).buttonStyle(AITextButtonStyle(color: ColorToken.badgeBadInk.color, size: .compact))
+                .accessibilityIdentifier("aiRemove")
         }
         .disabled(busy)
     }
@@ -277,8 +316,9 @@ struct AIConfirmRemove: View {
                 .foregroundStyle(Palette.ink)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
-                Button(busy ? "Removing…" : "Remove key", action: onRemove).buttonStyle(AIDangerPillStyle())
+                Button(busy ? "Removing…" : "Remove key", action: onRemove).buttonStyle(AIDangerPillStyle()).accessibilityIdentifier("aiRemoveConfirm")
                 Button("Keep it", action: onKeep)
+                    .accessibilityIdentifier("aiKeep")
                     .buttonStyle(AITextButtonStyle())
                     .accessibilityFocused($keepFocused)
             }
@@ -328,6 +368,7 @@ struct AIFeedback: View {
             }
             .font(.app(size: 13, relativeTo: .footnote))
             .foregroundStyle(note.ok ? Palette.goodText : Palette.critical)
+            .accessibilityElement(children: .combine)
             .accessibilityIdentifier("aiFeedback")
         }
     }
@@ -347,6 +388,28 @@ struct AILoading: View {
             .foregroundStyle(Palette.critical)
         } else {
             Text("Loading…").font(.app(.subheadline)).foregroundStyle(Palette.ink3)
+        }
+    }
+}
+
+/// A sheet's two buttons, the quiet one then the main one, side by side; at the accessibility text sizes the main one
+/// goes first, above, so neither is cut short.
+struct AIFooterButtons<Quiet: View, Primary: View>: View {
+    @ViewBuilder var quiet: Quiet
+    @ViewBuilder var primary: Primary
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    var body: some View {
+        if typeSize.isAccessibilitySize {
+            VStack(alignment: .trailing, spacing: 8) {
+                primary
+                quiet
+            }
+        } else {
+            HStack(spacing: 10) {
+                quiet
+                primary
+            }
         }
     }
 }

@@ -41,6 +41,7 @@ struct ChatbotSheet: View {
         } footer: {
             footer
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("chatbotSheet")
         .task {
             guard dashboard.phase == .ready else { return close() }
@@ -54,12 +55,15 @@ struct ChatbotSheet: View {
     @ViewBuilder
     private var footer: some View {
         if let status = model.status, form.pick != nil, status.byok {
-            Button("Close", action: close).buttonStyle(AITextButtonStyle())
             let primary = form.primary(status, busy: model.busy)
-            Button(primary.title) { save(status) }
-                .buttonStyle(.accentPill)
-                .disabled(!primary.enabled)
-                .accessibilityIdentifier("chatbotPrimary")
+            AIFooterButtons {
+                Button("Close", action: close).buttonStyle(AITextButtonStyle())
+            } primary: {
+                Button(primary.title) { save(status) }
+                    .buttonStyle(.accentPill)
+                    .disabled(!primary.enabled)
+                    .accessibilityIdentifier("chatbotPrimary")
+            }
         } else {
             Button("Done", action: close).buttonStyle(.accentPill)
         }
@@ -185,6 +189,7 @@ struct OpenAIKeySheet: View {
         } footer: {
             footer
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("openAIKeySheet")
         .task {
             guard dashboard.phase == .ready else { return close() }
@@ -201,12 +206,15 @@ struct OpenAIKeySheet: View {
     @ViewBuilder
     private var footer: some View {
         if model.status?.byok == true, entering {
-            Button(replacing ? "Cancel" : "Close") { if replacing { replacing = false; key = "" } else { close() } }
-                .buttonStyle(AITextButtonStyle())
-            Button(model.busy ? "Checking with OpenAI…" : "Verify & save", action: save)
-                .buttonStyle(.accentPill)
-                .disabled(model.busy || !keyTyped)
-                .accessibilityIdentifier("openAIPrimary")
+            AIFooterButtons {
+                Button(replacing ? "Cancel" : "Close") { if replacing { replacing = false; key = "" } else { close() } }
+                    .buttonStyle(AITextButtonStyle())
+            } primary: {
+                Button(model.busy ? "Checking with OpenAI…" : "Verify & save", action: save)
+                    .buttonStyle(.accentPill)
+                    .disabled(model.busy || !keyTyped)
+                    .accessibilityIdentifier("openAIPrimary")
+            }
         } else {
             Button("Done", action: close).buttonStyle(.accentPill)
         }

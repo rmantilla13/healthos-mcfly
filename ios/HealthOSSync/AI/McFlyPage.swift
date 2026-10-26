@@ -121,6 +121,7 @@ struct McFlyScreen: View {
             }
         }
         .card()
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("mcflyUnavailable")
     }
 
@@ -169,6 +170,11 @@ struct McFlyScreen: View {
                 }
             }
             .environment(\.mcflyChartTouched, { [follow] in follow.chartTouched() })
+            // Opening on a conversation: its newest words, as the web's thread opens at its bottom.
+            .onAppear {
+                guard !chat.messages.isEmpty else { return }
+                Task { @MainActor in proxy.scrollTo("end", anchor: .bottom) }
+            }
             .onChange(of: followKey) { _, _ in
                 // Only while the reader is at the bottom: an earlier paragraph or chart stays put to be read.
                 guard follow.following else { return }
@@ -222,13 +228,16 @@ struct McFlyScreen: View {
                 .overlay(RoundedRectangle(cornerRadius: Radius.tile, style: .continuous).strokeBorder(Palette.border))
                 .accessibilityLabel("Your question")
                 .accessibilityIdentifier("mcflyQuestion")
-            HStack(spacing: 12) {
+            // At the accessibility text sizes the line goes above the button, so neither is squeezed.
+            let row = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .trailing, spacing: 8)) : AnyLayout(HStackLayout(spacing: 12))
+            row {
                 Text(McFlyWords.composerLine(chat.status))
                     .font(.app(size: 12, relativeTo: .caption))
                     .foregroundStyle(Palette.ink3)
                     .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: typeSize.isAccessibilitySize ? .infinity : nil, alignment: .leading)
                     .accessibilityIdentifier("mcflyComposerLine")
-                Spacer(minLength: 0)
+                if !typeSize.isAccessibilitySize { Spacer(minLength: 0) }
                 if chat.streaming {
                     Button("Stop") { chat.stop() }
                         .buttonStyle(.quietPill)
@@ -348,7 +357,7 @@ private struct McFlyAnswerRow: View {
     private var steps: some View {
         VStack(alignment: .leading, spacing: 2) {
             ForEach(Array(message.steps.enumerated()), id: \.offset) { j, step in
-                HStack(spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
                     if message.workingStep == j {
                         StepRing()
                         ShinyText(step)
