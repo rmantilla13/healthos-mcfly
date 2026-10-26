@@ -7,6 +7,9 @@ struct AboutStep: View {
     let photo: PhotoMeta?
     @FocusState private var ageFocused: Bool
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.dynamicTypeSize) private var typeSize
+    /// The age field grows with its digits.
+    @ScaledMetric(relativeTo: .title) private var ageWidth: CGFloat = 120
 
     var body: some View {
         let answers = model.answers
@@ -60,7 +63,7 @@ struct AboutStep: View {
                     .foregroundStyle(Palette.ink)
                     .frame(minHeight: 62)
                     .padding(.horizontal, 16)
-                    .frame(width: 120)
+                    .frame(width: ageWidth)
                     .background((reduceTransparency ? Palette.surface : WelcomeLook.field.color).clipShape(shape))
                     .overlay(shape.strokeBorder(model.ageError ? Palette.critical : WelcomeLook.fieldBorder.color))
                     .overlay {
@@ -86,7 +89,9 @@ struct AboutStep: View {
     private func preview(_ card: (eyebrow: String, title: String, text: String), variant: FigureVariant) -> some View {
         let answers = model.answers
         let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
-        return HStack(alignment: .center, spacing: 14) {
+        // At the accessibility text sizes the figure goes over the words, so they keep the card's width.
+        let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 14)) : AnyLayout(HStackLayout(alignment: .center, spacing: 14))
+        return layout {
             Group {
                 if answers.perspective == .stats {
                     StatsArt(barWidth: 15, gap: 7, height: 72)
