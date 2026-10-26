@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// The way in (src/pages/Login.tsx), full screen in the welcome frame as the web's phone shows it, with no tab bar: sign
-/// in, join with an invite code, or use a reset link, each a step of this one screen. Email and password on servers
+/// in, join with an invite code, or use a reset link, each a step of this one screen. On a page pushed under More (signed
+/// out, any page there asks for sign-in) the bars stay, so Back leads out. Email and password on servers
 /// with accounts (on a brand-new one, the first sign-in creates the admin's), the password alone on older single-user
 /// servers. "Change server", at the top right, is the iPhone's own: it opens Profile, where the address is.
 struct SignInView: View {

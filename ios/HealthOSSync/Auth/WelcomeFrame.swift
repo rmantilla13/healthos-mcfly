@@ -4,7 +4,7 @@ import SwiftUI
 // your account", a reset link's new password and the welcome's three steps share it, so joining reads as one flow. The
 // healthOS mark top left, a link top right (Change server, Sign out, Back to Profile), a glass card, and the tagline
 // under it, on a warm page with a peach glow top right and a sage one bottom left. Full screen, as the web's phone shows
-// these pages: no tab bar and no navigation bar.
+// these pages: no tab bar and no navigation bar, except on a page pushed under More, which keeps its Back.
 
 /// onboarding.css's own tokens, light and dark (its :root block and its dark block). WelcomeLookTests reads the CSS
 /// and checks each one, so change both together.
@@ -137,11 +137,29 @@ struct WelcomeFrame<End: View, Content: View>: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .background { GradientLayers(layers: WelcomeLook.background, base: ColorToken.page.value).ignoresSafeArea() }
-        // The web shows these pages on their own, outside the dashboard: no bars over or under them.
-        .toolbar(.hidden, for: .navigationBar)
-        .toolbar(.hidden, for: .tabBar)
+        .modifier(WelcomeBars(hidden: !pushed))
         .font(.app(.body))
         .tint(Palette.tint)
+    }
+
+    /// Shown as a page pushed over another (signed out, a page opened from More asks for sign-in): its Back and the
+    /// tab bar stay, so there's a way back. A tab's own page, or the welcome over the app, isn't.
+    @Environment(\.isPresented) private var pushed
+}
+
+/// The web shows the way in on its own, outside the dashboard: no bars over or under it. Only where the frame is a
+/// tab's own page: pushed under More, hiding them would leave no Back, no tab bar and no swipe back.
+private struct WelcomeBars: ViewModifier {
+    let hidden: Bool
+
+    func body(content: Content) -> some View {
+        if hidden {
+            content
+                .toolbar(.hidden, for: .navigationBar)
+                .toolbar(.hidden, for: .tabBar)
+        } else {
+            content
+        }
     }
 }
 
