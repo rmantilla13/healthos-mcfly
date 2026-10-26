@@ -76,26 +76,24 @@ private struct LinkForm: View {
                         lede: kind == .invite ? AccountLink.inviteLede(token) : SignInWords.resetLede)
             if kind == .invite {
                 VStack(alignment: .leading, spacing: 14) {
-                    WelcomeField("Email", text: $email, readOnly: lockedEmail != nil, focus: $focus, field: .email)
+                    WelcomeField("Email", text: $email, readOnly: lockedEmail != nil, focus: $focus, field: .email, id: "joinEmail")
                         .textContentType(.username)
                         .keyboardType(.emailAddress)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .submitLabel(.next)
                         .onSubmit { focus = .name }
-                        .accessibilityIdentifier("joinEmail")
-                    WelcomeField("Name", text: $name, focus: $focus, field: .name)
+                    WelcomeField("Name", text: $name, focus: $focus, field: .name, id: "joinName")
                         .textContentType(.givenName)
                         .submitLabel(.next)
                         .onSubmit { focus = .password }
                         .onChange(of: name) { _, now in
                             if now.count > AccountLink.maxName { name = String(now.prefix(AccountLink.maxName)) }
                         }
-                        .accessibilityIdentifier("joinName")
                 }
             }
             VStack(alignment: .leading, spacing: 14) {
-                WelcomeField("Password", text: $password, secure: true, focus: $focus, field: .password, invalid: tooShort) {
+                WelcomeField("Password", text: $password, secure: true, focus: $focus, field: .password, invalid: tooShort, id: "newPassword") {
                     Text(SignInWords.passwordHint)
                         .font(.app(size: 12, relativeTo: .caption))
                         .foregroundStyle(tooShort ? Palette.critical : Palette.ink3)
@@ -103,8 +101,7 @@ private struct LinkForm: View {
                 .textContentType(.newPassword)
                 .submitLabel(.next)
                 .onSubmit { focus = .confirm }
-                .accessibilityIdentifier("newPassword")
-                WelcomeField("Confirm password", text: $confirm, secure: true, focus: $focus, field: .confirm, invalid: mismatch) {
+                WelcomeField("Confirm password", text: $confirm, secure: true, focus: $focus, field: .confirm, invalid: mismatch, id: "confirmPassword") {
                     if mismatch {
                         Text(SignInWords.passwordsDiffer)
                             .font(.app(size: 12, relativeTo: .caption))
@@ -114,7 +111,6 @@ private struct LinkForm: View {
                 .textContentType(.newPassword)
                 .submitLabel(kind == .invite ? .join : .done)
                 .onSubmit(submit)
-                .accessibilityIdentifier("confirmPassword")
             }
             if let error { ErrorNote(error).accessibilityIdentifier("formError") }
             WelcomeFoot(hasStart: kind == .invite) {

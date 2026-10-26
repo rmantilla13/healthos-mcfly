@@ -19,7 +19,7 @@ struct JoinView: View {
             WelcomeHead(eyebrow: kind == .invite ? SignInWords.joinEyebrow : SignInWords.resetEyebrow,
                         title: kind == .invite ? SignInWords.joinTitle : SignInWords.resetLinkTitle,
                         lede: kind == .invite ? SignInWords.joinLede : SignInWords.resetLinkLede)
-            WelcomeField(kind == .invite ? SignInWords.codeLabel : SignInWords.resetLinkLabel, text: $code, focus: $focus, field: true, invalid: error != nil)
+            WelcomeField(kind == .invite ? SignInWords.codeLabel : SignInWords.resetLinkLabel, text: $code, focus: $focus, field: true, invalid: error != nil, id: "inviteCode")
                 // Codes are ABCD-EFGH, in capitals as you type; a pasted link keeps its case (link tokens are
                 // case-sensitive).
                 .textInputAutocapitalization(kind == .invite ? .characters : .never)
@@ -28,7 +28,6 @@ struct JoinView: View {
                 .submitLabel(.go)
                 .onSubmit(next)
                 .onChange(of: code) { _, _ in error = nil }
-                .accessibilityIdentifier("inviteCode")
             if let error { ErrorNote(error).accessibilityIdentifier("codeError") }
             WelcomeFoot {
                 Button(action: back) { BackLabel(SignInWords.backToSignIn) }

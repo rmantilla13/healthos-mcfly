@@ -197,11 +197,13 @@ struct WelcomeField<Focus: Hashable, Below: View>: View {
     var focus: FocusState<Focus?>.Binding
     let field: Focus
     var invalid = false
+    /// The text field's own accessibility identifier (for UI tests), not the label's or the hint's.
+    var id: String
     @ViewBuilder var below: Below
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     init(_ label: String, text: Binding<String>, secure: Bool = false, readOnly: Bool = false, focus: FocusState<Focus?>.Binding, field: Focus,
-         invalid: Bool = false, @ViewBuilder below: () -> Below) {
+         invalid: Bool = false, id: String, @ViewBuilder below: () -> Below) {
         self.label = label
         _text = text
         self.secure = secure
@@ -209,6 +211,7 @@ struct WelcomeField<Focus: Hashable, Below: View>: View {
         self.focus = focus
         self.field = field
         self.invalid = invalid
+        self.id = id
         self.below = below()
     }
 
@@ -231,6 +234,7 @@ struct WelcomeField<Focus: Hashable, Below: View>: View {
             .foregroundStyle(readOnly ? Palette.ink2 : Palette.ink)
             .focused(focus, equals: field)
             .disabled(readOnly)
+            .accessibilityIdentifier(id)
             // The whole field takes the tap, not only the line of text in it.
             .frame(minHeight: 44)
             .padding(.horizontal, 14)
@@ -251,8 +255,8 @@ struct WelcomeField<Focus: Hashable, Below: View>: View {
 
 extension WelcomeField where Below == EmptyView {
     init(_ label: String, text: Binding<String>, secure: Bool = false, readOnly: Bool = false, focus: FocusState<Focus?>.Binding, field: Focus,
-         invalid: Bool = false) {
-        self.init(label, text: text, secure: secure, readOnly: readOnly, focus: focus, field: field, invalid: invalid) { EmptyView() }
+         invalid: Bool = false, id: String) {
+        self.init(label, text: text, secure: secure, readOnly: readOnly, focus: focus, field: field, invalid: invalid, id: id) { EmptyView() }
     }
 }
 

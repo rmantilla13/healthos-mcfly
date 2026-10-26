@@ -48,7 +48,9 @@ private struct SignInForm: View {
     let join: () -> Void
     let reset: () -> Void
     @Environment(Dashboard.self) private var dashboard
-    @State private var email = Config.lastEmail
+    /// Empty, as the web's: the last person's email isn't shown to whoever holds the phone. Password AutoFill offers
+    /// the accounts saved on it.
+    @State private var email = ""
     @State private var password = ""
     @State private var error: String?
     @State private var busy = false
@@ -96,20 +98,18 @@ private struct SignInForm: View {
         }
         VStack(alignment: .leading, spacing: 18) {
             if asksEmail {
-                WelcomeField("Email", text: $email, focus: $focus, field: .email)
+                WelcomeField("Email", text: $email, focus: $focus, field: .email, id: "email")
                     .textContentType(.username)
                     .keyboardType(.emailAddress)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .submitLabel(.next)
                     .onSubmit { focus = .password }
-                    .accessibilityIdentifier("email")
             }
-            WelcomeField("Password", text: $password, secure: true, focus: $focus, field: .password)
+            WelcomeField("Password", text: $password, secure: true, focus: $focus, field: .password, id: "password")
                 .textContentType(.password)
                 .submitLabel(.go)
                 .onSubmit(submit)
-                .accessibilityIdentifier("password")
         }
         if let error { ErrorNote(error).accessibilityIdentifier("signInError") }
         WelcomeFoot(hasStart: offersLinks) {
