@@ -231,6 +231,98 @@ final class PeersTests: XCTestCase {
         XCTAssertTrue(Fmt.day("2026-09-27").contains("27"))
     }
 
+    // MARK: Reading, and what a failed read says
+
+    /// A refused or failed read through the client's own answer checks (APIClient.checked, unreachable).
+    private func refusal(_ status: Int, _ body: String) -> Error {
+        let client = APIClient(base: URL(string: "http://localhost:8805")!)
+        let response = HTTPURLResponse(url: URL(string: "http://localhost:8805/api/peers")!, statusCode: status, httpVersion: nil, headerFields: nil)!
+        do {
+            _ = try client.checked(Data(body.utf8), response, path: "/peers")
+            XCTFail("a \(status) went through")
+            return APIError.server(status, "")
+        } catch {
+            return error
+        }
+    }
+
+    func testAFailedReadSaysWhatTheWebSays() async throws {
+        let lib = try web("src/lib.ts")
+        // server/peers.ts's error handler: 500 {error: 'Something went wrong'}. The web shows body.error as it is.
+        XCTAssertTrue(try web("server/peers.ts").contains("res.status(500).json({ error: 'Something went wrong' });"))
+        XCTAssertTrue(lib.contains("throw new Error(body?.error ?? 'Something went wrong. Try again in a moment.');"))
+        let reader = PeerReader()
+        let failed = refusal(500, #"{"error":"Something went wrong"}"#)
+        await reader.read { throw failed }
+        XCTAssertEqual(reader.error, "Something went wrong", "no \"Server answered 500\"")
+        XCTAssertEqual(PeerWords.loadFailed(try XCTUnwrap(reader.error)), "Couldn't load your comparison: Something went wrong")
+        XCTAssertFalse(reader.missing, "a failure isn't an older server: the card stays")
+        // A proxy's page with no words of ours: the web's plain fallback.
+        let bare = refusal(502, "<html>Bad Gateway</html>")
+        await reader.read { throw bare }
+        XCTAssertEqual(reader.error, "Something went wrong. Try again in a moment.")
+        // Offline: the web's request() words, not the phone's own.
+        XCTAssertTrue(lib.contains("\"Couldn't reach healthOS. Check your connection and try again.\""))
+        let offline = APIClient(base: URL(string: "http://localhost:8805")!).unreachable(URLError(.notConnectedToInternet))
+        await reader.read { throw offline }
+        XCTAssertEqual(reader.error, "Couldn't reach healthOS. Check your connection and try again.")
+        // A read cut short (the card closed) says nothing.
+        let quiet = PeerReader()
+        await quiet.read { throw URLError(.cancelled) }
+        XCTAssertNil(quiet.error)
+        // The next answer clears the failure and shows.
+        await reader.read { PeerData(participating: false, reason: "off") }
+        XCTAssertNil(reader.error)
+        XCTAssertEqual(reader.data, PeerData(participating: false, reason: "off"))
+    }
+
+    func testTheCatchAllHidesTheCardAndNothingElseDoes() async throws {
+        // An older server's catch-all answers 404 {error: "Not found"}: the client reads that as no such route, so
+        // optional("/peers") gives nil, and the card hides.
+        let catchAll = try XCTUnwrap(refusal(404, #"{"error":"Not found"}"#) as? APIError)
+        XCTAssertTrue(catchAll.routeMissing)
+        let reader = PeerReader(data: PeerData(participating: false, reason: "off"))
+        await reader.read { nil }
+        XCTAssertTrue(reader.missing)
+        // A 500, or no connection, never hides it.
+        let other = PeerReader()
+        let failed = refusal(500, #"{"error":"Something went wrong"}"#)
+        await other.read { throw failed }
+        XCTAssertFalse(other.missing)
+        XCTAssertFalse((failed as? APIError)?.routeMissing ?? true)
+        let offline = APIClient(base: URL(string: "http://localhost:8805")!).unreachable(URLError(.cannotConnectToHost))
+        await other.read { throw offline }
+        XCTAssertFalse(other.missing)
+    }
+
+    func testAnOlderAnswerNeverReplacesANewerOne() async throws {
+        final class Gate { var release: CheckedContinuation<Void, Never>? }
+        let reader = PeerReader()
+        let gate = Gate()
+        let first = Task { @MainActor in
+            await reader.read {
+                await withCheckedContinuation { gate.release = $0 }
+                return PeerData(participating: false, reason: "off")
+            }
+        }
+        while gate.release == nil { await Task.yield() }
+        await reader.read { PeerData(participating: false, reason: "no_age") }
+        gate.release?.resume()
+        await first.value
+        XCTAssertEqual(reader.data?.reason, "no_age", "the later read's answer stays")
+    }
+
+    func testItReadsAgainWhenTakingPartOrTheAgeChanges() {
+        // The welcome's Edit preferences saves these without a load (no new generation): the open card reads again.
+        let now = PeersSection.readKey(generation: 4, peerComparison: false, age: nil)
+        XCTAssertNotEqual(PeersSection.readKey(generation: 4, peerComparison: true, age: nil), now, "turned on")
+        XCTAssertNotEqual(PeersSection.readKey(generation: 4, peerComparison: false, age: 35), now, "an age given")
+        XCTAssertNotEqual(PeersSection.readKey(generation: 4, peerComparison: true, age: 35),
+                          PeersSection.readKey(generation: 4, peerComparison: true, age: 36), "a birthday")
+        XCTAssertNotEqual(PeersSection.readKey(generation: 5, peerComparison: false, age: nil), now, "after a load")
+        XCTAssertEqual(PeersSection.readKey(generation: 4, peerComparison: false, age: nil), now, "nothing changed: no read")
+    }
+
     // MARK: Where it shows
 
     func testOnlySignedInOnAServerThatNamesTheSwitch() throws {

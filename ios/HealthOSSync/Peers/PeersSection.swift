@@ -5,11 +5,10 @@ import SwiftUI
 /// who also take part: a quarter, never a rank, and never anyone else's values. Profile places it.
 ///
 /// Shown only signed in, on a server whose settings name `peerComparison` (the setting came with /api/peers, so an
-/// older server shows nothing). A server that answers the read with its catch-all 404 hides it too.
+/// older server shows nothing). A server that answers the read with its catch-all 404 hides it too. One person's at a
+/// time: what it read goes when they sign out, someone else signs in or the server changes.
 struct PeersSection: View {
     @Environment(Dashboard.self) private var dashboard
-    /// The server, by address, that answered GET /api/peers with its catch-all 404.
-    @State private var missingOn: String?
 
     /// Signed in, on a server whose settings name the comparison's switch: never behind a sign-in screen, never on a
     /// server older than it.
@@ -17,41 +16,47 @@ struct PeersSection: View {
         phase == .ready && status?.settings?.peerComparison != nil
     }
 
+    /// When the open card reads again: after each load, and as soon as a setting the answer turns on changes (taking
+    /// part, the age), which the welcome's Edit preferences saves without a load.
+    static func readKey(generation: Int, peerComparison: Bool?, age: Int?) -> String {
+        "\(generation)|\(peerComparison.map { $0 ? "on" : "off" } ?? "-")|\(age.map(String.init) ?? "-")"
+    }
+
     var body: some View {
-        if Self.shown(phase: dashboard.phase, status: dashboard.status), missingOn != server {
+        // Whose card it is: another server or another account starts from nothing.
+        if Self.shown(phase: dashboard.phase, status: dashboard.status), let person = dashboard.signedInPerson {
+            PeersCard().id(person)
+        }
+    }
+}
+
+private struct PeersCard: View {
+    @Environment(Dashboard.self) private var dashboard
+    @State private var reader = PeerReader()
+
+    var body: some View {
+        if !reader.missing {
             Collapsible(PeerWords.title, meta: PeerWords.meta, systemImage: "chart.bar") {
-                PeerBody(editLink: dashboard.status?.settings?.perspective != nil) { missingOn = server }
+                PeerBody(reader: reader, editLink: dashboard.status?.settings?.perspective != nil)
             }
         }
     }
-
-    private var server: String { Config.serverURL()?.absoluteString ?? "" }
 }
 
-/// What the card shows once open: read when it opens and after each load, as the web reads it on opening and when
-/// data changes. The last answer stays on screen while the next is read.
+/// What the card shows once open: read when it opens, after each load and when taking part or the age changes, as the
+/// web reads it on opening and when data changes. The last answer stays on screen while the next is read.
 private struct PeerBody: View {
+    let reader: PeerReader
     let editLink: Bool
-    let routeMissing: () -> Void
     @Environment(Dashboard.self) private var dashboard
-    @State private var data: PeerData?
-    @State private var error: String?
 
     var body: some View {
-        PeerContent(data: data, error: error, editLink: editLink)
-            .task(id: dashboard.generation) { await read() }
+        let settings = dashboard.status?.settings
+        PeerContent(data: reader.data, error: reader.error, editLink: editLink)
+            .task(id: PeersSection.readKey(generation: dashboard.generation, peerComparison: settings?.peerComparison, age: settings?.age)) {
+                await reader.read { try await dashboard.peers() }
+            }
             .environment(\.openURL, OpenURLAction { url in dashboard.open(url: url) ? .handled : .systemAction })
-    }
-
-    private func read() async {
-        do {
-            guard let answer = try await dashboard.peers() else { return routeMissing() }
-            data = answer
-            error = nil
-        } catch {
-            if Task.isCancelled || APIClient.isCancellation(error) { return }
-            self.error = error.localizedDescription
-        }
     }
 }
 

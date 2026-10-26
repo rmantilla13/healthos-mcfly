@@ -97,6 +97,42 @@ extension Dashboard {
     func peers() async throws -> PeerData? { try await fetch { try await $0.peers() } }
 }
 
+/// What the comparison card read last (the web's useApi('/peers')), in memory only and for one person on one server:
+/// the card that holds it starts afresh for anyone else. A failure shows in the web's words over what was read; the
+/// next answer clears it. A server that answers with its catch-all 404 (`read` gives nil) has no comparison, and the
+/// card hides.
+@MainActor
+@Observable
+final class PeerReader {
+    private(set) var data: PeerData?
+    private(set) var error: String?
+    /// The server predates comparisons.
+    private(set) var missing = false
+    /// Each read's number, so an older answer never replaces a newer one.
+    private var reads = 0
+
+    init(data: PeerData? = nil) { self.data = data }
+
+    /// One read: `answer` is GET /api/peers (nil from a server without it).
+    func read(_ answer: () async throws -> PeerData?) async {
+        reads += 1
+        let mine = reads
+        do {
+            let got = try await answer()
+            guard mine == reads else { return }
+            if let got {
+                data = got
+                error = nil
+            } else {
+                missing = true
+            }
+        } catch {
+            guard mine == reads, !Task.isCancelled, !APIClient.isCancellation(error) else { return }
+            self.error = PeerWords.message(error)
+        }
+    }
+}
+
 /// The web's words for the comparison (src/pages/Profile.tsx PeerBody and PeerRow), and its value formatting. Straight
 /// apostrophes, as that file has them. PeersTests reads Profile.tsx to keep them in step.
 enum PeerWords {
@@ -110,6 +146,10 @@ enum PeerWords {
     static let waiting = "Waiting for enough people in your age group to compare with."
 
     static func loadFailed(_ message: String) -> String { "Couldn't load your comparison: \(message)" }
+
+    /// A failed read in the words the web shows after "Couldn't load your comparison:" (src/lib.ts): the server's own
+    /// message whatever its code, its plain fallback when it sent none, or "Couldn't reach healthOS…" offline.
+    static func message(_ error: Error) -> String { PortraitWords.message(error) }
 
     /// Why the person isn't taking part, as Markdown: "Edit preferences" is a link to the welcome's steps where the
     /// server has them (`editLink`), plain words otherwise. nil for a reason the app doesn't know (the web shows nothing).
