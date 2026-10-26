@@ -25,6 +25,7 @@
 		172C06E93D638961B404EB90 /* MetricInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = F52ED1D712CE37BC49897619 /* MetricInfo.swift */; };
 		180452B0990805753969B688 /* ChartLegend.swift in Sources */ = {isa = PBXBuildFile; fileRef = E617E2FB9DFD894B406765C5 /* ChartLegend.swift */; };
 		1927B716006AE1725C3FE33A /* nutrition-no-energy.json in Resources */ = {isa = PBXBuildFile; fileRef = 05350E818E3C1D083459C737 /* nutrition-no-energy.json */; };
+		1A9878B7B2222CDD2A5B4654 /* HostedAccessibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51CF2CFE98D1350F331B63C6 /* HostedAccessibility.swift */; };
 		1AA510E2D24F3A92AF33ACC7 /* FoodTotalsCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29AF2AE15AF660DD6EF87284 /* FoodTotalsCard.swift */; };
 		1DEB0D58FBB4C34B5097F48C /* AppFont.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29C1771A03EB3CB2D0A7C635 /* AppFont.swift */; };
 		1E1FC25B8B9BD709409AC048 /* cycle-v2.json in Resources */ = {isa = PBXBuildFile; fileRef = 3ABEA99C24FB4C804B7345E1 /* cycle-v2.json */; };
@@ -36,6 +37,7 @@
 		22071AB6A2D3BDD20B4D8FBA /* ProfileSettingsSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = F278F77C9031AC107E56126F /* ProfileSettingsSheets.swift */; };
 		227321122C18691CE1D3BC33 /* NutritionViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB45FFDD1FA53CE0B2371012 /* NutritionViews.swift */; };
 		23767F738B3924A8F673265C /* SignInView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD53F734E61FD82B3D256C06 /* SignInView.swift */; };
+		251CCE9EF02BD5F3CF4E3676 /* EditPreferencesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AF0E336EA4DB332150CFF8F /* EditPreferencesTests.swift */; };
 		2578216F805846611425475C /* ProfileCardsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A741F0E47E33A6BD3FEF6AF /* ProfileCardsSheet.swift */; };
 		25E13EC820FD5FD2FC767FA4 /* ChartPageControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 316AC8D7649BE5581C8EEE9F /* ChartPageControls.swift */; };
 		283EC6884105A448351592AD /* SyncEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53251687CBD17661351787AD /* SyncEngine.swift */; };
@@ -274,6 +276,7 @@
 		2739124E7A5AE19DF9FC2D0D /* MetricSheetModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricSheetModels.swift; sourceTree = "<group>"; };
 		29AF2AE15AF660DD6EF87284 /* FoodTotalsCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoodTotalsCard.swift; sourceTree = "<group>"; };
 		29C1771A03EB3CB2D0A7C635 /* AppFont.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppFont.swift; sourceTree = "<group>"; };
+		2AF0E336EA4DB332150CFF8F /* EditPreferencesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditPreferencesTests.swift; sourceTree = "<group>"; };
 		2C6553853766B0A4E7AB9B02 /* PortraitsAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortraitsAPI.swift; sourceTree = "<group>"; };
 		2E5B81C4F556E9D1D8C175FD /* FoodLogModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoodLogModel.swift; sourceTree = "<group>"; };
 		2E9453311E01C59473240C7B /* TrendsExtras.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrendsExtras.swift; sourceTree = "<group>"; };
@@ -308,6 +311,7 @@
 		5034941FE1AC01BE51D9A076 /* metric-hrv-month.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "metric-hrv-month.json"; sourceTree = "<group>"; };
 		509E5458B1A6201B625AD7CC /* SafariView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariView.swift; sourceTree = "<group>"; };
 		50E6297F40184DD996001DAA /* OnboardingFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingFlow.swift; sourceTree = "<group>"; };
+		51CF2CFE98D1350F331B63C6 /* HostedAccessibility.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostedAccessibility.swift; sourceTree = "<group>"; };
 		51DEBFAE5E0B09A0109EE558 /* SignInWords.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignInWords.swift; sourceTree = "<group>"; };
 		53180FBA0C9ADCF282A00B6B /* Format.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Format.swift; sourceTree = "<group>"; };
 		53251687CBD17661351787AD /* SyncEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncEngine.swift; sourceTree = "<group>"; };
@@ -597,6 +601,7 @@
 				CB191D78F6B17779F6ED3C1E /* ComponentsTests.swift */,
 				A2F31692BC3B154539132A48 /* DashboardTests.swift */,
 				FF3AD1F8E32A8E71A82AA62D /* DayAggregatorTests.swift */,
+				2AF0E336EA4DB332150CFF8F /* EditPreferencesTests.swift */,
 				921D0C88BED0295B748107F6 /* FamilyTests.swift */,
 				D8457E60A4786255AE3EBB8F /* FoodLogTests.swift */,
 				DCB8EE7A62B1F4AB7B71786B /* HeartRateMeasurementTests.swift */,
@@ -604,6 +609,7 @@
 				A4DA5EB623B0EE188A6E04E9 /* HomeMetricSheetLinkTests.swift */,
 				4CAB7FF036699F17248D0E2E /* HomeReadsTests.swift */,
 				6CF00FE6CAC4FB940559D6D2 /* HomeTests.swift */,
+				51CF2CFE98D1350F331B63C6 /* HostedAccessibility.swift */,
 				1D16ADB4EAC1CF6BB06E7F64 /* IngestTokenTests.swift */,
 				8BA4D84D468C4393AE68A6E5 /* McFlyTests.swift */,
 				017AEE75F3F4B0D196D562F2 /* MetricSheetLiveTests.swift */,
@@ -1086,6 +1092,7 @@
 				3CA8B99A57428D827456A0F2 /* ComponentsTests.swift in Sources */,
 				463BE90AB15F967AAF2EAF68 /* DashboardTests.swift in Sources */,
 				0BDF60A216902A26A4A8FE46 /* DayAggregatorTests.swift in Sources */,
+				251CCE9EF02BD5F3CF4E3676 /* EditPreferencesTests.swift in Sources */,
 				6C6C7DCCE697784424F3E782 /* FamilyTests.swift in Sources */,
 				AD2FCA0181439C67F109F750 /* FoodLogTests.swift in Sources */,
 				8901142952134DD35512BE8D /* HeartRateMeasurementTests.swift in Sources */,
@@ -1093,6 +1100,7 @@
 				6CA404647EE207A3C4FB87FC /* HomeMetricSheetLinkTests.swift in Sources */,
 				F053550686D2E5C8906783EC /* HomeReadsTests.swift in Sources */,
 				0F8A1DFE4BBDAE51D8777C27 /* HomeTests.swift in Sources */,
+				1A9878B7B2222CDD2A5B4654 /* HostedAccessibility.swift in Sources */,
 				C5CA6CFB2FC4BA7F33A6EDFA /* IngestTokenTests.swift in Sources */,
 				76A08B640A0A219B4371F7F1 /* McFlyTests.swift in Sources */,
 				A63719A71868FB8C8F9DF163 /* MetricSheetLiveTests.swift in Sources */,
