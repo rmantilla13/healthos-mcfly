@@ -666,8 +666,12 @@ final class Dashboard {
         guard phase == .ready, let settings = status?.settings, settings.timeZone != zone, timeZoneSent != zone else { return false }
         let send = send ?? { fields in try await self.fetch { try await $0.updateSettings(fields) } }
         timeZoneSent = zone
+        let asked = session
         do {
-            showChanged(try await send(["timeZone": zone]))
+            let status = try await send(["timeZone": zone])
+            // Signed out or someone else's now: not shown, and the next session sends its own.
+            guard stillCurrent(asked) else { return false }
+            showChanged(status)
         } catch {
             if Self.worthRetrying(error) { timeZoneSent = nil }
             return false
@@ -802,12 +806,17 @@ final class Dashboard {
             if cardChanges == 0 { pendingCards = nil }
         }
         let previous = cardQueue
+        let asked = session
         let work = Task { @MainActor in
             await previous?.value
             var status = try await send(change.body)
+            try self.keep(answeredUnder: asked)
             // A server from before one-card changes ignored it: the same change again, as the whole list.
-            if let retry = change.retry(stored: status.settings?.hiddenCards) { status = try await send(retry.body) }
-            showChanged(status)
+            if let retry = change.retry(stored: status.settings?.hiddenCards) {
+                status = try await send(retry.body)
+                try self.keep(answeredUnder: asked)
+            }
+            self.showChanged(status)
         }
         cardQueue = Task { _ = try? await work.value }
         try await work.value
@@ -824,14 +833,27 @@ final class Dashboard {
     ///
     /// `reload`: the change moves what the data shows (units, name, step goal, demo data), so the summary is read again.
     /// Card changes go through `changeCards`, which keeps them in order. `send` is the request; tests pass their own.
+    ///
+    /// An answer that lands after the phase has left `.ready` (Sign out, a 401, offline), or once someone else is signed
+    /// in or another server is set, is dropped with a CancellationError: it's one person's settings, never shown or
+    /// kept behind a sign-in screen or for whoever is here now (pages stay quiet about a CancellationError).
     @discardableResult
     func save(settings fields: [String: Any], reload: Bool = false,
               send: (@MainActor ([String: Any]) async throws -> ServerStatus)? = nil) async throws -> ServerStatus {
         let send = send ?? { fields in try await self.fetch { try await $0.updateSettings(fields) } }
+        let asked = session
         let status = try await send(fields)
+        try keep(answeredUnder: asked)
         showChanged(status)
         if reload { await load() }
         return status
+    }
+
+    /// Throws CancellationError unless an answer to a request made under `asked` is still for whoever is here
+    /// (`session`: the same server and person, with no sign-out, 401 or other sign-in since and the phase not left
+    /// `.ready`).
+    private func keep(answeredUnder asked: Session) throws {
+        guard stillCurrent(asked) else { throw CancellationError() }
     }
 
     /// Shows a status the server answered a change with (PUT /api/settings, or another write that answers with the

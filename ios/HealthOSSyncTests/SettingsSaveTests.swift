@@ -83,4 +83,97 @@ final class SettingsSaveTests: XCTestCase {
         d.showChanged(try status(#"{"cycleTracking":false}"#))
         XCTAssertEqual(SummaryCache.load(for: base)?.status?.settings?.cycleTracking, true)
     }
+
+    // MARK: An answer that lands too late
+
+    private func person(_ id: String) -> AuthState.User { AuthState.User(id: id, email: "\(id)@example.test", name: nil, role: "member") }
+
+    private func samsStatus(perspective: String = "digital") throws -> ServerStatus {
+        try JSONDecoder().decode(ServerStatus.self, from: Data(#"{"user":{"id":"u-sam"},"settings":{"units":"metric","perspective":"\#(perspective)"}}"#.utf8))
+    }
+
+    /// Sam signed in, with today's summary and his status on screen.
+    private func samsDashboard() throws -> Dashboard {
+        let d = Dashboard()
+        d.authMode = "required"
+        d.account = person("u-sam")
+        d.phase = .ready
+        d.summary = try summary()
+        d.apply(status: try samsStatus(perspective: "portrait"))
+        return d
+    }
+
+    /// A save's answer that lands once the phase has left `.ready`, or someone else (or Sam again) has signed in, or
+    /// another server is set, is Sam's settings from before: it's dropped, with nothing shown or kept, and the page hears
+    /// a CancellationError, which pages stay quiet about.
+    func testASaveAnsweredTooLateIsDropped() async throws {
+        let cases: [(String, @MainActor (Dashboard) -> Void)] = [
+            ("signed out", { $0.phase = .signIn }),
+            ("offline", { $0.phase = .unavailable("offline") }),
+            ("someone else signed in", { d in
+                d.phase = .signIn
+                d.account = self.person("u-alex")
+                d.signedIn()
+            }),
+            ("Sam signed out and in again", { d in
+                d.phase = .signIn
+                d.account = self.person("u-sam")
+                d.signedIn()
+            }),
+            ("another server", { _ in Config.serverText = "http://127.0.0.1:10" }),
+        ]
+        for (name, meanwhile) in cases {
+            Config.serverText = base.absoluteString
+            SummaryCache.clear(for: base)
+            let d = try samsDashboard()
+            let before = d.status?.settings?.perspective
+            do {
+                try await d.save(settings: ["perspective": "digital"], reload: true) { _ in
+                    meanwhile(d)
+                    return try self.samsStatus()
+                }
+                XCTFail("\(name): the late answer reaches the page as a cancellation")
+            } catch {
+                XCTAssertTrue(error is CancellationError, "\(name): \(error)")
+            }
+            XCTAssertNotEqual(d.status?.settings?.perspective, "digital", "\(name): not shown")
+            if name == "offline" || name == "another server" { XCTAssertEqual(d.status?.settings?.perspective, before, "\(name): what was there stays") }
+            XCTAssertNil(SummaryCache.load(for: base), "\(name): not kept for the next launch")
+        }
+        Config.serverText = base.absoluteString
+    }
+
+    /// The same save, answered while Sam is still here, shows as always.
+    func testASaveAnsweredInTimeShows() async throws {
+        let d = try samsDashboard()
+        try await d.save(settings: ["perspective": "digital"]) { _ in try self.samsStatus() }
+        XCTAssertEqual(d.status?.settings?.perspective, "digital")
+        XCTAssertEqual(SummaryCache.load(for: base)?.status?.settings?.perspective, "digital")
+    }
+
+    /// The other writes that answer with the status follow the same rule: a card change, and the time zone.
+    func testCardAndTimeZoneAnswersAnsweredTooLateAreDropped() async throws {
+        let d = try samsDashboard()
+        do {
+            try await d.changeCards(.card("home.load", shown: true)) { _ in
+                d.phase = .signIn
+                return try self.samsStatus()
+            }
+            XCTFail("the card change's late answer is a cancellation")
+        } catch {
+            XCTAssertTrue(error is CancellationError)
+        }
+        XCTAssertNil(d.status)
+
+        let t = try samsDashboard()
+        let zoned = try JSONDecoder().decode(ServerStatus.self, from: Data(#"{"user":{"id":"u-sam"},"settings":{"timeZone":"UTC"}}"#.utf8))
+        t.apply(status: zoned)
+        let moved = await t.followTimeZone("Europe/Paris") { _ in
+            t.phase = .signIn
+            return try JSONDecoder().decode(ServerStatus.self, from: Data(#"{"user":{"id":"u-sam"},"settings":{"timeZone":"Europe/Paris"}}"#.utf8))
+        }
+        XCTAssertFalse(moved)
+        XCTAssertNil(t.status, "Sam's settings stay out of memory behind the sign-in screen")
+        XCTAssertNil(SummaryCache.load(for: base))
+    }
 }
