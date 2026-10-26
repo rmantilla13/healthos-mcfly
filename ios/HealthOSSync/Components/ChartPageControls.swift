@@ -1,4 +1,6 @@
+import Charts
 import SwiftUI
+import UIKit
 
 // What the web's chart pages (Vitals, Body, Sleep) share from Detail.tsx: the day picker, the range picker and the
 // page's tabs. Here once, so slices H, I and J build their pages from the same pieces. A page keeps its own selection;
@@ -137,5 +139,74 @@ struct DayNav: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(name)
+    }
+}
+
+// MARK: - Picking a point without stopping the page's scroll
+
+extension View {
+    /// Picks a Swift Charts chart's point under a tap, or under a finger moved sideways along the chart, as the web's
+    /// charts do on a phone (touch-action: pan-y): a drag that starts up or down scrolls the page instead of picking.
+    /// Swift Charts' own `chartXSelection` takes every drag that starts on the chart, so a page couldn't be scrolled from
+    /// one. The pick stays when the finger lifts; a tap on another bar moves it.
+    func chartScrub<Value: Plottable>(_ selection: Binding<Value?>) -> some View {
+        chartOverlay { proxy in
+            GeometryReader { geo in
+                let plot = proxy.plotFrame.map { geo[$0] } ?? CGRect(origin: .zero, size: geo.size)
+                let pick: (CGPoint) -> Void = { point in
+                    if let value = proxy.value(atX: point.x - plot.minX, as: Value.self) { selection.wrappedValue = value }
+                }
+                Rectangle().fill(.clear).contentShape(Rectangle())
+                    .gesture(SpatialTapGesture().onEnded { pick($0.location) })
+                    .modifier(SidewaysScrub(moved: pick))
+            }
+        }
+    }
+}
+
+/// When a drag on a chart picks points rather than scrolling the page: when it starts more sideways than up or down.
+enum ChartScrub {
+    static func isSideways(_ velocity: CGPoint) -> Bool { abs(velocity.x) > abs(velocity.y) }
+}
+
+/// A sideways drag that picks as it goes (iOS 18 and later, where UIKit's pan can decline a drag that goes up or down
+/// and leave it to the scroll view); on iOS 17, a tap picks.
+private struct SidewaysScrub: ViewModifier {
+    let moved: (CGPoint) -> Void
+
+    func body(content: Content) -> some View {
+        if #available(iOS 18.0, *) {
+            content.gesture(SidewaysPan(moved: moved))
+        } else {
+            content
+        }
+    }
+}
+
+@available(iOS 18.0, *)
+private struct SidewaysPan: UIGestureRecognizerRepresentable {
+    let moved: (CGPoint) -> Void
+
+    func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator { Coordinator() }
+
+    func makeUIGestureRecognizer(context: Context) -> UIPanGestureRecognizer {
+        let pan = UIPanGestureRecognizer()
+        pan.delegate = context.coordinator
+        return pan
+    }
+
+    func handleUIGestureRecognizerAction(_ recognizer: UIPanGestureRecognizer, context: Context) {
+        switch recognizer.state {
+        case .began, .changed: moved(context.converter.localLocation)
+        default: break
+        }
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        /// Up or down: the pan steps aside, and the page scrolls.
+        func gestureRecognizerShouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {
+            guard let pan = recognizer as? UIPanGestureRecognizer else { return true }
+            return ChartScrub.isSideways(pan.velocity(in: pan.view))
+        }
     }
 }

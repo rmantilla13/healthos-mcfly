@@ -178,6 +178,15 @@ final class ComponentsTests: XCTestCase {
         XCTAssertGreaterThan(wrapped.height, row.height * 3, "on more than one row")
     }
 
+    /// A drag on a chart picks points only when it starts sideways; one that starts up or down is the page's scroll.
+    func testAChartPicksOnlyOnASidewaysDrag() {
+        XCTAssertTrue(ChartScrub.isSideways(CGPoint(x: 300, y: 40)))
+        XCTAssertTrue(ChartScrub.isSideways(CGPoint(x: -300, y: 40)))
+        XCTAssertFalse(ChartScrub.isSideways(CGPoint(x: 40, y: 300)))
+        XCTAssertFalse(ChartScrub.isSideways(CGPoint(x: 10, y: -300)))
+        XCTAssertFalse(ChartScrub.isSideways(.zero))
+    }
+
     /// The radio card's mark as the web's radio draws: empty, a grey ring on a grey disc in dark mode (not the card's
     /// own surface); chosen, an accent ring, a white band and an accent dot, in light and dark.
     func testTheRadioMarkIsTheWebsInLightAndDark() throws {

@@ -474,7 +474,8 @@ private struct SeriesCard: View {
             }
         }
         .chartYScale(domain: domain)
-        .chartXSelection(value: $selected)
+        // A tap or a sideways drag picks a day; up or down scrolls the conversation.
+        .chartScrub($selected)
         .chartYAxis { yAxis(f) }
         .chartXAxis { dateAxis(monthly: series.resolution == "month") }
         .chartLegend(.hidden)
