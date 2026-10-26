@@ -238,6 +238,7 @@ struct AIConnectedKey: View {
     let busy: Bool
     let onReplace: () -> Void
     let onRemove: () -> Void
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -270,6 +271,8 @@ struct AIConnectedKey: View {
         HStack(spacing: 8) {
             if info.lastError != nil {
                 Badge("Needs attention", tone: .peach, systemImage: "exclamationmark.triangle")
+                    // The key's own label says it ("…, needs attention"): VoiceOver reads it once.
+                    .accessibilityHidden(true)
             } else {
                 Image(systemName: "checkmark")
                     .font(.system(size: 10, weight: .bold))
@@ -290,10 +293,13 @@ struct AIConnectedKey: View {
     /// The last four read one character at a time.
     private var spelled: String { info.last4.map(String.init).joined(separator: " ") }
 
+    /// Side by side; one above the other at the accessibility text sizes, so neither is cut short.
     private var actions: some View {
-        HStack(spacing: 6) {
-            Button("Replace", action: onReplace).buttonStyle(.quietPill(size: .compact)).accessibilityIdentifier("aiReplace")
-            Button("Remove key", action: onRemove).buttonStyle(AITextButtonStyle(color: ColorToken.badgeBadInk.color, size: .compact))
+        let row = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8)) : AnyLayout(HStackLayout(spacing: 6))
+        return row {
+            Button(action: onReplace) { AIButtonLabel("Replace") }.buttonStyle(.quietPill(size: .compact)).accessibilityIdentifier("aiReplace")
+            Button(action: onRemove) { AIButtonLabel("Remove key") }
+                .buttonStyle(AITextButtonStyle(color: ColorToken.badgeBadInk.color, size: .compact))
                 .accessibilityIdentifier("aiRemove")
         }
         .disabled(busy)
@@ -309,6 +315,7 @@ struct AIConfirmRemove: View {
     let onRemove: () -> Void
     let onKeep: () -> Void
     @AccessibilityFocusState private var keepFocused: Bool
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -316,9 +323,13 @@ struct AIConfirmRemove: View {
                 .font(.app(size: 13.5, relativeTo: .subheadline))
                 .foregroundStyle(Palette.ink)
                 .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 8) {
-                Button(busy ? "Removing…" : "Remove key", action: onRemove).buttonStyle(AIDangerPillStyle()).accessibilityIdentifier("aiRemoveConfirm")
-                Button("Keep it", action: onKeep)
+            // One above the other at the accessibility text sizes, so neither is cut short.
+            let row = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8)) : AnyLayout(HStackLayout(spacing: 8))
+            row {
+                Button(action: onRemove) { AIButtonLabel(busy ? "Removing…" : "Remove key") }
+                    .buttonStyle(AIDangerPillStyle())
+                    .accessibilityIdentifier("aiRemoveConfirm")
+                Button(action: onKeep) { AIButtonLabel("Keep it") }
                     .accessibilityIdentifier("aiKeep")
                     .buttonStyle(AITextButtonStyle())
                     .accessibilityFocused($keepFocused)
@@ -415,6 +426,23 @@ struct AIFooterButtons<Quiet: View, Primary: View>: View {
     }
 }
 
+/// A button's words, on as many lines as they need: the pill styles keep a label to one line, which at the
+/// accessibility text sizes cut "Use the shared assistant" to "Use the share…". Its own line limit wins over the style's.
+struct AIButtonLabel: View {
+    let text: String
+
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        Text(text)
+            .lineLimit(nil)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+            // Room above and below once it takes two lines; one line stays inside the pill's own height.
+            .padding(.vertical, 4)
+    }
+}
+
 /// The web's quiet button (.btn-quiet): words only, no pill, in the muted ink, or a colour of its own (Remove key's
 /// red). Close, Cancel, Keep it.
 struct AITextButtonStyle: ButtonStyle {
@@ -426,7 +454,6 @@ struct AITextButtonStyle: ButtonStyle {
         configuration.label
             .font(size.font)
             .foregroundStyle(configuration.isPressed && color == Palette.ink3 ? Palette.ink : color)
-            .lineLimit(1)
             .padding(.horizontal, size.padding - 4)
             .frame(minHeight: size.height)
             .contentShape(Capsule())
@@ -443,8 +470,8 @@ struct AIDangerPillStyle: ButtonStyle {
         configuration.label
             .font(PillSize.regular.font)
             .foregroundStyle(ColorToken.badgeBadInk.color)
-            .lineLimit(1)
             .padding(.horizontal, 18)
+            .padding(.vertical, 6)
             .frame(minHeight: 40)
             .background(Palette.surface, in: Capsule())
             .tokenShadow(.pill, in: Capsule())

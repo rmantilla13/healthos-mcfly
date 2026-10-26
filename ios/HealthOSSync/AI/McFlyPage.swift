@@ -31,6 +31,7 @@ struct McFlyScreen: View {
     @Bindable var chat: McFlyChat
     @Environment(Dashboard.self) private var dashboard
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var draft = ""
     @State private var follow = McFlyFollow()
     @State private var chatbot = false
@@ -116,7 +117,7 @@ struct McFlyScreen: View {
                 .foregroundStyle(Palette.ink3)
                 .fixedSize(horizontal: false, vertical: true)
             if byok {
-                Button(McFlyWords.connect) { chatbot = true }
+                Button { chatbot = true } label: { AIButtonLabel(McFlyWords.connect) }
                     .buttonStyle(.accentPill)
                     .accessibilityIdentifier("mcflyConnectKey")
             }
@@ -179,7 +180,12 @@ struct McFlyScreen: View {
             .onChange(of: followKey) { _, _ in
                 // Only while the reader is at the bottom: an earlier paragraph or chart stays put to be read.
                 guard follow.following else { return }
-                withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("end", anchor: .bottom) }
+                // A short glide down to the new words; with Reduce Motion it jumps there, as the web's thread does.
+                if reduceMotion {
+                    proxy.scrollTo("end", anchor: .bottom)
+                } else {
+                    withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("end", anchor: .bottom) }
+                }
             }
         }
     }

@@ -340,30 +340,125 @@ final class AIKeysTests: XCTestCase {
         XCTAssertFalse(sent)
     }
 
+    // MARK: Against a server (AIStubServer: made-up answers on 127.0.0.1)
+
+    private func serve(_ answers: [String: AIStubServer.Answer]) async throws -> AIStubServer {
+        let server = try await AIStubServer.start(answers)
+        addTeardownBlock { server.stop() }
+        Config.serverText = server.url.absoluteString
+        return server
+    }
+
+    private func fixtureText(_ name: String) throws -> String { String(decoding: try fixture(name), as: UTF8.self) }
+
+    func testAnOlderServerSaysNotSetUpButOfflineOrABreakdownNever() async throws {
+        // A server older than own keys: its catch-all 404 {"error":"Not found"}. The sheet says keys aren't set up here.
+        var server = try await serve([:])
+        var model = AIKeysModel()
+        await model.load(try signedIn())
+        XCTAssertEqual(server.requests("GET /api/ai").count, 1)
+        XCTAssertTrue(model.missing)
+        XCTAssertNil(model.status)
+        XCTAssertNil(model.loadError)
+
+        // A breakdown, or a 404 of the route's own: unknown, never "not set up here".
+        for answer in [AIStubServer.Answer.json(500, #"{"error":"Database unavailable"}"#), .json(404, #"{"error":"No such person"}"#)] {
+            server = try await serve(["GET /api/ai": answer])
+            model = AIKeysModel()
+            await model.load(try signedIn())
+            XCTAssertFalse(model.missing, answer.body)
+            XCTAssertNil(model.status)
+            XCTAssertNotNil(model.loadError, answer.body)
+        }
+
+        // Offline: the same.
+        Config.serverText = base.absoluteString
+        model = AIKeysModel()
+        await model.load(try signedIn())
+        XCTAssertFalse(model.missing)
+        XCTAssertTrue(model.loadError?.hasPrefix("Can't reach 127.0.0.1") == true, model.loadError ?? "")
+
+        // Keys can be stored: the sheet shows the status, and the app hears it.
+        server = try await serve(["GET /api/ai": .json(200, try fixtureText("ai-own-key"))])
+        model = AIKeysModel()
+        let d = try signedIn()
+        await model.load(d)
+        XCTAssertEqual(model.status, try status("ai-own-key"))
+        XCTAssertFalse(model.missing)
+        XCTAssertEqual(d.availability.ai, .known(try status("ai-own-key")))
+    }
+
+    func testA401BringsUpSignIn() async throws {
+        _ = try await serve(["GET /api/ai": .json(401, #"{"error":"Sign in required"}"#),
+                             "PUT /api/ai/keys/openai": .json(401, #"{"error":"Sign in required"}"#)])
+        let d = try signedIn()
+        let model = AIKeysModel()
+        await model.load(d)
+        XCTAssertEqual(d.phase, .signIn)
+        XCTAssertFalse(model.missing, "signed out isn't “not set up here”")
+        XCTAssertNil(model.status)
+
+        let e = try signedIn()
+        let ok = await model.run(e, done: AIWords.openAIConnected) { try await $0.saveOpenAIKey(self.madeUpKey) }
+        XCTAssertFalse(ok)
+        XCTAssertEqual(e.phase, .signIn, "a key write's 401 too, through dashboard.fetch")
+        XCTAssertEqual(e.availability.ai, .unknown)
+    }
+
+    func testARefusedKeyComesBackInTheServersWords() async throws {
+        let server = try await serve([
+            "PUT /api/ai/keys/openai": .json(400, #"{"error":"That key wasn't accepted by OpenAI."}"#),
+            "PUT /api/ai/keys/gemini": .json(502, #"{"error":"Couldn't reach Gemini to check the key. Try again in a moment."}"#),
+        ])
+        let d = try signedIn()
+        let model = AIKeysModel()
+        var ok = await model.run(d, done: AIWords.openAIConnected) { try await $0.saveOpenAIKey(self.madeUpKey) }
+        XCTAssertFalse(ok)
+        XCTAssertEqual(model.note, AINote(ok: false, text: "That key wasn't accepted by OpenAI."))
+        XCTAssertEqual(server.requests("PUT /api/ai/keys/openai").first?.headers["x-healthos"], "1")
+        ok = await model.run(d, done: "Saved.") { try await $0.saveAIKey(.gemini, key: self.madeUpKey, model: nil) }
+        XCTAssertFalse(ok)
+        XCTAssertEqual(model.note, AINote(ok: false, text: "Couldn't reach Gemini to check the key. Try again in a moment."), "a 502 in its own words too")
+        XCTAssertEqual(d.phase, .ready)
+    }
+
     func testAKeyIsNeverStoredOnThePhone() async throws {
+        let answer = try fixtureText("ai-own-key")
+        let server = try await serve(["PUT /api/ai/keys/gemini": .json(200, answer), "PUT /api/ai/chat": .json(200, answer)])
         let d = try signedIn()
         let model = AIKeysModel()
         var form = ChatbotForm()
         let s = try status("ai-own-key")
         form.choose(.own(.gemini), s)
         form.key = madeUpKey
+        form.model = "gemini-2.5-pro"
         let plan = try XCTUnwrap(form.save(s))
-        var sentKey: String?
-        let ok = await model.run(d, done: plan.done) { _ in
-            if case .putKey(_, let key, _)? = plan.steps.first { sentKey = key }
-            return s
+        // The sheet's own save: each step through APIClient, as the Chatbot sheet runs it.
+        let ok = await model.run(d, done: plan.done) { client in
+            var last = s
+            for step in plan.steps { last = try await client.run(step) }
+            return last
         }
+        XCTAssertTrue(ok)
         if ok { form.saved() }
-        XCTAssertEqual(sentKey, madeUpKey, "sent once, in the request")
-        XCTAssertEqual(form.key, "", "and gone from the sheet once saved")
 
-        // Not in the settings the app keeps, nor in any file it writes.
+        // Sent once, in the body of the request that checks and stores it, and nowhere else.
+        let put = try XCTUnwrap(server.requests("PUT /api/ai/keys/gemini").first)
+        XCTAssertEqual(try JSONSerialization.jsonObject(with: put.body) as? [String: String], ["key": madeUpKey, "model": "gemini-2.5-pro"])
+        XCTAssertEqual(server.requests("PUT /api/ai/chat").map(\.text), [#"{"provider":"gemini"}"#])
+        let everything = server.requests().map { $0.text + $0.headers.values.joined() + $0.path }.joined()
+        XCTAssertEqual(everything.components(separatedBy: madeUpKey).count - 1, 1, "the key went out once")
+        XCTAssertEqual(form.key, "", "and is gone from the sheet once saved")
+        XCTAssertEqual(model.status, s)
+
+        // Not in the settings the app keeps, nor in any file it writes (caches and temporary files included).
         let defaults = UserDefaults.standard.dictionaryRepresentation().values.map { "\($0)" }.joined(separator: "\n")
         XCTAssertFalse(defaults.contains(madeUpKey))
-        let library = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]
-        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let roots = [FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0],
+                     FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0],
+                     URL(fileURLWithPath: NSTemporaryDirectory())]
         let needle = Data(madeUpKey.utf8)
-        for root in [library, documents] {
+        for root in roots {
             let files = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey])
             while let url = files?.nextObject() as? URL {
                 let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])

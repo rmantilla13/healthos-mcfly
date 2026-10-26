@@ -48,7 +48,7 @@ struct ChatbotSheet: View {
             await model.load(dashboard)
             if let s = model.status, form.pick == nil { form.choose(ChatbotForm.opening(s), s) }
         }
-        .onChange(of: dashboard.phase) { _, phase in if phase != .ready { close() } }
+        .onChange(of: dashboard.phase) { _, phase in if phase != .ready { signedOut() } }
         .onChange(of: model.note) { _, note in if let note { AccessibilityNotification.Announcement(note.text).post() } }
     }
 
@@ -59,7 +59,7 @@ struct ChatbotSheet: View {
             AIFooterButtons {
                 Button("Close", action: close).buttonStyle(AITextButtonStyle())
             } primary: {
-                Button(primary.title) { save(status) }
+                Button { save(status) } label: { AIButtonLabel(primary.title) }
                     .buttonStyle(.accentPill)
                     .disabled(!primary.enabled)
                     .accessibilityIdentifier("chatbotPrimary")
@@ -153,8 +153,17 @@ struct ChatbotSheet: View {
         }
     }
 
+    /// Close, Done or the X: the typed key goes; the rest stays on screen while the sheet slides away (its state goes
+    /// with it), so it never flashes "Loading…".
     private func close() {
+        form.key = ""
+        if let onClose { onClose() } else { dismiss() }
+    }
+
+    /// Signed out underneath: nothing of the person stays, not even while the sheet slides away.
+    private func signedOut() {
         form = ChatbotForm()
+        model = AIKeysModel()
         if let onClose { onClose() } else { dismiss() }
     }
 }
@@ -195,7 +204,7 @@ struct OpenAIKeySheet: View {
             guard dashboard.phase == .ready else { return close() }
             await model.load(dashboard)
         }
-        .onChange(of: dashboard.phase) { _, phase in if phase != .ready { close() } }
+        .onChange(of: dashboard.phase) { _, phase in if phase != .ready { signedOut() } }
         .onChange(of: model.note) { _, note in if let note { AccessibilityNotification.Announcement(note.text).post() } }
     }
 
@@ -210,7 +219,7 @@ struct OpenAIKeySheet: View {
                 Button(replacing ? "Cancel" : "Close") { if replacing { replacing = false; key = "" } else { close() } }
                     .buttonStyle(AITextButtonStyle())
             } primary: {
-                Button(model.busy ? "Checking with OpenAI…" : "Verify & save", action: save)
+                Button(action: save) { AIButtonLabel(model.busy ? "Checking with OpenAI…" : "Verify & save") }
                     .buttonStyle(.accentPill)
                     .disabled(model.busy || !keyTyped)
                     .accessibilityIdentifier("openAIPrimary")
@@ -281,6 +290,15 @@ struct OpenAIKeySheet: View {
 
     private func close() {
         key = ""
+        if let onClose { onClose() } else { dismiss() }
+    }
+
+    /// Signed out underneath: nothing of the person stays, not even while the sheet slides away.
+    private func signedOut() {
+        key = ""
+        replacing = false
+        removing = false
+        model = AIKeysModel()
         if let onClose { onClose() } else { dismiss() }
     }
 }
