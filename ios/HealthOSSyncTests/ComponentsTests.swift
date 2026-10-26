@@ -76,6 +76,23 @@ final class ComponentsTests: XCTestCase {
         }
     }
 
+    /// The radio card's mark as the web's radio draws: empty, a grey ring on a grey disc in dark mode (not the card's
+    /// own surface); chosen, an accent ring, a white band and an accent dot, in light and dark.
+    func testTheRadioMarkIsTheWebsInLightAndDark() throws {
+        let offDark = try pixels(RadioMark(isOn: false), width: 16, height: 16, scheme: .dark)(8, 8)
+        XCTAssertEqual(offDark[0], 0x3B, accuracy: 3, "\(offDark)")
+        XCTAssertEqual(offDark[2], 0x3B, accuracy: 3, "\(offDark)")
+        let offLight = try pixels(RadioMark(isOn: false), width: 16, height: 16)(8, 8)
+        XCTAssertGreaterThan(offLight[0], 250, "white in light mode, as before: \(offLight)")
+        for (scheme, accent) in [(ColorScheme.light, [0x2F, 0x4A, 0x3D]), (.dark, [0x4D, 0x6B, 0x5A])] {
+            let at = try pixels(RadioMark(isOn: true), width: 16, height: 16, scheme: scheme)
+            let dot = at(8, 8), band = at(2, 8)
+            for i in 0..<3 { XCTAssertEqual(dot[i], accent[i], accuracy: 4, "\(scheme) dot: \(dot)") }
+            XCTAssertGreaterThan(band[0], 235, "\(scheme) white band: \(band)")
+            XCTAssertGreaterThan(band[1], 235, "\(scheme) white band: \(band)")
+        }
+    }
+
     func testASheetHasAFooterOnlyWhenGivenOne() {
         XCTAssertFalse(SheetScaffold(title: "Edit widgets") { Text("Body") }.hasFooter)
         XCTAssertTrue(SheetScaffold(title: "Edit widgets") { Text("Body") } footer: { Button("Done") {} }.hasFooter)

@@ -55,15 +55,25 @@ extension ChoiceCard where Accessory == EmptyView {
     }
 }
 
-/// A radio button's round mark: an empty ring, or the accent with a white dot when chosen.
+/// A radio button's round mark, as the web's radio (a native one with the accent as its accent-color) draws in light and
+/// dark: an empty ring, on white in light mode and on a grey disc in dark mode; once chosen, an accent ring, a white band
+/// and an accent dot.
 struct RadioMark: View {
     let isOn: Bool
+    /// The empty radio's disc and ring in dark mode, the browser's own (light keeps the app's surface and ink).
+    private static let offFill = Themed(CSSColor(0xFFFFFF), CSSColor(0x3B3B3B)).color
+    private static let offRing = Themed(CSSColor(0x5F6661), CSSColor(0x858585)).color
 
     var body: some View {
         ZStack {
-            Circle().fill(isOn ? Palette.accent : Palette.surface)
-            Circle().strokeBorder(isOn ? Palette.accent : Palette.ink2, lineWidth: 1)
-            if isOn { Circle().fill(Palette.accentInk).frame(width: 6, height: 6) }
+            if isOn {
+                Circle().fill(Palette.accent)
+                Circle().fill(Color.white).padding(1)
+                Circle().fill(Palette.accent).padding(3)
+            } else {
+                Circle().fill(Self.offFill)
+                Circle().strokeBorder(Self.offRing, lineWidth: 1)
+            }
         }
         .frame(width: 16, height: 16)
         .accessibilityHidden(true)
