@@ -104,8 +104,9 @@ extension APIClient {
 extension Dashboard {
     /// The person's portraits; nil from a server without them. Tells Availability whether one can be made.
     func portraits() async throws -> PortraitList? {
+        let who = signedInPerson
         let list = try await fetch { try await $0.portraits() }
-        if let can = list?.canGenerate { availability.heard(canGeneratePortraits: can) }
+        heardPortraits(list, for: who)
         return list
     }
 
@@ -118,8 +119,9 @@ extension Dashboard {
     /// portrait studio's Delete. Answers with the list as it is now, which tells Availability whether one can be made.
     @discardableResult
     func deletePortrait(id: String) async throws -> PortraitList {
+        let who = signedInPerson
         let list = try await fetch { try await $0.deletePortrait(id: id) }
-        if let can = list.canGenerate { availability.heard(canGeneratePortraits: can) }
+        heardPortraits(list, for: who)
         return list
     }
 
@@ -131,13 +133,22 @@ extension Dashboard {
     /// Marks a portrait as the one in use, after it became the profile photo. Answers with the list, which tells
     /// Availability whether one can be made.
     func choosePortrait(id: String) async throws -> PortraitList {
+        let who = signedInPerson
         let list = try await fetch { try await $0.choosePortrait(id: id) }
-        if let can = list.canGenerate { availability.heard(canGeneratePortraits: can) }
+        heardPortraits(list, for: who)
         return list
     }
 
     /// One photo's image, into memory only (the portrait studio's thumbnails, and Use this portrait).
     func portraitImage(id: String) async throws -> Data {
         try await fetch { try await $0.portraitImage(id: id) }
+    }
+
+    /// Tells Availability whether a portrait can be made, from a list asked for while `person` was signed in: only if
+    /// they still are, on the same server. An answer that lands after a sign-out, or once someone else has signed in,
+    /// says nothing about the person signed in now.
+    func heardPortraits(_ list: PortraitList?, for person: String?) {
+        guard let can = list?.canGenerate, let person, signedInPerson == person else { return }
+        availability.heard(canGeneratePortraits: can)
     }
 }

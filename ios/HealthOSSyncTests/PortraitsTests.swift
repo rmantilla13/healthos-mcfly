@@ -484,6 +484,31 @@ final class PortraitsTests: XCTestCase {
         XCTAssertTrue(process.contains("Couldn't separate you from the background."))
     }
 
+    // MARK: Whose answers count
+
+    func testAnAnswerForSomeoneElseTellsAvailabilityNothing() throws {
+        let can = PortraitList(portraits: [], chosen: nil, canGenerate: true)
+        let d = Dashboard()
+        d.phase = .ready
+        d.account = AuthState.User(id: "person-a", email: nil, name: nil, role: nil)
+        let a = try XCTUnwrap(d.signedInPerson)
+        // Person B signed in by the time A's answer landed.
+        d.account = AuthState.User(id: "person-b", email: nil, name: nil, role: nil)
+        d.heardPortraits(can, for: a)
+        XCTAssertNil(d.availability.portraits, "A's answer says nothing about B")
+        // Signed out: nobody's.
+        d.phase = .signIn
+        d.heardPortraits(can, for: a)
+        d.heardPortraits(can, for: nil)
+        XCTAssertNil(d.availability.portraits)
+        // B's own answer counts.
+        d.phase = .ready
+        d.heardPortraits(can, for: d.signedInPerson)
+        XCTAssertEqual(d.availability.portraits, true)
+        d.heardPortraits(PortraitList(portraits: [], chosen: nil, canGenerate: false), for: d.signedInPerson)
+        XCTAssertEqual(d.availability.portraits, false)
+    }
+
     func testAFailedTileIsSurfaceAndEveryOtherOnTheCream() throws {
         let css = try web("src/styles/portraits.css")
         XCTAssertNotNil(css.firstMatch(of: /\.portrait-tile-art \{[^}]*background: var\(--grad-cream\);/))
