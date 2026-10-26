@@ -189,7 +189,7 @@ final class HomeReadRulesTests: XCTestCase {
         let back = await fake.reads.journal(wanted: true, current: .missing, dashboard: d)
         XCTAssertTrue(back.shows)
         XCTAssertEqual(back.latest?.id, "a")
-        XCTAssertTrue(JournalCard.reading.shows, "the invitation shows while it reads")
-        XCTAssertNil(JournalCard.reading.latest)
+        XCTAssertTrue(HomeJournalRead.reading.shows, "the invitation shows while it reads")
+        XCTAssertNil(HomeJournalRead.reading.latest)
     }
 }

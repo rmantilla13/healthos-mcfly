@@ -49,7 +49,7 @@ struct TodayContent: View {
     /// The food totals card's 7 days (nil: not placed) and the journal card's check-in, read here rather than by the
     /// cards (HomeReads says why).
     @State private var food: NutritionData?
-    @State private var journal = JournalCard.reading
+    @State private var journal = HomeJournalRead.reading
     /// The timeline's marker, shared with the figure: while it's moved, the figure's heart shows that hour.
     @State private var scrub = TodayScrub()
     @State private var editing = false

@@ -28,7 +28,7 @@ struct HomeReads {
     /// The journal card after a read: today's latest check-in (or none yet), or `.missing` when the server has no
     /// journal (an older one), which hides the card. Nothing is asked for while the card is hidden, and a read that
     /// fails (offline, a server error) leaves the card as it was.
-    @MainActor func journal(wanted: Bool, current: JournalCard, dashboard: Dashboard) async -> JournalCard {
+    @MainActor func journal(wanted: Bool, current: HomeJournalRead, dashboard: Dashboard) async -> HomeJournalRead {
         guard wanted else { return current }
         do {
             guard let data = try await readJournal(dashboard) else { return .missing }
@@ -40,7 +40,7 @@ struct HomeReads {
 }
 
 /// Where Home's journal card stands. What's read is held in memory only, for the card, never kept on disk or logged.
-enum JournalCard {
+enum HomeJournalRead {
     /// Not read yet: the invitation shows, as on the web while it reads.
     case reading
     /// The server has no journal: no card.

@@ -67,7 +67,7 @@ struct FoodTotalsCard: View {
                 Text("Logged in \(latest.app)").font(.app(.footnote, weight: .medium)).foregroundStyle(Palette.ink)
             } else {
                 // Wraps like the web's row of values: as many to a line as fit.
-                FlowRow(spacing: 28, lineSpacing: 10) {
+                HomeFlowRow(spacing: 28, lineSpacing: 10) {
                     ForEach(m.shown, id: \.self) { key in
                         VStack(alignment: .leading, spacing: 2) {
                             Text(FoodMath.name(key)).font(.app(.caption)).foregroundStyle(Palette.ink2)
@@ -109,7 +109,7 @@ struct FoodTotalsCard: View {
 
 /// Lays its children out left to right, wrapping onto a new line when the next doesn't fit (CSS flex-wrap). A child wider
 /// than the whole line gets a line of its own at the line's width, and as many lines of its own as its words take there.
-struct FlowRow: Layout {
+struct HomeFlowRow: Layout {
     var spacing: CGFloat = 8
     var lineSpacing: CGFloat = 8
 

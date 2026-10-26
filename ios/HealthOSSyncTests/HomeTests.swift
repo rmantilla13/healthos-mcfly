@@ -783,10 +783,10 @@ final class HomeFitsTests: XCTestCase {
     }
 }
 
-/// FlowRow (the journal's mood and line, the food card's values) reports the height its children take, a wrapped line's
+/// HomeFlowRow (the journal's mood and line, the food card's values) reports the height its children take, a wrapped line's
 /// included.
 @MainActor
-final class FlowRowTests: XCTestCase {
+final class HomeFlowRowTests: XCTestCase {
     func testALineWiderThanTheRowWrapsOnALineOfItsOwnAndCountsAllItsHeight() {
         let line = Text("Made-up: felt tired after lunch, maybe the late night again").font(.system(size: 13)).lineLimit(2)
             .fixedSize(horizontal: false, vertical: true)
@@ -798,11 +798,11 @@ final class FlowRowTests: XCTestCase {
             let alone = height(line.frame(width: w))
             let one = height(Text("M").font(.system(size: 13)))
             XCTAssertGreaterThan(alone, one * 1.5, "the line takes two lines at \(w)")
-            let row = height(FlowRow(spacing: 8, lineSpacing: 6) { badge; line }.frame(width: w))
+            let row = height(HomeFlowRow(spacing: 8, lineSpacing: 6) { badge; line }.frame(width: w))
             XCTAssertEqual(row, height(badge) + 6 + alone, accuracy: 1, "the badge's line, then the wrapped line's two")
         }
         // Children that fit stay on one line.
-        let short = UIHostingController(rootView: FlowRow(spacing: 8, lineSpacing: 6) { badge; Text("Ok").font(.system(size: 13)) }.frame(width: 200))
+        let short = UIHostingController(rootView: HomeFlowRow(spacing: 8, lineSpacing: 6) { badge; Text("Ok").font(.system(size: 13)) }.frame(width: 200))
             .sizeThatFits(in: CGSize(width: 200, height: CGFloat.greatestFiniteMagnitude))
         XCTAssertLessThan(short.height, 30)
     }

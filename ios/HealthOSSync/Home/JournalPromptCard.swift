@@ -90,7 +90,7 @@ struct JournalPromptCard: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 16)
             if let line = m.line {
-                FlowRow(spacing: 8, lineSpacing: 6) {
+                HomeFlowRow(spacing: 8, lineSpacing: 6) {
                     if let mood = m.mood { Badge(mood, tone: .sage) }
                     Text(line).font(.app(.footnote)).foregroundStyle(Palette.ink2).lineLimit(2).fixedSize(horizontal: false, vertical: true)
                 }
