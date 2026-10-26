@@ -715,17 +715,47 @@ final class NutritionConversationTests: XCTestCase {
         }
     }
 
-    func testTheThreadIsNeverWritten() throws {
-        // Memory only, as privacy.html promises: nothing of the conversation in UserDefaults or the app's folders.
-        let thread = NutritionThread()
-        thread.draft = "a secret lunch"
-        thread.append(ChatTurn(.you(text: "a secret lunch", thumbnail: nil)))
-        let defaults = UserDefaults.standard.dictionaryRepresentation()
-        XCTAssertFalse(defaults.values.contains { "\($0)".contains("a secret lunch") })
-        for dir in [FileManager.SearchPathDirectory.applicationSupportDirectory, .cachesDirectory, .documentDirectory] {
-            guard let url = FileManager.default.urls(for: dir, in: .userDomainMask).first,
-                  let files = FileManager.default.enumerator(at: url, includingPropertiesForKeys: nil)?.compactMap({ $0 as? URL }) else { continue }
-            XCTAssertFalse(files.contains { $0.lastPathComponent.contains("nutrition-chat") || $0.lastPathComponent.hasPrefix("healthos-voice-") })
+    /// The conversation, its last full photo and the draft live only in the page (memory only, as privacy.html
+    /// promises), and the page is made anew for another person or another server: its key names both. Signed out,
+    /// PhaseGate shows sign-in instead of the page, so nothing of it stays.
+    func testTheConversationIsOnePersonsOnOneServer() throws {
+        let one = URL(string: "http://localhost:8807"), other = URL(string: "http://192.168.1.20:8787")
+        XCTAssertEqual(NutritionScreen.identity(server: one, user: "u1"), NutritionScreen.identity(server: one, user: "u1"))
+        XCTAssertNotEqual(NutritionScreen.identity(server: one, user: "u1"), NutritionScreen.identity(server: one, user: "u2"), "another person")
+        XCTAssertNotEqual(NutritionScreen.identity(server: one, user: "u1"), NutritionScreen.identity(server: other, user: "u1"), "another server")
+        XCTAssertNotEqual(NutritionScreen.identity(server: one, user: nil), NutritionScreen.identity(server: one, user: "u1"))
+        // The web keys its conversation by person too (NutritionChat's key={status.user.id}).
+        XCTAssertTrue(try web("src/pages/NutritionChat.tsx").contains("<NutritionChat key={status.user.id}"))
+        // Nothing of the conversation, its photos or the draft is ever written or logged: none of the ways to keep or
+        // log something appears in the code that holds them.
+        for file in ["Nutrition/NutritionChatModel.swift", "Nutrition/NutritionToday.swift", "Nutrition/MealPhoto.swift", "Dashboard/NutritionScreen.swift"] {
+            let code = try String(contentsOf: Self.root.appendingPathComponent("ios/HealthOSSync/\(file)"), encoding: .utf8)
+            for writer in ["UserDefaults.", "FileManager.", ".write(to:", "SecItem", "URLCache", "SummaryCache.", "print(", "Logger(", "os_log", "NSLog", "@AppStorage", "@SceneStorage"] {
+                XCTAssertFalse(code.contains(writer), "\(file): \(writer)")
+            }
         }
+    }
+
+    // MARK: Links to the page
+
+    func testALinkIsAppliedOnce() throws {
+        var link = NutritionLink()
+        let macros = RouteRequest(route: AppRoute(.nutrition, query: ["tab": "macros"]), id: 4)
+        let first = link.take(macros)
+        XCTAssertEqual(first?.tab, .macros)
+        XCTAssertEqual(first?.compose, false)
+        XCTAssertNil(link.take(macros), "coming back to the tab doesn't open Macros again")
+        XCTAssertNil(link.take(nil))
+        // Home's orb: Today, with its composer, once.
+        let orb = RouteRequest(route: AppRoute(.nutrition, query: ["compose": "1", "tab": "macros"]), id: 5)
+        let asked = link.take(orb)
+        XCTAssertEqual(asked?.tab, .today)
+        XCTAssertEqual(asked?.compose, true)
+        XCTAssertNil(link.take(orb))
+        // The same link opened again is a new request, and works again.
+        XCTAssertEqual(link.take(RouteRequest(route: macros.route, id: 6))?.tab, .macros)
+        XCTAssertEqual(link.take(RouteRequest(route: AppRoute(.nutrition, query: [:]), id: 7))?.tab, .today)
+        // The web reads compose=1 from the address of Today alone (Nutrition.tsx).
+        XCTAssertTrue(try web("src/pages/Nutrition.tsx").contains("compose={params.get('compose') === '1'}"))
     }
 }

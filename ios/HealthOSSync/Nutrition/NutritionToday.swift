@@ -11,8 +11,8 @@ struct NutritionToday<Views: View>: View {
     let thread: NutritionThread
     /// The day viewed; nil is today, whichever day that is when the answer comes back.
     @Binding var date: String?
-    /// Goes up when something asks for the composer (Home's orb: compose=1).
-    let compose: Int
+    /// Something asked for the composer (Home's orb: compose=1): the conversation focuses it once, then sets this back.
+    @Binding var compose: Bool
     /// The server has no POST /nutrition/log/day (it's older): the page shows the Log instead.
     let routeMissing: () -> Void
     @ViewBuilder let views: () -> Views
@@ -43,7 +43,7 @@ struct NutritionToday<Views: View>: View {
                             .fixedSize(horizontal: false, vertical: true)
                             .card()
                     } else {
-                        NutritionChatCard(thread: thread, day: day, askedAt: askedAt, mode: mode, viewing: viewing, today: today, compose: compose) {
+                        NutritionChatCard(thread: thread, day: day, askedAt: askedAt, mode: mode, viewing: viewing, today: today, compose: $compose) {
                             withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) { proxy.scrollTo(NutritionChatCard.bottomID, anchor: .bottom) }
                         }
                         Group {
@@ -158,7 +158,9 @@ struct NutritionChatCard: View {
     let mode: NutritionMode
     let viewing: String
     let today: String
-    let compose: Int
+    /// A link asked for the composer: focused once, then set back, so coming back to the page never raises the
+    /// keyboard again (the web's ?compose=1 is in one address only).
+    @Binding var compose: Bool
     /// Brings the newest line and the composer into view.
     let scrollToBottom: () -> Void
     @Environment(Dashboard.self) private var dashboard
@@ -221,10 +223,12 @@ struct NutritionChatCard: View {
         .onChange(of: thread.turns.count) { old, new in if new > old { scrollToBottom() } }
         .onChange(of: thread.busy) { _, busy in if busy { scrollToBottom() } }
         .task(id: compose) {
-            guard compose > 0 else { return }
+            guard compose else { return }
             try? await Task.sleep(for: .milliseconds(350))
+            guard !Task.isCancelled else { return }
             focused = true
             scrollToBottom()
+            compose = false
         }
         .onChange(of: thread.draft) { _, v in
             let capped = NutritionChat.prefix(v, utf16: NutritionChat.maxDescription)

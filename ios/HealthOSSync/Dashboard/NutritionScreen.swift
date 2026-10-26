@@ -6,6 +6,9 @@ import SwiftUI
 /// views over more days: Trends, Macros, Hydration and Log.
 struct NutritionScreen: View {
     @Environment(Dashboard.self) private var dashboard
+    /// The links to Nutrition already applied. Kept here, above the page, so a page made again (another person, Nutrition
+    /// turned off and on) doesn't apply the last one again either.
+    @State private var link = NutritionLink()
 
     var body: some View {
         PhaseGate {
@@ -20,7 +23,7 @@ struct NutritionScreen: View {
                 // One person's, on one server: someone else signing in, or another server, never sees (or saves over)
                 // another's conversation, as the web keys it by person. Signed out, PhaseGate shows sign-in instead,
                 // and the conversation goes with the page.
-                NutritionPage(mode: mode).id(identity)
+                NutritionPage(mode: mode, link: $link).id(identity)
             } else {
                 NutritionIntro()
             }
@@ -30,13 +33,35 @@ struct NutritionScreen: View {
     }
 
     private var identity: String {
-        "\(Config.serverURL()?.absoluteString ?? "")|\(dashboard.status?.user?.id ?? dashboard.account?.id ?? "")"
+        Self.identity(server: Config.serverURL(), user: dashboard.status?.user?.id ?? dashboard.account?.id)
+    }
+
+    /// Whose page this is: the server and the person. A change makes the page (and its conversation) anew.
+    static func identity(server: URL?, user: String?) -> String {
+        "\(server?.absoluteString ?? "")|\(user ?? "")"
+    }
+}
+
+/// A link to Nutrition (#/nutrition?tab=macros, Profile's card places, Home's orb with compose=1), applied once. The
+/// page comes back every time its tab is chosen again, and the last link stays on the dashboard until another comes,
+/// so without this the page would jump back to that link's view (and raise the keyboard) on every return. On the web
+/// the view and compose=1 are in the address, which changes once a view is picked.
+struct NutritionLink {
+    private(set) var handled: Int?
+
+    /// The view a link asks for, and whether it asks for Today's composer: the first time its request is seen, then nil.
+    mutating func take(_ request: RouteRequest?) -> (tab: NutritionTab, compose: Bool)? {
+        guard let request, request.id != handled else { return nil }
+        handled = request.id
+        let compose = request.route.query["compose"] == "1"
+        return (compose ? .today : NutritionTab.of(request.route.query["tab"]), compose)
     }
 }
 
 /// The page while Nutrition is on: the view chosen (Today first), from the views row or a link's ?tab=.
 private struct NutritionPage: View {
     let mode: NutritionMode
+    @Binding var link: NutritionLink
     @Environment(Dashboard.self) private var dashboard
     /// The view asked for; the one shown falls back where this server can't show it.
     @State private var asked: NutritionTab = .today
@@ -48,8 +73,8 @@ private struct NutritionPage: View {
     @State private var days = 30
     /// POST /nutrition/log/day: false once an older server has answered it doesn't have it.
     @State private var dayRoute = true
-    /// Goes up when a link asks for Today's composer (Home's orb, compose=1).
-    @State private var compose = 0
+    /// A link asked for Today's composer (Home's orb, compose=1); Today sets it back once it's focused.
+    @State private var compose = false
 
     var body: some View {
         let tabs = NutritionTab.visible(mode, today: dayRoute, logging: dashboard.foodLogAvailable != false)
@@ -57,7 +82,7 @@ private struct NutritionPage: View {
         Group {
             switch current {
             case .today:
-                NutritionToday(mode: mode, thread: thread, date: $date, compose: compose, routeMissing: { dayRoute = false }) {
+                NutritionToday(mode: mode, thread: thread, date: $date, compose: $compose, routeMissing: { dayRoute = false }) {
                     NutritionViewsRow(tabs: tabs, current: current) { asked = $0 }
                 }
             case .log:
@@ -78,14 +103,11 @@ private struct NutritionPage: View {
                 .refreshable { await dashboard.load() }
             }
         }
-        // A link to a view (#/nutrition?tab=macros, Profile's card places, Home's orb with compose=1).
-        .task(id: dashboard.request(for: .nutrition)?.id) {
-            guard let route = dashboard.request(for: .nutrition)?.route else { return }
-            asked = NutritionTab.of(route.query["tab"])
-            if route.query["compose"] == "1" {
-                asked = .today
-                compose += 1
-            }
+        // A link to a view (#/nutrition?tab=macros, Profile's card places, Home's orb with compose=1), once each.
+        .onChange(of: dashboard.request(for: .nutrition)?.id, initial: true) {
+            guard let wanted = link.take(dashboard.request(for: .nutrition)) else { return }
+            asked = wanted.tab
+            if wanted.compose { compose = true }
         }
         // Whether this server has the food log decides the Log; Health catches up with the log on opening.
         .task(id: "\(dashboard.generation)|\(dashboard.nutritionOn)") {
