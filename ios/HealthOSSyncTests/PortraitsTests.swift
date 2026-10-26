@@ -176,12 +176,18 @@ final class PortraitsTests: XCTestCase {
         XCTAssertTrue(five.full, "the add pill is off at five")
     }
 
-    func testTheAddedDayIsThePhonesOwn() {
-        // The web's toLocaleDateString: the phone's own time zone, month and day.
-        let ms = 1_761_300_000_000.0
-        let f = DateFormatter()
-        f.setLocalizedDateFormatFromTemplate("MMMd")
-        XCTAssertEqual(PortraitWords.added(ms), f.string(from: Date(timeIntervalSince1970: ms / 1000)))
+    func testTheAddedDayIsShortMonthAndDayOnThePhonesOwnDay() throws {
+        // The web's `added`: the browser's own language and time zone, short month and day.
+        let studio = try web("src/components/portraits/PortraitStudio.tsx")
+        XCTAssertTrue(studio.contains("const added = (ms: number) => new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });"))
+        let ms = 1_761_300_000_000.0 // 24 October 2025, 10:00 UTC
+        let us = Locale(identifier: "en_US")
+        XCTAssertEqual(PortraitWords.added(ms, locale: us, timeZone: try XCTUnwrap(TimeZone(identifier: "UTC"))), "Oct 24")
+        // Already the 25th at UTC+14, still the 23rd at UTC−11: the day it was where the phone is, not UTC's.
+        XCTAssertEqual(PortraitWords.added(ms, locale: us, timeZone: try XCTUnwrap(TimeZone(identifier: "Pacific/Kiritimati"))), "Oct 25")
+        XCTAssertEqual(PortraitWords.added(ms, locale: us, timeZone: try XCTUnwrap(TimeZone(identifier: "Pacific/Pago_Pago"))), "Oct 23")
+        // In the phone's language, as toLocaleDateString(undefined, …) is in the browser's.
+        XCTAssertEqual(PortraitWords.added(ms, locale: Locale(identifier: "en_GB"), timeZone: try XCTUnwrap(TimeZone(identifier: "UTC"))), "24 Oct")
         XCTAssertEqual(PortraitWords.added(nil), "")
     }
 

@@ -379,16 +379,22 @@ enum PortraitWords {
         return failedDefault
     }
 
-    private static let addedFormat: DateFormatter = {
+    private static let addedFormat = addedFormatter(locale: .autoupdatingCurrent, timeZone: .autoupdatingCurrent)
+
+    private static func addedFormatter(locale: Locale, timeZone: TimeZone) -> DateFormatter {
         let f = DateFormatter()
+        f.locale = locale
+        f.timeZone = timeZone
         f.setLocalizedDateFormatFromTemplate("MMMd")
         return f
-    }()
+    }
 
-    /// The day it was added, in this phone's time zone (the web's `added`: month and day).
-    static func added(_ ms: Double?) -> String {
+    /// The day it was added, short month and day in the phone's language and time zone (the web's `added`:
+    /// toLocaleDateString(undefined, { month: 'short', day: 'numeric' })).
+    static func added(_ ms: Double?, locale: Locale? = nil, timeZone: TimeZone? = nil) -> String {
         guard let ms else { return "" }
-        return addedFormat.string(from: Date(timeIntervalSince1970: ms / 1000))
+        let f = locale == nil && timeZone == nil ? addedFormat : addedFormatter(locale: locale ?? .current, timeZone: timeZone ?? .current)
+        return f.string(from: Date(timeIntervalSince1970: ms / 1000))
     }
 
     /// An error in the words the web shows (src/lib.ts): the server's own message whatever its code (a 404's "That
