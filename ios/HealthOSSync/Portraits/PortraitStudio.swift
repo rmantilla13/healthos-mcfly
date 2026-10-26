@@ -155,7 +155,7 @@ struct PortraitStudioContent: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Button(action: add) {
-                HStack(spacing: 7) {
+                HStack(alignment: .firstTextBaseline, spacing: 7) {
                     Image(systemName: "plus").imageScale(.small).accessibilityHidden(true)
                     PillText(model.busy == "add" ? PortraitWords.adding : PortraitWords.add)
                 }

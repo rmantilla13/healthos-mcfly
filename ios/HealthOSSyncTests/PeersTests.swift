@@ -43,6 +43,16 @@ final class PeersTests: XCTestCase {
         XCTAssertNil(PeerWords.notTakingPart(later.reason, editLink: true))
     }
 
+    func testALocalServersAnswers() throws {
+        // A made-up account on a local server: comparisons off, then on with an age and no readings yet.
+        let off = try decode(#"{"participating":false,"reason":"off"}"#)
+        XCTAssertEqual(PeerWords.notTakingPart(off.reason, editLink: true), "You're not taking part. Turn it on in [Edit preferences](healthos://welcome).")
+        let none = try decode(#"{"participating":true,"ageBand":"30–39","window":{"from":"2026-09-27","to":"2026-10-26"},"metrics":[]}"#)
+        XCTAssertTrue(none.participating)
+        XCTAssertTrue(none.metrics.isEmpty, "shows the no-readings line")
+        XCTAssertFalse(none.gathering)
+    }
+
     func testTakingPartReadsEachMeasurementOnItsOwn() throws {
         let data = try JSONDecoder().decode(PeerData.self, from: fixture("peers-ready"))
         XCTAssertTrue(data.participating)
