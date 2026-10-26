@@ -293,7 +293,7 @@ struct AllCardsHiddenNote: View {
                 Image(systemName: "rectangle.grid.2x2").font(.subheadline.weight(.semibold)).foregroundStyle(Palette.ink3)
                     .accessibilityHidden(true)
                 Text("\(text) Choose the ones to show in **Settings → Cards**.")
-                    .font(.footnote)
+                    .font(.app(.footnote))
                     .foregroundStyle(Palette.ink2)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)

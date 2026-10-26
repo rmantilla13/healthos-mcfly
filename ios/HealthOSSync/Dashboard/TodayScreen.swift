@@ -129,11 +129,11 @@ private struct Header: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Hello,").font(.system(size: 26)).foregroundStyle(Palette.ink2)
-                    Text("\(name ?? "there").").font(.system(size: 40, weight: .bold)).foregroundStyle(Palette.ink)
+                    Text("Hello,").font(.app(fixedSize: 26)).foregroundStyle(Palette.ink2)
+                    Text("\(name ?? "there").").font(.app(fixedSize: 40, weight: .bold)).foregroundStyle(Palette.ink)
                         .lineLimit(1).minimumScaleFactor(0.6)
                     Text(isToday ? "Here's your health today." : "Here's your health on \(Fmt.day(summary.date, "EEEEMMMMd")).")
-                        .font(.subheadline)
+                        .font(.app(.subheadline))
                         .foregroundStyle(Palette.ink3)
                 }
                 Spacer(minLength: 8)
@@ -149,7 +149,7 @@ private struct Header: View {
                 }
                 .accessibilityLabel("Previous day")
                 Button { Task { await dashboard.show(date: nil) } } label: {
-                    Text(Fmt.day(summary.date, "EEEMMMdyyyy")).font(.subheadline.weight(.medium)).monospacedDigit()
+                    Text(Fmt.day(summary.date, "EEEMMMdyyyy")).font(.app(.subheadline, weight: .medium)).monospacedDigit()
                 }
                 .disabled(isToday)
                 .accessibilityHint("Back to today")
@@ -160,7 +160,7 @@ private struct Header: View {
                 .accessibilityLabel("Next day")
                 Spacer()
                 if let latest = summary.latestDataDate, latest < summary.date {
-                    Text("Latest data \(Fmt.day(latest))").font(.caption).foregroundStyle(Palette.ink3)
+                    Text("Latest data \(Fmt.day(latest))").font(.app(.caption)).foregroundStyle(Palette.ink3)
                 }
             }
             .foregroundStyle(Palette.ink)
@@ -179,7 +179,7 @@ private struct Banner: View {
 
     var body: some View {
         Label(text, systemImage: icon)
-            .font(.footnote)
+            .font(.app(.footnote))
             .foregroundStyle(tone.ink)
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -201,9 +201,9 @@ private struct FlagBanner: View {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: flag.caution ? "heart.text.square" : "waveform.path.ecg").font(.subheadline.weight(.semibold))
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(flag.title).font(.subheadline.weight(.semibold))
-                    Text(flag.text).font(.footnote)
-                    if let note { Text(note).font(.footnote).opacity(0.85).padding(.top, 3) }
+                    Text(flag.title).font(.app(.subheadline, weight: .semibold))
+                    Text(flag.text).font(.app(.footnote))
+                    if let note { Text(note).font(.app(.footnote)).opacity(0.85).padding(.top, 3) }
                 }
                 .multilineTextAlignment(.leading)
                 .fixedSize(horizontal: false, vertical: true)
@@ -231,7 +231,7 @@ private struct FamilyNotice: View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "person.2").font(.subheadline.weight(.semibold)).accessibilityHidden(true)
             Text("Your family can see your daily status and your last 30 days on the **[Family](healthos://family)** board. Change this in **[Settings](healthos://settings)**.")
-                .font(.footnote)
+                .font(.app(.footnote))
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .environment(\.openURL, OpenURLAction { url in
@@ -239,7 +239,7 @@ private struct FamilyNotice: View {
                     return .handled
                 })
             Button("Got it") { Task { await dashboard.dismissFamilyNotice() } }
-                .font(.footnote.weight(.semibold))
+                .font(.app(.footnote, weight: .semibold))
                 .buttonStyle(.plain)
                 .accessibilityHint("Hides this note")
         }
@@ -256,8 +256,8 @@ private struct WeekCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(WeekText.title(week)).font(.caption.weight(.semibold)).textCase(.uppercase).foregroundStyle(Palette.ink3)
-            Text(WeekText.body(week, stepGoal: stepGoal)).font(.callout).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
+            Text(WeekText.title(week)).font(.app(.caption, weight: .semibold)).textCase(.uppercase).foregroundStyle(Palette.ink3)
+            Text(WeekText.body(week, stepGoal: stepGoal)).font(.app(.callout)).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
         }
         .card()
     }
@@ -285,7 +285,7 @@ private struct VitalsRow: View {
     private func tile(_ vital: Vital?, icon: String, color: Color, title: String, format: (Double) -> (String, String)) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Label(title, systemImage: icon)
-                .font(.caption.weight(.medium))
+                .font(.app(.caption, weight: .medium))
                 .foregroundStyle(Palette.ink2)
                 .labelStyle(TintedIconLabel(color: color))
                 .lineLimit(1)
@@ -293,11 +293,11 @@ private struct VitalsRow: View {
                 let (value, unit) = format(latest.value)
                 BigValue(value: value, unit: unit, size: 24)
                 Text(latest.date == asOf ? Self.statusText(vital?.status) : Fmt.day(latest.date))
-                    .font(.caption2)
+                    .font(.app(.caption2))
                     .foregroundStyle(vital?.status == "normal" || latest.date != asOf ? Palette.ink3 : Palette.serious)
             } else {
-                Text("—").font(.title2.weight(.semibold)).foregroundStyle(Palette.ink3)
-                Text("No reading").font(.caption2).foregroundStyle(Palette.ink3)
+                Text("—").font(.app(.title2, weight: .semibold)).foregroundStyle(Palette.ink3)
+                Text("No reading").font(.app(.caption2)).foregroundStyle(Palette.ink3)
             }
         }
         .padding(12)
@@ -351,7 +351,7 @@ struct SyncStatusLine: View {
                     }
                     Spacer(minLength: 0)
                 }
-                .font(.footnote)
+                .font(.app(.footnote))
                 .foregroundStyle(Palette.ink2)
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)
@@ -360,7 +360,7 @@ struct SyncStatusLine: View {
             .disabled(sync.syncingSources)
             .accessibilityHint("Syncs again")
             if !sync.syncingSources, let notes = sync.sources?.notes, !notes.isEmpty {
-                ForEach(notes, id: \.self) { Text($0).font(.caption).foregroundStyle(Palette.ink3) }
+                ForEach(notes, id: \.self) { Text($0).font(.app(.caption)).foregroundStyle(Palette.ink3) }
             }
         }
     }

@@ -73,6 +73,19 @@ enum AppFont {
         guard let style else { return font }
         return UIFontMetrics(forTextStyle: style).scaledFont(for: font, compatibleWith: traits)
     }
+
+    /// Bar titles, tab labels and segmented pickers are drawn by UIKit: DM Sans there too, at the web's heading weight
+    /// (500). Set once at launch, before any bar is made.
+    @MainActor static func styleBars() {
+        let bar = UINavigationBar.appearance()
+        let ink = UIColor(Palette.ink)
+        bar.titleTextAttributes = [.font: uiFont(size: 17, weight: .medium, relativeTo: .headline), .foregroundColor: ink]
+        bar.largeTitleTextAttributes = [.font: uiFont(size: 34, weight: .medium, relativeTo: .largeTitle), .foregroundColor: ink]
+        UITabBarItem.appearance().setTitleTextAttributes([.font: uiFont(size: 10, weight: .medium, relativeTo: .caption2)], for: .normal)
+        let segments = UISegmentedControl.appearance()
+        segments.setTitleTextAttributes([.font: uiFont(size: 13, weight: .medium, relativeTo: .footnote)], for: .normal)
+        segments.setTitleTextAttributes([.font: uiFont(size: 13, weight: .semibold, relativeTo: .footnote)], for: .selected)
+    }
 }
 
 extension Font {
@@ -88,6 +101,11 @@ extension Font {
     ///     Text("YOUR WORKSPACE").font(.app(size: 11, weight: .medium, relativeTo: .caption2))
     static func app(size: CGFloat, weight: Font.Weight = .regular, relativeTo style: Font.TextStyle = .body) -> Font {
         .custom(AppFont.instanceName(weight), size: size, relativeTo: style)
+    }
+
+    /// DM Sans at one size whatever the text size, for text drawn to fit a shape (an avatar's initial, a ring's figure).
+    static func app(fixedSize size: CGFloat, weight: Font.Weight = .regular) -> Font {
+        .custom(AppFont.instanceName(weight), fixedSize: size)
     }
 }
 

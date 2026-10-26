@@ -15,7 +15,7 @@ struct OrganicHeader: View {
         let isToday = summary.date == summary.today
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 2) {
-                Text(Fmt.day(summary.date, "EEEEMMMd")).font(.subheadline.weight(.medium)).foregroundStyle(Palette.ink2)
+                Text(Fmt.day(summary.date, "EEEEMMMd")).font(.app(.subheadline, weight: .medium)).foregroundStyle(Palette.ink2)
                 Spacer()
                 Button { Task { await dashboard.show(date: Day.add(summary.date, -1)) } } label: {
                     Image(systemName: "chevron.left").frame(width: 44, height: 44)
@@ -35,9 +35,9 @@ struct OrganicHeader: View {
             }
             .foregroundStyle(Palette.ink2)
             .buttonStyle(.plain)
-            Text("Hello, \(name ?? "there").").font(.title2.weight(.medium)).foregroundStyle(Palette.ink)
+            Text("Hello, \(name ?? "there").").font(.app(.title2, weight: .medium)).foregroundStyle(Palette.ink)
             if !isToday {
-                Button("Back to today") { Task { await dashboard.show(date: nil) } }.font(.footnote)
+                Button("Back to today") { Task { await dashboard.show(date: nil) } }.font(.app(.footnote))
             }
             SyncStatusLine()
         }
@@ -239,11 +239,11 @@ struct OrganicPortrait: View {
                             .position(p.dot)
                         VStack(alignment: p.left ? .trailing : .leading, spacing: 1) {
                             HStack(spacing: 3) {
-                                Text(r.name).font(.caption2.weight(.medium)).foregroundStyle(Palette.ink2)
+                                Text(r.name).font(.app(.caption2, weight: .medium)).foregroundStyle(Palette.ink2)
                                 // The heart reading opens live heart rate.
                                 if key == .heart { Image(systemName: "waveform.path.ecg").font(.caption2).foregroundStyle(Palette.vitalHeart) }
                             }
-                            Text(r.value ?? "—").font(.subheadline.weight(.semibold)).monospacedDigit().foregroundStyle(Palette.ink)
+                            Text(r.value ?? "—").font(.app(.subheadline, weight: .semibold)).monospacedDigit().foregroundStyle(Palette.ink)
                             // The words with the colour, so it never rests on colour alone.
                             if let status = r.status {
                                 HStack(alignment: .firstTextBaseline, spacing: 4) {
@@ -251,7 +251,7 @@ struct OrganicPortrait: View {
                                         Circle().fill(r.level.color).frame(width: 7, height: 7)
                                     }
                                     Text(status)
-                                        .font(.caption2).foregroundStyle(Palette.ink3)
+                                        .font(.app(.caption2)).foregroundStyle(Palette.ink3)
                                         .multilineTextAlignment(p.left ? .trailing : .leading)
                                         // A scrubbed hour stays on one line, so the label keeps its height as the marker moves.
                                         .lineLimit(r.scrubbed ? 1 : 2)
@@ -552,8 +552,8 @@ private struct DataShape: View {
     var body: some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.caption.weight(.medium)).foregroundStyle(Palette.ink2)
-                Text(value).font(.headline).monospacedDigit().foregroundStyle(Palette.ink).lineLimit(1).minimumScaleFactor(0.7)
+                Text(title).font(.app(.caption, weight: .medium)).foregroundStyle(Palette.ink2)
+                Text(value).font(.app(.headline)).monospacedDigit().foregroundStyle(Palette.ink).lineLimit(1).minimumScaleFactor(0.7)
                 if let progress {
                     GeometryReader { g in
                         ZStack(alignment: .leading) {
@@ -759,12 +759,12 @@ struct TodayPath: View {
             let moment = TimelineScrub.moment(day: hours, events: events, date: timeline.date, minute: minute, live: live)
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text(isToday ? "Today's path" : "The day's path").font(.headline).foregroundStyle(Palette.ink)
+                    Text(isToday ? "Today's path" : "The day's path").font(.app(.headline)).foregroundStyle(Palette.ink)
                     Spacer()
                     // Back to the resting position; hidden while there.
                     Button { withAnimation(TimelineScrub.motion(.easeOut(duration: 0.25), reduceMotion: reduceMotion)) { scrub = nil } } label: {
                         Text(isToday ? "Now" : "End of day")
-                            .font(.footnote.weight(.semibold))
+                            .font(.app(.footnote, weight: .semibold))
                             .foregroundStyle(Palette.ink)
                             .padding(.horizontal, 12).padding(.vertical, 5)
                             .background(Palette.surface2, in: Capsule())
@@ -820,7 +820,7 @@ struct TodayPath: View {
     @ViewBuilder
     private func pebbles(_ events: [TimelineEvent], current: Set<String>) -> some View {
         if events.isEmpty {
-            Text("Nothing recorded for this day yet.").font(.footnote).foregroundStyle(Palette.ink3)
+            Text("Nothing recorded for this day yet.").font(.app(.footnote)).foregroundStyle(Palette.ink3)
         } else {
             GeometryReader { geo in
                 let w = geo.size.width
@@ -847,8 +847,8 @@ struct TodayPath: View {
                                     .overlay(Circle().stroke(now ? Palette.ink : Palette.surface, lineWidth: 2))
                                     .frame(width: now ? 20 : 16, height: now ? 20 : 16)
                                     .frame(width: 20, height: 20)
-                                Text(e.title).font(.caption2.weight(.semibold)).foregroundStyle(Palette.ink).lineLimit(1)
-                                Text(Fmt.clock(e.start)).font(.caption2).monospacedDigit().foregroundStyle(Palette.ink3)
+                                Text(e.title).font(.app(.caption2, weight: .semibold)).foregroundStyle(Palette.ink).lineLimit(1)
+                                Text(Fmt.clock(e.start)).font(.app(.caption2)).monospacedDigit().foregroundStyle(Palette.ink3)
                             }
                             .frame(width: 72, height: 64)
                             .contentShape(Rectangle())

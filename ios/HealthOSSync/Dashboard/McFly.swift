@@ -330,7 +330,7 @@ struct AskMcFlyPill: View {
                     .modifier(SparklePulse(active: !reduceMotion))
                     .symbolEffect(.bounce, value: taps)
                 Text("Ask McFly")
-                    .font(.subheadline.weight(.semibold))
+                    .font(.app(.subheadline, weight: .semibold))
                     .foregroundStyle(.white)
             }
             .padding(.horizontal, 20)
@@ -412,9 +412,9 @@ struct McFlySheet: View {
                     LazyVStack(alignment: .leading, spacing: 14) {
                         if chat.messages.isEmpty {
                             VStack(alignment: .leading, spacing: 8) {
-                                Text("Ask about your health data").font(.headline).foregroundStyle(Palette.ink)
+                                Text("Ask about your health data").font(.app(.headline)).foregroundStyle(Palette.ink)
                                 Text("For example: How did I sleep this week? Is my resting heart rate trending down?")
-                                    .font(.subheadline).foregroundStyle(Palette.ink3)
+                                    .font(.app(.subheadline)).foregroundStyle(Palette.ink3)
                             }
                             .padding(.top, 24)
                         }
@@ -423,7 +423,7 @@ struct McFlySheet: View {
                         }
                         if let label = chat.lookingAt {
                             Label("Looking at \(label)…", systemImage: "magnifyingglass")
-                                .font(.caption).foregroundStyle(Palette.ink3)
+                                .font(.app(.caption)).foregroundStyle(Palette.ink3)
                         }
                         Color.clear.frame(height: 1).id("end")
                     }
@@ -463,7 +463,7 @@ struct McFlySheet: View {
         VStack(spacing: 6) {
             if let s = chat.status {
                 Text(s.left == 1 ? "1 question left today" : "\(s.left) questions left today")
-                    .font(.caption2).foregroundStyle(Palette.ink3)
+                    .font(.app(.caption2)).foregroundStyle(Palette.ink3)
             }
             HStack(alignment: .bottom, spacing: 8) {
                 TextField("Ask a question", text: $draft, axis: .vertical)
@@ -552,7 +552,7 @@ private struct Bubble: View {
             VStack(alignment: .leading, spacing: 6) {
                 inner
             }
-            .font(.callout)
+            .font(.app(.callout))
             .foregroundStyle(message.role == .user ? Palette.page : Palette.ink)
             .padding(.horizontal, 14).padding(.vertical, 10)
             .background(message.role == .user ? Palette.ink : Palette.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))

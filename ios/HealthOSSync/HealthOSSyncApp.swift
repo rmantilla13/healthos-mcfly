@@ -46,9 +46,12 @@ struct RootView: View {
             SettingsScreen()
                 .environment(dashboard)
                 .environment(sync)
+                .font(.app(.body))
         }
         .environment(dashboard)
         .environment(sync)
+        // DM Sans for any text that doesn't set its own font (Form rows, labels, fields).
+        .font(.app(.body))
         .tint(Palette.tint)
         .onAppear {
             sync.dashboard = dashboard
@@ -98,6 +101,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         // Before launch finishes, so a tap that launches the app still reaches didReceive.
         UNUserNotificationCenter.current().delegate = self
+        AppFont.styleBars()
         #if targetEnvironment(simulator)
         // Scripted runs: `xcrun simctl launch booted health.mcfly.sync -healthosToken <token>`. As if pasted while signed
         // out: whoever signs in next is its owner, and nothing of an earlier run's owner or pause is kept.

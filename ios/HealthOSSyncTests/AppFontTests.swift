@@ -53,4 +53,15 @@ final class AppFontTests: XCTestCase {
             XCTAssertEqual(variation?[NSNumber(value: AppFont.weightAxis)]?.doubleValue ?? 400, AppFont.axisValue(weight), AppFont.instanceName(weight))
         }
     }
+
+    func testDigitsAreProportional() {
+        // The web's latin file has no tabular figures, so asking for them changes nothing: "1111" sets narrower than
+        // "0000", as on the web. If a font with tnum is bundled, `.monospacedDigit()` starts working and this fails.
+        let monospaced = AppFont.uiFont(size: 17).fontDescriptor.addingAttributes([.featureSettings: [[
+            UIFontDescriptor.FeatureKey.type: kNumberSpacingType, UIFontDescriptor.FeatureKey.selector: kMonospacedNumbersSelector,
+        ]]])
+        let font = UIFont(descriptor: monospaced, size: 17)
+        func width(_ s: String) -> CGFloat { (s as NSString).size(withAttributes: [.font: font]).width }
+        XCTAssertLessThan(width("1111"), width("0000") - 4)
+    }
 }

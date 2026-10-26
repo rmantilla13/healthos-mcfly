@@ -45,7 +45,7 @@ struct DayScreen: View {
                     ContentUnavailableView("Couldn't load this day", systemImage: "chart.xyaxis.line", description: Text(error))
                 } else if loaded {
                     Text("No hourly readings yet. They come from the healthOS app on your iPhone, after a sync.")
-                        .font(.footnote).foregroundStyle(Palette.ink3)
+                        .font(.app(.footnote)).foregroundStyle(Palette.ink3)
                         .card()
                 } else {
                     ProgressView().frame(maxWidth: .infinity, minHeight: 200)
@@ -78,8 +78,8 @@ struct DayScreen: View {
         return VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 2) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(Fmt.day(current, "EEEEMMMd")).font(.title2.weight(.semibold)).foregroundStyle(Palette.ink)
-                    if ago < 7 { Text(Fmt.relativeDay(current, today: today)).font(.subheadline).foregroundStyle(Palette.ink3) }
+                    Text(Fmt.day(current, "EEEEMMMd")).font(.app(.title2, weight: .semibold)).foregroundStyle(Palette.ink)
+                    if ago < 7 { Text(Fmt.relativeDay(current, today: today)).font(.app(.subheadline)).foregroundStyle(Palette.ink3) }
                 }
                 Spacer()
                 Group {
@@ -97,7 +97,7 @@ struct DayScreen: View {
                 .buttonStyle(.plain)
             }
             if !isToday {
-                Button("Back to today") { picked = nil }.font(.footnote)
+                Button("Back to today") { picked = nil }.font(.app(.footnote))
             }
         }
     }
@@ -124,14 +124,14 @@ struct DayCard: View {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(alignment: .firstTextBaseline) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(title).font(.headline).foregroundStyle(Palette.ink)
-                            if isToday { Text("By the hour").font(.caption).foregroundStyle(Palette.ink3) }
+                            Text(title).font(.app(.headline)).foregroundStyle(Palette.ink)
+                            if isToday { Text("By the hour").font(.app(.caption)).foregroundStyle(Palette.ink3) }
                         }
                         Spacer()
                         Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(Palette.ink3)
                     }
                     BigValue(value: reading.value.map { Fmt.number($0) } ?? "—", unit: metric.unit, size: 26)
-                    Text(reading.note).font(.caption).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
+                    Text(reading.note).font(.app(.caption)).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
                     if reading.through != nil {
                         HoursChart(metric: metric, series: series, reading: reading, compact: true).frame(height: 64)
                     }
@@ -311,9 +311,9 @@ private struct HoursCard: View {
         let reading = DayReading(metric: metric, series: series, data: data)
         let dayLabel = data.date >= data.today ? "Today" : Fmt.day(data.date, "EEEMMMd")
         VStack(alignment: .leading, spacing: 6) {
-            Text(metric.title).font(.subheadline.weight(.medium)).foregroundStyle(Palette.ink2)
-            Text(reading.value.map(metric.format) ?? "—").font(.title2.weight(.semibold)).foregroundStyle(Palette.ink).monospacedDigit()
-            Text(reading.note).font(.caption).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
+            Text(metric.title).font(.app(.subheadline, weight: .medium)).foregroundStyle(Palette.ink2)
+            Text(reading.value.map(metric.format) ?? "—").font(.app(.title2, weight: .semibold)).foregroundStyle(Palette.ink).monospacedDigit()
+            Text(reading.note).font(.app(.caption)).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
             if reading.through != nil, DayMath.extent(reading.shown, series.typical) != nil {
                 HoursChart(metric: metric, series: series, reading: reading, goal: goal, label: "\(metric.title) by hour, \(dayLabel)")
                     .frame(height: 200)
@@ -324,7 +324,7 @@ private struct HoursCard: View {
                 }
             } else {
                 Text(series.total != nil ? "No hourly readings on this day" : "No readings on this day")
-                    .font(.footnote).foregroundStyle(Palette.ink3)
+                    .font(.app(.footnote)).foregroundStyle(Palette.ink3)
                     .frame(maxWidth: .infinity, minHeight: 120)
             }
         }
@@ -350,7 +350,7 @@ private struct LegendKey: View {
             }
             .stroke(color, style: StrokeStyle(lineWidth: dashed ? 1.25 : 2, lineCap: .round, dash: dashed ? [3, 3] : []))
             .frame(width: 16, height: 2)
-            Text(label).font(.caption2).foregroundStyle(Palette.ink3).lineLimit(1)
+            Text(label).font(.app(.caption2)).foregroundStyle(Palette.ink3).lineLimit(1)
         }
     }
 }
@@ -445,7 +445,7 @@ private struct HoursChart: View {
                     .lineStyle(StrokeStyle(lineWidth: 1))
                     // Left, where the running total is still low: on the right it would sit on the line's end.
                     .annotation(position: .top, alignment: .leading) {
-                        Text("Goal \(Fmt.compact(goal))").font(.caption2).foregroundStyle(Palette.goodText)
+                        Text("Goal \(Fmt.compact(goal))").font(.app(.caption2)).foregroundStyle(Palette.goodText)
                     }
             }
             ForEach(bandPoints) { p in
@@ -499,20 +499,20 @@ private struct HoursChart: View {
 
     private func tooltip(_ h: Int) -> some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text(DayMath.span(h)).font(.caption2).foregroundStyle(Palette.ink3)
+            Text(DayMath.span(h)).font(.app(.caption2)).foregroundStyle(Palette.ink3)
             if running {
-                Text("\(metric.format(reading.shown[h] ?? 0)) so far").font(.caption.weight(.semibold))
-                Text("\(metric.format(series.hours[h] ?? 0)) this hour").font(.caption2)
+                Text("\(metric.format(reading.shown[h] ?? 0)) so far").font(.app(.caption, weight: .semibold))
+                Text("\(metric.format(series.hours[h] ?? 0)) this hour").font(.app(.caption2))
             } else if let v = reading.shown[h] {
-                Text("\(metric.format(v)) average").font(.caption.weight(.semibold))
+                Text("\(metric.format(v)) average").font(.app(.caption, weight: .semibold))
                 if let lo = series.min?[h], let hi = series.max?[h] {
-                    Text("range \(metric.axis(lo))–\(metric.format(hi))").font(.caption2)
+                    Text("range \(metric.axis(lo))–\(metric.format(hi))").font(.app(.caption2))
                 }
             } else {
-                Text("No reading").font(.caption.weight(.semibold))
+                Text("No reading").font(.app(.caption, weight: .semibold))
             }
             if let t = series.typical[h] {
-                Text("typical\(running ? " by then" : "") \(metric.format(t))").font(.caption2).foregroundStyle(Palette.ink2)
+                Text("typical\(running ? " by then" : "") \(metric.format(t))").font(.app(.caption2)).foregroundStyle(Palette.ink2)
             }
         }
         .padding(.horizontal, 8).padding(.vertical, 4)

@@ -87,7 +87,7 @@ struct Avatar: View {
                 Image(uiImage: image).resizable().scaledToFill()
             } else {
                 RadialGradient(colors: [Color(UIColor(hex: 0xA58A73)), Color(UIColor(hex: 0x4C3B2F))], center: .topLeading, startRadius: 0, endRadius: size * 1.2)
-                Text(initial).font(.system(size: size * 0.42, weight: .semibold)).foregroundStyle(.white)
+                Text(initial).font(.app(fixedSize: size * 0.42, weight: .semibold)).foregroundStyle(.white)
             }
         }
         .frame(width: size, height: size)
@@ -156,7 +156,7 @@ struct PhotoFigure: View {
                 .position(p)
                 if let text = item.text {
                     Text(text)
-                        .font(.caption.weight(.semibold).monospacedDigit())
+                        .font(.app(.caption, weight: .semibold).monospacedDigit())
                         .padding(.horizontal, 7).padding(.vertical, 3)
                         .background(Palette.surface.opacity(0.9), in: Capsule())
                         .overlay(Capsule().strokeBorder(Palette.border))

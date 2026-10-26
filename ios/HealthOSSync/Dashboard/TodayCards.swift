@@ -51,7 +51,7 @@ private struct MetricCard<Content: View>: View {
         Button { dashboard.open(section) } label: {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text(title).font(.subheadline.weight(.medium)).foregroundStyle(Palette.ink2)
+                    Text(title).font(.app(.subheadline, weight: .medium)).foregroundStyle(Palette.ink2)
                     Spacer()
                     Image(systemName: "arrow.up.right").font(.caption.weight(.semibold)).foregroundStyle(Palette.ink3)
                 }
@@ -68,7 +68,7 @@ private struct MetricCard<Content: View>: View {
 private struct Empty: View {
     let text: String
     var body: some View {
-        Text(text).font(.footnote).foregroundStyle(Palette.ink3).frame(maxHeight: .infinity, alignment: .center)
+        Text(text).font(.app(.footnote)).foregroundStyle(Palette.ink3).frame(maxHeight: .infinity, alignment: .center)
     }
 }
 
@@ -77,7 +77,7 @@ private struct Stale: View {
     let date: String
     let asOf: String
     var body: some View {
-        if date != asOf { Text(Fmt.day(date)).font(.caption2).foregroundStyle(Palette.ink3) }
+        if date != asOf { Text(Fmt.day(date)).font(.app(.caption2)).foregroundStyle(Palette.ink3) }
     }
 }
 
@@ -90,7 +90,7 @@ private struct Foot<Leading: View, Trailing: View>: View {
             Spacer(minLength: 4)
             trailing
         }
-        .font(.caption)
+        .font(.app(.caption))
         .foregroundStyle(Palette.ink3)
         .lineLimit(1)
     }
@@ -125,7 +125,7 @@ struct ReadinessCard: View {
                 Foot {
                     HStack(spacing: 4) {
                         Circle().fill(Self.zoneColor(zone)).frame(width: 7, height: 7)
-                        Text(Self.zoneText(zone)).foregroundStyle(Palette.ink).fontWeight(.medium)
+                        Text(Self.zoneText(zone)).font(.app(.caption, weight: .medium)).foregroundStyle(Palette.ink)
                     }
                 } trailing: { Stale(date: r.latest.date, asOf: summary.date) }
             }
@@ -201,7 +201,7 @@ struct Spo2Card: View {
                     BigValue(value: Fmt.number(l.value, l.value.truncatingRemainder(dividingBy: 1) == 0 ? 0 : 1), unit: "%", size: 30)
                     Spacer(minLength: 0)
                 }
-                Text(summary.spo2?.status == "low" ? "Below your range" : "Normal").font(.caption.weight(.medium)).foregroundStyle(Palette.ink2)
+                Text(summary.spo2?.status == "low" ? "Below your range" : "Normal").font(.app(.caption, weight: .medium)).foregroundStyle(Palette.ink2)
                 MiniLine(points: summary.spo2?.series ?? [], color: Palette.series2, domain: 90...100).frame(height: 56)
                 Spacer(minLength: 0)
                 Foot { Text("90") } trailing: {
@@ -229,7 +229,7 @@ struct HrvCard: View {
                 MiniDots(points: hrv.series ?? [], baseline: hrv.baseline).frame(height: 64)
                 Spacer(minLength: 0)
                 Foot {
-                    Text(Self.statusText(hrv.status)).foregroundStyle(Palette.ink).fontWeight(.medium)
+                    Text(Self.statusText(hrv.status)).font(.app(.caption, weight: .medium)).foregroundStyle(Palette.ink)
                 } trailing: {
                     Text("usual · \(hrv.metric == "hrv_sdnn" ? "SDNN" : "RMSSD")")
                 }
@@ -262,7 +262,7 @@ struct SleepCard: View {
                 Spacer(minLength: 0)
                 Foot {
                     HStack(spacing: 6) {
-                        Text(l.value >= 7 ? "Good" : l.value >= 6 ? "Fair" : "Short").foregroundStyle(Palette.ink).fontWeight(.medium)
+                        Text(l.value >= 7 ? "Good" : l.value >= 6 ? "Fair" : "Short").font(.app(.caption, weight: .medium)).foregroundStyle(Palette.ink)
                         Stale(date: l.date, asOf: summary.date)
                     }
                 } trailing: {
@@ -292,7 +292,7 @@ struct LoadCard: View {
                 Spacer(minLength: 0)
                 Foot {
                     HStack(spacing: 6) {
-                        Text(band).foregroundStyle(Palette.ink).fontWeight(.medium)
+                        Text(band).font(.app(.caption, weight: .medium)).foregroundStyle(Palette.ink)
                         Stale(date: l.latest.date, asOf: summary.date)
                     }
                 } trailing: {
@@ -438,23 +438,23 @@ struct TimelineCard: View {
     var body: some View {
         let isToday = timeline.date == today
         VStack(alignment: .leading, spacing: 14) {
-            Text(isToday ? "Today's timeline" : "Timeline · \(Fmt.day(timeline.date, "EEEMMMd"))").font(.headline).foregroundStyle(Palette.ink)
+            Text(isToday ? "Today's timeline" : "Timeline · \(Fmt.day(timeline.date, "EEEMMMd"))").font(.app(.headline)).foregroundStyle(Palette.ink)
             Track(timeline: timeline, isToday: isToday)
             if timeline.events.isEmpty {
-                Text("Nothing recorded for this day.").font(.footnote).foregroundStyle(Palette.ink3)
+                Text("Nothing recorded for this day.").font(.app(.footnote)).foregroundStyle(Palette.ink3)
             }
             ForEach(timeline.events.suffix(4)) { e in
                 HStack(spacing: 10) {
                     Circle().fill(Self.color(e.kind)).frame(width: 9, height: 9)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(e.title).font(.subheadline.weight(.medium)).foregroundStyle(Palette.ink)
+                        Text(e.title).font(.app(.subheadline, weight: .medium)).foregroundStyle(Palette.ink)
                         Text("\(Fmt.clock(e.start)) – \(Fmt.clock(e.end))\(e.detail.map { " · \($0)" } ?? "")")
-                            .font(.caption).foregroundStyle(Palette.ink3).monospacedDigit()
+                            .font(.app(.caption)).foregroundStyle(Palette.ink3).monospacedDigit()
                     }
                     Spacer()
                     let state = Self.state(e, isToday: isToday, today: today)
                     Text(state)
-                        .font(.caption2.weight(.medium))
+                        .font(.app(.caption2, weight: .medium))
                         .padding(.horizontal, 8).padding(.vertical, 3)
                         .background((state == "In progress" ? Tone.green : state == "Upcoming" ? Tone.blue : Tone.neutral).background, in: Capsule())
                         .foregroundStyle((state == "In progress" ? Tone.green : state == "Upcoming" ? Tone.blue : Tone.neutral).ink)
@@ -522,7 +522,7 @@ struct TimelineCard: View {
                         if h != 24 { Spacer() }
                     }
                 }
-                .font(.caption2.monospacedDigit())
+                .font(.app(.caption2).monospacedDigit())
                 .foregroundStyle(Palette.ink3)
             }
             .accessibilityElement(children: .ignore)
@@ -540,9 +540,9 @@ struct InsightsCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Recent insights").font(.headline).foregroundStyle(Palette.ink)
+            Text("Recent insights").font(.app(.headline)).foregroundStyle(Palette.ink)
             if insights.isEmpty {
-                Text("Insights appear after a week or two of data.").font(.footnote).foregroundStyle(Palette.ink3)
+                Text("Insights appear after a week or two of data.").font(.app(.footnote)).foregroundStyle(Palette.ink3)
             }
             ForEach(insights) { insight in
                 let (symbol, tone) = Self.style(insight.icon)
@@ -556,8 +556,8 @@ struct InsightsCard: View {
                             .frame(width: 34, height: 34)
                             .background(tone.background, in: Circle())
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(insight.text).font(.subheadline).foregroundStyle(Palette.ink).multilineTextAlignment(.leading)
-                            Text(Fmt.relativeDay(insight.date, today: today)).font(.caption).foregroundStyle(Palette.ink3)
+                            Text(insight.text).font(.app(.subheadline)).foregroundStyle(Palette.ink).multilineTextAlignment(.leading)
+                            Text(Fmt.relativeDay(insight.date, today: today)).font(.app(.caption)).foregroundStyle(Palette.ink3)
                         }
                         Spacer(minLength: 0)
                         Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(Palette.ink3)

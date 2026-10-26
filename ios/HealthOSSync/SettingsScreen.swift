@@ -132,12 +132,12 @@ private struct SyncSection: View {
             // The token sends to one account (IngestTokenOwner): say why nothing goes up.
             if dashboard.ingestOwner.paused {
                 Label("Signed out. This iPhone's Health data isn't sent until someone signs in.", systemImage: "pause.circle")
-                    .font(.footnote)
+                    .font(.app(.footnote))
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier("syncPaused")
             } else if dashboard.ingestOwner.setUpAgain, model.token.isEmpty {
                 Label("This iPhone's token may belong to another account, so it was removed and nothing more goes there. Set this iPhone up again for your account in Integrations on the dashboard (Integrations → iPhone app), then paste the new token below.", systemImage: "exclamationmark.triangle")
-                    .font(.footnote)
+                    .font(.app(.footnote))
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier("setUpAgain")
             }
@@ -145,7 +145,7 @@ private struct SyncSection: View {
                 Task { await model.syncAll(force: true) }
             } label: {
                 HStack {
-                    Text("Sync now").bold()
+                    Text("Sync now").font(.app(.body, weight: .bold))
                     Spacer()
                     if model.syncingSources { ProgressView() }
                 }
@@ -153,12 +153,12 @@ private struct SyncSection: View {
             .disabled(model.syncingSources || !model.serverValid)
             .accessibilityIdentifier("syncNow")
             if model.syncingSources, !model.progress.isEmpty {
-                Text(model.progress).font(.footnote).foregroundStyle(.secondary)
+                Text(model.progress).font(.app(.footnote)).foregroundStyle(.secondary)
             }
             LastSyncRows(status: model.sources, report: model.last)
             if model.backfillLeft > 0 {
                 Label("Sending older history: \(model.backfillLeft) day\(model.backfillLeft == 1 ? "" : "s") left. Continues while the app is open.", systemImage: "clock.arrow.circlepath")
-                    .font(.footnote).foregroundStyle(.secondary)
+                    .font(.app(.footnote)).foregroundStyle(.secondary)
             }
             SecureField("Ingest token", text: $model.token)
                 .textInputAutocapitalization(.never)
@@ -186,9 +186,9 @@ private struct LastSyncRows: View {
             }
             Label(status.summary, systemImage: status.ok ? "checkmark.circle" : "exclamationmark.triangle")
                 .foregroundStyle(status.ok ? Color.secondary : Color.red)
-                .font(.footnote)
+                .font(.app(.footnote))
                 .accessibilityIdentifier("lastResult")
-            ForEach(status.notes, id: \.self) { Text($0).font(.footnote).foregroundStyle(.secondary) }
+            ForEach(status.notes, id: \.self) { Text($0).font(.app(.footnote)).foregroundStyle(.secondary) }
         } else if let report {
             // Before the first combined sync this launch: the last Apple Health push (possibly from the background).
             LabeledContent("Apple Health") {
@@ -196,7 +196,7 @@ private struct LastSyncRows: View {
             }
             Label(report.message, systemImage: report.ok ? "checkmark.circle" : "exclamationmark.triangle")
                 .foregroundStyle(report.ok ? Color.secondary : Color.red)
-                .font(.footnote)
+                .font(.app(.footnote))
         } else {
             LabeledContent("Last sync", value: "Never")
         }
@@ -250,7 +250,7 @@ private struct NutritionTargetsSection: View {
                     }
                 }
             }
-            if let error { Text(error).font(.footnote).foregroundStyle(.red) }
+            if let error { Text(error).font(.app(.footnote)).foregroundStyle(.red) }
         } header: {
             Text("Nutrition targets")
         } footer: {
@@ -347,12 +347,12 @@ struct CardsScreen: View {
         Form {
             Section {
                 Text("Choose the cards you see on Home, Sleep\(nutrition ? ", Body and Nutrition" : " and Body"). Hiding one only changes the page; your data stays, and an unhidden card comes back as it was.\(optional ? " Optional cards stay off until you turn them on." : "") The web dashboard follows the same choices.")
-                    .font(.footnote)
+                    .font(.app(.footnote))
                     .foregroundStyle(.secondary)
                     .listRowBackground(Color.clear)
                     .listRowInsets(EdgeInsets(top: 4, leading: 4, bottom: 4, trailing: 4))
                 if let error {
-                    Text(error).font(.footnote).foregroundStyle(.red)
+                    Text(error).font(.app(.footnote)).foregroundStyle(.red)
                 }
             }
             // A server older than optional cards gets only the cards it knows: it refuses the newer ones.
@@ -363,7 +363,7 @@ struct CardsScreen: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(Cards.label(card, optionalCards: optional))
                                 Text(note(for: card, optional: optional && card.optional))
-                                    .font(.footnote)
+                                    .font(.app(.footnote))
                                     .foregroundStyle(.secondary)
                             }
                         }
@@ -432,7 +432,7 @@ private struct FamilySection: View {
             Toggle(isOn: Binding(get: { sharing }, set: { setSharing($0) })) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Share with family")
-                    Text(sharingNote(on: sharing)).font(.footnote).foregroundStyle(.secondary)
+                    Text(sharingNote(on: sharing)).font(.app(.footnote)).foregroundStyle(.secondary)
                 }
             }
             .disabled(pendingSharing != nil)
@@ -442,13 +442,13 @@ private struct FamilySection: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Show my cycle phase to family")
                         Text("One word on your Family board tile (period, follicular or luteal), never dates or logs. Hidden as your next period approaches. Members will know you track your cycle, and looking day after day shows roughly when your period starts.")
-                            .font(.footnote).foregroundStyle(.secondary)
+                            .font(.app(.footnote)).foregroundStyle(.secondary)
                     }
                 }
                 .disabled(pendingPhase != nil || pendingSharing != nil)
                 .accessibilityIdentifier("shareCyclePhase")
             }
-            if let error { Text(error).font(.footnote).foregroundStyle(.red) }
+            if let error { Text(error).font(.app(.footnote)).foregroundStyle(.red) }
         } header: {
             Text("Family")
         } footer: {
@@ -581,7 +581,7 @@ private struct PhotoSection: View {
                 Spacer()
                 if processing { ProgressView() }
             }
-            if let error { Text(error).font(.footnote).foregroundStyle(.red) }
+            if let error { Text(error).font(.app(.footnote)).foregroundStyle(.red) }
         } header: {
             Text("Profile photo")
         } footer: {
@@ -641,7 +641,7 @@ private struct PhotoPreview: View {
                     .frame(width: 72, height: 72)
                     .clipShape(Circle())
                     .accessibilityLabel("Your avatar")
-                if let error { Text(error).font(.footnote).foregroundStyle(.red).multilineTextAlignment(.center) }
+                if let error { Text(error).font(.app(.footnote)).foregroundStyle(.red).multilineTextAlignment(.center) }
                 Spacer()
             }
             .padding()

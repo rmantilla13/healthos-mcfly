@@ -171,7 +171,7 @@ struct NutritionTrends: View {
     private func header(_ tabs: [NutritionTab]) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("From the food app you log in, through Apple Health, or logged here. Only you can see it.")
-                .font(.footnote).foregroundStyle(Palette.ink3)
+                .font(.app(.footnote)).foregroundStyle(Palette.ink3)
             if tabs.count > 1 {
                 Picker("Nutrition", selection: $tab) {
                     ForEach(tabs) { Text($0.rawValue).tag($0.rawValue) }
@@ -201,7 +201,7 @@ private struct NutritionLoader<Content: View>: View {
                 ContentUnavailableView("Couldn't load your nutrition", systemImage: "fork.knife", description: Text(error))
             } else if loaded {
                 Text("Nutrition isn't available from this server yet.")
-                    .font(.footnote).foregroundStyle(Palette.ink3)
+                    .font(.app(.footnote)).foregroundStyle(Palette.ink3)
                     .card()
             } else {
                 ProgressView().frame(maxWidth: .infinity, minHeight: 200)
@@ -298,9 +298,9 @@ private struct FoodCardHead: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text(title).font(.subheadline.weight(.medium)).foregroundStyle(Palette.ink2)
+            Text(title).font(.app(.subheadline, weight: .medium)).foregroundStyle(Palette.ink2)
             Spacer(minLength: 4)
-            if let day { Text(day).font(.caption).foregroundStyle(Palette.ink3).lineLimit(1) }
+            if let day { Text(day).font(.app(.caption)).foregroundStyle(Palette.ink3).lineLimit(1) }
         }
     }
 }
@@ -315,7 +315,7 @@ private struct FoodCardFoot: View {
             Text(text)
             if let target { Text("Your target \(target)") }
         }
-        .font(.caption2).foregroundStyle(Palette.ink3)
+        .font(.app(.caption2)).foregroundStyle(Palette.ink3)
     }
 }
 
@@ -331,7 +331,7 @@ private struct FoodEnergyCard: View {
             if let last {
                 BigValue(value: Fmt.number(last.value), unit: "kcal", size: 26)
             } else {
-                Text("No calories logged this week.").font(.caption).foregroundStyle(Palette.ink3)
+                Text("No calories logged this week.").font(.app(.caption)).foregroundStyle(Palette.ink3)
             }
             Spacer(minLength: 0)
             FoodDayBars(days: week, target: target, label: "Energy, last 7 days") { "\(Fmt.number($0)) kcal" }
@@ -355,11 +355,11 @@ private struct FoodProteinCard: View {
             if let last {
                 BigValue(value: Fmt.number(last.value), unit: "grams", size: 26)
             } else {
-                Text("No protein logged this week.").font(.caption).foregroundStyle(Palette.ink3)
+                Text("No protein logged this week.").font(.app(.caption)).foregroundStyle(Palette.ink3)
             }
             if let delta = FoodMath.change(week, before) {
                 Text(FoodMath.changeText(delta))
-                    .font(.caption2.weight(.medium))
+                    .font(.app(.caption2, weight: .medium))
                     .padding(.horizontal, 8).padding(.vertical, 3)
                     .background(Palette.surface2, in: Capsule())
                     .foregroundStyle(Palette.ink2)
@@ -386,9 +386,9 @@ private struct FoodWaterCard: View {
             FoodCardHead(title: "Water", day: last.map { Fmt.relativeDay($0.date, today: today) })
             if let last {
                 BigValue(value: FoodMath.glassesText(last.value), unit: FoodMath.glasses(last.value) == 1 ? "glass" : "glasses", size: 26)
-                Text(FoodMath.water(last.value, units: units)).font(.caption).foregroundStyle(Palette.ink3)
+                Text(FoodMath.water(last.value, units: units)).font(.app(.caption)).foregroundStyle(Palette.ink3)
             } else {
-                Text("No water logged this week.").font(.caption).foregroundStyle(Palette.ink3)
+                Text("No water logged this week.").font(.app(.caption)).foregroundStyle(Palette.ink3)
             }
             Spacer(minLength: 0)
             GlassBars(days: week, target: target, label: "Water in glasses, last 7 days") { "\(FoodMath.glassesText($0)) glasses, \(FoodMath.water($0, units: units))" }
@@ -411,7 +411,7 @@ private struct FoodLoggedCard: View {
         VStack(alignment: .leading, spacing: 8) {
             FoodCardHead(title: "Days logged", day: nil)
             Text("\(logged.count) of \(FoodMath.days(dates.count))")
-                .font(.system(size: compact ? 20 : 22, weight: .semibold, design: .rounded)).monospacedDigit()
+                .font(.app(fixedSize: compact ? 20 : 22, weight: .semibold)).monospacedDigit()
                 .foregroundStyle(Palette.ink)
             Spacer(minLength: 0)
             FamilyWrap(spacing: 4, rowSpacing: 4) {
@@ -428,7 +428,7 @@ private struct FoodLoggedCard: View {
                 Spacer()
                 Text(Fmt.day(data.end))
             }
-            .font(.caption2).foregroundStyle(Palette.ink3)
+            .font(.app(.caption2)).foregroundStyle(Palette.ink3)
         }
         .frame(maxHeight: .infinity, alignment: .top)
         .card()
@@ -443,10 +443,10 @@ private struct FoodNoAmountsCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(latest.map { Fmt.relativeDay($0.date, today: today) } ?? "Nothing logged lately").font(.headline).foregroundStyle(Palette.ink)
+            Text(latest.map { Fmt.relativeDay($0.date, today: today) } ?? "Nothing logged lately").font(.app(.headline)).foregroundStyle(Palette.ink)
             Text((latest.map { "You logged food \($0.app == "healthOS" ? "here" : "in \($0.app)"). " } ?? "")
                 + "You chose to see no amounts, so this shows only the days you logged\(logging ? ", and the Log tab what you logged" : ""). Change it on the web, in Settings.")
-                .font(.footnote).foregroundStyle(Palette.ink2)
+                .font(.app(.footnote)).foregroundStyle(Palette.ink2)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .card()
@@ -456,9 +456,9 @@ private struct FoodNoAmountsCard: View {
 private struct FoodNothingLoggedCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Nothing logged yet").font(.headline).foregroundStyle(Palette.ink)
+            Text("Nothing logged yet").font(.app(.headline)).foregroundStyle(Palette.ink)
             Text("healthOS reads what your food app writes to Apple Health: MyFitnessPal, Cronometer, Lose It!, MacroFactor and Yazio all can. Turn on its Apple Health connection in that app, and allow healthOS to read nutrition when Health asks.")
-                .font(.footnote).foregroundStyle(Palette.ink2)
+                .font(.app(.footnote)).foregroundStyle(Palette.ink2)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .card()
@@ -488,12 +488,12 @@ private struct MacroBalanceCard: View {
         let parts = FoodMath.parts(day)
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .firstTextBaseline) {
-                Text("Macro balance").font(.headline).foregroundStyle(Palette.ink)
+                Text("Macro balance").font(.app(.headline)).foregroundStyle(Palette.ink)
                 Spacer()
-                Text("\(Fmt.relativeDay(day.date, today: today)) · \(day.app)").font(.caption).foregroundStyle(Palette.ink3).lineLimit(1)
+                Text("\(Fmt.relativeDay(day.date, today: today)) · \(day.app)").font(.app(.caption)).foregroundStyle(Palette.ink3).lineLimit(1)
             }
             if parts.isEmpty {
-                Text("No protein, carbs or fat logged that day.").font(.footnote).foregroundStyle(Palette.ink3)
+                Text("No protein, carbs or fat logged that day.").font(.app(.footnote)).foregroundStyle(Palette.ink3)
             } else {
                 HStack(spacing: 18) {
                     MacroDonut(parts: parts, energy: mode == .all ? day.values["energy_kcal"] : nil)
@@ -502,10 +502,10 @@ private struct MacroBalanceCard: View {
                         ForEach(parts) { p in
                             HStack(spacing: 8) {
                                 Circle().fill(MacroColor.of(p.key)).frame(width: 8, height: 8)
-                                Text(p.label).font(.subheadline).foregroundStyle(Palette.ink2)
+                                Text(p.label).font(.app(.subheadline)).foregroundStyle(Palette.ink2)
                                 Spacer(minLength: 4)
-                                Text("\(Fmt.number(p.grams)) g").font(.subheadline.weight(.semibold)).monospacedDigit().foregroundStyle(Palette.ink)
-                                Text("\(p.percent)%").font(.caption).monospacedDigit().foregroundStyle(Palette.ink3).frame(minWidth: 30, alignment: .trailing)
+                                Text("\(Fmt.number(p.grams)) g").font(.app(.subheadline, weight: .semibold)).monospacedDigit().foregroundStyle(Palette.ink)
+                                Text("\(p.percent)%").font(.app(.caption)).monospacedDigit().foregroundStyle(Palette.ink3).frame(minWidth: 30, alignment: .trailing)
                             }
                             .accessibilityElement(children: .combine)
                         }
@@ -514,7 +514,7 @@ private struct MacroBalanceCard: View {
             }
             MacroFooter(day: day, caffeine: caffeine)
             if !day.otherApps.isEmpty {
-                Text("Also logged in \(day.otherApps.joined(separator: ", ")), not added in.").font(.caption).foregroundStyle(Palette.ink3)
+                Text("Also logged in \(day.otherApps.joined(separator: ", ")), not added in.").font(.app(.caption)).foregroundStyle(Palette.ink3)
             }
         }
         .card()
@@ -535,10 +535,10 @@ private struct MacroDonut: View {
             .chartLegend(.hidden)
             VStack(spacing: 0) {
                 if let energy {
-                    Text(Fmt.number(energy)).font(.system(size: 22, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(Palette.ink)
-                    Text("kcal").font(.caption2).foregroundStyle(Palette.ink3)
+                    Text(Fmt.number(energy)).font(.app(fixedSize: 22, weight: .semibold)).monospacedDigit().foregroundStyle(Palette.ink)
+                    Text("kcal").font(.app(.caption2)).foregroundStyle(Palette.ink3)
                 } else {
-                    Text("by weight").font(.caption2).foregroundStyle(Palette.ink3)
+                    Text("by weight").font(.app(.caption2)).foregroundStyle(Palette.ink3)
                 }
             }
         }
@@ -578,8 +578,8 @@ private struct FoodFooterCell: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text(label).font(.caption).foregroundStyle(Palette.ink3)
-            Text(value).font(.subheadline.weight(.medium)).monospacedDigit().foregroundStyle(Palette.ink)
+            Text(label).font(.app(.caption)).foregroundStyle(Palette.ink3)
+            Text(value).font(.app(.subheadline, weight: .medium)).monospacedDigit().foregroundStyle(Palette.ink)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
@@ -591,10 +591,10 @@ private struct FoodInsightsCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Insights").font(.headline).foregroundStyle(Palette.ink)
+            Text("Insights").font(.app(.headline)).foregroundStyle(Palette.ink)
             if insights.isEmpty {
                 Text("Patterns show up here once there are a few weeks of logs to compare: caffeine and that night's sleep, and drinks and the next morning's HRV.")
-                    .font(.footnote).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
+                    .font(.app(.footnote)).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
             } else {
                 ForEach(insights) { p in
                     let (symbol, tone) = InsightsCard.style(p.icon ?? "")
@@ -606,9 +606,9 @@ private struct FoodInsightsCard: View {
                             .background(tone.background, in: Circle())
                             .accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(p.text).font(.subheadline).foregroundStyle(Palette.ink)
+                            Text(p.text).font(.app(.subheadline)).foregroundStyle(Palette.ink)
                             Text(((p.detail ?? "") + " Days that go together, not proof that one causes the other.").trimmingCharacters(in: .whitespaces))
-                                .font(.caption).foregroundStyle(Palette.ink3)
+                                .font(.app(.caption)).foregroundStyle(Palette.ink3)
                         }
                         .fixedSize(horizontal: false, vertical: true)
                     }
@@ -635,7 +635,7 @@ private struct NutritionMacros: View {
                               start: data.start, end: data.end, target: target, format: { FoodMath.amount(n, $0) })
             }
             Text("Days with nothing logged are left out, not counted as zero. When two apps logged the same day, one is shown and the other isn't added in, because food apps often copy each other's entries through Apple Health.")
-                .font(.caption).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
+                .font(.app(.caption)).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
         } else {
             FoodNothingLoggedCard()
         }
@@ -653,16 +653,16 @@ private struct FoodDayCard: View {
         let parts = FoodMath.parts(day)
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text(Fmt.relativeDay(day.date, today: today)).font(.headline).foregroundStyle(Palette.ink)
+                Text(Fmt.relativeDay(day.date, today: today)).font(.app(.headline)).foregroundStyle(Palette.ink)
                 Spacer()
                 Text(day.app)
-                    .font(.caption.weight(.medium))
+                    .font(.app(.caption, weight: .medium))
                     .padding(.horizontal, 8).padding(.vertical, 3)
                     .background(Palette.surface2, in: Capsule())
                     .foregroundStyle(Palette.ink2)
             }
             if mode == .none || shown.isEmpty {
-                Text("You logged food in \(([day.app] + day.otherApps).joined(separator: ", ")).").font(.footnote).foregroundStyle(Palette.ink2)
+                Text("You logged food in \(([day.app] + day.otherApps).joined(separator: ", ")).").font(.app(.footnote)).foregroundStyle(Palette.ink2)
             } else {
                 Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
                     ForEach(Array(stride(from: 0, to: shown.count, by: 2)), id: \.self) { i in
@@ -678,7 +678,7 @@ private struct FoodDayCard: View {
                 }
                 if parts.count == 3 { MacroSplit(parts: parts) }
                 if !day.otherApps.isEmpty {
-                    Text("Also logged in \(day.otherApps.joined(separator: ", ")), not added in.").font(.caption).foregroundStyle(Palette.ink3)
+                    Text("Also logged in \(day.otherApps.joined(separator: ", ")), not added in.").font(.app(.caption)).foregroundStyle(Palette.ink3)
                 }
             }
         }
@@ -709,7 +709,7 @@ private struct MacroSplit: View {
                 }
                 Text("by weight").foregroundStyle(Palette.ink3)
             }
-            .font(.caption).foregroundStyle(Palette.ink2)
+            .font(.app(.caption)).foregroundStyle(Palette.ink2)
         }
         .accessibilityElement()
         .accessibilityLabel("By weight: " + parts.map { "\($0.label.lowercased()) \($0.percent)%" }.joined(separator: ", "))
@@ -725,9 +725,9 @@ private struct NutritionHydration: View {
     var body: some View {
         if data.water.isEmpty && data.caffeine.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
-                Text("No water or caffeine logged").font(.headline).foregroundStyle(Palette.ink)
+                Text("No water or caffeine logged").font(.app(.headline)).foregroundStyle(Palette.ink)
                 Text("Apps that log drinks, like WaterMinder or your food app, write water and caffeine to Apple Health, and they show up here.")
-                    .font(.footnote).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
+                    .font(.app(.footnote)).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
             }
             .card()
         } else {
@@ -757,9 +757,9 @@ private struct FoodChartCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.subheadline.weight(.medium)).foregroundStyle(Palette.ink2)
+            Text(title).font(.app(.subheadline, weight: .medium)).foregroundStyle(Palette.ink2)
             Text(([FoodMath.days(points.count) + " logged", "median line"] + [note].compactMap { $0 }).joined(separator: " · "))
-                .font(.caption).foregroundStyle(Palette.ink3)
+                .font(.app(.caption)).foregroundStyle(Palette.ink3)
             if !points.isEmpty { chart.frame(height: 180).padding(.top, 6) }
         }
         .card()
@@ -793,7 +793,7 @@ private struct FoodChartCard: View {
                     .foregroundStyle(Palette.ink2)
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
                     .annotation(position: .top, alignment: .trailing) {
-                        Text("Your target").font(.caption2).foregroundStyle(Palette.ink2)
+                        Text("Your target").font(.app(.caption2)).foregroundStyle(Palette.ink2)
                             .padding(.horizontal, 4)
                             .background(Palette.surface.opacity(0.9), in: RoundedRectangle(cornerRadius: 4))
                     }
@@ -803,8 +803,8 @@ private struct FoodChartCard: View {
                     .foregroundStyle(Palette.ink3.opacity(0.3))
                     .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
                         VStack(spacing: 1) {
-                            Text(format(picked.value)).font(.caption.weight(.semibold))
-                            Text(Fmt.day(picked.date)).font(.caption2)
+                            Text(format(picked.value)).font(.app(.caption, weight: .semibold))
+                            Text(Fmt.day(picked.date)).font(.app(.caption2))
                         }
                         .padding(.horizontal, 8).padding(.vertical, 4)
                         .background(Palette.surface2, in: RoundedRectangle(cornerRadius: 8))

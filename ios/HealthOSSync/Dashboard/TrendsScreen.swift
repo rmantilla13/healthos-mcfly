@@ -19,7 +19,7 @@ struct TrendsScreen: View {
                         VStack(alignment: .leading, spacing: 14) {
                             TrendsSectionChips(selection: $dashboard.trendsSection, sections: TrendsSection.visible(cycleTracking: dashboard.cycleTrackingOn))
                             HStack {
-                                Text(subtitle).font(.footnote).foregroundStyle(Palette.ink3)
+                                Text(subtitle).font(.app(.footnote)).foregroundStyle(Palette.ink3)
                                 Spacer()
                                 // The cycle view has its own span.
                                 if dashboard.trendsSection != .cycle {
@@ -76,7 +76,7 @@ private struct TrendsSectionChips: View {
                         let on = s == selection
                         Button { selection = s } label: {
                             Text(s.rawValue)
-                                .font(.subheadline.weight(.medium))
+                                .font(.app(.subheadline, weight: .medium))
                                 .padding(.horizontal, 16)
                                 .padding(.vertical, 8)
                                 .foregroundStyle(on ? Palette.surface : Palette.ink2)
@@ -225,11 +225,11 @@ private struct SleepTrends: View {
         var body: some View {
             let bars = SleepTrends.stages.flatMap { s in (trends[s.key] ?? []).weekly(days: days).map { Bar(date: $0.date, stage: s.label, hours: $0.value) } }
             VStack(alignment: .leading, spacing: 10) {
-                Text(days > 90 ? "Sleep stages, weekly average" : "Sleep stages").font(.subheadline.weight(.medium)).foregroundStyle(Palette.ink2)
-                Text(average.map(Fmt.hoursMinutes) ?? "—").font(.title2.weight(.semibold)).monospacedDigit()
-                Text("average time asleep").font(.caption).foregroundStyle(Palette.ink3)
+                Text(days > 90 ? "Sleep stages, weekly average" : "Sleep stages").font(.app(.subheadline, weight: .medium)).foregroundStyle(Palette.ink2)
+                Text(average.map(Fmt.hoursMinutes) ?? "—").font(.app(.title2, weight: .semibold)).monospacedDigit()
+                Text("average time asleep").font(.app(.caption)).foregroundStyle(Palette.ink3)
                 if bars.isEmpty {
-                    Text("No sleep stages in this range.").font(.footnote).foregroundStyle(Palette.ink3)
+                    Text("No sleep stages in this range.").font(.app(.footnote)).foregroundStyle(Palette.ink3)
                 } else {
                     Chart(bars) { b in
                         BarMark(x: .value("Night", Fmt.chartDate(b.date), unit: days > 90 ? .weekOfYear : .day), y: .value("Hours", b.hours))
@@ -286,9 +286,9 @@ private struct ActivityTrends: View {
         var body: some View {
             let bars = points.weekly(days: days)
             VStack(alignment: .leading, spacing: 10) {
-                Text(days > 90 ? "Steps, weekly daily average" : "Steps").font(.subheadline.weight(.medium)).foregroundStyle(Palette.ink2)
-                Text(points.average.map { "\(Fmt.number($0)) / day" } ?? "—").font(.title2.weight(.semibold)).monospacedDigit()
-                Text("goal \(Fmt.number(goal))").font(.caption).foregroundStyle(Palette.ink3)
+                Text(days > 90 ? "Steps, weekly daily average" : "Steps").font(.app(.subheadline, weight: .medium)).foregroundStyle(Palette.ink2)
+                Text(points.average.map { "\(Fmt.number($0)) / day" } ?? "—").font(.app(.title2, weight: .semibold)).monospacedDigit()
+                Text("goal \(Fmt.number(goal))").font(.app(.caption)).foregroundStyle(Palette.ink3)
                 if !bars.isEmpty {
                     Chart {
                         ForEach(bars) { p in
@@ -299,7 +299,7 @@ private struct ActivityTrends: View {
                             .foregroundStyle(Palette.good)
                             .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
                             .annotation(position: .top, alignment: .trailing) {
-                                Text("Goal \(Fmt.compact(goal))").font(.caption2).foregroundStyle(Palette.goodText)
+                                Text("Goal \(Fmt.compact(goal))").font(.app(.caption2)).foregroundStyle(Palette.goodText)
                             }
                     }
                     .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { v in
@@ -323,12 +323,12 @@ private struct WorkoutsCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Workouts").font(.headline).foregroundStyle(Palette.ink)
+                Text("Workouts").font(.app(.headline)).foregroundStyle(Palette.ink)
                 Spacer()
-                if let workouts { Text("\(workouts.count) in this range").font(.caption).foregroundStyle(Palette.ink3) }
+                if let workouts { Text("\(workouts.count) in this range").font(.app(.caption)).foregroundStyle(Palette.ink3) }
             }
             if let workouts {
-                if workouts.isEmpty { Text("No workouts in this range.").font(.footnote).foregroundStyle(Palette.ink3) }
+                if workouts.isEmpty { Text("No workouts in this range.").font(.app(.footnote)).foregroundStyle(Palette.ink3) }
                 ForEach(workouts.prefix(60)) { w in
                     WorkoutListRow(workout: w, units: dashboard.units)
                     if w.id != workouts.prefix(60).last?.id { Divider().overlay(Palette.border) }
@@ -355,12 +355,12 @@ private struct WorkoutListRow: View {
                 .background(Tone.peach.background, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
             VStack(alignment: .leading, spacing: 3) {
                 HStack {
-                    Text(workout.sport).font(.subheadline.weight(.medium)).foregroundStyle(Palette.ink)
+                    Text(workout.sport).font(.app(.subheadline, weight: .medium)).foregroundStyle(Palette.ink)
                     Spacer()
-                    Text(Fmt.day(workout.date, "EEEMMMd")).font(.caption).foregroundStyle(Palette.ink3)
+                    Text(Fmt.day(workout.date, "EEEMMMd")).font(.app(.caption)).foregroundStyle(Palette.ink3)
                 }
-                Text(details).font(.caption).foregroundStyle(Palette.ink2).monospacedDigit()
-                Text(source).font(.caption2).foregroundStyle(Palette.ink3)
+                Text(details).font(.app(.caption)).foregroundStyle(Palette.ink2).monospacedDigit()
+                Text(source).font(.app(.caption2)).foregroundStyle(Palette.ink3)
             }
         }
         .accessibilityElement(children: .combine)
@@ -449,9 +449,9 @@ struct TrendCard: View {
         let last = points.last
         let avg = points.average
         VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.subheadline.weight(.medium)).foregroundStyle(Palette.ink2)
-            Text(last.map { format($0.value) } ?? "—").font(.title2.weight(.semibold)).foregroundStyle(Palette.ink).monospacedDigit()
-            Text(noteText(last: last, avg: avg)).font(.caption).foregroundStyle(Palette.ink3)
+            Text(title).font(.app(.subheadline, weight: .medium)).foregroundStyle(Palette.ink2)
+            Text(last.map { format($0.value) } ?? "—").font(.app(.title2, weight: .semibold)).foregroundStyle(Palette.ink).monospacedDigit()
+            Text(noteText(last: last, avg: avg)).font(.app(.caption)).foregroundStyle(Palette.ink3)
             if !points.isEmpty { chart.frame(height: 150).padding(.top, 6) }
         }
         .card()
@@ -503,8 +503,8 @@ struct TrendCard: View {
                     .foregroundStyle(Palette.ink3.opacity(0.5))
                     .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
                         VStack(spacing: 1) {
-                            Text(format(picked.value)).font(.caption.weight(.semibold))
-                            Text(Fmt.day(picked.date)).font(.caption2)
+                            Text(format(picked.value)).font(.app(.caption, weight: .semibold))
+                            Text(Fmt.day(picked.date)).font(.app(.caption2))
                         }
                         .padding(.horizontal, 8).padding(.vertical, 4)
                         .background(Palette.surface2, in: RoundedRectangle(cornerRadius: 8))

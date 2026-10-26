@@ -34,12 +34,12 @@ struct NutritionScreen: View {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 14) {
                             Text("From the food app you log in, through Apple Health. Only you can see it.")
-                                .font(.footnote).foregroundStyle(Palette.ink3)
+                                .font(.app(.footnote)).foregroundStyle(Palette.ink3)
                             if dashboard.nutritionAvailable {
                                 NutritionOptIn { withAnimation { proxy.scrollTo(NutritionOptIn.choicesID, anchor: .bottom) } }
                             } else {
                                 Text("This healthOS server doesn't have Nutrition yet.")
-                                    .font(.footnote).foregroundStyle(Palette.ink2)
+                                    .font(.app(.footnote)).foregroundStyle(Palette.ink2)
                                     .card()
                             }
                         }
@@ -92,12 +92,12 @@ private struct NutritionOptIn: View {
                     .frame(width: 40, height: 40)
                     .background(Tone.green.background, in: Circle())
                     .accessibilityHidden(true)
-                Text("Nutrition is off").font(.title3.weight(.semibold)).foregroundStyle(Palette.ink)
+                Text("Nutrition is off").font(.app(.title3, weight: .semibold)).foregroundStyle(Palette.ink)
                 Text("Reads what you log in a food app (MyFitnessPal, Cronometer, Lose It!, MacroFactor, Yazio) from Apple Health, as daily totals. Only you can see it: never your family, never the admin screens. Ask McFly can read it while this is on, only as much as you choose to see. healthOS never suggests a target.")
-                    .font(.subheadline).foregroundStyle(Palette.ink2)
+                    .font(.app(.subheadline)).foregroundStyle(Palette.ink2)
                     .fixedSize(horizontal: false, vertical: true)
                 Text("While this is off, healthOS doesn't read or keep your food logs.")
-                    .font(.footnote).foregroundStyle(Palette.ink3)
+                    .font(.app(.footnote)).foregroundStyle(Palette.ink3)
                     .fixedSize(horizontal: false, vertical: true)
                 if !choosing {
                     Button("Turn on Nutrition") {
@@ -113,14 +113,14 @@ private struct NutritionOptIn: View {
             if choosing {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("First, choose what you want to see. You can change it any time.")
-                        .font(.subheadline.weight(.medium)).foregroundStyle(Palette.ink)
+                        .font(.app(.subheadline, weight: .medium)).foregroundStyle(Palette.ink)
                         .fixedSize(horizontal: false, vertical: true)
                     ForEach(NutritionChoice.all) { choice in
                         Button { turnOn(choice.mode) } label: {
                             HStack(alignment: .top, spacing: 10) {
                                 VStack(alignment: .leading, spacing: 3) {
-                                    Text(choice.title).font(.subheadline.weight(.semibold)).foregroundStyle(Palette.ink)
-                                    Text(choice.text).font(.footnote).foregroundStyle(Palette.ink2)
+                                    Text(choice.title).font(.app(.subheadline, weight: .semibold)).foregroundStyle(Palette.ink)
+                                    Text(choice.text).font(.app(.footnote)).foregroundStyle(Palette.ink2)
                                         .fixedSize(horizontal: false, vertical: true)
                                 }
                                 Spacer(minLength: 0)
@@ -136,13 +136,13 @@ private struct NutritionOptIn: View {
                         .accessibilityIdentifier("nutritionChoice-\(choice.mode.rawValue)")
                     }
                     if let error {
-                        Text(error).font(.footnote).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+                        Text(error).font(.app(.footnote)).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
                     }
                     Button("Not now") {
                         choosing = false
                         error = nil
                     }
-                    .font(.subheadline)
+                    .font(.app(.subheadline))
                     .disabled(saving != nil)
                 }
                 .card()

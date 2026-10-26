@@ -32,7 +32,7 @@ struct FoodLogTab<Header: View>: View {
             if let log {
                 content(log)
             } else if let error {
-                Section { Text("Couldn't load your food log: \(error)").font(.footnote).foregroundStyle(Palette.ink2) }
+                Section { Text("Couldn't load your food log: \(error)").font(.app(.footnote)).foregroundStyle(Palette.ink2) }
             } else {
                 Section { ProgressView().frame(maxWidth: .infinity) }.listRowBackground(Color.clear)
             }
@@ -84,7 +84,7 @@ struct FoodLogTab<Header: View>: View {
             .listRowBackground(Palette.surface)
             Button { adding = true } label: {
                 Label("Add food or drink", systemImage: "plus")
-                    .font(.subheadline.weight(.semibold))
+                    .font(.app(.subheadline, weight: .semibold))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 4)
             }
@@ -94,15 +94,15 @@ struct FoodLogTab<Header: View>: View {
             if !log.drafts.isEmpty {
                 Button { reviewing = true } label: {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("McFly's estimate to check").font(.subheadline.weight(.semibold)).foregroundStyle(Palette.ink)
-                        Text("For \(log.drafts[0].time). Nothing counts until you save it.").font(.caption).foregroundStyle(Palette.ink3)
+                        Text("McFly's estimate to check").font(.app(.subheadline, weight: .semibold)).foregroundStyle(Palette.ink)
+                        Text("For \(log.drafts[0].time). Nothing counts until you save it.").font(.app(.caption)).foregroundStyle(Palette.ink3)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .listRowBackground(Tone.blue.background)
             }
             if entries.isEmpty {
-                Text("Nothing logged in healthOS on this day.").font(.footnote).foregroundStyle(Palette.ink3)
+                Text("Nothing logged in healthOS on this day.").font(.app(.footnote)).foregroundStyle(Palette.ink3)
                     .listRowBackground(Palette.surface)
             }
             ForEach(entries) { e in
@@ -116,7 +116,7 @@ struct FoodLogTab<Header: View>: View {
                     .accessibilityHint("Opens it to edit. Swipe to delete.")
             }
             if let rowError {
-                Text(rowError).font(.footnote).foregroundStyle(.red).listRowBackground(Palette.surface)
+                Text(rowError).font(.app(.footnote)).foregroundStyle(.red).listRowBackground(Palette.surface)
             }
         }
         if !entries.isEmpty {
@@ -124,14 +124,14 @@ struct FoodLogTab<Header: View>: View {
                 let sum = FoodText.amounts(FoodText.addUp(entries), units: units)
                 if log.mode != .none, !sum.isEmpty {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Logged here").font(.caption).foregroundStyle(Palette.ink3)
-                        Text(sum).font(.footnote).foregroundStyle(Palette.ink)
+                        Text("Logged here").font(.app(.caption)).foregroundStyle(Palette.ink3)
+                        Text(sum).font(.app(.footnote)).foregroundStyle(Palette.ink)
                     }
                     .accessibilityElement(children: .combine)
                 }
                 if let app = counted?.days.first(where: { $0.date == selected })?.app, app != "healthOS" {
                     Text("This day's totals on the other tabs come from \(app), which logged more. Two apps are never added together, because apps copy each other's food through Apple Health. You can choose which app counts on the web, on the Macros tab.")
-                        .font(.caption).foregroundStyle(Palette.ink3)
+                        .font(.app(.caption)).foregroundStyle(Palette.ink3)
                 }
             }
             .listRowBackground(Palette.surface)
@@ -140,7 +140,7 @@ struct FoodLogTab<Header: View>: View {
             Text(log.mode == .none
                  ? "You chose to see no amounts, so what you log here isn't saved to Apple Health."
                  : "Food you log on this iPhone is saved to Apple Health too, with only the amounts you see. healthOS doesn't count it twice.")
-                .font(.caption).foregroundStyle(Palette.ink3)
+                .font(.app(.caption)).foregroundStyle(Palette.ink3)
         }
         .listRowBackground(Color.clear)
     }
@@ -183,8 +183,8 @@ private struct FoodDayHeader: View {
                 .accessibilityLabel("Day before")
             Spacer()
             VStack(spacing: 1) {
-                Text(Fmt.relativeDay(day, today: today)).font(.headline).foregroundStyle(Palette.ink)
-                Text(Fmt.day(day, "EEEEMMMMd")).font(.caption).foregroundStyle(Palette.ink3)
+                Text(Fmt.relativeDay(day, today: today)).font(.app(.headline)).foregroundStyle(Palette.ink)
+                Text(Fmt.day(day, "EEEEMMMMd")).font(.app(.caption)).foregroundStyle(Palette.ink3)
             }
             Spacer()
             Button { step(1) } label: { Image(systemName: "chevron.right").frame(width: 36, height: 36) }
@@ -202,12 +202,12 @@ private struct FoodEntryRow: View {
     var body: some View {
         let line = FoodText.amounts(entry.values, units: units)
         HStack(alignment: .top, spacing: 12) {
-            Text(entry.time).font(.caption.monospacedDigit()).foregroundStyle(Palette.ink3).frame(width: 40, alignment: .leading)
+            Text(entry.time).font(.app(.caption).monospacedDigit()).foregroundStyle(Palette.ink3).frame(width: 40, alignment: .leading)
             VStack(alignment: .leading, spacing: 2) {
-                Text(entry.name).font(.subheadline.weight(.semibold)).foregroundStyle(Palette.ink)
+                Text(entry.name).font(.app(.subheadline, weight: .semibold)).foregroundStyle(Palette.ink)
                 let detail = FoodText.detail(entry)
-                if !detail.isEmpty { Text(detail).font(.caption).foregroundStyle(Palette.ink3) }
-                if !line.isEmpty { Text(line).font(.caption).foregroundStyle(Palette.ink2) }
+                if !detail.isEmpty { Text(detail).font(.app(.caption)).foregroundStyle(Palette.ink3) }
+                if !line.isEmpty { Text(line).font(.app(.caption)).foregroundStyle(Palette.ink2) }
             }
             Spacer(minLength: 0)
         }
@@ -270,7 +270,7 @@ private struct FoodEditSheet: View {
                         Text("Amounts are for the whole entry. Changing only how many scales them all.")
                     }
                 }
-                if let error { Section { Text(error).foregroundStyle(.red).font(.footnote) } }
+                if let error { Section { Text(error).foregroundStyle(.red).font(.app(.footnote)) } }
             }
             .navigationTitle("Edit")
             .navigationBarTitleDisplayMode(.inline)
@@ -407,15 +407,15 @@ private struct FoodWaterSection: View {
                 ForEach(FoodWater.choices(units)) { w in
                     // Bordered, so each is its own button rather than the whole row.
                     Button { add(w) } label: {
-                        Text("+ \(w.label)").font(.subheadline).lineLimit(1).minimumScaleFactor(0.8).frame(maxWidth: .infinity)
+                        Text("+ \(w.label)").font(.app(.subheadline)).lineLimit(1).minimumScaleFactor(0.8).frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.bordered)
                     .disabled(busy)
                     .accessibilityIdentifier("water-\(Int(w.ml.rounded()))")
                 }
             }
-            if let added { Text(added).font(.footnote) }
-            if let error { Text(error).font(.footnote).foregroundStyle(.red) }
+            if let added { Text(added).font(.app(.footnote)) }
+            if let error { Text(error).font(.app(.footnote)).foregroundStyle(.red) }
         }
         .task(id: added) {
             guard added != nil else { return }
@@ -457,19 +457,19 @@ private struct FoodResultsList: View {
     let toQuick: () -> Void
 
     var body: some View {
-        ForEach(found.notes, id: \.self) { Text($0).font(.caption).foregroundStyle(Palette.ink3) }
+        ForEach(found.notes, id: \.self) { Text($0).font(.app(.caption)).foregroundStyle(Palette.ink3) }
         if found.results.isEmpty {
             Text(barcode ? "That barcode isn’t in USDA FoodData Central or Open Food Facts." + (quick ? " Quick add from the label instead." : "")
                          : "Nothing found. Try fewer or other words.")
-                .font(.footnote).foregroundStyle(Palette.ink2)
+                .font(.app(.footnote)).foregroundStyle(Palette.ink2)
             if barcode, quick { Button("Quick add from the label", action: toQuick) }
         } else {
             ForEach(found.results) { r in
                 NavigationLink(value: FoodPick(food: r, barcode: barcode)) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(r.name).font(.subheadline.weight(.medium)).foregroundStyle(Palette.ink)
+                        Text(r.name).font(.app(.subheadline, weight: .medium)).foregroundStyle(Palette.ink)
                         Text([r.brand, r.source == "usda" ? "USDA" : "Open Food Facts"].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
-                            .font(.caption).foregroundStyle(Palette.ink3)
+                            .font(.app(.caption)).foregroundStyle(Palette.ink3)
                     }
                 }
             }
@@ -503,7 +503,7 @@ private struct FoodSearchSection: View {
                     .disabled(busy || query.trimmingCharacters(in: .whitespaces).count < 2)
                     .accessibilityIdentifier("foodSearch")
             }
-            if let error { Text(error).font(.footnote).foregroundStyle(.red) }
+            if let error { Text(error).font(.app(.footnote)).foregroundStyle(.red) }
         } footer: {
             Text("Foods from \(usda ? "USDA FoodData Central and " : "")Open Food Facts. healthOS's server sends them your search, never your name.")
         }
@@ -560,7 +560,7 @@ private struct FoodScanSection: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12))
                 .listRowInsets(EdgeInsets())
             } else {
-                Text("Scanning needs the camera. Type the numbers under the barcode instead.").font(.footnote).foregroundStyle(Palette.ink2)
+                Text("Scanning needs the camera. Type the numbers under the barcode instead.").font(.app(.footnote)).foregroundStyle(Palette.ink2)
             }
             HStack {
                 TextField("Barcode", text: $code).keyboardType(.numberPad).accessibilityIdentifier("barcodeField")
@@ -568,7 +568,7 @@ private struct FoodScanSection: View {
                     .disabled(busy || code.filter(\.isNumber).count < 8)
                     .accessibilityIdentifier("barcodeLookUp")
             }
-            if let error { Text(error).font(.footnote).foregroundStyle(.red) }
+            if let error { Text(error).font(.app(.footnote)).foregroundStyle(.red) }
         } footer: {
             Text("Barcodes are looked up in Open Food Facts, then USDA FoodData Central. healthOS's server sends them the code, never your name.")
         }
@@ -644,8 +644,8 @@ private struct FoodPickView: View {
         let preview = q.map { FoodText.amounts(FoodText.scaled(values, by: $0), units: units) } ?? ""
         Form {
             Section {
-                Text(food.name).font(.headline)
-                if let brand = food.brand, !brand.isEmpty { Text(brand).font(.footnote).foregroundStyle(Palette.ink3) }
+                Text(food.name).font(.app(.headline))
+                if let brand = food.brand, !brand.isEmpty { Text(brand).font(.app(.footnote)).foregroundStyle(Palette.ink3) }
             }
             Section {
                 Picker("Portion", selection: $portion) {
@@ -655,10 +655,10 @@ private struct FoodPickView: View {
                     TextField("1", text: $quantity).keyboardType(.decimalPad).multilineTextAlignment(.trailing).frame(maxWidth: 80)
                         .accessibilityIdentifier("pickQuantity")
                 }
-                if !preview.isEmpty { Text(preview).font(.footnote).foregroundStyle(Palette.ink2) }
+                if !preview.isEmpty { Text(preview).font(.app(.footnote)).foregroundStyle(Palette.ink2) }
             }
-            if let error { Section { Text(error).font(.footnote).foregroundStyle(.red) } }
-            if let added { Section { Text("Added \(added).").font(.footnote) } }
+            if let error { Section { Text(error).font(.app(.footnote)).foregroundStyle(.red) } }
+            if let added { Section { Text("Added \(added).").font(.app(.footnote)) } }
             Section {
                 Button(busy ? "Adding…" : "Add") { add(q) }
                     .disabled(busy || q == nil || food.portions.isEmpty)
@@ -722,8 +722,8 @@ private struct FoodEstimateSection: View {
                     Button { camera = true } label: { Label("Take a photo", systemImage: "camera") }
                 }
             }
-            if let note { Text(note).font(.footnote).foregroundStyle(Palette.ink2) }
-            if let error { Text(error).font(.footnote).foregroundStyle(.red) }
+            if let note { Text(note).font(.app(.footnote)).foregroundStyle(Palette.ink2) }
+            if let error { Text(error).font(.app(.footnote)).foregroundStyle(.red) }
             Button(busy ? "Estimating…" : "Estimate", action: estimate)
                 .disabled(busy || (description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && jpeg == nil))
                 .accessibilityIdentifier("estimate")
@@ -834,8 +834,8 @@ private struct FoodQuickSection: View {
                         .accessibilityIdentifier("quick-\(f.key)")
                 }
             }
-            if let error { Text(error).font(.footnote).foregroundStyle(.red) }
-            if let added { Text("Added \(added).").font(.footnote) }
+            if let error { Text(error).font(.app(.footnote)).foregroundStyle(.red) }
+            if let added { Text("Added \(added).").font(.app(.footnote)) }
             Button(busy ? "Adding…" : "Add") { add(fields) }.disabled(busy).accessibilityIdentifier("quickAdd")
         }
     }
@@ -902,8 +902,8 @@ private struct FoodReviewSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    Text("For \(drafts.first?.time ?? ""). Check it, then save. Nothing counts until you do.").font(.footnote)
-                    if !note.isEmpty { Text(note).font(.footnote).foregroundStyle(Palette.ink2) }
+                    Text("For \(drafts.first?.time ?? ""). Check it, then save. Nothing counts until you do.").font(.app(.footnote))
+                    if !note.isEmpty { Text(note).font(.app(.footnote)).foregroundStyle(Palette.ink2) }
                 }
                 ForEach($kept) { $k in
                     if let d = byID[k.id] {
@@ -914,13 +914,13 @@ private struct FoodReviewSheet: View {
                             }
                             if mode != .none, let q = foodQuantity(k.quantity) {
                                 let line = FoodText.amounts(FoodText.scaled(d.values, by: q / d.quantity), units: units)
-                                if !line.isEmpty { Text(line).font(.footnote).foregroundStyle(Palette.ink2) }
+                                if !line.isEmpty { Text(line).font(.app(.footnote)).foregroundStyle(Palette.ink2) }
                             }
                             Button("Leave out", role: .destructive) { kept.removeAll { $0.id == k.id } }
                         }
                     }
                 }
-                if let error { Section { Text(error).font(.footnote).foregroundStyle(.red) } }
+                if let error { Section { Text(error).font(.app(.footnote)).foregroundStyle(.red) } }
                 Section {
                     Button(busy ? "Saving…" : kept.count == 1 ? "Save 1 item" : "Save \(kept.count) items") { save(byID) }
                         .disabled(busy || kept.isEmpty)

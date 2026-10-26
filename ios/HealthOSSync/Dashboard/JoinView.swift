@@ -66,7 +66,7 @@ struct JoinView: View {
                 Section {
                     Button(action: submit) {
                         HStack {
-                            Text("Create account").bold()
+                            Text("Create account").font(.app(.body, weight: .bold))
                             Spacer()
                             if busy { ProgressView() }
                         }

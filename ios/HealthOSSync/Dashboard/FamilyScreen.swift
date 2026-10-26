@@ -93,7 +93,7 @@ private struct FamilyNote: View {
 
     var body: some View {
         Text(text)
-            .font(.callout)
+            .font(.app(.callout))
             .foregroundStyle(Palette.ink3)
             .multilineTextAlignment(.center)
             .padding(32)
@@ -111,9 +111,9 @@ struct FamilyBoardView: View {
         let others = board.members.filter { !$0.isYou }
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Your family, today.").font(.title.weight(.semibold)).foregroundStyle(Palette.ink)
+                Text("Your family, today.").font(.app(.title, weight: .semibold)).foregroundStyle(Palette.ink)
                 Text(FamilyText.groupLine(board.members) ?? "Each person against their own last 30 days.")
-                    .font(.subheadline)
+                    .font(.app(.subheadline))
                     .foregroundStyle(Palette.ink2)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -133,9 +133,9 @@ private struct FamilyEmpty: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("No one else is sharing yet.").font(.callout).foregroundStyle(Palette.ink2)
+            Text("No one else is sharing yet.").font(.app(.callout)).foregroundStyle(Palette.ink2)
             if admin {
-                Text("Invite someone from Admin on the web dashboard.").font(.footnote).foregroundStyle(Palette.ink3)
+                Text("Invite someone from Admin on the web dashboard.").font(.app(.footnote)).foregroundStyle(Palette.ink3)
             }
         }
         .padding(16)
@@ -150,7 +150,7 @@ private struct FamilyFoot: View {
 
     var body: some View {
         Text("Statuses compare each person with their own last 30 days. They're a nudge to check in, not medical advice. Change what you share in **[Settings](healthos://settings)**.")
-            .font(.footnote)
+            .font(.app(.footnote))
             .foregroundStyle(Palette.ink3)
             .fixedSize(horizontal: false, vertical: true)
             .environment(\.openURL, OpenURLAction { _ in
@@ -169,7 +169,7 @@ private struct SharingOff: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Family is off: you don't see anyone, and nobody sees you.")
-                .font(.callout)
+                .font(.app(.callout))
                 .foregroundStyle(Palette.ink2)
                 .fixedSize(horizontal: false, vertical: true)
             Button {
@@ -182,7 +182,7 @@ private struct SharingOff: View {
             }
             .buttonStyle(.borderedProminent)
             .disabled(busy)
-            if let error { Text(error).font(.footnote).foregroundStyle(Palette.critical) }
+            if let error { Text(error).font(.app(.footnote)).foregroundStyle(Palette.critical) }
         }
         .card()
     }
@@ -234,7 +234,7 @@ struct FamilyTile: View {
         return VStack(alignment: .leading, spacing: 12) {
             FamilyTileHead(member: member, boardToday: boardToday)
             if let reasons = FamilyText.reasons(member) {
-                Text(reasons).font(.footnote).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
+                Text(reasons).font(.app(.footnote)).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
             }
             FamilySlots(member: member).opacity(quiet ? 0.6 : 1)
         }
@@ -257,7 +257,7 @@ struct FamilyTileHead: View {
                 // room at every text size.
                 FamilyWrap(spacing: 6, rowSpacing: 4) {
                     Text(FamilyText.title(member))
-                        .font(.headline)
+                        .font(.app(.headline))
                         .foregroundStyle(Palette.ink)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
@@ -265,7 +265,7 @@ struct FamilyTileHead: View {
                     if member.demo { FamilyPill(text: "Demo data", tone: .blue) }
                 }
                 Text(FamilyText.devicesLine(member, boardToday: boardToday))
-                    .font(.caption)
+                    .font(.app(.caption))
                     .foregroundStyle(Palette.ink3)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -285,7 +285,7 @@ private struct FamilyPill: View {
         // Not fixed width: at the largest text sizes a pill wider than the tile shortens instead of pushing the board
         // off screen.
         Text(text)
-            .font(.caption.weight(.medium))
+            .font(.app(.caption, weight: .medium))
             .lineLimit(1)
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
@@ -355,7 +355,7 @@ private struct FamilyStatusChip: View {
             }
             Text(text).lineLimit(2).fixedSize(horizontal: false, vertical: true)
         }
-        .font(.caption.weight(.medium))
+        .font(.app(.caption, weight: .medium))
         .foregroundStyle(status == "check" ? Palette.ink : Palette.ink2)
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
@@ -412,7 +412,7 @@ struct FamilySlot: View {
     var spark: FamilySparkData? = nil
 
     /// Scales with Dynamic Type, so the figure stays bigger than its caption at every text size.
-    static let valueFont = Font.system(.title3, design: .rounded, weight: .semibold)
+    static let valueFont = Font.app(.title3, weight: .semibold)
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -420,7 +420,7 @@ struct FamilySlot: View {
                 Image(systemName: icon)
                 Text(label)
             }
-            .font(.caption)
+            .font(.app(.caption))
             .foregroundStyle(Palette.ink3)
             .lineLimit(1)
             Text(value ?? "—")
@@ -433,7 +433,7 @@ struct FamilySlot: View {
                 .minimumScaleFactor(0.5)
                 .fixedSize(horizontal: false, vertical: true)
             Text(note)
-                .font(.caption2)
+                .font(.app(.caption2))
                 .foregroundStyle(Palette.ink3)
                 .fixedSize(horizontal: false, vertical: true)
             if let spark {
@@ -509,7 +509,7 @@ struct FamilyAvatar: View {
                 Image(uiImage: image).resizable().scaledToFill()
             } else {
                 RadialGradient(colors: [Color(UIColor(hex: 0xA58A73)), Color(UIColor(hex: 0x4C3B2F))], center: .topLeading, startRadius: 0, endRadius: size * 1.2)
-                Text(FamilyText.initial(member.name)).font(.system(size: size * 0.36, weight: .semibold)).foregroundStyle(.white)
+                Text(FamilyText.initial(member.name)).font(.app(fixedSize: size * 0.36, weight: .semibold)).foregroundStyle(.white)
             }
         }
         .frame(width: size, height: size)
@@ -604,7 +604,7 @@ struct FamilyPersonPage: View {
                 VStack(alignment: .leading, spacing: 4) {
                     FamilyWrap(spacing: 6, rowSpacing: 4) {
                         Text(FamilyText.title(m))
-                            .font(.title2.weight(.semibold))
+                            .font(.app(.title2, weight: .semibold))
                             .foregroundStyle(Palette.ink)
                             .lineLimit(2)
                             .fixedSize(horizontal: false, vertical: true)
@@ -612,11 +612,11 @@ struct FamilyPersonPage: View {
                         if m.demo { FamilyPill(text: "Demo data", tone: .blue) }
                     }
                     Text(FamilyText.pageDevicesLine(m, boardToday: boardToday))
-                        .font(.caption)
+                        .font(.app(.caption))
                         .foregroundStyle(Palette.ink3)
                         .fixedSize(horizontal: false, vertical: true)
                     if let reasons = FamilyText.reasons(m) {
-                        Text(reasons).font(.footnote).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
+                        Text(reasons).font(.app(.footnote)).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
                     }
                     if let text = FamilyText.status(m) { FamilyStatusChip(status: m.status ?? "", text: text) }
                 }
@@ -633,7 +633,7 @@ struct FamilyPersonPage: View {
             }
 
             Text(FamilyText.pageFoot(m))
-                .font(.footnote)
+                .font(.app(.footnote))
                 .foregroundStyle(Palette.ink3)
                 .fixedSize(horizontal: false, vertical: true)
                 .environment(\.openURL, OpenURLAction { _ in
@@ -654,11 +654,11 @@ private struct FamilyChartCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(chart.title).font(.subheadline.weight(.medium)).foregroundStyle(Palette.ink2)
-            Text(chart.value).font(.title2.weight(.semibold)).foregroundStyle(Palette.ink).monospacedDigit()
-            if let note = chart.note { Text(note).font(.caption).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true) }
+            Text(chart.title).font(.app(.subheadline, weight: .medium)).foregroundStyle(Palette.ink2)
+            Text(chart.value).font(.app(.title2, weight: .semibold)).foregroundStyle(Palette.ink).monospacedDigit()
+            if let note = chart.note { Text(note).font(.app(.caption)).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true) }
             if chart.points.isEmpty {
-                Text("Nothing in the last 30 days.").font(.footnote).foregroundStyle(Palette.ink3).padding(.top, 6)
+                Text("Nothing in the last 30 days.").font(.app(.footnote)).foregroundStyle(Palette.ink3).padding(.top, 6)
             } else {
                 plot.frame(height: 180).padding(.top, 6)
             }
@@ -740,8 +740,8 @@ private struct FamilyChartCard: View {
                     .foregroundStyle(Palette.ink3.opacity(0.4))
                     .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
                         VStack(spacing: 1) {
-                            Text(chart.format(picked.value)).font(.caption.weight(.semibold))
-                            Text(Fmt.day(picked.date, "EEEMMMd")).font(.caption2)
+                            Text(chart.format(picked.value)).font(.app(.caption, weight: .semibold))
+                            Text(Fmt.day(picked.date, "EEEMMMd")).font(.app(.caption2))
                         }
                         .padding(.horizontal, 8).padding(.vertical, 4)
                         .background(Palette.surface2, in: RoundedRectangle(cornerRadius: 8))
@@ -776,7 +776,7 @@ private struct FamilyChartTag: View {
 
     var body: some View {
         Text(text)
-            .font(.caption2)
+            .font(.app(.caption2))
             .foregroundStyle(color)
             .padding(.horizontal, 4)
             .padding(.vertical, 1)

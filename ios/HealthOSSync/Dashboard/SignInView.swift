@@ -17,13 +17,13 @@ struct SignInView: View {
         VStack(spacing: 18) {
             BrandMark().frame(width: 72, height: 72)
             VStack(spacing: 4) {
-                Text("healthOS").font(.largeTitle.bold()).foregroundStyle(Palette.ink)
-                Text("Sign in to \(Config.serverURL()?.host ?? "your dashboard")").font(.subheadline).foregroundStyle(Palette.ink3)
+                Text("healthOS").font(.app(.largeTitle, weight: .bold)).foregroundStyle(Palette.ink)
+                Text("Sign in to \(Config.serverURL()?.host ?? "your dashboard")").font(.app(.subheadline)).foregroundStyle(Palette.ink3)
             }
             // Otherwise nothing here says why the background uploads stopped (IngestTokenOwner).
             if dashboard.ingestWaitsForSignIn {
                 Label("This iPhone's Apple Health uploads wait until you sign in.", systemImage: "pause.circle")
-                    .font(.footnote)
+                    .font(.app(.footnote))
                     .foregroundStyle(Palette.ink3)
                     .multilineTextAlignment(.center)
                     .accessibilityIdentifier("uploadsWait")
@@ -53,11 +53,11 @@ struct SignInView: View {
                 .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Palette.border))
                 .accessibilityIdentifier("password")
             if let error {
-                Text(error).font(.footnote).foregroundStyle(Palette.critical).multilineTextAlignment(.center)
+                Text(error).font(.app(.footnote)).foregroundStyle(Palette.critical).multilineTextAlignment(.center)
             }
             Button(action: submit) {
                 Group {
-                    if busy { ProgressView() } else { Text("Sign in").bold() }
+                    if busy { ProgressView() } else { Text("Sign in").font(.app(.body, weight: .bold)) }
                 }
                 .frame(maxWidth: .infinity)
             }
@@ -67,11 +67,11 @@ struct SignInView: View {
             .accessibilityIdentifier("signIn")
             if dashboard.usesAccounts {
                 Button("Have an invite code?") { joining = true }
-                    .font(.subheadline)
+                    .font(.app(.subheadline))
                     .accessibilityIdentifier("haveInvite")
             }
             Button("Change server") { dashboard.tab = .settings }
-                .font(.footnote)
+                .font(.app(.footnote))
         }
         .padding(28)
         .frame(maxWidth: 420)
