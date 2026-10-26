@@ -434,11 +434,25 @@ struct McFlySheet: View {
     }
 }
 
-/// Ask McFly as a page (More → Ask McFly, the web's #/mcfly): the same conversation as the pill's sheet.
+/// Ask McFly as a page (More → Ask McFly, the web's #/mcfly): the same conversation as the pill's sheet. Unlike the
+/// pill, it's always listed, so on a server with McFly off it says so in the web's words instead of a composer.
 struct McFlyPage: View {
     @Environment(Dashboard.self) private var dashboard
 
-    var body: some View { McFlyThread(chat: dashboard.mcfly) }
+    var body: some View {
+        if let status = dashboard.mcfly.status, !status.available {
+            let admin = dashboard.status?.user?.role == "admin"
+            Unavailable(status.configured ? "Ask McFly is turned off" : "Ask McFly isn't set up yet", systemImage: AppPage.mcfly.symbol,
+                        description: !admin ? "Ask the admin to turn it on."
+                            : status.configured ? "Set a daily question limit above 0 in Admin → Settings."
+                            : "Add ANTHROPIC_API_KEY (from the Claude Console) to the Vercel project, then redeploy.")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Palette.page)
+                .task { await dashboard.mcfly.refreshStatus() }
+        } else {
+            McFlyThread(chat: dashboard.mcfly)
+        }
+    }
 }
 
 /// The conversation and its composer, for the sheet and the page. Its NavigationStack is theirs.
@@ -492,7 +506,7 @@ struct McFlyThread: View {
         .navigationTitle("Ask McFly")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
+            ToolbarItem(placement: .topBarTrailing) {
                 Button("New chat") { chat.newChat() }.disabled(chat.messages.isEmpty || chat.streaming)
             }
         }

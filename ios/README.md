@@ -6,13 +6,22 @@ The healthOS dashboard as a native SwiftUI app. It also sends your iPhone's Appl
 
 The app reads the same API as the website (`/api/summary`, `/api/trends`, `/api/workouts`, `/api/status`). It shows the same numbers, including WHOOP recovery and strain, which only the server has.
 
-- **Today:**
+**Layout:** the web's phone layout (`src/components/shell/MobileNav.tsx`), in `Shell/`.
+- **Tabs:** Home, Vitals, Body, Nutrition and More. Each tab keeps its own pages pushed over it.
+- **More** lists the rest, in the web's order: Family (on a server with the Family board), Cycle (while cycle tracking is on), Journal, Sleep, Blood records, Ask McFly, Profile and Integrations, then Insights, which only the iPhone has. It's there signed in or not, so Profile and its server address can be reached before sign-in.
+- **Your avatar** at the top right of every page (in Home's header, which hides the bar) opens the account menu, "Your workspace", as on the web: Profile, Integrations, Privacy & data (the server's `privacy.html`, shown in the app), Admin for admins (the web dashboard's Admin page, shown in the app, where it asks for sign-in again), and Sign out while signed in on a server with sign-in.
+- **Pages by the web's ids** (`AppRoute`): every button, card, insight, pattern and flag opens its page with `dashboard.open(_:)`, where the web's phone layout has it. A tab's page opens on its tab, at its top; one day by hour opens over Home; everything else is pushed under More. The web's old addresses still work: `settings` is Profile and `activity` is Body's Activity tab. Links carry the web's query (`body?tab=activity`, `family?member=<id>`, `profile?connect=openai`). The app's own text links are `healthos://<page>?<query>`; no URL scheme is registered, so only the app's text opens them.
+- **`dashboard.tab = .settings`** (Open Profile, Change server, the hidden-cards note) opens Profile under More, as the web's `#/settings` does.
+- **Pages not built here yet** show what the app had: Vitals, Sleep and Cycle show Trends' charts for them, and Body shows Body and Activity as two tabs. Journal, Blood records, Integrations and Admin show "coming in this build". Each page is its own file (`Vitals/`, `Body/`, `Sleep/`, `Cycle/`, `Journal/`, `Labs/`, `Integrations/`, `Admin/`), so building one changes only that file.
+- **Nothing outlives what it showed:** signed out, the server unreachable, another server or someone else signing in, every pushed page goes except Profile. A Family member's page goes with the board, and Family or Cycle close when they leave More.
+
+- **Home:**
   - the greeting, then your profile photo as an organic portrait: it reveals through a short ASCII sweep once per launch (skipped with Reduce Motion), with heart, breathing and temperature dots, leader-line callouts, and Slept, Steps and HRV shapes around it;
   - four cards: recovery or VO₂ max, blood oxygen, HRV and sleep;
-  - optional cards, off until you turn them on in Settings → Cards, as on the web: the day's path (and with it the portrait's heart following its marker), the "week so far" summary, recent insights, strain or active energy, and steps against your goal.
+  - optional cards, off until you turn them on in Profile → Cards, as on the web: the day's path (and with it the portrait's heart following its marker), the "week so far" summary, recent insights, strain or active energy, and steps against your goal.
   - Arrows step through past days. Pull down to refresh, which also pushes any new Health data.
-  - **Ask McFly:** a pill above the tab bar opens a chat with the dashboard's assistant (`/api/mcfly`, streamed from `/api/mcfly/chat`). The conversation stays in memory only. It shows how many questions are left today, and the pill is hidden when the server has McFly off.
-- **Trends:** Vitals, Sleep (stacked stages; sleep performance from WHOOP and sleep efficiency are separate cards, each hidden on its own), Activity (steps against goal, plus workouts) and Body, over 30 days, 90 days or a year. Drag across a chart to read a single day.
+  - **Ask McFly:** a pill above the tab bar, on Home only, opens a chat with the dashboard's assistant (`/api/mcfly`, streamed from `/api/mcfly/chat`). More → Ask McFly is the same conversation as a page; on a server with McFly off it says so in the web's words. The conversation stays in memory only and is forgotten on sign-out, another person's sign-in or another server. It shows how many questions are left today, and the pill is hidden when the server has McFly off.
+- **Vitals, Sleep and Body** (Body with Activity as its second tab): charts over 7 days, 30 days, 90 days or a year. Sleep has stacked stages; sleep performance from WHOOP and sleep efficiency are separate cards, each hidden on its own. Activity has steps against goal, plus workouts. Drag across a chart to read a single day.
 - **Nutrition** (only while Nutrition is on): the web's Neka layout from `GET /api/nutrition`.
   - **Overview:** Energy (only when calories are shown), Protein with a neutral week-on-week note, Water in glasses, Days logged, a macro balance donut with fiber, sugar, sodium and caffeine, and food insights worded as associations.
   - **Macros and Hydration:** a bar per logged day over 7, 30 or 90 days. With "No amounts", only the Overview and the Log show, and only which days were logged.
@@ -21,12 +30,12 @@ The app reads the same API as the website (`/api/summary`, `/api/trends`, `/api/
     - **Add food or drink:** search USDA and Open Food Facts, scan a barcode (or type its number), ask McFly to estimate a photo or a description (only when the server has McFly on; you review its drafts before they're saved, and saving or discarding touches only that estimate), or quick add your own amounts. Quick add types only what your "numbers" setting shows: no Calories with "No calories", no Quick add with "No amounts".
     - **Photos** are shrunk on the phone to 1,280 px on the long edge and re-encoded, which drops the location and other metadata, and are sent only for that estimate.
     - **Saved to Apple Health:** see Apple Health sync below.
-  - **No judgement:** a day with nothing logged is a gap, never a zero. A target you set (Settings → Nutrition targets) is a plain dashed line. No score, no "remaining", no red or green.
+  - **No judgement:** a day with nothing logged is a gap, never a zero. A target you set (Profile → Nutrition targets) is a plain dashed line. No score, no "remaining", no red or green.
 - **Cycle** (only while cycle tracking is on): this cycle's phase ring and estimates, each fertile day's estimated chance, the temperature curve for any cycle (cover line, ovulation, the rise after it), a five-week calendar, past cycles split before and after ovulation, and patterns from your own cycles. Estimates never mark a day as safe.
-- **Settings:**
+- **Profile** (until it's rebuilt as the web's, the app's settings):
   - server address and sign-in status;
   - the profile photo: **Change photo** picks one from Photos and cuts it out on the phone with Apple Vision, using the same steps as the Mac tool `server/photo/cutout.swift`. After a Save/Cancel preview it uploads to `POST /api/profile/photo/upload`;
-  - **Cards:** the web's card switches, one list for both. Optional cards are marked and stay off until turned on (the server's `shownCards`). **Show all** brings back every card you hid and leaves the optional ones as they are. A server older than optional cards sends no `shownCards`: there every card shows unless it's hidden, Settings offers only the 33 cards that server knows (its sleep score hides sleep efficiency too), and Show all clears the whole list;
+  - **Cards:** the web's card switches, one list for both. Optional cards are marked and stay off until turned on (the server's `shownCards`). **Show all** brings back every card you hid and leaves the optional ones as they are. A server older than optional cards sends no `shownCards`: there every card shows unless it's hidden, Profile offers only the 33 cards that server knows (its sleep score hides sleep efficiency too), and Show all clears the whole list;
   - the Apple Health sync controls.
 
 Cards hide or switch to fit your sources, as on the web: no WHOOP means VO₂ max instead of recovery, active energy instead of strain, and HRV labelled SDNN.
@@ -34,12 +43,13 @@ Cards hide or switch to fit your sources, as on the web: no WHOOP means VO₂ ma
 **Sign-in:** the same account as the website. On servers with per-person accounts the app asks for email and password; older single-user servers need only the password. The app works with either.
 - **Invites:** someone invited taps **Have an invite code?** and enters the code, or pastes the whole invite link. They pick a name, email and password, and land on their own dashboard. No email is ever sent.
 - **Session:** the 30-day session cookie lives in the Keychain.
+- **Sign out** (the account menu, or Profile) forgets what's on the phone of that person: the cached summary and loaded data, the Family board and its photos, the profile photo kept in Caches and Ask McFly's conversation. Then it's back to Home, with nothing open on any tab.
 - **Local servers:** one with no password set needs no sign-in.
 - **Time zone:** after each status read, if the server's `settings.timeZone` isn't this iPhone's, the app sends it (`PUT /api/settings {timeZone}`), as the web does, so the hosted server's "today" is yours. A zone is sent once per session: a server that keeps its own, or refuses it, isn't asked again, and one that couldn't be reached or failed (a 5xx) is asked on the next read.
 - **Sign out pauses the Apple Health sync.** The ingest token belongs to one account, whoever is signed in, so the app remembers which account it was set under (or, for a token from an older build, the first account seen signed in). That record lives in the Keychain beside the token, so the two outlive a reinstall together.
   - **Sign out:** nothing is read or sent, in the app or in the background, until someone signs in; a sync already running stops before its next upload. The same account resumes the sync.
   - **A session that ran out or was ended elsewhere, or none at launch:** while the token's owner is known, the sync goes on, as it did before owners were kept. A token whose owner can't be told (pasted while signed out, or from an older build after a reinstall) waits for a sign-in, and the sign-in screen says that this iPhone's Apple Health uploads wait until you sign in.
-  - **Someone else signs in,** or a new account from an invite: the token is removed and Settings asks to set this iPhone up again in Integrations, so a phone that changes hands never sends the new person's data to the last account once they sign in. The next token starts the upload from the beginning.
+  - **Someone else signs in,** or a new account from an invite: the token is removed and Profile asks to set this iPhone up again in Integrations, so a phone that changes hands never sends the new person's data to the last account once they sign in. The next token starts the upload from the beginning.
   - **The same account** is the same id on the same server, or the same id and email on a server reached at another address (a Mac server at home and on the LAN).
   - **A token from an older build** first seen while nobody is signed in is taken to be the email that build last signed in with here: that email signing in keeps it, any other removes it. With no email to go by (a reinstall), it can't be told whose, so the next sign-in removes it.
   - A token pasted while signed out is the next person's to sign in.
@@ -63,7 +73,7 @@ The app takes the web's look from `src/styles.css`, light and dark.
   - `AppFontTests` reads the app's sources and fails on a system text style or `.system(` font outside those cases, a ContentUnavailableView, a legend that isn't `ChartLegend`, or an axis label without the app font.
   - It's the web's latin subset: other scripts fall back to the system face. It has no tabular figures, so digits are proportional, as on the web, and `.monospacedDigit()` doesn't change them. The web's own file (`@fontsource-variable/dm-sans`) has none either, so its `font-variant-numeric: tabular-nums` changes nothing there.
 - **Shared pieces** (`Components/`): the accent and quiet pill buttons, Badge, ChoiceCard (radio card), ChipToggle, Eyebrow, PageIntro, SheetScaffold (eyebrow, title, close button, footer buttons, the sheet gradient, full height), ProfileCard and ProfileRow, Collapsible, Orb (McFly's mark; its pulse stops with Reduce Motion), the "—" empty value, Unavailable (empty and error states), ChartLegend, and SafariView. Translucent fills turn solid with Reduce Transparency.
-- **The largest text sizes:** at the accessibility sizes, Today's metric cards go one to a row and Trends puts its range picker under the page's line, so no word breaks in the middle. The pills over the figure stop growing at xxLarge, as the labels beside it already do; VoiceOver reads them in full.
+- **The largest text sizes:** at the accessibility sizes, Home's metric cards go one to a row and the chart pages put their range picker under the page's line, so no word breaks in the middle. The pills over the figure stop growing at xxLarge, as the labels beside it already do; VoiceOver reads them in full.
 
 ## Apple Health sync
 
@@ -77,7 +87,7 @@ The app takes the web's look from `src/styles.css`, light and dark.
   - Days use each record's own time zone (`HKMetadataKeyTimeZone`, or the device's).
 - **Uploads** a week of days per request to `POST /api/apple/ingest` with the bearer token, newest week first. A day whose upload fails stays queued for the next sync. Nothing goes up after Sign out, or while signed out with a token whose owner isn't known (see Sign-in above).
   - Every sync sends today, plus any changed day in the last 30.
-  - Older days (the first upload, or the one-time hourly backfill) wait in a saved queue. They go up newest first, four weeks per pass, only while the app is open and not in Low Power Mode. Settings shows how many are left.
+  - Older days (the first upload, or the one-time hourly backfill) wait in a saved queue. They go up newest first, four weeks per pass, only while the app is open and not in Low Power Mode. Profile shows how many are left.
 - **Cycle tracking:** menstrual flow, spotting, ovulation tests, cervical mucus, sexual activity, basal body temperature and Health's cycle symptoms (cramps, bloating, headache and the rest; one logged as "not present" is left out). The app reads these only after you turn cycle tracking on in healthOS settings and the server answers that it stores cycle days. Each day sent replaces that day on the server.
 - **Nutrition** (food totals from the apps you log meals in): energy, protein, carbs, fat, fiber, sugar, saturated fat, sodium and alcoholic drinks.
   - **Off by default.** The app reads, asks Health about and watches these types only while the server's ingest reply says you turned Nutrition on (`nutritionOn`) and lists the nutrients it takes (`nutrients`). Off, it reads none of them.
@@ -117,7 +127,7 @@ Needs iOS 17 or later. Built and tested with Xcode 27. Bundle ID `health.mcfly.s
 
 1. Install the latest build from **TestFlight**. In App Store Connect → TestFlight, add yourself to an internal testing group once; new builds then appear in the TestFlight app. For a quick local install instead, run the `HealthOSSync` scheme on your phone from Xcode.
 2. Open the app and sign in, or join with an invite code. It already points at `https://health.mcfly.bot`.
-3. In **Settings**, paste your ingest token, then tap **Test connection**. Each person gets their own on the dashboard under Integrations → Apple Watch / Health → Set up the iPhone app; the owner can also use the `HEALTHOS_INGEST_TOKEN` value set on Vercel.
+3. In **Profile** (More → Profile, or your avatar), paste your ingest token, then tap **Test connection**. Each person gets their own on the dashboard under Integrations → Apple Watch / Health → Set up the iPhone app; the owner can also use the `HEALTHOS_INGEST_TOKEN` value set on Vercel.
 4. Tap **Sync now**. When the Health sheet asks how much history to share, pick **All Recorded Data** if you want a full backfill. The **First upload covers** setting can limit it further.
 5. For background sync, leave **Background App Refresh** on for the app (Settings → General).
 
@@ -143,7 +153,7 @@ Simulator builds have an extra **Add sample Health data** button. It writes two 
 env -u DATABASE_URL HEALTHOS_DATA_DIR=/tmp/healthos-scratch PORT=8790 HEALTHOS_INGEST_TOKEN=any-test-token-16chars node server/index.ts
 ```
 
-Then enter `http://localhost:8790` and that token in the app's Settings.
+Then enter `http://localhost:8790` and that token in the app's Profile.
 
 Build and test from the terminal:
 

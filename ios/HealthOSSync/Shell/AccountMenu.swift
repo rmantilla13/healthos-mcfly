@@ -41,7 +41,12 @@ extension View {
     /// header, which hides the bar.
     func accountMenu() -> some View {
         toolbar {
-            ToolbarItem(placement: .topBarTrailing) { AccountMenu() }
+            if #available(iOS 26, *) {
+                // The avatar has its own ring: no glass bubble around it, as on the web's top bar.
+                ToolbarItem(placement: .topBarTrailing) { AccountMenu() }.sharedBackgroundVisibility(.hidden)
+            } else {
+                ToolbarItem(placement: .topBarTrailing) { AccountMenu() }
+            }
         }
     }
 }
