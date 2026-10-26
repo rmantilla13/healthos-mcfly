@@ -39,7 +39,7 @@ struct EditWidgetsSheet: View {
                 dismiss()
                 onEveryPage()
             }
-            .buttonStyle(.quietPill)
+            .buttonStyle(QuietTextButtonStyle())
             .accessibilityHint("Opens Profile")
             .accessibilityIdentifier("everyPagesCards")
             Button("Done") { dismiss() }
@@ -49,24 +49,18 @@ struct EditWidgetsSheet: View {
     }
 
     private func group(_ title: String, _ cards: [DashboardCard]) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 0) {
             Text(title).font(.app(.caption, weight: .semibold)).foregroundStyle(Palette.ink2).accessibilityAddTraits(.isHeader)
-            VStack(spacing: 0) {
-                ForEach(cards) { card in
-                    Toggle(isOn: Binding(get: { dashboard.cardShown(card.id) }, set: { set(card.id, shown: $0) })) {
-                        Text(Cards.label(card, optionalCards: dashboard.optionalCards)).font(.app(.subheadline)).foregroundStyle(Palette.ink)
-                    }
-                    .frame(minHeight: 44)
-                    .accessibilityIdentifier("widget-\(card.id)")
-                    if card.id != cards.last?.id { Divider().overlay(Palette.border) }
+                .padding(.bottom, 2)
+            ForEach(cards) { card in
+                Toggle(isOn: Binding(get: { dashboard.cardShown(card.id) }, set: { set(card.id, shown: $0) })) {
+                    Text(Cards.label(card, optionalCards: dashboard.optionalCards)).font(.app(.subheadline)).foregroundStyle(Palette.ink)
                 }
+                .toggleStyle(CheckboxToggleStyle())
+                .accessibilityIdentifier("widget-\(card.id)")
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 4)
-            .background(Palette.surface, in: RoundedRectangle(cornerRadius: Radius.field, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: Radius.field, style: .continuous).strokeBorder(Palette.border))
         }
-        .padding(.top, 4)
+        .padding(.top, 2)
     }
 
     private func set(_ id: String, shown: Bool) {
@@ -80,5 +74,32 @@ struct EditWidgetsSheet: View {
                 self.error = error.localizedDescription
             }
         }
+    }
+}
+
+/// The web's checkbox (.card-choices input: 16px, ink when ticked): a box and its words, the whole row to tap. VoiceOver
+/// reads it as a switch, on or off.
+struct CheckboxToggleStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Button { configuration.isOn.toggle() } label: {
+            HStack(spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        .fill(configuration.isOn ? Palette.ink : Palette.surface)
+                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        .strokeBorder(configuration.isOn ? Palette.ink : Palette.ink3, lineWidth: 1)
+                    if configuration.isOn {
+                        Image(systemName: "checkmark").font(.system(size: 10, weight: .heavy)).foregroundStyle(Palette.surface)
+                    }
+                }
+                .frame(width: 17, height: 17)
+                configuration.label
+                Spacer(minLength: 0)
+            }
+            .frame(minHeight: 40)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityRepresentation { Toggle(isOn: configuration.$isOn) { configuration.label } }
     }
 }

@@ -72,22 +72,30 @@ struct DigitalFigure: View {
     var callouts: [CalloutKey] = CalloutKey.home
     var onHeart: (() -> Void)?
     @Environment(\.colorScheme) private var scheme
-    @State private var width: CGFloat = 343
     @State private var sizes: [CalloutKey: CGSize] = [:]
 
     var body: some View {
         let art = DigitalArt.of(variant)
+        // The art sets the figure's size from the width it's given (never a width kept from an earlier layout), and
+        // the callouts are drawn over it in that size.
+        Image(art.asset)
+            .resizable()
+            .aspectRatio(art.width / art.height, contentMode: .fit)
+            .frame(maxWidth: .infinity)
+            // The porcelain figure, a little dimmer on a dark page.
+            .colorMultiply(scheme == .dark ? Color(white: 0.84) : .white)
+            .accessibilityHidden(true)
+            .overlay { GeometryReader { geo in callouts(art, width: geo.size.width) } }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Digital \(variant == .woman ? "woman" : "man") with your vitals")
+            .accessibilityIdentifier("figure-digital")
+    }
+
+    private func callouts(_ art: DigitalArt, width: CGFloat) -> some View {
         let height = width * art.ratio
         let wrist = CalloutText.atWrist(vitals)
         let nudge = art.nudges(callouts, sizes: sizes, width: width, wrist: wrist)
-        ZStack(alignment: .topLeading) {
-            Image(art.asset)
-                .resizable()
-                .scaledToFit()
-                .frame(width: width, height: height)
-                // The porcelain figure, a little dimmer on a dark page.
-                .colorMultiply(scheme == .dark ? Color(white: 0.84) : .white)
-                .accessibilityHidden(true)
+        return ZStack(alignment: .topLeading) {
             Canvas { ctx, _ in
                 for key in callouts {
                     let s = art.spot(key, wrist: wrist)
@@ -114,12 +122,7 @@ struct DigitalFigure: View {
                     .opacity(sizes[key] == nil ? 0 : 1)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .frame(height: height, alignment: .topLeading)
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Digital \(variant == .woman ? "woman" : "man") with your vitals")
-        .accessibilityIdentifier("figure-digital")
+        .frame(width: width, height: height, alignment: .topLeading)
     }
 
     @ViewBuilder private func label(_ text: CalloutText) -> some View {

@@ -13,6 +13,7 @@ struct JournalPromptCard: View {
     @State private var missing = false
     /// The card's width inside its padding, for the words' two thirds.
     @State private var inner: CGFloat = 303
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     /// What the card says: the latest of today's check-ins, its mood's word and first line.
     struct Model: Equatable {
@@ -56,8 +57,9 @@ struct JournalPromptCard: View {
             CardMinHeight(min: 236 - 38) {
                 VStack(alignment: .leading, spacing: 0) {
                     words(m)
-                        // The words keep to the left two thirds; the art takes the rest (home.css, 560px and below).
-                        .frame(width: inner * 0.66, alignment: .leading)
+                        // The words keep to the left two thirds; the art takes the rest (home.css, 560px and below). At
+                        // the accessibility text sizes they take the whole card, over the art's faded side.
+                        .frame(maxWidth: typeSize.isAccessibilitySize ? .infinity : inner * 0.66, alignment: .leading)
                     Spacer(minLength: 16)
                     HStack(spacing: 7) {
                         Text(m.button)
@@ -99,6 +101,7 @@ struct JournalPromptCard: View {
     private func words(_ m: Model) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Your health journal").font(.app(.footnote, weight: .medium)).foregroundStyle(Palette.ink)
+                .fixedSize(horizontal: false, vertical: true)
             Text("How are you feeling today?")
                 .font(.app(size: 22, weight: .medium, relativeTo: .title2))
                 .tracking(-0.22)

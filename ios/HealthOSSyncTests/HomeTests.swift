@@ -586,6 +586,10 @@ final class HomeChromeTests: XCTestCase {
         for words in ["A clearer picture.", "A healthier you.", "Your measurements", "href={href('vitals')}"] { XCTAssertTrue(tsx.contains(words), words) }
         // With just the statistics, the compact line after the cards.
         XCTAssertTrue(tsx.contains("{stats && <Tagline compact />}"))
+        // The page's last line, without the right-hand one Ask McFly's pill takes on Home.
+        let foot = try web("src/components/shell/AppFooter.tsx")
+        XCTAssertTrue(foot.contains("<span>\(HomeFooter.text)</span>"))
+        XCTAssertTrue(foot.contains("{!home && <span>"))
     }
 
     func testAllHiddenSaysWhatTheWebSays() throws {
@@ -593,5 +597,71 @@ final class HomeChromeTests: XCTestCase {
         XCTAssertTrue(row.contains("All the cards on this page are hidden. Choose the ones to show with Edit widgets on Home, or in"))
         XCTAssertTrue(Cards.allHidden(in: .home, hidden: Set(Cards.all.filter { $0.page == .home }.map(\.id))))
         XCTAssertFalse(Cards.allHidden(in: .home, hidden: Set(Cards.optional)), "the default cards still show")
+    }
+}
+
+// MARK: - Every text size
+
+/// Nothing on Home runs off a phone's screen at any text size: each part fits the width it's given (the content width
+/// of a 375pt phone, with the page's 16pt sides).
+@MainActor
+final class HomeFitsTests: XCTestCase {
+    private let width: CGFloat = 343
+    private let sizes: [DynamicTypeSize] = [.large, .xxxLarge, .accessibility1, .accessibility3, .accessibility5]
+
+    private func fit(_ view: some View, _ size: DynamicTypeSize, sync: AppModel? = nil) -> CGSize {
+        let root = view.environment(Dashboard()).environment(sync ?? AppModel()).environment(\.dynamicTypeSize, size)
+        return UIHostingController(rootView: root).sizeThatFits(in: CGSize(width: width, height: .greatestFiniteMagnitude))
+    }
+
+    private func assertFits(_ name: String, _ view: some View, file: StaticString = #filePath, line: UInt = #line) {
+        for size in sizes {
+            XCTAssertLessThanOrEqual(fit(view, size).width, width + 0.5, "\(name) runs off the screen at \(size)", file: file, line: line)
+        }
+    }
+
+    func testEveryCardFits() throws {
+        for json in [fullSummary, olderSummary] {
+            let s = try decode(Summary.self, json)
+            for id in Signal.ids {
+                assertFits(id, SignalCard(signal: try XCTUnwrap(Signal.of(id, s)), date: s.date))
+                assertFits("\(id) compact", SignalCard(signal: try XCTUnwrap(Signal.of(id, s, variant: .compact)), date: s.date, variant: .compact))
+            }
+            assertFits("load", LoadCard(summary: s))
+            assertFits("activity", ActivityCard(summary: s, goal: 10_000))
+            assertFits("insights", InsightsCard(insights: s.insights ?? [], today: s.today))
+            assertFits("week", WeekCard(week: s.week, stepGoal: 10_000))
+            assertFits("figure", DigitalFigure(vitals: s.vitals, asOf: s.date))
+        }
+        assertFits("nutrition", TodayNutritionCard(date: "2026-10-19", today: "2026-10-19"))
+        assertFits("journal", JournalPromptCard())
+        assertFits("tagline", HomeTagline())
+        assertFits("compact tagline", HomeTagline(compact: true))
+        assertFits("no sources", NoSourcesBanner())
+        assertFits("family notice", FamilyNotice())
+        assertFits("footer", HomeFooter())
+    }
+
+    /// The figure's size comes from the width it's given, never from one kept from an earlier layout, which would hold
+    /// the whole page wider than the screen once it had been (at the largest text sizes it was).
+    func testTheFigureTakesTheWidthItsGiven() throws {
+        let s = try decode(Summary.self, fullSummary)
+        for proposed: CGFloat in [120, 200, 343] {
+            let host = UIHostingController(rootView: DigitalFigure(vitals: s.vitals, asOf: s.date).environment(\.dynamicTypeSize, .accessibility5))
+            let size = host.sizeThatFits(in: CGSize(width: proposed, height: .greatestFiniteMagnitude))
+            XCTAssertEqual(size.width, proposed, accuracy: 0.5)
+            XCTAssertEqual(size.height, proposed * 600 / 640, accuracy: 0.5)
+        }
+        let photo = try decode(PhotoMeta.self, #"{"version":1,"width":900,"height":1200,"face":[0.38,0.06,0.24,0.24],"shoulderY":0.36,"dots":{"temp":[0.5,0.1],"breathing":[0.5,0.3],"heart":[0.56,0.45]}}"#)
+        for proposed: CGFloat in [120, 343, 600] {
+            let host = UIHostingController(rootView: PortraitFigure(vitals: s.vitals, asOf: s.date, photo: photo).environment(\.dynamicTypeSize, .accessibility5))
+            let size = host.sizeThatFits(in: CGSize(width: proposed, height: .greatestFiniteMagnitude))
+            XCTAssertEqual(size.height, min(proposed, PortraitFigure.maxWidth) * 4 / 3, accuracy: 0.5, "at most 440 wide, in the photo's shape")
+        }
+    }
+
+    func testTheHeaderFits() throws {
+        let s = try decode(Summary.self, fullSummary)
+        assertFits("header", HomeHeader(summary: s, editing: .constant(false)))
     }
 }

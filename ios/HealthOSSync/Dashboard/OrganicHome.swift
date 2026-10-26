@@ -168,7 +168,8 @@ struct PortraitFigure: View {
     @State private var revealStart: Date?
     @State private var revealed = false
     @State private var cells: RevealCells?
-    @State private var available: CGFloat = 343
+    /// The figure's size as last laid out, for the reveal's glyph grid only (it never sets the layout).
+    @State private var size = CGSize(width: 343, height: 457)
     @State private var sizes: [CalloutKey: CGSize] = [:]
 
     /// The figure is at most 440pt wide on a phone (styles.css .figure at 820px and below).
@@ -176,27 +177,35 @@ struct PortraitFigure: View {
     private static var played: Set<String> = []
 
     var body: some View {
-        let width = min(available, Self.maxWidth)
-        let height = width * CGFloat(photo.height / max(1, photo.width))
         Group {
             if let dots = PhotoLabels.dots(photo) {
-                let slots = PhotoLabels.slots(dots, callouts: callouts)
-                let placed = PhotoLabels.place(photo: photo, dots: dots, slots: slots, sizes: sizes, width: width, height: height)
-                ZStack(alignment: .topLeading) {
-                    glow(width: width, height: height)
-                    figure(width: width, height: height)
-                    callouts(dots: dots, placed: placed, width: width, height: height)
-                        .opacity(revealed ? 1 : 0)
-                        .animation(reduceMotion ? nil : .easeOut(duration: 0.5), value: revealed)
-                }
-                .frame(width: width, height: height, alignment: .topLeading)
+                // The photo's own shape sets the figure's size from the width it's given; everything is drawn over it.
+                Color.clear
+                    .aspectRatio(CGFloat(photo.width / max(1, photo.height)), contentMode: .fit)
+                    .frame(maxWidth: Self.maxWidth)
+                    .overlay {
+                        GeometryReader { geo in
+                            let width = geo.size.width, height = geo.size.height
+                            let slots = PhotoLabels.slots(dots, callouts: callouts)
+                            let placed = PhotoLabels.place(photo: photo, dots: dots, slots: slots, sizes: sizes, width: width, height: height)
+                            ZStack(alignment: .topLeading) {
+                                glow(width: width, height: height)
+                                figure(width: width, height: height)
+                                callouts(dots: dots, placed: placed, width: width, height: height)
+                                    .opacity(revealed ? 1 : 0)
+                                    .animation(reduceMotion ? nil : .easeOut(duration: 0.5), value: revealed)
+                            }
+                            .frame(width: width, height: height, alignment: .topLeading)
+                            .onAppear { size = geo.size }
+                            .onChange(of: geo.size) { _, new in size = new }
+                        }
+                    }
             } else {
                 Color.clear.frame(height: 0).onAppear { onFailed?() }
             }
         }
         .frame(maxWidth: .infinity)
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { available = $0 }
-        .task(id: "\(photo.versionKey)-\(scheme == .dark)") { await loadPhoto(width: width, height: height) }
+        .task(id: "\(photo.versionKey)-\(scheme == .dark)") { await loadPhoto() }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("figure-photo")
     }
@@ -284,7 +293,7 @@ struct PortraitFigure: View {
         }
     }
 
-    private func loadPhoto(width: CGFloat, height: CGFloat) async {
+    private func loadPhoto() async {
         let key = photo.versionKey
         guard let img = await ProfileImages.image(.cutout, version: key, dark: scheme == .dark) else {
             image = nil
@@ -296,7 +305,7 @@ struct PortraitFigure: View {
             revealed = true
             return
         }
-        let size = CGSize(width: width, height: height)
+        let size = size
         cells = await Task.detached(priority: .userInitiated) { RevealCells(image: img, size: size) }.value
         Self.played.insert(key)
         revealed = false

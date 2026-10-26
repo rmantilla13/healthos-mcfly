@@ -86,6 +86,7 @@ private struct TodayContent: View {
                         if stats { HomeTagline(compact: true) }
                     }
                 }
+                HomeFooter()
             }
             .padding(16)
             .opacity(dashboard.loading ? 0.6 : 1)

@@ -150,7 +150,10 @@ struct TodayNutritionCard: View {
                 .font(.app(size: 10.5, relativeTo: .caption2))
                 .foregroundStyle(Palette.ink3)
                 .lineLimit(1)
-                .minimumScaleFactor(0.7)
+                .minimumScaleFactor(0.5)
+                // Six times across one card: beyond this they'd no longer fit side by side. VoiceOver reads the
+                // track's times in full.
+                .dynamicTypeSize(...DynamicTypeSize.xxLarge)
                 .accessibilityHidden(true)
             }
             if let empty = m.empty {
