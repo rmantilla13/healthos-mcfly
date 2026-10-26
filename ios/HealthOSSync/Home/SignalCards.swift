@@ -76,6 +76,10 @@ struct Signal: Equatable {
     var footRight: String?
     /// HRV's key for the band: a small swatch before "usual".
     var swatch = false
+    /// The foot in words, for VoiceOver, where it says something the chart doesn't (sleep's weekly change, recovery
+    /// against its average, how HRV is measured); the chart's own captions ("Last 30 days", 90 and 100) go with the
+    /// chart, which VoiceOver skips.
+    var spokenFoot: String?
 
     /// The unit in words, for VoiceOver.
     static let spokenUnits = ["bpm": "beats per minute", "%": "percent", "ms": "milliseconds", "hours": "hours", "breaths/min": "breaths per minute"]
@@ -85,6 +89,7 @@ struct Signal: Equatable {
         guard let value else { return "\(title), no reading yet" }
         var parts = ["\(title), \(value) \(Self.spokenUnits[unit] ?? unit)"]
         if let status { parts.append(status.words + (status.stale.map { ", \($0)" } ?? "")) }
+        if let spokenFoot { parts.append(spokenFoot) }
         return parts.joined(separator: ", ")
     }
 
@@ -128,7 +133,9 @@ struct Signal: Equatable {
         return Signal(id: "home.hrv", title: "HRV", tint: .blue, unit: "ms", value: l.map { Fmt.number($0.value) },
                       metric: .hrv, page: .vitals, status: status,
                       chart: home && l != nil ? .dots(s.hrv?.series ?? [], baseline: s.hrv?.baseline) : .none,
-                      footLeft: l == nil ? nil : home ? "usual · \(kind)" : kind, swatch: home && l != nil)
+                      footLeft: l == nil ? nil : home ? "usual · \(kind)" : kind, swatch: home && l != nil,
+                      // The web's title on the key: which watch measures which.
+                      spokenFoot: l == nil ? nil : kind == "RMSSD" ? "WHOOP and Fitbit measure RMSSD during sleep" : "Apple Watch measures SDNN")
     }
 
     static func sleep(_ s: Summary, variant: MetricCardVariant = .home) -> Signal {
@@ -139,7 +146,9 @@ struct Signal: Equatable {
                       status: l.map { SignalStatus(words: $0.value >= 7 ? "Good" : $0.value >= 6 ? "Fair" : "Short", stale: SignalStatus.stale($0.date, s.date)) },
                       chart: home ? .line(s.sleep?.series ?? [], color: Palette.series1, height: 48) : .none,
                       footLeft: home ? "Last 14 nights" : nil,
-                      footRight: home ? s.sleep?.change.map { "\(Fmt.signed($0 * 100))% wk" } : nil)
+                      footRight: home ? s.sleep?.change.map { "\(Fmt.signed($0 * 100))% wk" } : nil,
+                      // The web's title on "−5% wk".
+                      spokenFoot: home ? s.sleep?.change.map { c in Self.spokenChange(c * 100, unit: "%").map { "This week's average \($0) last week's" } ?? "This week's average the same as last week's" } : nil)
     }
 
     static let zoneWords = ["red": "Low", "yellow": "Moderate", "green": "High"]
@@ -160,7 +169,8 @@ struct Signal: Equatable {
         return Signal(id: "home.readiness", title: "Recovery", tint: .pink, unit: "%", value: r.map { Fmt.number($0.latest.value) },
                       metric: .recovery, page: .vitals,
                       status: r.map { SignalStatus(words: zone.flatMap { zoneWords[$0] } ?? zone ?? "", level: level, stale: SignalStatus.stale($0.latest.date, s.date), zone: true) },
-                      chart: chart, footLeft: home ? delta.map { "\(Fmt.signed($0)) vs 30-day avg" } : nil)
+                      chart: chart, footLeft: home ? delta.map { "\(Fmt.signed($0)) vs 30-day avg" } : nil,
+                      spokenFoot: home ? delta.map { d in Self.spokenChange(d).map { "\($0) the 30-day average" } ?? "At the 30-day average" } : nil)
     }
 
     static func respRate(_ s: Summary, variant: MetricCardVariant = .home) -> Signal {
@@ -172,6 +182,14 @@ struct Signal: Equatable {
                       metric: .respRate, page: .vitals, status: SignalStatus.vital(v, latest: latest, asOf: s.date),
                       chart: home ? .line(series, color: Palette.series3, height: 52) : .none,
                       footLeft: home ? "Last 30 days" : nil)
+    }
+
+    /// A signed change in words, as the card shows it rounded: "5% above", "3 below"; nil when it shows as 0. VoiceOver
+    /// would read the card's "−5%" as a dash.
+    static func spokenChange(_ v: Double, unit: String = "") -> String? {
+        let digits = Fmt.number(abs(v))
+        guard digits != "0" else { return nil }
+        return "\(digits)\(unit) \(v > 0 ? "above" : "below")"
     }
 
     /// Home's signal card for a card id; nil for an id that isn't one.

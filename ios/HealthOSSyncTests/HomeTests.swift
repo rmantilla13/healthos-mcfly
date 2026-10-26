@@ -112,7 +112,18 @@ final class HomeSignalCardTests: XCTestCase {
         XCTAssertEqual(resp.chart, .none, "one day isn't a line")
         XCTAssertNil(resp.footLeft)
 
+        // VoiceOver reads the feet that say something of their own, in words; the chart's captions go with the chart.
+        XCTAssertEqual(hrv.spoken, "HRV, 48 milliseconds, Optimal, \(Fmt.day("2026-10-18")), Apple Watch measures SDNN")
+        XCTAssertEqual(sleep.spoken, "Sleep, 6.4 hours, Fair, This week's average 5% below last week's")
+        XCTAssertEqual(recovery.spoken, "Recovery, 72 percent, High, 5 above the 30-day average")
+        XCTAssertEqual(spo2.spoken, "Blood oxygen, 96.5 percent, Below your range", "90 and 100 are the chart's")
+        XCTAssertEqual(Signal.spokenChange(-0.4), nil, "a change that shows as 0")
+        XCTAssertEqual(Signal.spokenChange(3.6, unit: "%"), "4% above")
+
         let tsx = try web("src/components/home/Signals.tsx")
+        for title in ["This week's average vs last week's", "WHOOP and Fitbit measure RMSSD during sleep", "Apple Watch measures SDNN"] {
+            XCTAssertTrue(tsx.contains(title), title)
+        }
         for words in ["Last 30 days", "Last 14 nights", "Below your range", "Building baseline", "vs 30-day avg", "% wk", "usual · ",
                       "Well above usual", "Well below usual", "Above usual", "Below usual", "Optimal", "Below baseline", "Moderate", "'Good'", "'Fair'", "'Short'"] {
             XCTAssertTrue(tsx.contains(words), words)
