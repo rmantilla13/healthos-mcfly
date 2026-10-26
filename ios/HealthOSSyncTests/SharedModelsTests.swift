@@ -205,6 +205,28 @@ final class SharedModelsTests: XCTestCase {
         XCTAssertEqual(Peers.band(you: 61, p25: 50, median: 55, p75: 60), .aboveP75)
     }
 
+    // MARK: Perspective
+
+    /// One type for the server's one field (shared/types.ts Perspective), read as the web reads it: what the welcome
+    /// saves, Home draws and Profile names.
+    func testThePerspectiveIsTheWebsAndReadsAsTheWebDoes() throws {
+        func settings(_ json: String) throws -> ServerStatus.Settings { try decode(ServerStatus.Settings.self, json) }
+        XCTAssertTrue(try web("shared/types.ts").contains("export type Perspective = 'portrait' | 'digital' | 'stats';"))
+        XCTAssertEqual(Perspective.allCases.map(\.rawValue), ["portrait", "digital", "stats"])
+        XCTAssertTrue(try web("src/pages/onboardingFlow.ts").contains("perspective: s.perspective ?? 'portrait',"))
+        XCTAssertTrue(try web("src/App.tsx").contains("perspective={settings?.perspective ?? 'portrait'}"))
+        XCTAssertEqual(Perspective.of(nil), .portrait)
+        XCTAssertEqual(Perspective.of(try settings(#"{}"#)), .portrait, "a server older than the welcome")
+        XCTAssertEqual(Perspective.of(try settings(#"{"perspective":"stats"}"#)), .stats)
+        XCTAssertEqual(Perspective.of(try settings(#"{"perspective":"hologram"}"#)), .portrait, "a value this build doesn't know")
+        // The raw field stays the server's, so a value this build doesn't know still says the server has the welcome.
+        XCTAssertEqual(try settings(#"{"perspective":"hologram"}"#).perspective, "hologram")
+        // The welcome starts from it, Home draws it, and Profile names it.
+        XCTAssertEqual(OnboardingFlow.answers(from: try settings(#"{"perspective":"digital"}"#)).perspective, .digital)
+        XCTAssertEqual(ProfileWords.perspective(try settings(#"{"perspective":"stats","age":40}"#), drawn: .man), "Just the statistics · 40 years")
+        XCTAssertEqual(ProfileWords.perspective(try settings(#"{"perspective":"digital"}"#), drawn: .man), "Digital man · no age given")
+    }
+
     // MARK: Figure, WHOOP, the app's permissions
 
     func testTheDigitalHumanFollowsTheChoiceThenGender() throws {

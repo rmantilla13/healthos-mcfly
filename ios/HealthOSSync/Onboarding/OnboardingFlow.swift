@@ -6,13 +6,6 @@ import Observation
 // tab that jumps ahead saves, and what the preview card on step 2 says. OnboardingTests checks them against the web's
 // own tests and its file.
 
-/// How Home and Body show you (shared/types.ts Perspective). Named for the welcome, not `Perspective`: Home has its own
-/// (slice B's HomeFigure.swift), and one module can't hold two.
-enum OnboardingPerspective: String, CaseIterable, Identifiable {
-    case portrait, digital, stats
-    var id: String { rawValue }
-}
-
 /// How a person describes themselves (shared/types.ts Gender). Never used for health calculations (that's `sex`).
 enum Gender: String, CaseIterable, Identifiable {
     case woman, man, nonbinary, unsaid
@@ -78,7 +71,7 @@ enum OnboardingStep: Int, CaseIterable, Comparable, Identifiable {
 
 /// Everything the three steps ask, held while the person moves between them (Answers).
 struct OnboardingAnswers: Equatable {
-    var perspective: OnboardingPerspective = .portrait
+    var perspective: Perspective = .portrait
     var gender: Gender?
     var figure: FigureVariant?
     /// As typed: digits only, up to three.
@@ -97,7 +90,7 @@ enum OnboardingFlow {
     /// What the steps show first: the person's settings as they are (a new account has the server's defaults), and the
     /// defaults for anything an older server doesn't send.
     static func answers(from s: ServerStatus.Settings?) -> OnboardingAnswers {
-        OnboardingAnswers(perspective: s?.perspective.flatMap(OnboardingPerspective.init(rawValue:)) ?? .portrait,
+        OnboardingAnswers(perspective: Perspective.of(s),
                           gender: s?.gender.flatMap(Gender.init(rawValue:)),
                           figure: s?.figure.flatMap(FigureVariant.init(rawValue:)),
                           age: s?.age.map(String.init) ?? "",

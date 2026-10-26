@@ -5,16 +5,6 @@ import SwiftUI
 // or none at all ('stats'). Each callout points at its place on the body with the latest reading, animated by it.
 // Home's set is blood oxygen and heart on the left, breathing on the right; Body shows the same.
 
-/// How the person chose to see themselves (settings.perspective): nil from servers older than onboarding, read as the
-/// portrait, as the web does. Home's own name for it: the welcome (slice A) keeps a Perspective of its own for its choices.
-enum HomePerspective: String {
-    case portrait, digital, stats
-
-    static func of(_ settings: ServerStatus.Settings?) -> HomePerspective {
-        settings?.perspective.flatMap(HomePerspective.init(rawValue:)) ?? .portrait
-    }
-}
-
 /// A callout's vital (Figure.tsx CalloutKey).
 enum CalloutKey: String, CaseIterable, Hashable {
     case temp, breathing, heart, spo2
@@ -298,7 +288,7 @@ struct HomeFigure: View {
 
     /// Which figure shows: none for 'stats'; the photo for a portrait with one whose metadata places the dots, unless
     /// its cut-out couldn't be loaded; else the digital human.
-    static func shown(_ perspective: HomePerspective, photo: PhotoMeta?, failed: Double?) -> Shown {
+    static func shown(_ perspective: Perspective, photo: PhotoMeta?, failed: Double?) -> Shown {
         guard perspective != .stats else { return .none }
         guard perspective == .portrait, let photo, PhotoLabels.dots(photo) != nil, failed != photo.version else { return .digital }
         return .portrait
@@ -306,7 +296,7 @@ struct HomeFigure: View {
 
     var body: some View {
         let settings = dashboard.status?.settings
-        let perspective = HomePerspective.of(settings)
+        let perspective = Perspective.of(settings)
         let photo = dashboard.status?.photo
         let shown = Self.shown(perspective, photo: photo, failed: failedPhoto)
         if shown != .none {

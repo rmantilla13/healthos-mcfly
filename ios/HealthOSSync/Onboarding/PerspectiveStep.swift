@@ -9,7 +9,7 @@ struct PerspectiveStep: View {
     let hasPhoto: Bool
 
     /// The views (VIEWS).
-    static let views: [(id: OnboardingPerspective, title: String, text: String)] = [
+    static let views: [(id: Perspective, title: String, text: String)] = [
         (.portrait, "Your own portrait", "Your likeness, rendered in the healthOS style from a photo."),
         (.digital, "Digital human", "A modern Vitruvian figure, no photo needed."),
         (.stats, "Just the statistics", "Your measurements take the whole stage."),
@@ -36,7 +36,7 @@ struct PerspectiveStep: View {
 /// One view to choose (.onb-choice): the illustration on the left, its name and line on the right, a radio mark in the
 /// corner. VoiceOver reads it as one choice, selected or not.
 private struct PerspectiveCard: View {
-    let id: OnboardingPerspective
+    let id: Perspective
     let title: String
     let text: String
     let figure: FigureVariant

@@ -8,10 +8,10 @@ enum ProfileWords {
 
     /// "Digital man · 33 years": how Home and Body show you (the digital human as drawn), and your age (perspectiveLine).
     static func perspective(_ s: ServerStatus.Settings, drawn: FigureVariant) -> String {
-        let look = switch s.perspective {
-        case "digital": "Digital \(drawn.rawValue)"
-        case "stats": "Just the statistics"
-        default: "Your portrait"
+        let look = switch Perspective.of(s) {
+        case .digital: "Digital \(drawn.rawValue)"
+        case .stats: "Just the statistics"
+        case .portrait: "Your portrait"
         }
         return s.age.map { "\(look) · \($0) years" } ?? "\(look) · no age given"
     }

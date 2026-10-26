@@ -62,7 +62,7 @@ struct TodayContent: View {
         // The phase is about today, so it says nothing about a past day on screen.
         let phase = isToday && dashboard.cycleTrackingOn ? cycle?.phase : nil
         let off = dashboard.cardsOff
-        let stats = HomePerspective.of(dashboard.status?.settings) == .stats
+        let stats = Perspective.of(dashboard.status?.settings) == .stats
         // Food totals only for people with Nutrition on, and once its days have come.
         let optionalRow = HomeCards.optionalRow.filter { $0 != "home.food" || (dashboard.nutritionOn && food != nil) }
         ScrollView {
