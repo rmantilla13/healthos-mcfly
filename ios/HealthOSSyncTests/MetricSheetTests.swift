@@ -785,6 +785,58 @@ final class MetricSheetTests: XCTestCase {
         return MetricSheetFallback.daySheet(.steps, day: day, date: "2026-10-26", today: "2026-10-26", goal: 10_000)
     }
 
+    /// The web's onClick is `setPicked(true); setRange(r)` for every range button, the one already chosen too: pressing the
+    /// range the sheet moved to by itself keeps it, drops "Nothing in the last 30 days, so…" and stops it moving again.
+    func testPressingTheChosenRangeIsAPick() async throws {
+        XCTAssertTrue(try web("src/components/MetricSheet.tsx").contains("""
+                        onClick={() => {
+                          setPicked(true);
+                          setRange(r);
+                        }}
+        """), "the web's range button picks whatever it is")
+
+        var picked: [MetricRange] = []
+        try await onScreen(SheetRangeButtons(ranges: [.week, .month, .year], range: .year, pick: { picked.append($0) })) { elements in
+            let year = try XCTUnwrap(elements.first { $0.accessibilityLabel == "Year" })
+            XCTAssertTrue(year.accessibilityTraits.contains(.selected))
+            XCTAssertTrue(year.accessibilityActivate())
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertEqual(picked, [.year], "the chosen range, pressed, is a pick")
+            _ = elements.first { $0.accessibilityLabel == "Month" }?.accessibilityActivate()
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertEqual(picked, [.year, .month])
+        }
+
+        // What that pick does: the sheet moved from an empty month to the year and said so.
+        var r = SheetRanges(key: .vo2max, asked: nil)
+        r.heard(sheet(.vo2max, range: .month), current: true)
+        let year = sheet(.vo2max, range: .year, value: 42.5, points: [Point(date: "2026-09-02", value: 42.5)], latest: Point(date: "2026-09-02", value: 42.5))
+        XCTAssertNotNil(r.note(shown: year))
+        r.pick(.year)
+        XCTAssertEqual(r.range, .year)
+        XCTAssertTrue(r.picked)
+        XCTAssertNil(r.note(shown: year), "the note goes")
+        r.heard(sheet(.vo2max, range: .year), current: true)
+        XCTAssertEqual(r.range, .year, "and the sheet doesn't move on its own again")
+    }
+
+    /// Never measured, "Manage connections" is the one thing to press, so it grows with the text at every size: one line
+    /// up to xxxLarge, and at the accessibility sizes its words wrap inside the sheet rather than stopping at xxxLarge's size.
+    func testManageConnectionsGrowsWithTheText() {
+        let button = ManageConnectionsButton(action: {})
+        let sizes: [DynamicTypeSize] = [.large, .xxxLarge, .accessibility1, .accessibility3, .accessibility5]
+        let measured = sizes.map { measure(button, $0) }
+        XCTAssertGreaterThan(measured[1].width, measured[0].width, "one line, wider at xxxLarge")
+        for i in 1..<sizes.count {
+            XCTAssertGreaterThan(measured[i].height, measured[i - 1].height + (i == 1 ? -1 : 0), "\(sizes[i]) doesn't stop at \(sizes[i - 1])'s size")
+        }
+        for (type, size) in zip(sizes, measured) {
+            XCTAssertLessThanOrEqual(size.width, sheetWidth + 0.5, "\(type): inside the sheet")
+        }
+        let line = measure(Text("Manage").font(PillSize.compact.font).fixedSize(), .accessibility5, width: .greatestFiniteMagnitude).height
+        XCTAssertGreaterThan(measure(button, .accessibility5).height, line * 2, "its words on two lines or more at the largest size")
+    }
+
     /// Every cell keeps to one line, as the web's td (white-space: nowrap) does, so no word or value is ever broken: a table
     /// too wide for the sheet scrolls sideways (.table-wrap's overflow) and stays inside the sheet. Its height is then
     /// exactly the names' line and one line per row, with the web's padding and a hairline under each.
@@ -821,5 +873,38 @@ final class MetricSheetTests: XCTestCase {
             XCTAssertEqual(read, table.rows.reversed().map { SheetTableView.spoken(table.columns, $0) })
             XCTAssertEqual(read.first, "Hour: \(table.rows.last![0]), Average: \(table.rows.last![1]), Low: \(table.rows.last![2]), High: \(table.rows.last![3]), Typical: \(table.rows.last![4])")
         }
+    }
+
+    /// The chart and table switch is drawn as the web's .seg (a 15-point icon in 5 by 8 points of padding, in a 3-point
+    /// well) at the standard size, grows with the text, and each of its buttons, and each range button, takes a tap
+    /// anywhere in 44 by 44 points, the two segments growing away from each other.
+    func testTheSwitchGrowsWithTheTextAndItsTargetsAre44Points() {
+        let large = measure(ViewSwitch(asTable: .constant(false), title: "Each day").fixedSize(), .large, width: .greatestFiniteMagnitude)
+        XCTAssertEqual(large.width, 2 * 32 + 6, accuracy: 0.5)
+        XCTAssertEqual(large.height, 26 + 6, accuracy: 0.5)
+        var last = large
+        for type: DynamicTypeSize in [.xxxLarge, .accessibility3, .accessibility5] {
+            let size = measure(ViewSwitch(asTable: .constant(false), title: "Each day").fixedSize(), type, width: .greatestFiniteMagnitude)
+            XCTAssertGreaterThan(size.width, last.width, "\(type)")
+            XCTAssertGreaterThan(size.height, last.height, "\(type)")
+            last = size
+        }
+
+        let chart = CGRect(x: 3, y: 3, width: 32, height: 26), table = CGRect(x: 35, y: 3, width: 32, height: 26)
+        let chartArea = SheetTapArea.area(of: chart, outward: .leading), tableArea = SheetTapArea.area(of: table, outward: .trailing)
+        for (drawn, area) in [(chart, chartArea), (table, tableArea)] {
+            XCTAssertEqual(area.size, CGSize(width: 44, height: 44))
+            XCTAssertTrue(area.contains(drawn), "the whole drawn button")
+            XCTAssertEqual(area.midY, drawn.midY, accuracy: 0.01)
+        }
+        XCTAssertFalse(chartArea.intersects(tableArea), "neither takes the other's taps")
+        XCTAssertEqual(chartArea.maxX, chart.maxX)
+        XCTAssertEqual(tableArea.minX, table.minX)
+        // A range button is wider than 44 already: only taller, so its neighbours keep theirs.
+        let day = CGRect(x: 3, y: 3, width: 49, height: 29)
+        XCTAssertEqual(SheetTapArea.area(of: day, outward: nil), CGRect(x: 3, y: 3 - 7.5, width: 49, height: 44))
+        // Already big enough at the largest sizes: left as drawn.
+        let big = CGRect(x: 0, y: 0, width: 60, height: 50)
+        XCTAssertEqual(SheetTapArea.area(of: big, outward: .leading), big)
     }
 }

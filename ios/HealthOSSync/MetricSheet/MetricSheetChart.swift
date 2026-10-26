@@ -72,6 +72,7 @@ struct SheetChartCard<Chart: View>: View {
     /// The person's choice; until they make one, the chart (or the table, for a picture of it).
     @State private var chosen: Bool?
     @Environment(\.sheetChartOpensOnTable) private var opensOnTable
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     private var asTable: Binding<Bool> {
         Binding(get: { chosen ?? opensOnTable }, set: { chosen = $0 })
@@ -79,19 +80,31 @@ struct SheetChartCard<Chart: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.app(size: 13, weight: .medium, relativeTo: .footnote)).foregroundStyle(Palette.ink2)
-                        .accessibilityAddTraits(.isHeader)
-                    if let note {
-                        Text(note).font(.app(size: 12, relativeTo: .caption)).foregroundStyle(Palette.ink3)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+            // At the accessibility sizes the switch, grown with the text, goes under the title rather than squeeze it.
+            if typeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 10) {
+                    head
+                    ViewSwitch(asTable: asTable, title: title)
                 }
-                Spacer(minLength: 0)
-                ViewSwitch(asTable: asTable, title: title)
+            } else {
+                HStack(alignment: .top, spacing: 12) {
+                    head
+                    Spacer(minLength: 0)
+                    ViewSwitch(asTable: asTable, title: title)
+                }
             }
             if asTable.wrappedValue { SheetTableView(table: table) } else { chart }
+        }
+    }
+
+    private var head: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.app(size: 13, weight: .medium, relativeTo: .footnote)).foregroundStyle(Palette.ink2)
+                .accessibilityAddTraits(.isHeader)
+            if let note {
+                Text(note).font(.app(size: 12, relativeTo: .caption)).foregroundStyle(Palette.ink3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 }
@@ -118,15 +131,19 @@ extension EnvironmentValues {
     }
 }
 
-/// The chart and table buttons (.seg): two icons in a soft well, the chosen one raised on white.
-private struct ViewSwitch: View {
+/// The chart and table buttons (.seg): two icons in a soft well, the chosen one raised on white. The icons and their
+/// pills grow with the text; each button's tap target is at least 44 points, past the drawn pill and away from the other.
+struct ViewSwitch: View {
     @Binding var asTable: Bool
     let title: String
+    @ScaledMetric(relativeTo: .footnote) private var icon: CGFloat = 14
+    @ScaledMetric(relativeTo: .footnote) private var width: CGFloat = 32
+    @ScaledMetric(relativeTo: .footnote) private var height: CGFloat = 26
 
     var body: some View {
         HStack(spacing: 0) {
-            button("chart.bar.xaxis", "Chart", on: !asTable) { asTable = false }
-            button("tablecells", "Table", on: asTable) { asTable = true }
+            button("chart.bar.xaxis", "Chart", on: !asTable, outward: .leading) { asTable = false }
+            button("tablecells", "Table", on: asTable, outward: .trailing) { asTable = true }
         }
         .padding(3)
         .background(Palette.surface2, in: Capsule())
@@ -135,14 +152,14 @@ private struct ViewSwitch: View {
         .accessibilityLabel("\(title) view")
     }
 
-    private func button(_ symbol: String, _ name: String, on: Bool, action: @escaping () -> Void) -> some View {
+    private func button(_ symbol: String, _ name: String, on: Bool, outward: HorizontalEdge, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 14, weight: .light))
+                .font(.system(size: icon, weight: .light))
                 .foregroundStyle(on ? Palette.ink : Palette.ink2)
-                .frame(width: 32, height: 26)
+                .frame(width: width, height: height)
                 .background { if on { Capsule().fill(Palette.surface).tokenShadow(.pill, in: Capsule()) } }
-                .contentShape(Capsule())
+                .sheetTapTarget(outward: outward)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(name)

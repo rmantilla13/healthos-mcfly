@@ -76,7 +76,10 @@ final class MetricSheetSnapshotTests: XCTestCase {
     func testAWeekOfBars() async throws {
         let s = try fixture("metric-steps-week")
         try await both(shot(.steps, sheet: s, openPage: "Activity on Body"), "steps-week")
-        try await draw(shot(.steps, sheet: s, openPage: "Activity on Body"), "steps-week", size: .accessibility5)
+        for size: DynamicTypeSize in [.xxxLarge, .accessibility3, .accessibility5] {
+            try await draw(shot(.steps, sheet: s, openPage: "Activity on Body"), "steps-week", size: size)
+        }
+        try await draw(shot(.steps, sheet: s, openPage: "Activity on Body"), "steps-week", dark: true, size: .accessibility5)
     }
 
     func testAYearOfWeeks() async throws {
@@ -119,7 +122,11 @@ final class MetricSheetSnapshotTests: XCTestCase {
     func testNeverMeasured() async throws {
         let s = try fixture("metric-glucose-never")
         try await both(shot(.glucose, section: "Body", sheet: s, openPage: "Body"), "glucose-never")
-        try await draw(shot(.glucose, section: "Body", sheet: s, openPage: "Body"), "glucose-never", size: .accessibility5)
+        // Manage connections grows with the text: one line to xxxLarge, then its words wrap inside the sheet.
+        for size: DynamicTypeSize in [.xxxLarge, .accessibility1, .accessibility3, .accessibility5] {
+            try await draw(shot(.glucose, section: "Body", sheet: s, openPage: "Body"), "glucose-never", size: size)
+        }
+        try await draw(shot(.glucose, section: "Body", sheet: s, openPage: "Body"), "glucose-never", dark: true, size: .accessibility5)
         let lean = MetricSheetData(key: .leanMass, range: .month, headline: MetricFigure(label: "Average", value: nil, unit: "kg"), everMeasured: false)
         try await both(shot(.leanMass, section: "Body", sheet: lean, openPage: "Body"), "lean-never")
     }
@@ -151,6 +158,10 @@ final class MetricSheetSnapshotTests: XCTestCase {
         r.heard(month, current: true)
         try await both(shot(.vo2max, section: "Body", sheet: year, range: r.range, note: r.note(shown: year), openPage: "Cardiovascular on Body"),
                        "vo2max-widened")
+        // The year it moved to, pressed: a pick, so the note goes and it stays.
+        r.pick(.year)
+        try await both(shot(.vo2max, section: "Body", sheet: year, range: r.range, picked: r.picked, note: r.note(shown: year),
+                            openPage: "Cardiovascular on Body"), "vo2max-year-pressed")
         // The month pressed again: empty, and it says where to look.
         try await both(shot(.vo2max, section: "Body", sheet: month, picked: true, openPage: "Cardiovascular on Body"), "vo2max-month-empty")
     }

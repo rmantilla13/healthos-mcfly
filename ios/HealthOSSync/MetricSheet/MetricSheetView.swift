@@ -123,7 +123,10 @@ struct MetricSheetContent: View {
 
 /// The range buttons (.filters.msheet-ranges): the ranges in a soft pill-shaped well, the chosen one raised on white.
 /// At the largest text sizes they scroll sideways rather than break a label.
-private struct SheetRangeButtons: View {
+///
+/// Every press is a pick, of the range already chosen too, as on the web: it keeps that range, drops the note that the
+/// sheet moved there by itself, and from then on the sheet doesn't move on its own.
+struct SheetRangeButtons: View {
     let ranges: [MetricRange]
     let range: MetricRange
     let pick: (MetricRange) -> Void
@@ -141,16 +144,19 @@ private struct SheetRangeButtons: View {
         HStack(spacing: 0) {
             ForEach(ranges, id: \.self) { r in
                 let on = r == range
-                Button(r.label) { if !on { pick(r) } }
-                    .buttonStyle(.plain)
-                    .font(.app(size: 13, weight: .medium, relativeTo: .footnote))
-                    .foregroundStyle(on ? Palette.ink : Palette.ink2)
-                    .lineLimit(1)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background { if on { Capsule().fill(Palette.surface).tokenShadow(.pill, in: Capsule()) } }
-                    .contentShape(Capsule())
-                    .accessibilityAddTraits(on ? .isSelected : [])
+                Button { pick(r) } label: {
+                    Text(r.label)
+                        .font(.app(size: 13, weight: .medium, relativeTo: .footnote))
+                        .foregroundStyle(on ? Palette.ink : Palette.ink2)
+                        .lineLimit(1)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background { if on { Capsule().fill(Palette.surface).tokenShadow(.pill, in: Capsule()) } }
+                        // Each is wider than 44 points already; its tap target is 44 tall too, past the well it's drawn in.
+                        .sheetTapTarget()
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(on ? .isSelected : [])
             }
         }
         .padding(3)
@@ -172,16 +178,8 @@ private struct NeverMeasured: View {
             if SheetWords.ownEntries.contains(key) {
                 Text(SheetWords.ownEntry).font(.app(size: 12, relativeTo: .caption)).foregroundStyle(Palette.ink3)
             }
-            Button(action: manageConnections) {
-                HStack(spacing: 7) {
-                    Text(SheetWords.manageConnections)
-                    Image(systemName: "arrow.up.right").imageScale(.small).accessibilityHidden(true)
-                }
-            }
-            .buttonStyle(.quietPill(size: .compact))
-            // A pill keeps to one line, as the web's: it stops growing before its words would be cut off.
-            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
-            .padding(.top, 16)
+            ManageConnectionsButton(action: manageConnections)
+                .padding(.top, 16)
         }
         .multilineTextAlignment(.center)
         .foregroundStyle(Palette.ink2)
@@ -190,6 +188,81 @@ private struct NeverMeasured: View {
         .padding(.top, 34)
         .padding(.horizontal, 8)
         .padding(.bottom, 28)
+    }
+}
+
+/// "Manage connections ↗" (the web's .pill): the quiet pill on one line, as the web's. At the accessibility text sizes,
+/// where one line would cut its words off, it grows with the text instead: a white box the sheet's width, its words
+/// wrapping.
+struct ManageConnectionsButton: View {
+    let action: () -> Void
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    var body: some View {
+        if typeSize.isAccessibilitySize {
+            Button(action: action) {
+                Text("\(Text(verbatim: SheetWords.manageConnections)) \(Image(systemName: "arrow.up.right"))")
+            }
+            .buttonStyle(GrowingPillStyle())
+            .accessibilityLabel(SheetWords.manageConnections)
+        } else {
+            Button(action: action) {
+                HStack(spacing: 7) {
+                    Text(SheetWords.manageConnections)
+                    Image(systemName: "arrow.up.right").imageScale(.small).accessibilityHidden(true)
+                }
+            }
+            .buttonStyle(.quietPill(size: .compact))
+        }
+    }
+}
+
+/// The quiet pill's look (QuietPillStyle) for words that need more than one line: ink on white with the pill's shadow,
+/// in a rounded box as wide as there's room for and as tall as its words.
+private struct GrowingPillStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 22, style: .continuous)
+        configuration.label
+            .font(PillSize.compact.font)
+            .foregroundStyle(configuration.isPressed ? Palette.ink : Palette.ink2)
+            .multilineTextAlignment(.center)
+            .lineLimit(nil)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, PillSize.compact.padding)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, minHeight: SheetTapArea.least)
+            .background(Palette.surface, in: shape)
+            .tokenShadow(.pill, in: shape)
+            .contentShape(shape)
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.98 : 1)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: configuration.isPressed)
+    }
+}
+
+/// A tap target of at least 44 by 44 points (the least Apple's guidelines ask for) around a control drawn smaller, as the
+/// web draws its range and view buttons. It reaches past what's drawn without moving anything. A control narrower than
+/// 44 points grows sideways only toward `outward`, so two segments side by side (the chart and table switch) each grow
+/// away from the other and their targets never overlap.
+struct SheetTapArea: Shape {
+    static let least: CGFloat = 44
+    var outward: HorizontalEdge?
+
+    func path(in rect: CGRect) -> Path { Path(Self.area(of: rect, outward: outward)) }
+
+    static func area(of rect: CGRect, outward: HorizontalEdge?) -> CGRect {
+        let tall = max(0, least - rect.height) / 2
+        let wide = outward == nil ? 0 : max(0, least - rect.width)
+        return CGRect(x: rect.minX - (outward == .leading ? wide : 0), y: rect.minY - tall,
+                      width: rect.width + wide, height: rect.height + 2 * tall)
+    }
+}
+
+extension View {
+    /// Taps anywhere in its SheetTapArea reach it.
+    func sheetTapTarget(outward: HorizontalEdge? = nil) -> some View {
+        contentShape(SheetTapArea(outward: outward))
     }
 }
 
