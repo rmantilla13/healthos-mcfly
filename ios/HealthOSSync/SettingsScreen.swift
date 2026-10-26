@@ -175,6 +175,7 @@ private struct ProfileYoursCard: View {
                     .buttonStyle(.quietPill(size: .compact))
                     .accessibilityIdentifier("manageSources")
             }
+            if keys, !exportMissing { ProfileExportRow(missing: $exportMissing) }
             ProfileRow("Privacy & data use", lines: ["Understand how files, food descriptions and recordings are handled."], divider: signedIn) {
                 Button("Read details") { dashboard.showWeb("privacy.html") }
                     .buttonStyle(.quietPill(size: .compact))

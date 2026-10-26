@@ -205,4 +205,103 @@ final class ProfileTests: XCTestCase {
         _ = try client.checked(Data(#"{"ok":true}"#.utf8), answer, path: "/auth/password")
         XCTAssertEqual(SessionStore.cookie(for: base), "v2.u1.2.222.new")
     }
+
+    // MARK: Export
+
+    private let base = URL(string: "http://127.0.0.1:9")!
+
+    private func answer(_ status: Int, _ body: String, headers: [String: String] = [:]) throws -> (URL, URLResponse) {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("test-download-\(UUID().uuidString).tmp")
+        try Data(body.utf8).write(to: file)
+        return (file, HTTPURLResponse(url: base.appendingPathComponent("api/me/export"), statusCode: status, httpVersion: "HTTP/1.1", headerFields: headers)!)
+    }
+
+    private func problem(_ download: @escaping ProfileExport.Download) async -> Error? {
+        do {
+            _ = try await ProfileExport.run(client: APIClient(base: base), download: download, today: "2026-10-26")
+            return nil
+        } catch {
+            return error
+        }
+    }
+
+    override func tearDown() async throws { ProfileExport.removeAll() }
+
+    func testTheExportIsAFileOfItsOwnNamedAsTheServerNamesIt() async throws {
+        var asked: URLRequest?
+        var downloaded: URL?
+        let body = #"{"format":"healthos-export","version":1}"#
+        let file = try await ProfileExport.run(client: APIClient(base: base), download: { request in
+            asked = request
+            let a = try self.answer(200, body, headers: ["Content-Disposition": #"attachment; filename="healthos-export-2026-10-25.json""#])
+            downloaded = a.0
+            return a
+        }, today: "2026-10-26")
+        XCTAssertEqual(asked?.url?.path, "/api/me/export")
+        XCTAssertEqual(asked?.httpMethod, "GET")
+        XCTAssertEqual(asked?.timeoutInterval, 120)
+        XCTAssertEqual(file.lastPathComponent, "healthos-export-2026-10-25.json")
+        XCTAssertTrue(file.path.hasPrefix(ProfileExport.folder.path), "in the temporary folder, not Documents or a cache")
+        XCTAssertFalse(file.path.contains("/Documents/"))
+        XCTAssertFalse(file.path.contains("/Caches/"))
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), body)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: try XCTUnwrap(downloaded).path), "moved, not copied")
+        ProfileExport.removeAll()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: ProfileExport.folder.path), "gone once shared")
+    }
+
+    func testTheExportsName() {
+        XCTAssertEqual(ProfileExport.fileName(contentDisposition: #"attachment; filename="healthos-export-2026-10-25.json""#, today: "2026-10-26"),
+                       "healthos-export-2026-10-25.json")
+        XCTAssertEqual(ProfileExport.fileName(contentDisposition: nil, today: "2026-10-26"), "healthos-export-2026-10-26.json", "the web's own")
+        XCTAssertEqual(ProfileExport.fileName(contentDisposition: "attachment", today: "2026-10-26"), "healthos-export-2026-10-26.json")
+        XCTAssertEqual(ProfileExport.fileName(contentDisposition: #"attachment; filename="""#, today: "2026-10-26"), "healthos-export-2026-10-26.json")
+        let odd = ProfileExport.fileName(contentDisposition: #"attachment; filename="../../x/export.json""#, today: "2026-10-26")
+        XCTAssertFalse(odd.contains("/"), "never a path")
+        XCTAssertFalse(odd.hasPrefix("."))
+        XCTAssertTrue(odd.hasSuffix("export.json"))
+    }
+
+    func testARefusalSaysWhatTheServerSays() async throws {
+        let busy = await problem { _ in
+            try self.answer(429, #"{"error":"Your export was just prepared. Try again in a minute."}"#, headers: ["Retry-After": "42"])
+        }
+        XCTAssertEqual((busy as? ProfileExport.Problem)?.message, "Your export was just prepared. Try again in a minute.")
+        let failed = await problem { _ in try self.answer(500, #"{"error":"Couldn't prepare your export. Try again in a moment."}"#) }
+        XCTAssertEqual((failed as? ProfileExport.Problem)?.message, "Couldn't prepare your export. Try again in a moment.", "as sent, not 'Server answered 500'")
+        let silent = await problem { _ in try self.answer(502, "") }
+        XCTAssertEqual((silent as? ProfileExport.Problem)?.message, ProfileWords.exportFailed, "the web's words when the server sent none")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: ProfileExport.folder.path), "nothing kept from a refusal")
+    }
+
+    func testAnOlderServerHasNoExport() async throws {
+        let missing = await problem { _ in try self.answer(404, #"{"error":"Not found"}"#) } as? ProfileExport.Problem
+        XCTAssertEqual(missing?.routeMissing, true)
+        XCTAssertEqual(missing?.message, ProfileWords.exportNotHere)
+    }
+
+    func testSignedOutDropsToSignIn() async throws {
+        let saved = Keychain.read(service: "healthos.session")
+        defer { Keychain.write(saved ?? "", service: "healthos.session") }
+        let error = await problem { _ in try self.answer(401, #"{"error":"Sign in required","signIn":true}"#) }
+        guard case .signInRequired? = error as? APIError else { return XCTFail("a 401 is for dashboard.fetch to sign out: \(String(describing: error))") }
+    }
+
+    func testNoAnswerAndABrokenStreamAreNotAFile() async throws {
+        let unreachable = await problem { _ in throw ProfileExport.Failure.unreachable }
+        XCTAssertEqual((unreachable as? ProfileExport.Problem)?.message, "Couldn't reach healthOS. Check your connection and try again.")
+        // The server breaks the connection rather than end a failing export as a short file: a failure, never a file.
+        let stopped = await problem { _ in throw ProfileExport.Failure.stopped }
+        XCTAssertEqual((stopped as? ProfileExport.Problem)?.message, "The download stopped before it finished. Try again in a minute.")
+        let cancelled = await problem { _ in throw CancellationError() }
+        XCTAssertTrue(cancelled is CancellationError)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: ProfileExport.folder.path))
+    }
+
+    func testANewExportClearsTheLastOne() async throws {
+        let first = try await ProfileExport.run(client: APIClient(base: base), download: { _ in try self.answer(200, "{}") }, today: "2026-10-26")
+        let second = try await ProfileExport.run(client: APIClient(base: base), download: { _ in try self.answer(200, "{}") }, today: "2026-10-26")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: first.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: second.path))
+    }
 }
