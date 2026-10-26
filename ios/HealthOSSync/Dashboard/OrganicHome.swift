@@ -548,7 +548,6 @@ private struct DataShape: View {
     var progress: Double?
     let a11y: String
     let action: () -> Void
-    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         Button(action: action) {
@@ -568,9 +567,7 @@ private struct DataShape: View {
             .padding(.horizontal, 14).padding(.vertical, 10)
             .frame(width: 116, alignment: .leading)
             .frame(minHeight: 60)
-            .background(tint.background(scheme), in: UnevenRoundedRectangle(cornerRadii: radii, style: .continuous))
-            .overlay(UnevenRoundedRectangle(cornerRadii: radii, style: .continuous).strokeBorder(Palette.border))
-            .shadow(color: .black.opacity(scheme == .dark ? 0 : 0.05), radius: 10, y: 4)
+            .background { CardSurface(tint: tint, shape: UnevenRoundedRectangle(cornerRadii: radii, style: .continuous)) }
         }
         .buttonStyle(.plain)
         .accessibilityLabel(a11y)

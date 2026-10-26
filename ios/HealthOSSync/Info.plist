@@ -41,6 +41,10 @@
 	<string>healthOS saves the food and drink you log in healthOS to Apple Health.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>healthOS can send your Health data to a healthOS server on your local network.</string>
+	<key>UIAppFonts</key>
+	<array>
+		<string>DMSans-Variable.ttf</string>
+	</array>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>

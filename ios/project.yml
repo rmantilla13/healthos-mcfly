@@ -41,6 +41,8 @@ targets:
         # The app refresh backstop for background sync (Background.refreshTask).
         UIBackgroundModes: [fetch]
         BGTaskSchedulerPermittedIdentifiers: [health.mcfly.sync.refresh]
+        # DM Sans, the web's face (Fonts/, with its OFL licence). Resources are copied flat into the bundle.
+        UIAppFonts: [DMSans-Variable.ttf]
     entitlements:
       path: HealthOSSync/HealthOSSync.entitlements
       properties:

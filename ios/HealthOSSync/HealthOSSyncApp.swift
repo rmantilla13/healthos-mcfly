@@ -49,7 +49,7 @@ struct RootView: View {
         }
         .environment(dashboard)
         .environment(sync)
-        .tint(Palette.series1)
+        .tint(Palette.tint)
         .onAppear {
             sync.dashboard = dashboard
             KeyboardDismisser.install()

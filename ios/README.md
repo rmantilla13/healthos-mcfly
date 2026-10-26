@@ -48,6 +48,16 @@ Cards hide or switch to fit your sources, as on the web: no WHOOP means VO₂ ma
 - **Offline:** the last summary is cached on the phone, so the app opens with numbers even offline.
 - **Fresh data without re-downloading:** the app checks `GET /api/version` on open, on return, after syncs and every minute while open. It downloads the summary and trends again only when the version changed or the day rolled over, or on pull to refresh. Servers without `/api/version` get a reload on open, on return and after syncs.
 
+## Look
+
+The app takes the web's look from `src/styles.css`, light and dark.
+
+- **Tokens** (`Dashboard/Tokens.swift`): every colour, gradient, shadow and corner radius in the CSS's `:root` block and its dark block, by its CSS name. A token the dark block doesn't name keeps its light value. `Palette` (`Dashboard/Theme.swift`) names them for the views. `ThemeTests` reads `styles.css` and fails if a value here differs, or if the CSS gains a token the app doesn't have.
+- **Cards:** the white glass sheen with a soft card shadow and a white edge; the metric washes (green, peach, pink, lavender, mint, slate, cream, blush, blue) are the CSS's own ellipses, strongest near the bottom, drawn over the sheen. Shadows are drawn as CSS draws them, spread included.
+- **Tint:** the forest accent. In dark mode, words take its text step (`--accent-text`), as on the web, since the dark accent reads under 3:1 as text.
+- **Font:** DM Sans, the web's face, bundled as `Fonts/DMSans-Variable.ttf` with its licence (`Fonts/OFL.txt`) and registered in `UIAppFonts`. `Font.app(.footnote, weight: .medium)` and `Font.app(size: 11, weight: .medium, relativeTo: .caption2)` (`Dashboard/AppFont.swift`) set a weight on the font's wght axis and scale with Dynamic Type. It's the web's latin subset: other scripts fall back to the system face, and it has no tabular figures, so digits are proportional, as on the web.
+- **Shared pieces** (`Components/`): the accent and quiet pill buttons, Badge, ChoiceCard (radio card), ChipToggle, Eyebrow, PageIntro, SheetScaffold (eyebrow, title, close button, footer buttons, the sheet gradient, full height), ProfileCard and ProfileRow, Collapsible, Orb (McFly's mark; its pulse stops with Reduce Motion), the "—" empty value, and SafariView. Translucent fills turn solid with Reduce Transparency.
+
 ## Apple Health sync
 
 - **Reads** steps, active energy, exercise minutes, walking + running distance, heart rate, resting HR, HRV (SDNN), blood oxygen, respiratory rate, sleeping wrist temperature, body temperature, weight, body fat, lean mass, VO₂ max, sleep stages, mindful sessions and workouts.
