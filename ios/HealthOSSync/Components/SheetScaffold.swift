@@ -65,6 +65,7 @@ struct SheetScaffold<Content: View, Footer: View>: View {
                 .overlay(alignment: .top) { Rectangle().fill(Palette.border).frame(height: 1) }
             }
         }
+        .font(.app(.body))
         .tint(Palette.tint)
         .presentationDetents([.large])
         .presentationCornerRadius(Radius.sheet)

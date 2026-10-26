@@ -42,7 +42,8 @@ struct ChoiceCard<Accessory: View>: View {
             .opacity(isEnabled ? 1 : 0.7)
         }
         .buttonStyle(.plain)
-        .sensoryFeedback(.selection, trigger: isOn)
+        // Choosing one card turns another off: only the one chosen taps.
+        .sensoryFeedback(.selection, trigger: isOn) { _, on in on }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isOn ? [.isSelected] : [])
     }
