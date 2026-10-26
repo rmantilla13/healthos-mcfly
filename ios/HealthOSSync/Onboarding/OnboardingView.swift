@@ -1,45 +1,183 @@
 import SwiftUI
 
-/// The welcome (src/pages/Onboarding.tsx): a new account's three steps, "Make this space yours", or the same steps to
-/// edit from Profile. The shell shows it full screen whenever `dashboard.onboarding` says (Shell/Welcome.swift). Slice A
-/// builds it here, ending a new account's with `onboarding: null` through `dashboard.save(settings:)`, and an edit's with
-/// `dashboard.closeWelcome()`.
+/// The welcome (src/pages/Onboarding.tsx), "Make this space yours": a new account's three steps, or the same steps
+/// again from Profile's Edit preferences and Body's "Change my representation" (`.edit`). The shell shows it full
+/// screen whenever `dashboard.onboarding` says (Shell/Welcome.swift): for a new account, after any sign-in, until it's
+/// done; it goes with a sign-out.
 ///
-/// Until then it says so, and never writes `onboarding`: a new account can sign out or put it off for this session.
+/// Each step forward saves the steps it leaves (OnboardingModel), so a relaunch resumes at the step reached. A new
+/// account finishes by saving `onboarding: null` and lands on Home; an edit never sends `onboarding`, and goes back to
+/// Profile (`dashboard.closeWelcome()`). As on the web, a new account's only ways past it are finishing and Sign out.
 struct OnboardingView: View {
     let mode: OnboardingMode
     @Environment(Dashboard.self) private var dashboard
+    @State private var model: OnboardingModel?
+    @State private var reference: ReferencePhoto?
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 10) {
-                Eyebrow("Welcome")
-                Text(mode == .new ? "Make this space yours" : "Edit preferences")
-                    .font(.app(size: 24, weight: .medium, relativeTo: .title2))
-                    .foregroundStyle(Palette.ink)
-                    .accessibilityAddTraits(.isHeader)
-                Text("The welcome steps are coming in this build.")
-                    .font(.app(.subheadline))
-                    .foregroundStyle(Palette.ink2)
-                HStack(spacing: 10) {
-                    if mode == .edit {
-                        Button("Back to Profile") { dashboard.closeWelcome() }.buttonStyle(.accentPill)
-                    } else {
-                        Button("Not now") { dashboard.putOffOnboarding() }.buttonStyle(.accentPill)
-                        if dashboard.signOutOffered {
-                            Button("Sign out") { Task { await dashboard.signOut() } }.buttonStyle(.quietPill)
-                        }
-                    }
+        // A navigation stack, hidden, for the keyboard's Done (the age field's number pad has no return key).
+        NavigationStack {
+            Group {
+                if let model, let reference {
+                    OnboardingSteps(model: model, reference: reference)
+                } else {
+                    Palette.page.ignoresSafeArea()
                 }
-                .padding(.top, 6)
             }
-            .card()
-            .padding(16)
+            .toolbar(.hidden, for: .navigationBar)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Palette.page)
+        .onAppear {
+            guard model == nil else { return }
+            let dashboard = dashboard
+            let mode = mode
+            model = OnboardingModel(mode: mode, settings: dashboard.status?.settings, save: { body, finishing in
+                // The last save reads the dashboard again (the web's reload and notifyDataChanged).
+                try await dashboard.save(settings: body, reload: finishing)
+            }, finish: {
+                if mode == .edit { dashboard.closeWelcome() } else { dashboard.open(.home) }
+            })
+            reference = ReferencePhoto(add: { try await dashboard.addReference($0) },
+                                       delete: { try await dashboard.deletePortrait(id: $0) },
+                                       list: { try await dashboard.portraits() })
+        }
+        // Signed out (Sign out, or a session that ended): the photo on its way stops, and nothing of it stays.
+        .onDisappear {
+            if dashboard.phase != .ready { reference?.forget() }
+        }
+        .onChange(of: dashboard.phase) { _, phase in
+            if phase != .ready { reference?.forget() }
+        }
         .font(.app(.body))
         .tint(Palette.tint)
         .toggleStyle(.appSwitch)
+    }
+}
+
+/// The card: step tabs, the step's heading, the step, and Back, the helper line and the main button.
+private struct OnboardingSteps: View {
+    @Bindable var model: OnboardingModel
+    let reference: ReferencePhoto
+    @Environment(Dashboard.self) private var dashboard
+    @AccessibilityFocusState private var headingFocused: Bool
+
+    var body: some View {
+        WelcomeFrame(spacing: 30) {
+            if model.mode == .edit {
+                Button(OnboardingWords.backToProfile) { dashboard.closeWelcome() }
+                    .buttonStyle(.welcomeTopLink)
+                    .accessibilityIdentifier("backToProfile")
+            } else if dashboard.signOutOffered {
+                Button(OnboardingWords.signOut) { Task { await dashboard.signOut() } }
+                    .buttonStyle(.welcomeTopLink)
+                    .accessibilityIdentifier("welcomeSignOut")
+            }
+        } content: {
+            ScrollViewReader { scroll in
+                WelcomeCard(narrow: false) {
+                    StepTabs(step: model.step, furthest: model.furthest, busy: model.busy) { target in
+                        Task { await model.go(target) }
+                    }
+                    .id("onb-top")
+                    WelcomeHead(eyebrow: OnboardingWords.eyebrow, title: model.step.title, lede: model.step.lede, lede14: true)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityAddTraits(.isHeader)
+                        .accessibilityFocused($headingFocused)
+                        .padding(.top, 30)
+                        .accessibilityIdentifier("stepTitle")
+                    switch model.step {
+                    case .perspective: PerspectiveStep(model: model, reference: reference, hasPhoto: dashboard.status?.photo != nil)
+                    case .about: AboutStep(model: model, photo: dashboard.status?.photo)
+                    case .community: CommunityStep(model: model)
+                    }
+                    if let error = model.error {
+                        ErrorNote(error).padding(.top, 18).accessibilityIdentifier("stepError")
+                    }
+                    WelcomeFoot(top: 22) {
+                        WrapLayout(spacing: 18, lineSpacing: 2) {
+                            back
+                            Text(model.step.hint)
+                                .font(.app(size: 12, relativeTo: .footnote))
+                                .foregroundStyle(Palette.ink3)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .frame(minHeight: 44)
+                        }
+                    } main: {
+                        Button { Task { await model.next() } } label: {
+                            WelcomeButtonLabel(model.busy ? OnboardingWords.saving : model.nextTitle,
+                                               arrow: !model.busy && !(model.step == .community && model.mode == .edit))
+                        }
+                        .buttonStyle(.accentPill)
+                        .disabled(model.busy)
+                        .accessibilityIdentifier("stepNext")
+                    }
+                }
+                // A new step starts at its top, and VoiceOver moves to its heading (the age field's, when sent back for it).
+                .onChange(of: model.step) { _, _ in
+                    scroll.scrollTo("onb-top", anchor: .top)
+                    if !model.focusAge { headingFocused = true }
+                }
+            }
+        }
+        .keyboardDismissal()
+    }
+
+    @ViewBuilder
+    private var back: some View {
+        if let previous = model.step.previous {
+            Button { Task { await model.go(previous) } } label: { BackLabel() }
+                .buttonStyle(.welcomeLink)
+                .disabled(model.busy)
+                .accessibilityIdentifier("stepBack")
+        } else if model.mode == .edit {
+            Button { dashboard.closeWelcome() } label: { BackLabel() }
+                .buttonStyle(.welcomeLink)
+                .accessibilityLabel(OnboardingWords.backToProfile)
+                .accessibilityIdentifier("stepBack")
+        }
+    }
+}
+
+/// 01 Your perspective · 02 A little about you · 03 Your community. A step reached opens again; at phone width only the
+/// current one keeps its name on screen (VoiceOver reads them all).
+private struct StepTabs: View {
+    let step: OnboardingStep
+    let furthest: OnboardingStep
+    let busy: Bool
+    let open: (OnboardingStep) -> Void
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 18) {
+            ForEach(OnboardingStep.allCases) { tab in
+                let reached = tab <= furthest
+                let current = tab == step
+                let opens = reached && !current && !busy
+                Button { if opens { open(tab) } } label: {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(tab.numeral)
+                            .font(.app(size: 11, relativeTo: .caption2))
+                            .overlay(alignment: .bottom) {
+                                RoundedRectangle(cornerRadius: 1).frame(height: 1.5).offset(y: 7)
+                            }
+                        if current {
+                            Text(tab.label).font(.app(size: 12.5, relativeTo: .footnote)).lineLimit(1).minimumScaleFactor(0.8)
+                        }
+                    }
+                    .foregroundStyle(reached ? Palette.ink : WelcomeLook.stepOff.color)
+                    .padding(.bottom, 8)
+                    .frame(minHeight: 32)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .allowsHitTesting(opens)
+                .accessibilityRemoveTraits(opens ? [] : .isButton)
+                .accessibilityLabel("Step \(tab.rawValue) of 3, \(tab.label)")
+                .accessibilityValue(current ? "Current step" : reached ? "" : "Not reached yet")
+                .accessibilityAddTraits(current ? [.isSelected] : [])
+                .accessibilityIdentifier("stepTab.\(tab.rawValue)")
+            }
+            Spacer(minLength: 0)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Steps")
     }
 }
