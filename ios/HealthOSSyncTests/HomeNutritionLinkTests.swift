@@ -175,4 +175,44 @@ final class HomeNutritionLinkTests: XCTestCase {
         }
         XCTAssertEqual(signedOut.pills, 0, "not behind the sign-in screen")
     }
+
+    // MARK: Live heart rate
+
+    /// "Just the statistics" has no figure, so no heart to tap: Live heart rate opens from its own button there. With a
+    /// figure, the heart's callout is the way in, and there's no button.
+    func testLiveHeartRateHasAWayInWithJustTheStatistics() async throws {
+        let summary = try JSONDecoder().decode(Summary.self, from: try fixture("summary"))
+        for (perspective, shows) in [("stats", true), ("digital", false)] {
+            let d = Dashboard()
+            d.phase = .ready
+            d.apply(status: try JSONDecoder().decode(ServerStatus.self, from: Data(#"{"settings":{"perspective":"\#(perspective)"}}"#.utf8)))
+            try await HostedAccessibility.onScreen(TodayContent(summary: summary).environment(d).environment(AppModel())) { elements in
+                let button = elements.first { identifier($0) == "liveHeartRate" }
+                XCTAssertEqual(button != nil, shows, perspective)
+                if shows { XCTAssertEqual(button?.accessibilityLabel, "Live heart rate") }
+            }
+        }
+    }
+
+    /// Home is one person's on one server (TodayScreen keys TodayContent by `identity(of:)`): another server, or someone
+    /// else, makes it anew, so nothing read for the last one (the journal's check-in, the food totals) stays on it.
+    func testHomeIsMadeAnewForAnotherServerOrPerson() throws {
+        let saved = UserDefaults.standard.string(forKey: "serverURL")
+        addTeardownBlock {
+            if let saved { UserDefaults.standard.set(saved, forKey: "serverURL") } else { UserDefaults.standard.removeObject(forKey: "serverURL") }
+        }
+        func status(_ id: String) throws -> ServerStatus {
+            try JSONDecoder().decode(ServerStatus.self, from: Data(#"{"user":{"id":"\#(id)","email":"\#(id)@example.test","role":"member"}}"#.utf8))
+        }
+        let d = Dashboard()
+        Config.serverText = "https://one.example.test"
+        d.apply(status: try status("owner"))
+        let first = TodayScreen.identity(of: d)
+        XCTAssertEqual(TodayScreen.identity(of: d), first, "the same person on the same server keeps their Home")
+        Config.serverText = "http://192.168.0.2:8080"
+        XCTAssertNotEqual(TodayScreen.identity(of: d), first, "the same account id on another server")
+        Config.serverText = "https://one.example.test"
+        d.apply(status: try status("u-sam"))
+        XCTAssertNotEqual(TodayScreen.identity(of: d), first, "someone else on the same server")
+    }
 }

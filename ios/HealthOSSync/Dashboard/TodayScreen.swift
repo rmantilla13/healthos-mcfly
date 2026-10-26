@@ -16,7 +16,9 @@ struct TodayScreen: View {
                 }
             case .ready:
                 if let summary = dashboard.summary {
-                    TodayContent(summary: summary)
+                    // One person's, on one server, as Nutrition's page: after Change server or someone else's sign-in, the
+                    // day by hour, the cycle, the food totals and the journal's check-in start again from nothing.
+                    TodayContent(summary: summary).id(Self.identity(of: dashboard))
                 } else {
                     ProgressView()
                 }
@@ -32,12 +34,17 @@ struct TodayScreen: View {
             Task { await dashboard.refreshIfChanged(includeStatus: false) }
         }
     }
+
+    /// Whose Home this is: the server and the person, as Nutrition's page (`NutritionScreen.identity`).
+    static func identity(of dashboard: Dashboard) -> String {
+        NutritionScreen.identity(server: Config.serverURL(), user: dashboard.status?.user?.id ?? dashboard.account?.id)
+    }
 }
 
 /// What Home shows of one summary, in Home.tsx's order. Every card can be hidden in Edit widgets (or Profile → Cards),
 /// and the optional ones are off until turned on; hidden cards leave no gap. Two parts only the iPhone has stay: the day
 /// by hour (it opens the Day view) and, while cycle tracking is on, the cycle's phase. Live heart rate opens from the
-/// heart's callout.
+/// heart's callout, or with "Just the statistics" (no figure, so no heart) from its own button where the figure would be.
 struct TodayContent: View {
     let summary: Summary
     @Environment(Dashboard.self) private var dashboard
@@ -75,6 +82,8 @@ struct TodayContent: View {
                             HomeFigure(summary: summary, scrub: summary.timeline?.date == summary.date ? scrub.heart(on: summary.date) : nil)
                             HomeTagline()
                         }
+                    } else {
+                        LiveHeartRateButton()
                     }
                     VStack(spacing: 14) {
                         TodayGrid(summary: summary, ids: Cards.visible(HomeCards.signals, hidden: off), goal: dashboard.stepGoal)

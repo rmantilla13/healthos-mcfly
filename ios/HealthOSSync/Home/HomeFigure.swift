@@ -322,6 +322,30 @@ struct HomeFigure: View {
     }
 }
 
+/// Live heart rate (only the iPhone has it) for "Just the statistics": with no figure there's no heart to tap, so it
+/// opens from here, a quiet line where the figure would be.
+struct LiveHeartRateButton: View {
+    @State private var open = false
+
+    var body: some View {
+        Button { open = true } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "heart.fill").font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.vitalHeart).accessibilityHidden(true)
+                Text("Live heart rate")
+            }
+            .font(.app(.caption))
+            .foregroundStyle(Palette.ink2)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 4)
+        .accessibilityHint("Measures your heart rate now")
+        .accessibilityIdentifier("liveHeartRate")
+        .sheet(isPresented: $open) { LiveHeartRateView() }
+    }
+}
+
 /// Where a portrait comes from, as true for this server (Home.tsx PortraitNote): made from your photos on an OpenAI
 /// key, yours or the server's. "Not on this server" only when the server said both are missing; while it hasn't said,
 /// the plain invitation.
