@@ -107,7 +107,8 @@ struct FoodTotalsCard: View {
     }
 }
 
-/// Lays its children out left to right, wrapping onto a new line when the next doesn't fit (CSS flex-wrap).
+/// Lays its children out left to right, wrapping onto a new line when the next doesn't fit (CSS flex-wrap). A child wider
+/// than the whole line gets a line of its own at the line's width, and as many lines of its own as its words take there.
 struct FlowRow: Layout {
     var spacing: CGFloat = 8
     var lineSpacing: CGFloat = 8
@@ -116,14 +117,17 @@ struct FlowRow: Layout {
         var lines: [[(Int, CGSize)]] = [[]]
         var x: CGFloat = 0
         for (i, view) in subviews.enumerated() {
-            let size = view.sizeThatFits(.unspecified)
-            let w = min(size.width, width)
+            // Where it breaks goes by each child's one-line width, as flex-wrap's does.
+            let ideal = view.sizeThatFits(.unspecified)
+            let w = min(ideal.width, width)
+            // Narrowed to the line, it's measured again there: its words wrap and it grows taller.
+            let h = w < ideal.width ? view.sizeThatFits(ProposedViewSize(width: w, height: nil)).height : ideal.height
             if !lines[lines.count - 1].isEmpty, x + spacing + w > width {
                 lines.append([])
                 x = 0
             }
             x += (lines[lines.count - 1].isEmpty ? 0 : spacing) + w
-            lines[lines.count - 1].append((i, CGSize(width: w, height: size.height)))
+            lines[lines.count - 1].append((i, CGSize(width: w, height: h)))
         }
         return lines
     }

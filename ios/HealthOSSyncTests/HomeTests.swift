@@ -690,6 +690,22 @@ final class HomeFitsTests: XCTestCase {
         assertFits("header", HomeHeader(summary: s, editing: .constant(false)))
     }
 
+    /// The journal card with a long check-in: the line wraps inside the card, which grows to hold it, rather than running
+    /// over its button.
+    func testTheJournalWithALongCheckInGrowsToHoldIt() throws {
+        // No mood, so the line is the row's only child and its height is all the row's.
+        func entry(_ text: String) throws -> JournalEntry {
+            try decode(JournalEntry.self, #"{"id":"a","date":"2026-10-19","time":"08:10","mood":null,"text":"\#(text)","createdAt":1}"#)
+        }
+        let long = try entry("Made-up: a long first line that needs more than one line of the card to say all of it")
+        let short = try entry("Made-up")
+        assertFits("journal with a check-in", JournalPromptCard(latest: long))
+        for size in [DynamicTypeSize.accessibility3, .accessibility5] {
+            let tall = fit(JournalPromptCard(latest: long), size).height, low = fit(JournalPromptCard(latest: short), size).height
+            XCTAssertGreaterThan(tall, low + 10, "the long line's second line has room at \(size)")
+        }
+    }
+
     func testTheFoodTotalsCardFits() throws {
         let data = try decode(NutritionData.self, #"""
         {"enabled":true,"numbers":"all","today":"2026-10-19","start":"2026-10-13","end":"2026-10-19","apps":["MyFitnessPal"],"app":null,
@@ -697,5 +713,30 @@ final class HomeFitsTests: XCTestCase {
         """#)
         assertFits("food totals", FoodTotalsCard(data: data))
         XCTAssertGreaterThan(fit(FoodTotalsCard(data: data), .large).height, 100)
+    }
+}
+
+/// FlowRow (the journal's mood and line, the food card's values) reports the height its children take, a wrapped line's
+/// included.
+@MainActor
+final class FlowRowTests: XCTestCase {
+    func testALineWiderThanTheRowWrapsOnALineOfItsOwnAndCountsAllItsHeight() {
+        let line = Text("Made-up: felt tired after lunch, maybe the late night again").font(.system(size: 13)).lineLimit(2)
+            .fixedSize(horizontal: false, vertical: true)
+        let badge = Text("Good").font(.system(size: 12)).padding(4)
+        for w: CGFloat in [120, 200] {
+            func height(_ view: some View) -> CGFloat {
+                UIHostingController(rootView: view).sizeThatFits(in: CGSize(width: w, height: .greatestFiniteMagnitude)).height
+            }
+            let alone = height(line.frame(width: w))
+            let one = height(Text("M").font(.system(size: 13)))
+            XCTAssertGreaterThan(alone, one * 1.5, "the line takes two lines at \(w)")
+            let row = height(FlowRow(spacing: 8, lineSpacing: 6) { badge; line }.frame(width: w))
+            XCTAssertEqual(row, height(badge) + 6 + alone, accuracy: 1, "the badge's line, then the wrapped line's two")
+        }
+        // Children that fit stay on one line.
+        let short = UIHostingController(rootView: FlowRow(spacing: 8, lineSpacing: 6) { badge; Text("Ok").font(.system(size: 13)) }.frame(width: 200))
+            .sizeThatFits(in: CGSize(width: 200, height: CGFloat.greatestFiniteMagnitude))
+        XCTAssertLessThan(short.height, 30)
     }
 }
