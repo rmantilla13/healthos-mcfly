@@ -131,11 +131,15 @@ private struct ReferenceRow: View {
     @State private var item: PhotosPickerItem?
     @State private var picking = false
     @State private var camera = false
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
+        // At phone width Choose photo sits beside the words, as on the web; with a photo, Change and Remove go under
+        // them, and at the accessibility text sizes so does Choose photo, so the words keep the row's width.
+        let beside = reference.photo == nil && !typeSize.isAccessibilitySize
         VStack(alignment: .leading, spacing: 0) {
             Rectangle().fill(Palette.border).frame(height: 1).accessibilityHidden(true)
-            HStack(alignment: .top, spacing: 16) {
+            HStack(alignment: .center, spacing: 16) {
                 if let photo = reference.photo {
                     Image(uiImage: photo.preview)
                         .resizable()
@@ -145,11 +149,13 @@ private struct ReferenceRow: View {
                         .tokenShadow(.pill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .accessibilityLabel(OnboardingWords.referenceAlt)
                         .accessibilityAddTraits(.isImage)
+                        .accessibilityIdentifier("referenceThumb")
                 }
                 VStack(alignment: .leading, spacing: 3) {
                     Text(OnboardingWords.referenceTitle)
                         .font(.app(size: 13.5, weight: .medium, relativeTo: .subheadline))
                         .foregroundStyle(Palette.ink)
+                        .fixedSize(horizontal: false, vertical: true)
                     Text(OnboardingWords.referenceText)
                         .font(.app(size: 11.5, relativeTo: .caption))
                         .lineSpacing(2)
@@ -168,36 +174,10 @@ private struct ReferenceRow: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                if beside { actions }
             }
             .padding(.top, 22)
-            HStack(spacing: 6) {
-                // Photos, or the camera where there is one, as a phone's browser offers for the web's file field.
-                if UIImagePickerController.isSourceTypeAvailable(.camera) {
-                    Menu {
-                        Button { picking = true } label: { Label("Photo Library", systemImage: "photo.on.rectangle") }
-                        Button { camera = true } label: { Label("Take Photo", systemImage: "camera") }
-                    } label: {
-                        Text(reference.photo == nil ? OnboardingWords.choosePhoto : OnboardingWords.change)
-                    }
-                    .menuStyle(.button)
-                    .buttonStyle(.quietPill(size: .compact))
-                    .disabled(reference.saving)
-                    .accessibilityIdentifier("choosePhoto")
-                } else {
-                    Button(reference.photo == nil ? OnboardingWords.choosePhoto : OnboardingWords.change) { picking = true }
-                        .buttonStyle(.quietPill(size: .compact))
-                        .disabled(reference.saving)
-                        .accessibilityIdentifier("choosePhoto")
-                }
-                if reference.photo != nil {
-                    Button(OnboardingWords.remove) { Task { await reference.remove() } }
-                        .buttonStyle(.welcomeLink)
-                        .padding(.horizontal, 8)
-                        .disabled(reference.saving)
-                        .accessibilityIdentifier("removePhoto")
-                }
-            }
-            .padding(.top, 12)
+            if !beside { actions.padding(.top, 12) }
             Text(after)
                 .font(.app(size: 11.5, relativeTo: .caption))
                 .lineSpacing(3)
@@ -227,6 +207,38 @@ private struct ReferenceRow: View {
             await dashboard.loadAI()
             if reference.available == nil { await reference.load() }
         }
+    }
+
+    /// Choose photo, or Change and Remove: Photos, or the camera where there is one, as a phone's browser offers for the
+    /// web's file field.
+    private var actions: some View {
+        HStack(spacing: 6) {
+            if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                Menu {
+                    Button { picking = true } label: { Label("Photo Library", systemImage: "photo.on.rectangle") }
+                    Button { camera = true } label: { Label("Take Photo", systemImage: "camera") }
+                } label: {
+                    Text(reference.photo == nil ? OnboardingWords.choosePhoto : OnboardingWords.change)
+                }
+                .menuStyle(.button)
+                .buttonStyle(.quietPill(size: .compact))
+                .disabled(reference.saving)
+                .accessibilityIdentifier("choosePhoto")
+            } else {
+                Button(reference.photo == nil ? OnboardingWords.choosePhoto : OnboardingWords.change) { picking = true }
+                    .buttonStyle(.quietPill(size: .compact))
+                    .disabled(reference.saving)
+                    .accessibilityIdentifier("choosePhoto")
+            }
+            if reference.photo != nil {
+                Button(OnboardingWords.remove) { Task { await reference.remove() } }
+                    .buttonStyle(WelcomeLinkStyle(size: 13, color: Palette.ink3))
+                    .padding(.horizontal, 10)
+                    .disabled(reference.saving)
+                    .accessibilityIdentifier("removePhoto")
+            }
+        }
+        .fixedSize()
     }
 
     /// Saving, saved, or a photo kept before.
