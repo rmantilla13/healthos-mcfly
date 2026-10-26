@@ -206,7 +206,6 @@ struct NutritionChatCard: View {
             if voice == nil {
                 voice = VoiceNote(recorder: MicrophoneRecorder(), transcribe: { [dashboard] in try await dashboard.transcribe($0) })
             }
-            voice?.resume()
             voice?.onText = { words in
                 let typed = thread.draft
                 thread.draft = typed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? words : "\(typed.trimmingTrailingSpace) \(words)"
@@ -214,8 +213,10 @@ struct NutritionChatCard: View {
             }
         }
         .onDisappear { voice?.cancel() }
+        // Only the background ends a note: the microphone's permission question (and Control Center) make the app
+        // inactive for a moment, and a note started from VoiceOver goes on through that.
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { voice?.resume() } else { voice?.cancel() }
+            if phase == .background { voice?.cancel() }
         }
         .onChange(of: thread.turns.count) { old, new in if new > old { scrollToBottom() } }
         .onChange(of: thread.busy) { _, busy in if busy { scrollToBottom() } }

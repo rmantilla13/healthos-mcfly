@@ -63,9 +63,14 @@ final class VoiceNote {
     private var startedAt: Date?
     /// Let go before the recorder started (the microphone was still being asked for): don't record after all.
     private var released = false
-    /// Gone (the page closed): nothing that comes back is used.
-    private var alive = true
+    /// Which note this is. A new note, and leaving the page, move it on, so what comes back for an earlier note (its
+    /// start, its words, its clock) is dropped and never touches the one after it.
+    private var note = 0
+    /// A start is still waiting for the recorder (the microphone's permission question). Only one at a time, so a
+    /// start that comes back for a note given up on can stop its own recording and no other.
+    private var waitingForRecorder = false
     private var ticker: Task<Void, Never>?
+    private var writing: Task<Void, Never>?
 
     init(recorder: VoiceRecording, transcribe: @escaping (Data) async throws -> String, now: @escaping () -> Date = Date.init) {
         self.recorder = recorder
@@ -95,8 +100,8 @@ final class VoiceNote {
     func press() {
         // A press during a recording started from VoiceOver or a keyboard stops it.
         if state == .recording, via == .toggle { return stop() }
-        guard prepare(.press) else { return }
-        Task { await begin(.press) }
+        guard let id = prepare(.press) else { return }
+        Task { await begin(.press, id) }
     }
 
     /// The finger lifted, or the touch was taken away (the microphone's permission question, a scroll): stops.
@@ -106,49 +111,53 @@ final class VoiceNote {
 
     /// VoiceOver's activate, Switch Control or a keyboard: starts, and again stops.
     func toggle() {
-        if state == .recording { stop() } else if prepare(.toggle) { Task { await begin(.toggle) } }
+        if state == .recording { stop() } else if let id = prepare(.toggle) { Task { await begin(.toggle, id) } }
     }
 
-    /// Leaving the page mid-recording stops the microphone and throws the recording away.
+    /// Leaving the page (or the app going to the background) mid-note: the microphone stops, the recording is thrown
+    /// away, and words still being written down for it are dropped. The button is ready again for the next note.
     func cancel() {
-        alive = false
+        note += 1
         ticker?.cancel()
         ticker = nil
+        writing?.cancel()
+        writing = nil
         if state == .starting || state == .recording { recorder.cancel() }
         state = .idle
         seconds = 0
     }
 
-    /// Back on the page.
-    func resume() { alive = true }
-
     func start(_ how: Via) async {
-        guard prepare(how) else { return }
-        await begin(how)
+        guard let id = prepare(how) else { return }
+        await begin(how, id)
     }
 
-    /// Starting, right away: a release that comes before the microphone is ready is heard.
-    private func prepare(_ how: Via) -> Bool {
-        guard state == .idle else { return false }
+    /// Starting, right away: a release that comes before the microphone is ready is heard. The new note's number.
+    private func prepare(_ how: Via) -> Int? {
+        guard state == .idle, !waitingForRecorder else { return nil }
+        note += 1
         error = nil
         via = how
         released = false
         state = .starting
-        return true
+        return note
     }
 
-    private func begin(_ how: Via) async {
+    private func begin(_ how: Via, _ id: Int) async {
+        waitingForRecorder = true
         do {
             try await recorder.start()
         } catch {
-            guard alive else { return }
+            waitingForRecorder = false
+            guard id == note else { return }
             state = .idle
             self.error = (error as? VoiceProblem ?? .couldNotStart).message
             return
         }
-        if !alive || (how == .press && released) {
+        waitingForRecorder = false
+        if id != note || (how == .press && released) {
             recorder.cancel()
-            if alive {
+            if id == note {
                 state = .idle
                 error = "Hold the button while you talk, then let go."
             }
@@ -160,7 +169,7 @@ final class VoiceNote {
         ticker = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(250))
-                guard let self, !Task.isCancelled, self.state == .recording, let startedAt = self.startedAt else { return }
+                guard let self, !Task.isCancelled, self.note == id, self.state == .recording, let startedAt = self.startedAt else { return }
                 let took = self.now().timeIntervalSince(startedAt)
                 self.seconds = Int(took)
                 if took >= Self.maxSeconds { return self.stop() }
@@ -188,17 +197,19 @@ final class VoiceNote {
             return
         }
         state = .transcribing
-        Task { await written(audio) }
+        let id = note
+        writing = Task { await written(audio, id) }
     }
 
-    private func written(_ audio: Data) async {
-        defer { if alive { state = .idle } }
+    private func written(_ audio: Data, _ id: Int) async {
+        // Only this note's own answer ends its "Writing it down…": a note given up on leaves the next one alone.
+        defer { if id == note, state == .transcribing { state = .idle; writing = nil } }
         do {
             let words = try await transcribe(audio).trimmingCharacters(in: .whitespacesAndNewlines)
-            guard alive else { return }
+            guard id == note else { return }
             if words.isEmpty { error = "No words came through. Try again a little closer to the microphone." } else { onText(words) }
         } catch {
-            guard alive, !APIClient.isCancellation(error) else { return }
+            guard id == note, !APIClient.isCancellation(error) else { return }
             self.error = error.foodMessage
         }
     }
@@ -239,6 +250,10 @@ final class MicrophoneRecorder: VoiceRecording {
             AVNumberOfChannelsKey: 1,
             AVEncoderAudioQualityKey: AVAudioQuality.medium.rawValue,
         ]
+        // One recording at a time: anything left of an earlier one goes first, its file included.
+        recorder?.stop()
+        recorder = nil
+        removeFile()
         do {
             let r = try AVAudioRecorder(url: url, settings: settings)
             file = url
@@ -300,18 +315,25 @@ extension APIClient {
 enum VoiceWords {
     static let notTranscribed = "That recording couldn't be transcribed. Try again, or type it instead."
     static let unreachable = "Couldn't reach healthOS. Check your connection and try again."
+
+    /// What a refused transcription says: the server's own words (a limit, no key, OpenAI busy); an older server
+    /// without the route, or one that can't be reached, in the web's (useVoiceNote.ts transcribe). Signing in again
+    /// and a cancellation pass through as they are.
+    static func error(_ error: Error) -> Error {
+        guard let api = error as? APIError else { return error }
+        if api.routeMissing { return FoodError(notTranscribed) }
+        if case .network = api { return FoodError(unreachable) }
+        return api
+    }
 }
 
 extension Dashboard {
-    /// A voice note's words (a 401 drops to sign-in). The server's own words for a refusal; an older server without the
-    /// route, or one that can't be reached, in the web's.
+    /// A voice note's words (a 401 drops to sign-in), with its refusals in `VoiceWords.error`'s words.
     func transcribe(_ audio: Data) async throws -> String {
         do {
             return try await fetch { try await $0.transcribe(audio) }
-        } catch let error as APIError {
-            if error.routeMissing { throw FoodError(VoiceWords.notTranscribed) }
-            if case .network = error { throw FoodError(VoiceWords.unreachable) }
-            throw error
+        } catch {
+            throw VoiceWords.error(error)
         }
     }
 }

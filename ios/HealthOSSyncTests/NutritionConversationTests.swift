@@ -468,7 +468,7 @@ final class NutritionConversationTests: XCTestCase {
         XCTAssertEqual(words.count, 2)
     }
 
-    func testAVoiceNoteThatCantBeUsedSaysWhy() async {
+    func testAVoiceNoteThatCantBeUsedSaysWhy() async throws {
         let recorder = FakeRecorder()
         let clock = Clock()
         var reply: () throws -> String = { "" }
@@ -534,8 +534,8 @@ final class NutritionConversationTests: XCTestCase {
         XCTAssertEqual(recorder.cancelled, 2)
 
         // A touch taken away at once (the permission question, a scroll), before the start has even begun: the press
-        // is already starting, so the release is heard and nothing records.
-        voice.resume()
+        // is already starting, so the release is heard and nothing records. (After leaving the page, the button is
+        // ready again for the next note.)
         voice.press()
         XCTAssertEqual(voice.state, .starting)
         voice.release()
@@ -544,16 +544,122 @@ final class NutritionConversationTests: XCTestCase {
         XCTAssertEqual(recorder.cancelled, 3)
         XCTAssertEqual(voice.error, "Hold the button while you talk, then let go.")
 
-        let hook = try? web("src/hooks/useVoiceNote.ts")
+        let hook = try web("src/hooks/useVoiceNote.ts")
         for words in ["Hold the button while you talk, then let go.", "That was too short to hear anything. Try again.",
                       "That recording is too long. Keep voice notes to about a minute.", "No words came through. Try again a little closer to the microphone.",
                       "No microphone was found. Type what you had instead.", "The microphone is in use by another app. Try again, or type instead.",
                       "The microphone couldn't start. Type what you had instead.", "Couldn't reach healthOS. Check your connection and try again.",
                       "That recording couldn't be transcribed. Try again, or type it instead.", "MAX_MS = 60_000", "MIN_MS = 500", "MAX_BYTES = 4 * 1024 * 1024"] {
-            XCTAssertTrue(hook?.contains(words) ?? true, words)
+            XCTAssertTrue(hook.contains(words), words)
         }
         XCTAssertEqual(VoiceProblem.noMicrophone.message, "No microphone was found. Type what you had instead.")
         XCTAssertEqual(VoiceWords.unreachable, "Couldn't reach healthOS. Check your connection and try again.")
+    }
+
+    /// A transcription that comes back after its note was given up on (the page left and come back to, or the app
+    /// sent to the background) and a new note started: it's dropped, and the new recording goes on and stops as usual.
+    func testWordsForANoteGivenUpOnNeverTouchTheNextOne() async {
+        let recorder = FakeRecorder()
+        let clock = Clock()
+        var answers: [CheckedContinuation<String, Never>] = []
+        var sent = 0
+        let voice = VoiceNote(recorder: recorder, transcribe: { _ in
+            sent += 1
+            return await withCheckedContinuation { answers.append($0) }
+        }, now: { clock.now })
+        var words: [String] = []
+        voice.onText = { words.append($0) }
+
+        await voice.start(.press)
+        clock.now = clock.now.addingTimeInterval(3)
+        voice.release()
+        XCTAssertEqual(voice.state, .transcribing)
+        while answers.isEmpty { await Task.yield() }
+
+        // Away and back while it's written down, then a new note.
+        voice.cancel()
+        XCTAssertEqual(voice.state, .idle)
+        await voice.start(.press)
+        XCTAssertEqual(voice.state, .recording)
+
+        // The first note's words arrive: nothing of them is used, and the recording isn't ended.
+        answers[0].resume(returning: "the first note")
+        for _ in 0..<50 { await Task.yield() }
+        XCTAssertEqual(voice.state, .recording, "the new recording goes on")
+        XCTAssertEqual(words, [])
+        XCTAssertNil(voice.error)
+
+        // Let go: the microphone stops (no stop is skipped), and the second note is written down.
+        clock.now = clock.now.addingTimeInterval(2)
+        voice.release()
+        XCTAssertEqual(recorder.stopped, 2)
+        XCTAssertEqual(voice.state, .transcribing)
+        while answers.count < 2 { await Task.yield() }
+        answers[1].resume(returning: "the second note")
+        await settle(voice)
+        XCTAssertEqual(voice.state, .idle)
+        XCTAssertEqual(words, ["the second note"])
+        XCTAssertEqual(sent, 2)
+        XCTAssertEqual(recorder.cancelled, 0, "neither recording was cancelled: the first had already stopped")
+    }
+
+    /// The microphone's permission question makes the app inactive for a moment: a note started from VoiceOver waits
+    /// for the answer and records. Given up on meanwhile, it stops its own recording when the answer comes, and no
+    /// second start runs over it.
+    func testANoteWaitingForTheMicrophoneEndsOnlyItself() async {
+        let recorder = FakeRecorder()
+        let clock = Clock()
+        let voice = VoiceNote(recorder: recorder, transcribe: { _ in "words" }, now: { clock.now })
+
+        recorder.waits = true
+        let first = Task { await voice.start(.toggle) }
+        while recorder.gate == nil { await Task.yield() }
+        XCTAssertEqual(voice.state, .starting)
+        recorder.gate?.resume()
+        recorder.gate = nil
+        await first.value
+        XCTAssertEqual(voice.state, .recording, "Allow: it records")
+        clock.now = clock.now.addingTimeInterval(2)
+        voice.toggle()
+        await settle(voice)
+        XCTAssertEqual(voice.state, .idle)
+        XCTAssertNil(voice.error)
+
+        // Given up on (the background) while the question is up.
+        let second = Task { await voice.start(.toggle) }
+        while recorder.gate == nil { await Task.yield() }
+        voice.cancel()
+        XCTAssertEqual(voice.state, .idle)
+        XCTAssertEqual(recorder.cancelled, 1)
+        // Pressed again while that start still waits: nothing starts over it.
+        voice.toggle()
+        XCTAssertEqual(voice.state, .idle)
+        XCTAssertEqual(recorder.started, 2)
+        recorder.gate?.resume()
+        await second.value
+        XCTAssertEqual(voice.state, .idle, "the answer came for a note given up on")
+        XCTAssertEqual(recorder.cancelled, 2, "it stopped its own recording")
+        XCTAssertNil(voice.error, "and said nothing: the person had left")
+
+        // The next note works as usual.
+        recorder.waits = false
+        await voice.start(.toggle)
+        XCTAssertEqual(voice.state, .recording)
+    }
+
+    func testATranscriptionsRefusalSaysWhy() {
+        // An older server without POST /ai/transcribe answers its catch-all; one that can't be reached, nothing.
+        XCTAssertEqual(VoiceWords.error(APIError.server(404, "Not found")).localizedDescription, VoiceWords.notTranscribed)
+        XCTAssertEqual(VoiceWords.error(APIError.server(404, "")).localizedDescription, VoiceWords.notTranscribed)
+        XCTAssertEqual(VoiceWords.error(APIError.network("Can't reach localhost. Could not connect to the server.")).localizedDescription, VoiceWords.unreachable)
+        // The server's own words otherwise (server/ai/routes.ts), as the web shows them.
+        let limit = "You've used today's 20 voice notes on healthOS's shared key. Type what you had instead."
+        XCTAssertEqual(VoiceWords.error(APIClient.error(status: 429, message: limit, path: "/ai/transcribe")).foodMessage, limit)
+        let noKey = "Voice notes need an OpenAI key. Connect one in your Profile."
+        XCTAssertEqual(VoiceWords.error(APIClient.error(status: 503, message: noKey, path: "/ai/transcribe")).foodMessage, noKey)
+        // Signing in again and a cancellation stay what they are.
+        guard case .signInRequired? = VoiceWords.error(APIError.signInRequired) as? APIError else { return XCTFail("a 401 drops to sign-in") }
+        XCTAssertTrue(APIClient.isCancellation(VoiceWords.error(CancellationError())))
     }
 
     func testARecordingLeftBehindIsDeleted() throws {
