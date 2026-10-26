@@ -175,6 +175,11 @@ enum FoodText {
         quantity == 1 ? label : "\(quantityText(quantity)) × \(label.isEmpty ? "portion" : label)"
     }
 
+    /// A typed number, either decimal separator ("1,5" is 1.5); nil when it isn't one.
+    static func number(_ raw: String) -> Double? {
+        Double(raw.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ",", with: "."))
+    }
+
     /// 2 -> "2", 1.5 -> "1.5", 0.33333 -> "0.33".
     static func quantityText(_ q: Double) -> String {
         let r = (q * 100).rounded() / 100
