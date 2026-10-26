@@ -183,10 +183,32 @@ struct LinkedText: View {
 
     init(_ markdown: String) { self.markdown = markdown }
 
+    /// The links underlined, as the web's text links are.
+    static func underlined(_ markdown: String) -> AttributedString {
+        var text = (try? AttributedString(markdown: markdown)) ?? AttributedString(markdown)
+        for run in text.runs where run.link != nil { text[run.range].underlineStyle = .single }
+        return text
+    }
+
     var body: some View {
-        Text((try? AttributedString(markdown: markdown)) ?? AttributedString(markdown))
+        Text(Self.underlined(markdown))
             .tint(Palette.accentText)
             .fixedSize(horizontal: false, vertical: true)
             .environment(\.openURL, OpenURLAction { url in dashboard.open(url: url) ? .handled : .systemAction })
+    }
+}
+
+/// A pill button's words, wrapping at the largest text sizes instead of being cut off (the pill styles keep one line,
+/// and the innermost line limit wins).
+struct PillLabel: View {
+    let text: String
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        Text(text)
+            .lineLimit(nil)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.vertical, 6)
     }
 }

@@ -94,20 +94,29 @@ private struct ViewingPicker: View {
 
     var body: some View {
         let oldest = Day.add(today, -366)
-        HStack(spacing: 10) {
-            Text("Viewing").font(.app(size: 12, relativeTo: .caption)).foregroundStyle(Palette.ink3).accessibilityHidden(true)
-            DatePicker("Viewing", selection: Binding(get: { Day.midnightUTC(date ?? today) }, set: { new in
-                let v = Self.string(new)
-                // Past either end: keep the day shown.
-                guard v >= oldest, v <= today else { return }
-                date = v == today ? nil : v
-            }), in: Day.midnightUTC(oldest)...Day.midnightUTC(today), displayedComponents: .date)
-                .labelsHidden()
-                .environment(\.timeZone, Self.utc)
-                .environment(\.calendar, { var c = Calendar(identifier: .gregorian); c.timeZone = Self.utc; return c }())
-                .accessibilityLabel("Viewing")
-                .accessibilityIdentifier("nutritionViewing")
+        // Side by side, or "Viewing" over the picker where they don't fit (the largest text sizes).
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) { label; picker(oldest) }
+            VStack(alignment: .leading, spacing: 6) { label; picker(oldest) }
         }
+    }
+
+    private var label: some View {
+        Text("Viewing").font(.app(size: 12, relativeTo: .caption)).foregroundStyle(Palette.ink3).accessibilityHidden(true)
+    }
+
+    private func picker(_ oldest: String) -> some View {
+        DatePicker("Viewing", selection: Binding(get: { Day.midnightUTC(date ?? today) }, set: { new in
+            let v = Self.string(new)
+            // Past either end: keep the day shown.
+            guard v >= oldest, v <= today else { return }
+            date = v == today ? nil : v
+        }), in: Day.midnightUTC(oldest)...Day.midnightUTC(today), displayedComponents: .date)
+            .labelsHidden()
+            .environment(\.timeZone, Self.utc)
+            .environment(\.calendar, { var c = Calendar(identifier: .gregorian); c.timeZone = Self.utc; return c }())
+            .accessibilityLabel("Viewing")
+            .accessibilityIdentifier("nutritionViewing")
     }
 
     static func string(_ d: Date) -> String {
@@ -286,7 +295,8 @@ struct NutritionChatCard: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             .multilineTextAlignment(.center)
-            .frame(maxWidth: .infinity)
+            // The card is at least a short screen tall (min-height 460 on the web's phone), the invitation in its middle.
+            .frame(maxWidth: .infinity, minHeight: 268)
             .padding(.vertical, 24)
             .accessibilityElement(children: .combine)
         } else {
@@ -641,14 +651,11 @@ private struct ChatReview: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             NutritionFlow(spacing: 16, rowSpacing: 10) {
+                FoodWhenPicker(label: "\(first.map { Fmt.relativeDay($0.date, today: today) } ?? "Today") at", time: $review.time)
                 HStack(spacing: 8) {
-                    Text("\(first.map { Fmt.relativeDay($0.date, today: today) } ?? "Today") at").mutedSmall()
-                    FoodTimePicker(label: "Time", time: $review.time)
-                }
-                HStack(spacing: 8) {
-                    Button(review.saveTitle) {
+                    Button {
                         Task { if let n = await review.save(.dashboard(dashboard)) { onDone(n) } }
-                    }
+                    } label: { PillLabel(review.saveTitle) }
                     .buttonStyle(.accentPill(size: .compact))
                     .disabled(review.busy || review.kept.isEmpty)
                     .accessibilityIdentifier("saveDrafts")
@@ -776,9 +783,11 @@ private struct SetupLineView: View {
     var body: some View {
         switch line {
         case .connectOpenAI?:
-            LinkedText("\(NutritionChat.SetupLine.connectLead)**[\(NutritionChat.SetupLine.connectLink)](healthos://profile?connect=openai)**\(NutritionChat.SetupLine.connectTail)")
+            // The link as the web's .nutri-setup a: medium, in the accent's words colour, underlined.
+            Text(connectLine)
                 .font(.app(size: 11.5, relativeTo: .caption2))
                 .foregroundStyle(Palette.ink2)
+                .environment(\.openURL, OpenURLAction { url in dashboard.open(url: url) ? .handled : .systemAction })
                 .modifier(SetupLineLayout())
         case .notHere(let text)?:
             Text(text).font(.app(size: 11.5, relativeTo: .caption2)).foregroundStyle(Palette.ink2).modifier(SetupLineLayout())
@@ -787,6 +796,15 @@ private struct SetupLineView: View {
         case nil:
             EmptyView()
         }
+    }
+
+    private var connectLine: AttributedString {
+        var link = AttributedString(NutritionChat.SetupLine.connectLink)
+        link.link = URL(string: "healthos://profile?connect=openai")
+        link.font = .app(size: 11.5, weight: .medium, relativeTo: .caption2)
+        link.foregroundColor = Palette.accentText
+        link.underlineStyle = .single
+        return AttributedString(NutritionChat.SetupLine.connectLead) + link + AttributedString(NutritionChat.SetupLine.connectTail)
     }
 
     private struct SetupLineLayout: ViewModifier {

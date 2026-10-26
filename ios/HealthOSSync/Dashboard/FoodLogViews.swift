@@ -29,7 +29,6 @@ struct FoodLogTab<Header: View>: View {
                         day = Day.add(selected, step)
                     }
                     FoodAddCard(log: log, date: selected, units: dashboard.units)
-                        .id(log.drafts.map(\.id).joined(separator: ","))
                 } else if let error {
                     Text("Couldn't load your food log: \(error)").font(.app(.footnote)).foregroundStyle(Palette.ink2).card()
                 } else {
@@ -179,7 +178,7 @@ struct FoodEntryRow: View {
                     actions
                 }
             } else {
-                HStack(alignment: .top, spacing: 10) {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
                     time.frame(width: 44, alignment: .leading)
                     text.frame(maxWidth: .infinity, alignment: .leading)
                     actions
@@ -188,6 +187,7 @@ struct FoodEntryRow: View {
             if let error { NoteBad(error, size: 12) }
             if editing { FoodEntryEditor(entry: entry, mode: mode, units: units) { editing = false } }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 10)
         .task(id: confirming) {
             guard confirming else { return }
@@ -197,7 +197,7 @@ struct FoodEntryRow: View {
     }
 
     private var time: some View {
-        Text(entry.time).mutedSmall().padding(.top, 2).accessibilityLabel("At \(entry.time)")
+        Text(entry.time).mutedSmall().accessibilityLabel("At \(entry.time)")
     }
 
     private var text: some View {
@@ -237,13 +237,13 @@ struct FoodEntryRow: View {
     }
 }
 
-/// Fields side by side where they fit (.food-fields: at least 110pt each), one to a row at the largest text sizes.
+/// Fields side by side where they fit (.food-fields), two to a row at a phone's width as on the web, one at the largest text sizes.
 struct FoodFields<Content: View>: View {
     @ViewBuilder var content: Content
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
-        LazyVGrid(columns: typeSize.isAccessibilitySize ? [GridItem(.flexible())] : [GridItem(.adaptive(minimum: 110), spacing: 10, alignment: .bottomLeading)],
+        LazyVGrid(columns: typeSize.isAccessibilitySize ? [GridItem(.flexible())] : [GridItem(.adaptive(minimum: 140), spacing: 10, alignment: .bottomLeading)],
                   alignment: .leading, spacing: 10) {
             content
         }
@@ -282,6 +282,25 @@ struct FoodTimePicker: View {
             .labelsHidden()
             .environment(\.timeZone, zone)
             .accessibilityLabel(label)
+    }
+}
+
+/// "Today at" and the time: side by side, or the words over the picker where they don't fit, never a word broken.
+struct FoodWhenPicker: View {
+    let label: String
+    @Binding var time: String
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                Text(label).mutedSmall()
+                FoodTimePicker(label: "Time", time: $time)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text(label).mutedSmall()
+                FoodTimePicker(label: "Time", time: $time)
+            }
+        }
     }
 }
 
@@ -410,14 +429,12 @@ private struct FoodAddCard: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
                 if log.drafts.isEmpty {
-                    HStack(spacing: 8) {
-                        Text("\(Fmt.relativeDay(date, today: log.today)) at").mutedSmall()
-                        FoodTimePicker(label: "Time", time: Binding(get: { picked ?? defaultTime }, set: { picked = $0 }))
-                    }
+                    FoodWhenPicker(label: "\(Fmt.relativeDay(date, today: log.today)) at", time: Binding(get: { picked ?? defaultTime }, set: { picked = $0 }))
                 }
             }
             if !log.drafts.isEmpty {
                 FoodLogReview(drafts: log.drafts, batch: log.draftBatch ?? "", note: note, mode: log.mode, units: units)
+                    .id(log.drafts.map(\.id).joined(separator: ","))
             } else {
                 if log.mode != .none { FoodWaterButtons(when: when, units: units) }
                 if modes.count > 1 {
@@ -478,7 +495,7 @@ struct FoodWaterButtons: View {
                         .accessibilityIdentifier("water-\(Int(w.ml.rounded()))")
                 }
             }
-            if let done { Text(done).font(.app(size: 12, relativeTo: .caption)).foregroundStyle(Palette.goodText) }
+            if let done { Text(done).font(.app(size: 12, relativeTo: .caption)).foregroundStyle(Palette.ink) }
             if let error { NoteBad(error, size: 12) }
         }
         .task(id: done) {
@@ -536,7 +553,7 @@ struct FoodSearchPanel: View {
                 .onChange(of: query) { _, v in if v.count > 100 { query = String(v.prefix(100)) } }
                 .accessibilityLabel("Search foods, or type a barcode")
                 .accessibilityIdentifier("foodQuery")
-            let button = Button(busy ? "Searching…" : "Search", action: search)
+            let button = Button(action: search) { PillLabel(busy ? "Searching…" : "Search") }
                 .buttonStyle(.accentPill(size: .compact))
                 .disabled(busy || query.trimmingCharacters(in: .whitespaces).count < 2)
                 .accessibilityIdentifier("foodSearch")
@@ -560,7 +577,7 @@ struct FoodSearchPanel: View {
                 }
             }
             if let error { NoteBad(error, size: 12) }
-            if let added { Text("Added \(added).").font(.app(size: 12, relativeTo: .caption)).foregroundStyle(Palette.goodText) }
+            if let added { Text("Added \(added).").font(.app(size: 12, relativeTo: .caption)).foregroundStyle(Palette.ink) }
             if let found {
                 ForEach(found.notes, id: \.self) { Text($0).mutedSmall() }
                 if found.results.isEmpty {
@@ -772,13 +789,13 @@ private struct FoodScanPanel: View {
             }
             HStack(spacing: 8) {
                 TextField("Barcode", text: $code).keyboardType(.numberPad).foodInput().accessibilityLabel("Barcode").accessibilityIdentifier("barcodeField")
-                Button(busy ? "Looking up…" : "Look up", action: lookUp)
+                Button(action: lookUp) { PillLabel(busy ? "Looking up…" : "Look up") }
                     .buttonStyle(.accentPill(size: .compact))
                     .disabled(busy || code.filter(\.isNumber).count < 8)
                     .accessibilityIdentifier("barcodeLookUp")
             }
             if let error { NoteBad(error, size: 12) }
-            if let added { Text("Added \(added).").font(.app(size: 12, relativeTo: .caption)).foregroundStyle(Palette.goodText) }
+            if let added { Text("Added \(added).").font(.app(size: 12, relativeTo: .caption)).foregroundStyle(Palette.ink) }
             if let found {
                 ForEach(found.notes, id: \.self) { Text($0).mutedSmall() }
                 if found.results.isEmpty {
@@ -854,7 +871,7 @@ private struct FoodEstimatePanel: View {
                 .mutedSmall()
             if let note { Text(note).font(.app(size: 14, relativeTo: .subheadline)).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true) }
             if let error { NoteBad(error, size: 12) }
-            Button(busy ? "Estimating…" : "Estimate", action: estimate)
+            Button(action: estimate) { PillLabel(busy ? "Estimating…" : "Estimate") }
                 .buttonStyle(.accentPill(size: .compact))
                 .disabled(busy || (description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && photo == nil))
                 .accessibilityIdentifier("estimate")
@@ -934,9 +951,9 @@ private struct FoodLogReview: View {
             }
             if let error = review.error { NoteBad(error, size: 12) }
             HStack(spacing: 8) {
-                Button(review.saveTitle) {
+                Button {
                     Task { _ = await review.save(.dashboard(dashboard)) }
-                }
+                } label: { PillLabel(review.saveTitle) }
                 .buttonStyle(.accentPill(size: .compact))
                 .disabled(review.busy || review.kept.isEmpty)
                 .accessibilityIdentifier("saveDrafts")
@@ -995,7 +1012,7 @@ struct FoodQuickPanel: View {
                 }
             }
             if let error { NoteBad(error, size: 12) }
-            if let added { Text("Added \(added).").font(.app(size: 12, relativeTo: .caption)).foregroundStyle(Palette.goodText) }
+            if let added { Text("Added \(added).").font(.app(size: 12, relativeTo: .caption)).foregroundStyle(Palette.ink) }
             Button(busy ? "Adding…" : "Add") { add(fields) }
                 .buttonStyle(.accentPill(size: .compact))
                 .disabled(busy)
