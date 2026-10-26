@@ -2,7 +2,8 @@ import SwiftUI
 
 /// Profile → Cards (G24, the web's CardsSheet and CardChoices): a box per card, grouped as the web's pages (Home,
 /// "Sleep · Overview", "Body · Overview", and "Nutrition · Overview" while Nutrition is on). Optional cards say so;
-/// they're off until ticked. Under each, where this app shows it, or that it changes the web dashboard only. Each box
+/// they're off until ticked. Under a card, that only the web dashboard shows it, or where this iPhone does when that
+/// isn't the page its group names. Each box
 /// moves at once and its change goes to the server on its own, after any still on their way; one the server refuses
 /// goes back with the reason. Show all, while a default card is hidden, brings every default card back and leaves the
 /// optional ones as they are. Only the layout changes: nothing is deleted.
@@ -28,7 +29,7 @@ struct ProfileCardsSheet: View {
                         ForEach(group.cards) { card in
                             Toggle(isOn: Binding(get: { dashboard.cardShown(card.id) }, set: { set(card.id, shown: $0) })) {
                                 ProfileCardLabel(name: Cards.label(card, optionalCards: optional), optional: optional && card.optional,
-                                                 place: card.place?.label)
+                                                 note: Self.note(card, in: group.page))
                             }
                             .toggleStyle(ProfileCheckboxStyle())
                             .accessibilityIdentifier("card-\(card.id)")
@@ -47,6 +48,14 @@ struct ProfileCardsSheet: View {
             }
             Button("Done", action: close).buttonStyle(.accentPill).accessibilityIdentifier("cardsDone")
         }
+    }
+
+    /// Where this iPhone shows a card, when that isn't plain from its group: only on the web dashboard, or on
+    /// another tab of its page ("Body · Activity"). Nil when it shows on the page its group names.
+    static func note(_ card: DashboardCard, in page: CardPage) -> String? {
+        guard let place = card.place else { return "Only on the web dashboard" }
+        if place.tab == nil || place.label == page.label { return nil }
+        return "On this iPhone: \(place.label)"
     }
 
     private func set(_ id: String, shown: Bool) {
@@ -78,11 +87,11 @@ struct ProfileCardsSheet: View {
 }
 
 /// A card's name, "Optional" on the right for one that's off until ticked (the web's small muted word), and under the
-/// name where this app shows it.
+/// name where this iPhone shows it, when that isn't the page its group names.
 private struct ProfileCardLabel: View {
     let name: String
     let optional: Bool
-    let place: String?
+    let note: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -93,10 +102,12 @@ private struct ProfileCardLabel: View {
                     Text("Optional").font(.app(size: 11, relativeTo: .caption2)).foregroundStyle(Palette.ink3)
                 }
             }
-            Text(place.map { "On this iPhone: \($0)" } ?? "Only on the web dashboard")
-                .font(.app(size: 11, relativeTo: .caption2))
-                .foregroundStyle(Palette.ink3)
-                .fixedSize(horizontal: false, vertical: true)
+            if let note {
+                Text(note)
+                    .font(.app(size: 11, relativeTo: .caption2))
+                    .foregroundStyle(Palette.ink3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 }

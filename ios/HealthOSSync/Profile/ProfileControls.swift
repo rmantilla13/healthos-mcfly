@@ -95,6 +95,8 @@ struct ProfileSegments<Value: Hashable>: View {
             }
         }
         .padding(3)
+        // The track runs the row's width, its pills from the left, as the web's in a settings row.
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(Palette.surface2, in: shape)
         .overlay(shape.strokeBorder(Palette.border))
         .opacity(disabled ? 0.6 : 1)
@@ -260,23 +262,26 @@ private struct ProfileQuietBody: View {
 
 /// The web's .btn-danger: the white pill with its words in the critical colour (Delete all cycle data).
 struct ProfileDangerStyle: ButtonStyle {
+    var size: PillSize = .regular
+
     func makeBody(configuration: Configuration) -> some View {
-        ProfileDangerBody(configuration: configuration)
+        ProfileDangerBody(configuration: configuration, size: size)
     }
 }
 
 private struct ProfileDangerBody: View {
     let configuration: ButtonStyleConfiguration
+    let size: PillSize
     @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
         configuration.label
-            .font(PillSize.regular.font)
+            .font(size.font)
             .foregroundStyle(Palette.critical)
             .lineLimit(1)
             .minimumScaleFactor(0.8)
-            .padding(.horizontal, PillSize.regular.padding)
-            .frame(minHeight: PillSize.regular.height)
+            .padding(.horizontal, size.padding)
+            .frame(minHeight: size.height)
             .background(configuration.isPressed ? Palette.surfaceHover : Palette.surface, in: Capsule())
             .tokenShadow(.pill, in: Capsule())
             .contentShape(Capsule())

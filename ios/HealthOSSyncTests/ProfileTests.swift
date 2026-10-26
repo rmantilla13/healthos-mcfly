@@ -53,7 +53,7 @@ final class ProfileTests: XCTestCase {
         for w in [
             "Health profile", ProfileWords.healthProfile, "Sex for health calculations", "Track my cycle", ProfileWords.trackCycle, ProfileWords.trackWhenever,
             "Show my cycle phase to family", ProfileWords.sharePhase, ProfileWords.cycleOff, "Delete cycle data", ProfileWords.deleteCycle,
-            "Delete all cycle data", ProfileWords.deleteCycleConfirm, "There was nothing to delete.", "'entry' : 'entries'",
+            "Delete all cycle data", "\(ProfileWords.deleteCycleAsk) \(ProfileWords.deleteCycleWarning)", "There was nothing to delete.", "'entry' : 'entries'",
         ] { XCTAssertTrue(cycle.contains(w), "Cycle.tsx says \"\(w)\"") }
         for (_, title) in ProfileWords.sexChoices { XCTAssertTrue(cycle.contains("'\(title)'"), title) }
         XCTAssertTrue(cycle.contains("(['female', 'male', 'unspecified'] as const)"), "the same three, in the same order")
@@ -67,7 +67,7 @@ final class ProfileTests: XCTestCase {
         for w in [
             ProfileWords.nutritionAbout, ProfileWords.chooseFirst, "What you see", ProfileWords.targetsTitle, ProfileWords.targetsNote,
             ProfileWords.nutritionOff, "Delete nutrition data", ProfileWords.deleteNutrition, "Delete all nutrition data",
-            ProfileWords.deleteNutritionConfirm, "'Deleted.'", "There was nothing to delete.",
+            "\(ProfileWords.deleteNutritionAsk) \(ProfileWords.deleteNutritionWarning)", "'Deleted.'", "There was nothing to delete.",
         ] { XCTAssertTrue(nutrition.contains(w), "Nutrition.tsx says \"\(w)\"") }
         for c in ProfileWords.numbersChoices {
             XCTAssertTrue(nutrition.contains("{ value: '\(c.value)', title: '\(c.title)', text: '\(c.text)' }"), c.title)
@@ -139,6 +139,20 @@ final class ProfileTests: XCTestCase {
         // The links the app's own text and routes make.
         XCTAssertEqual(AppRoute(url: URL(string: "healthos://profile?connect=openai")!).flatMap { ProfileSheet.linked($0.query) }, .openai)
         XCTAssertEqual(AppRoute(page: "settings", query: ["connect": "chatbot"]).flatMap { ProfileSheet.linked($0.query) }, .chatbot)
+    }
+
+    func testCardNotesSayOnlyWhatTheGroupDoesnt() throws {
+        // A card this iPhone shows on the page its group names: nothing to add.
+        XCTAssertNil(ProfileCardsSheet.note(try XCTUnwrap(Cards.card("home.hrv")), in: .home))
+        // A card no page of this iPhone shows yet: the web dashboard only.
+        let unplaced = try XCTUnwrap(Cards.all.first { $0.place == nil })
+        XCTAssertEqual(ProfileCardsSheet.note(unplaced, in: unplaced.page), "Only on the web dashboard")
+        // Every note is one of those two or names another tab of the page.
+        for card in Cards.all {
+            guard let note = ProfileCardsSheet.note(card, in: card.page), note != "Only on the web dashboard" else { continue }
+            XCTAssertEqual(note, "On this iPhone: \(try XCTUnwrap(card.place).label)")
+            XCTAssertNotNil(card.place?.tab)
+        }
     }
 
     // MARK: Units & daily goal

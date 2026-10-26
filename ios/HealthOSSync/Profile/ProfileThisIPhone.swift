@@ -28,7 +28,7 @@ struct ProfileThisIPhone: View {
             ProfileBlock("Upload all history again", divider: false) {
                 ProfileFine("Use this after clearing Apple Health data on the server, or after deleting old entries in Health.")
                 Button("Upload all history again", role: .destructive, action: confirmReupload)
-                    .buttonStyle(ProfileDangerStyle())
+                    .buttonStyle(ProfileDangerStyle(size: .compact))
                     .disabled(model.syncing)
                     .accessibilityIdentifier("uploadAgain")
             }

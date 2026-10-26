@@ -123,9 +123,12 @@ struct ProfileCycleSheet: View {
                 ProfileDeleteLine(title: "Delete all cycle data", id: "deleteCycle", busy: deleting, done: deleted.map(ProfileWords.cycleDeleted)) { confirmDelete = true }
             }
         }
-        .confirmationDialog(ProfileWords.deleteCycleConfirm, isPresented: $confirmDelete, titleVisibility: .visible) {
+        // The web asks with confirm(): an alert, with its Cancel in view.
+        .alert(ProfileWords.deleteCycleAsk, isPresented: $confirmDelete) {
             Button("Delete all cycle data", role: .destructive) { Task { await delete() } }
             Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(ProfileWords.deleteCycleWarning)
         }
     }
 
@@ -232,9 +235,11 @@ struct ProfileNutritionSheet: View {
             }
         }
         .keyboardDismissal()
-        .confirmationDialog(ProfileWords.deleteNutritionConfirm, isPresented: $confirmDelete, titleVisibility: .visible) {
+        .alert(ProfileWords.deleteNutritionAsk, isPresented: $confirmDelete) {
             Button("Delete all nutrition data", role: .destructive) { Task { await delete() } }
             Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(ProfileWords.deleteNutritionWarning)
         }
     }
 

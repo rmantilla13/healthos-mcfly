@@ -118,7 +118,9 @@ enum ProfileWords {
     static let sharePhase = "One word on your Family board tile (period, follicular or luteal), never dates or logs. Hidden as your next period approaches. Members will know you track your cycle, and looking day after day shows roughly when your period starts."
     static let cycleOff = "While this is off, cycle data from Apple Health is still saved, hidden from every page and from Ask McFly, so your history is there if you turn it on."
     static let deleteCycle = "Removes every cycle entry healthOS stores for you. Entries from Apple Health come back with your next import or iPhone sync unless you delete them in the Health app or turn off healthOS's access to cycle data in iPhone Settings. Your Watch and WHOOP temperatures stay with your other health data."
-    static let deleteCycleConfirm = "Delete all your cycle data? This removes everything cycle-related healthOS stores for you, from Apple Health and logged here. It can’t be undone."
+    /// The web's confirm(), as an alert's title and message.
+    static let deleteCycleAsk = "Delete all your cycle data?"
+    static let deleteCycleWarning = "This removes everything cycle-related healthOS stores for you, from Apple Health and logged here. It can’t be undone."
 
     static func cycleDeleted(_ n: Int) -> String { n > 0 ? "Deleted \(n) \(n == 1 ? "entry" : "entries")." : "There was nothing to delete." }
 
@@ -139,7 +141,8 @@ enum ProfileWords {
     static let nutritionHosted = "Your food log comes in from this iPhone at its next sync."
     static let nutritionMac = "History comes in with your next Health export import, or from this iPhone at its next sync."
     static let deleteNutrition = "Removes every food total healthOS stores for you and everything you logged here, whether nutrition is on or off. With nutrition on, your next import or iPhone sync brings back what's still in Apple Health."
-    static let deleteNutritionConfirm = "Delete all your nutrition data? This removes every food total healthOS stores for you and everything you logged here. It can’t be undone."
+    static let deleteNutritionAsk = "Delete all your nutrition data?"
+    static let deleteNutritionWarning = "This removes every food total healthOS stores for you and everything you logged here. It can’t be undone."
 
     static func nutritionDeleted(_ n: Int) -> String { n > 0 ? "Deleted." : "There was nothing to delete." }
 
