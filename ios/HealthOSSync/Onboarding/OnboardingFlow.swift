@@ -218,6 +218,10 @@ final class OnboardingModel {
     var ageError = false
     /// Sent back to step 2 for its age: the field takes the focus once it's there, not the heading.
     var focusAge = false
+    /// This move opened step 2 only to ask for its age (the web's focusAge ref): VoiceOver goes to the age field, not
+    /// the heading. Set only by that move and taken once by the page (`takeSentForAge`), so an age error left from
+    /// before never stops a later step from opening at its heading.
+    private(set) var sentForAge = false
 
     @ObservationIgnored private let save: ([String: Any], _ finishing: Bool) async throws -> Void
     @ObservationIgnored private let finish: () -> Void
@@ -257,7 +261,11 @@ final class OnboardingModel {
         if OnboardingFlow.stepsLeft(from: step, to: target).contains(.about), OnboardingFlow.parseAge(answers.age) == nil {
             ageError = true
             focusAge = true
-            step = .about
+            // Already on step 2, the field just takes the focus; from step 1, step 2 opens for it.
+            if step != .about {
+                sentForAge = true
+                step = .about
+            }
             return
         }
         busy = true
@@ -279,6 +287,12 @@ final class OnboardingModel {
         busy = false
         step = target
         if target > furthest { furthest = target }
+    }
+
+    /// Whether the step just opened was opened to ask for the age, once: the page reads it as each step opens.
+    func takeSentForAge() -> Bool {
+        defer { sentForAge = false }
+        return sentForAge
     }
 
     /// The age as typed: under 18, taking part is off, so the box on the next step starts empty if the age goes back up.

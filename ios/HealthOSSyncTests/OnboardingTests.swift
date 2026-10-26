@@ -278,6 +278,33 @@ final class OnboardingTests: XCTestCase {
         XCTAssertEqual(m.step, .community)
     }
 
+    /// Onboarding.tsx's step effect: every new step starts at its top with the heading focused, unless that very move
+    /// sent the person to step 2 for its age (focusAge, set only when the step changes). The age error itself stays
+    /// after Back, as on the web, and mustn't count.
+    func testAnAgeErrorLeftFromBeforeDoesntStopStep2OpeningAtItsHeading() async throws {
+        let (m, sent) = try model(.new, #"{"perspective":"portrait","onboarding":2}"#)
+        await m.next()
+        XCTAssertTrue(m.ageError)
+        XCTAssertFalse(m.takeSentForAge(), "already on step 2: the field takes the focus and no step opens")
+        await m.go(.perspective)
+        XCTAssertFalse(m.takeSentForAge())
+        await m.next()
+        XCTAssertEqual(sent.bodies, [#"{"onboarding":2,"perspective":"portrait"}"#], "only step 1 is left behind")
+        XCTAssertEqual(m.step, .about)
+        XCTAssertTrue(m.ageError, "the error still shows, as on the web")
+        XCTAssertFalse(m.takeSentForAge(), "a plain move forward: step 2 opens at its top, VoiceOver on its heading")
+    }
+
+    func testATabThatJumpsPastStep2WithNoAgeOpensItForTheAgeOnce() async throws {
+        let (m, _) = try model(.new, #"{"perspective":"portrait","onboarding":3}"#)
+        await m.go(.perspective)
+        await m.go(.community)
+        XCTAssertEqual(m.step, .about, "sent to step 2 for its age")
+        XCTAssertTrue(m.focusAge)
+        XCTAssertTrue(m.takeSentForAge(), "the field takes the focus, not the heading")
+        XCTAssertFalse(m.takeSentForAge(), "once only")
+    }
+
     func testATabThatJumpsPastStep2AsksForItsAgeFirstThenSavesBothStepsAtOnce() async throws {
         let (m, sent) = try model(.edit, #"{"perspective":"portrait","onboarding":null}"#)
         // Editing: every tab is open, and step 2 has no age yet.

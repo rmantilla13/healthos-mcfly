@@ -111,12 +111,12 @@ private struct OnboardingSteps: View {
                     .accessibilityIdentifier("stepNext")
                 }
             }
-            // A new step starts at the top, and VoiceOver moves to its heading. Sent back for the age, the age field
-            // takes the focus instead, and the page follows it there.
-            .onChange(of: model.step) { _, step in
-                guard !(step == .about && model.ageError) else { return }
+            // A new step starts at the top (as the web scrolls to it on every step), and VoiceOver moves to its heading.
+            // Sent back for the age by this very move, the age field takes the focus instead (AboutStep), and the
+            // page follows it there; an age error left from before doesn't count.
+            .onChange(of: model.step) { _, _ in
                 toTop += 1
-                headingFocused = true
+                if !model.takeSentForAge() { headingFocused = true }
             }
         }
         .keyboardDismissal()
