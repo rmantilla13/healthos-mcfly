@@ -7,7 +7,9 @@ import Observation
 //
 // - GET /api/ai: whether keys can be stored here (byok), what reads an estimate, voice notes, portraits.
 // - McFly's status (GET /api/mcfly), read by McFlyChat for its pill, sheet and page, and seen here.
-// - The food log's `can` (GET /api/nutrition/log, POST /api/nutrition/log/day), as each read hears it.
+// - The food log's `can` (GET /api/nutrition/log, POST /api/nutrition/log/day), as each read hears it. The server works
+//   out its estimate and voice flags from the same AiStatus (server/foodlog.ts canFor), so a newer AiStatus (a key
+//   saved or removed, the next GET /api/ai) updates them in place.
 // - PortraitList.canGenerate (GET /api/portraits), as each read hears it.
 // - The lab reader (GET /api/labs/reader).
 //
@@ -28,7 +30,8 @@ struct AiStatus: Decodable, Equatable {
         var model: String?
         var addedAt: Double?
         var lastUsedAt: Double?
-        /// Why its last use failed, in the server's words.
+        /// Why its last use failed, as a kind the server records (server/ai/keys.ts noteKeyUse): "auth", "quota" or
+        /// "unreadable"; nil when it worked. Never the provider's text: AIWords.problem says it in the web's words.
         var lastError: String?
         var id: String { provider }
     }
@@ -205,6 +208,7 @@ final class Availability {
             let status = try await read()
             guard generation == self.generation else { return }
             ai = status.map { .known($0) } ?? .missing
+            if let status { follow(status) }
             aiFresh = true
         } catch {
             // Offline, signed out, cancelled: what's known stays, and the next ask reads again.
@@ -226,7 +230,20 @@ final class Availability {
     /// An AiStatus another request answered with (saving or removing a key, choosing the chat's provider).
     func heard(ai status: AiStatus) {
         ai = .known(status)
+        follow(status)
         aiFresh = true
+    }
+
+    /// The food log's estimate and voice flags from a newer AiStatus, as the server works them out (canFor in
+    /// server/foodlog.ts): a key just connected or removed shows on Nutrition at once, rather than once it reads its log
+    /// again. USDA is the log's own. Nothing until a log has been read: `estimate` and `voice` read the AiStatus then.
+    private func follow(_ status: AiStatus) {
+        guard var can = foodCan else { return }
+        can.estimate = status.estimate != nil
+        can.estimateProvider = status.estimate?.provider
+        can.estimateSource = status.estimate?.source
+        can.voice = status.voice
+        foodCan = can
     }
 
     /// The `can` of a food log or day just read.

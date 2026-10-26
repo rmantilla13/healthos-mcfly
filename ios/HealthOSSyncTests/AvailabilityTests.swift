@@ -184,6 +184,50 @@ final class AvailabilityTests: XCTestCase {
         XCTAssertEqual(a.labReading, false)
     }
 
+    /// A key connected or removed changes what reads a meal and whether voice notes work at once, on Nutrition too: the
+    /// server works the food log's flags out from the same AiStatus (server/foodlog.ts canFor), so a newer one
+    /// replaces what the last log read said, keeping its USDA flag.
+    func testAKeyChangeReachesTheFoodLogsFlagsAtOnce() async throws {
+        let (a, _) = model()
+        let shared = FoodLog.Can(estimate: true, usda: true, estimateProvider: "anthropic", estimateSource: "shared", voice: false)
+        a.heard(foodCan: shared)
+        XCTAssertEqual(a.estimateProvider, "anthropic")
+
+        // An OpenAI key saved in the Chatbot sheet: its answer says OpenAI reads meals now, on the person's key.
+        let own = AiStatus(byok: true, keys: [AiStatus.Key(provider: "openai", last4: "Q7xa")],
+                           estimate: AiStatus.Use(provider: "openai", source: "own"), voice: true, portraits: true)
+        a.heard(ai: own)
+        XCTAssertEqual(a.estimate, true)
+        XCTAssertEqual(a.estimateProvider, "openai")
+        XCTAssertEqual(a.voice, true)
+        XCTAssertEqual(a.foodCan, FoodLog.Can(estimate: true, usda: true, estimateProvider: "openai", estimateSource: "own", voice: true))
+        guard case .using(let line)? = NutritionChat.setupLine(can: a.foodCan, ai: a.ai.value, mode: .all) else {
+            return XCTFail("Nutrition's line says who reads a meal")
+        }
+        XCTAssertTrue(line.hasPrefix("Using your own OpenAI key"), line)
+
+        // Removed, on a server with no shared key left: nothing reads a meal, and no voice notes.
+        a.heard(ai: AiStatus(byok: true))
+        XCTAssertEqual(a.estimate, false)
+        XCTAssertNil(a.estimateProvider)
+        XCTAssertEqual(a.voice, false)
+        XCTAssertEqual(a.foodCan, FoodLog.Can(estimate: false, usda: true, voice: false))
+        XCTAssertEqual(NutritionChat.setupLine(can: a.foodCan, ai: a.ai.value, mode: .all), .connectOpenAI)
+
+        // The next load's GET /api/ai, after a key was added elsewhere, is as new.
+        a.loadedAgain()
+        await a.loadAI { AiStatus(byok: true, estimate: AiStatus.Use(provider: "gemini", source: "own")) }
+        XCTAssertEqual(a.estimateProvider, "gemini")
+        XCTAssertEqual(a.foodCan?.estimateSource, "own")
+        XCTAssertEqual(a.foodCan?.usda, true)
+
+        // Before any log is read there's nothing to update: the flags read the AiStatus.
+        let (fresh, _) = model()
+        fresh.heard(ai: own)
+        XCTAssertNil(fresh.foodCan)
+        XCTAssertEqual(fresh.estimateProvider, "openai")
+    }
+
     func testAnOlderServerHidesWhatItDoesntHave() async {
         let (a, _) = model()
         // GET /api/ai answered 404: no keys, portraits or voice notes there.
