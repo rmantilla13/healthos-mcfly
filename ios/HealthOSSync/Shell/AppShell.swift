@@ -38,15 +38,24 @@ struct AppShell: View {
         }
         // Family or Cycle went away (another server, tracking off) while open under More.
         .onChange(of: dashboard.featurePages) { _, _ in dashboard.dropMissingPages() }
-        // The welcome, over everything (the web shows it instead of the dashboard): a new account's until it's done,
-        // with no swipe away, or its steps again from Profile. It goes with a sign-out or a 401.
-        .fullScreenCover(item: welcome) { mode in
-            OnboardingView(mode: mode).interactiveDismissDisabled()
+        // Under the welcome, nothing of the app is read out or found.
+        .accessibilityHidden(dashboard.onboarding != nil)
+        // The welcome, over everything, in place of the app as the web shows it instead of the dashboard (App.tsx): a
+        // new account's until it's done, or its steps again from Profile. It goes with a sign-out or a 401. Not a
+        // full-screen cover: that slid up over Home at launch, and slid its words down over Home when done. Up at
+        // launch it's simply there; done, it fades out with its page, as the web's change of page.
+        .overlay {
+            ZStack {
+                if let mode = dashboard.onboarding {
+                    OnboardingView(mode: mode)
+                        .background { Palette.page.ignoresSafeArea() }
+                        .contentShape(Rectangle())
+                        .id(mode)
+                        .transition(.asymmetric(insertion: mode == .edit ? .opacity : .identity, removal: .opacity))
+                }
+            }
+            .animation(.easeOut(duration: 0.25), value: dashboard.onboarding)
         }
-    }
-
-    private var welcome: Binding<OnboardingMode?> {
-        Binding(get: { dashboard.onboarding }, set: { if $0 == nil { dashboard.welcomeEditing = false } })
     }
 }
 
