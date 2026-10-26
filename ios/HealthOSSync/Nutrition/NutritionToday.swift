@@ -17,11 +17,14 @@ struct NutritionToday<Views: View>: View {
     let routeMissing: () -> Void
     @ViewBuilder let views: () -> Views
     @Environment(Dashboard.self) private var dashboard
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var day: FoodLogDay?
     /// When the day shown was asked for: an estimate that arrived after it isn't in it yet.
     @State private var askedAt: Date?
     @State private var error: String?
     @State private var loading = false
+    /// The status was read again once for a 409 (Nutrition turned off elsewhere), so it never loops.
+    @State private var reloadedForOff = false
 
     var body: some View {
         let today = day?.today ?? Day.today()
@@ -41,7 +44,7 @@ struct NutritionToday<Views: View>: View {
                             .card()
                     } else {
                         NutritionChatCard(thread: thread, day: day, askedAt: askedAt, mode: mode, viewing: viewing, today: today, compose: compose) {
-                            withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(NutritionChatCard.bottomID, anchor: .bottom) }
+                            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) { proxy.scrollTo(NutritionChatCard.bottomID, anchor: .bottom) }
                         }
                         Group {
                             DailyBalanceCard(day: day, mode: mode, units: dashboard.units)
@@ -79,7 +82,10 @@ struct NutritionToday<Views: View>: View {
             guard !Task.isCancelled, !APIClient.isCancellation(error) else { return }
             self.error = error.foodMessage
             // Nutrition was turned off elsewhere (409 "Turn on Nutrition to log food."): the status here is out of date.
-            if case .server(409, _)? = error as? APIError { await dashboard.load() }
+            if case .server(409, _)? = error as? APIError, !reloadedForOff {
+                reloadedForOff = true
+                await dashboard.load()
+            }
         }
     }
 }
@@ -719,7 +725,9 @@ private struct VoiceButton: View {
     let disabled: Bool
     let blocked: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var pressing = false
+    /// Held down. A gesture state goes back to false however the touch ends, cancelled included (the microphone's
+    /// permission question, a scroll taking the touch), so a recording never outlives the finger.
+    @GestureState private var held = false
 
     var body: some View {
         let scale: CGFloat = voice.state == .recording ? 1.4 : voice.state == .starting ? 1.12 : 1
@@ -732,19 +740,14 @@ private struct VoiceButton: View {
         .opacity(voiceOff != nil || disabled ? 0.45 : 1)
         .frame(width: 44, height: 44)
         .contentShape(Circle())
-        .gesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in
-                    guard !pressing else { return }
-                    pressing = true
-                    if on { voice.press() } else { blocked() }
-                }
-                .onEnded { _ in
-                    pressing = false
-                    if on { voice.release() }
-                },
-            including: disabled ? .none : .all
-        )
+        .gesture(DragGesture(minimumDistance: 0).updating($held) { _, state, _ in state = true }, including: disabled ? .none : .all)
+        .onChange(of: held) { _, down in
+            if down {
+                if on { voice.press() } else { blocked() }
+            } else if on {
+                voice.release()
+            }
+        }
         .sensoryFeedback(.impact(weight: .light), trigger: voice.state == .recording) { _, recording in recording }
         .accessibilityElement()
         .accessibilityLabel("Voice note")

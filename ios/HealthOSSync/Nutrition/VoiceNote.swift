@@ -95,17 +95,18 @@ final class VoiceNote {
     func press() {
         // A press during a recording started from VoiceOver or a keyboard stops it.
         if state == .recording, via == .toggle { return stop() }
-        Task { await start(.press) }
+        guard prepare(.press) else { return }
+        Task { await begin(.press) }
     }
 
-    /// The finger lifted, or slid away and was cancelled.
+    /// The finger lifted, or the touch was taken away (the microphone's permission question, a scroll): stops.
     func release() {
         if via == .press { stop() }
     }
 
     /// VoiceOver's activate, Switch Control or a keyboard: starts, and again stops.
     func toggle() {
-        if state == .recording { stop() } else if state == .idle { Task { await start(.toggle) } }
+        if state == .recording { stop() } else if prepare(.toggle) { Task { await begin(.toggle) } }
     }
 
     /// Leaving the page mid-recording stops the microphone and throws the recording away.
@@ -122,11 +123,21 @@ final class VoiceNote {
     func resume() { alive = true }
 
     func start(_ how: Via) async {
-        guard state == .idle else { return }
+        guard prepare(how) else { return }
+        await begin(how)
+    }
+
+    /// Starting, right away: a release that comes before the microphone is ready is heard.
+    private func prepare(_ how: Via) -> Bool {
+        guard state == .idle else { return false }
         error = nil
         via = how
         released = false
         state = .starting
+        return true
+    }
+
+    private func begin(_ how: Via) async {
         do {
             try await recorder.start()
         } catch {

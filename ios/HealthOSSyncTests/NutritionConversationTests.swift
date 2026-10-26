@@ -533,6 +533,17 @@ final class NutritionConversationTests: XCTestCase {
         XCTAssertEqual(voice.state, .idle)
         XCTAssertEqual(recorder.cancelled, 2)
 
+        // A touch taken away at once (the permission question, a scroll), before the start has even begun: the press
+        // is already starting, so the release is heard and nothing records.
+        voice.resume()
+        voice.press()
+        XCTAssertEqual(voice.state, .starting)
+        voice.release()
+        for _ in 0..<200 where voice.state != .idle { await Task.yield() }
+        XCTAssertEqual(voice.state, .idle)
+        XCTAssertEqual(recorder.cancelled, 3)
+        XCTAssertEqual(voice.error, "Hold the button while you talk, then let go.")
+
         let hook = try? web("src/hooks/useVoiceNote.ts")
         for words in ["Hold the button while you talk, then let go.", "That was too short to hear anything. Try again.",
                       "That recording is too long. Keep voice notes to about a minute.", "No words came through. Try again a little closer to the microphone.",
