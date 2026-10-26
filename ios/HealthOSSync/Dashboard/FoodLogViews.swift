@@ -1,70 +1,53 @@
-import PhotosUI
 import SwiftUI
 import VisionKit
 
-// The Nutrition tab's Log (src/pages/FoodLog.tsx): a day's entries, each editable, and one sheet to add more: a food
-// database search, a barcode, McFly's estimate from a photo or a few words (a draft to check and save, never saved on
-// its own), or amounts typed in. Same tone as the rest of Nutrition: no score, no "remaining", no colour for more or less.
+// The Nutrition page's Log (src/pages/FoodLog.tsx): what a person logs in healthOS itself. A day's entries, each
+// editable, beside one card to add more: a food database search (or a barcode), McFly's estimate from a photo or a few
+// words (a draft to check and save, never saved on its own), or amounts typed in. The server has already removed every
+// number the person chose not to see, and saves a database food from its own copy, so the phone never needs them.
+// Same tone as the rest of Nutrition: no score, no "remaining", no colour for more or less. Today's conversation
+// (Nutrition/NutritionToday.swift) reuses the pieces here, as the web's NutritionChat.tsx reuses FoodLog.tsx's.
 
-/// The Log tab: its own List, so swipe to delete works (a List can't sit inside the other tabs' ScrollView).
+/// The Log view: a day of the last two weeks, and the card that adds to it.
 struct FoodLogTab<Header: View>: View {
     @ViewBuilder let header: () -> Header
     @Environment(Dashboard.self) private var dashboard
     @State private var log: FoodLog?
     @State private var error: String?
+    @State private var loading = false
     @State private var day: String?
-    @State private var adding = false
-    @State private var editing: FoodEntry?
-    @State private var reviewing = false
-    /// McFly's note on its latest estimate, shown while it's reviewed (it isn't stored with the drafts).
-    @State private var note = ""
     @State private var counted: NutritionData?
-    @State private var rowError: String?
 
     var body: some View {
-        List {
-            // Where the other tabs put it (16 pt in, as far down), and clear of the section's rounded corner, which
-            // clips a row's content even with a clear background.
-            Section { header() }
-                .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets(top: 16, leading: 0, bottom: 4, trailing: 0))
-                .listRowSeparator(.hidden)
-            if let log {
-                content(log)
-            } else if let error {
-                Section { Text("Couldn't load your food log: \(error)").font(.app(.footnote)).foregroundStyle(Palette.ink2) }
-            } else {
-                Section { ProgressView().frame(maxWidth: .infinity) }.listRowBackground(Color.clear)
-            }
-        }
-        .listStyle(.insetGrouped)
-        .contentMargins(.horizontal, 16, for: .scrollContent)
-        .scrollContentBackground(.hidden)
-        .background(Palette.page)
-        .refreshable { await reload() }
-        .task(id: "\(dashboard.generation)|\(dashboard.nutritionMode?.rawValue ?? "off")") { await reload() }
-        .sheet(isPresented: $adding, onDismiss: askHealth) {
-            if let log {
-                FoodAddSheet(log: log, date: selectedDay(log), units: dashboard.units, onChange: { await reload() }) { estimateNote in
-                    note = estimateNote
-                    adding = false
-                    reviewing = true
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                header()
+                if let log {
+                    let selected = selectedDay(log)
+                    let entries = log.entries.filter { $0.date == selected }
+                    FoodLogDayCard(log: log, day: selected, entries: entries, counted: counted?.days.first { $0.date == selected }?.app) { step in
+                        day = Day.add(selected, step)
+                    }
+                    FoodAddCard(log: log, date: selected, units: dashboard.units)
+                        .id(log.drafts.map(\.id).joined(separator: ","))
+                } else if let error {
+                    Text("Couldn't load your food log: \(error)").font(.app(.footnote)).foregroundStyle(Palette.ink2).card()
+                } else {
+                    ProgressView().frame(maxWidth: .infinity, minHeight: 200)
                 }
             }
+            .opacity(loading && log != nil ? 0.6 : 1)
+            .animation(.easeOut(duration: 0.2), value: loading)
+            .padding(16)
         }
-        .sheet(item: $editing) { entry in
-            FoodEditSheet(entry: entry, mode: log?.mode ?? .none, units: dashboard.units) { await reload() }
+        .scrollDismissesKeyboard(.interactively)
+        .background(Palette.page)
+        .refreshable { await dashboard.load() }
+        .task(id: "\(dashboard.generation)|\(dashboard.nutritionMode?.rawValue ?? "off")") { await reload() }
+        // Health's write question for what was just added here (no sheet is up to cover it).
+        .onChange(of: dashboard.foodHealthAskPending) { _, pending in
+            if pending { Task { await dashboard.askFoodHealthIfPending() } }
         }
-        .sheet(isPresented: $reviewing, onDismiss: askHealth) {
-            if let log, !log.drafts.isEmpty {
-                FoodReviewSheet(drafts: log.drafts, batch: log.draftBatch ?? "", note: note, mode: log.mode, units: dashboard.units) { await reload() }
-            }
-        }
-    }
-
-    /// Health's write question, held back while a sheet was up.
-    private func askHealth() {
-        Task { await dashboard.askFoodHealthIfPending() }
     }
 
     private func selectedDay(_ log: FoodLog) -> String {
@@ -72,78 +55,9 @@ struct FoodLogTab<Header: View>: View {
         return log.today
     }
 
-    @ViewBuilder
-    private func content(_ log: FoodLog) -> some View {
-        let selected = selectedDay(log)
-        let entries = log.entries.filter { $0.date == selected }
-        let units = dashboard.units
-        Section {
-            FoodDayHeader(day: selected, today: log.today, canBack: selected > log.start, canForward: selected < log.today) { step in
-                day = Day.add(selected, step)
-            }
-            .listRowBackground(Palette.surface)
-            Button { adding = true } label: {
-                Label("Add food or drink", systemImage: "plus")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.accentPill)
-            .listRowBackground(Palette.surface)
-            .accessibilityIdentifier("addFood")
-            if !log.drafts.isEmpty {
-                Button { reviewing = true } label: {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("McFly's estimate to check").font(.app(.subheadline, weight: .semibold)).foregroundStyle(Palette.ink)
-                        Text("For \(log.drafts[0].time). Nothing counts until you save it.").font(.app(.caption)).foregroundStyle(Palette.ink3)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .listRowBackground(Tone.blue.background)
-            }
-            if entries.isEmpty {
-                Text("Nothing logged in healthOS on this day.").font(.app(.footnote)).foregroundStyle(Palette.ink3)
-                    .listRowBackground(Palette.surface)
-            }
-            ForEach(entries) { e in
-                FoodEntryRow(entry: e, units: units)
-                    .contentShape(Rectangle())
-                    .onTapGesture { editing = e }
-                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                        Button(role: .destructive) { delete(e) } label: { Label("Delete", systemImage: "trash") }
-                    }
-                    .listRowBackground(Palette.surface)
-                    .accessibilityHint("Opens it to edit. Swipe to delete.")
-            }
-            if let rowError {
-                Text(rowError).font(.app(.footnote)).foregroundStyle(.red).listRowBackground(Palette.surface)
-            }
-        }
-        if !entries.isEmpty {
-            Section {
-                let sum = FoodText.amounts(FoodText.addUp(entries), units: units)
-                if log.mode != .none, !sum.isEmpty {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Logged here").font(.app(.caption)).foregroundStyle(Palette.ink3)
-                        Text(sum).font(.app(.footnote)).foregroundStyle(Palette.ink)
-                    }
-                    .accessibilityElement(children: .combine)
-                }
-                if let app = counted?.days.first(where: { $0.date == selected })?.app, app != "healthOS" {
-                    Text("This day's totals on the other tabs come from \(app), which logged more. Two apps are never added together, because apps copy each other's food through Apple Health. You can choose which app counts on the web, on the Macros tab.")
-                        .font(.app(.caption)).foregroundStyle(Palette.ink3)
-                }
-            }
-            .listRowBackground(Palette.surface)
-        }
-        Section {
-            Text(log.mode == .none
-                 ? "You chose to see no amounts, so what you log here isn't saved to Apple Health."
-                 : "Food you log on this iPhone is saved to Apple Health too, with only the amounts you see. healthOS doesn't count it twice.")
-                .font(.app(.caption)).foregroundStyle(Palette.ink3)
-        }
-        .listRowBackground(Color.clear)
-    }
-
     private func reload() async {
+        loading = true
+        defer { loading = false }
         do {
             log = try await dashboard.loadFoodLog(days: 14)
             error = nil
@@ -153,150 +67,296 @@ struct FoodLogTab<Header: View>: View {
             self.error = error.foodMessage
         }
     }
-
-    private func delete(_ e: FoodEntry) {
-        rowError = nil
-        Task {
-            do {
-                try await dashboard.deleteFood(e)
-            } catch {
-                rowError = error.foodMessage
-            }
-            await reload()
-        }
-    }
 }
 
-private struct FoodDayHeader: View {
+/// One day of the Log (.food-day): the day, its entries, what they add up to, and which app counts that day.
+private struct FoodLogDayCard: View {
+    let log: FoodLog
     let day: String
-    let today: String
-    let canBack: Bool
-    let canForward: Bool
+    let entries: [FoodEntry]
+    /// The app whose totals count that day on the other views.
+    let counted: String?
     let step: (Int) -> Void
+    @Environment(Dashboard.self) private var dashboard
 
     var body: some View {
-        HStack {
-            Button { step(-1) } label: { Image(systemName: "chevron.left").frame(width: 36, height: 36) }
-                .disabled(!canBack)
-                .accessibilityLabel("Day before")
-            Spacer()
-            VStack(spacing: 1) {
-                Text(Fmt.relativeDay(day, today: today)).font(.app(.headline)).foregroundStyle(Palette.ink)
-                Text(Fmt.day(day, "EEEEMMMMd")).font(.app(.caption)).foregroundStyle(Palette.ink3)
+        let units = dashboard.units
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                stepButton("chevron.left", "Day before", enabled: day > log.start) { step(-1) }
+                Spacer(minLength: 0)
+                VStack(spacing: 2) {
+                    Text(Fmt.relativeDay(day, today: log.today)).font(.app(.headline, weight: .medium)).foregroundStyle(Palette.ink)
+                        .accessibilityAddTraits(.isHeader)
+                    Text(Fmt.day(day, "EEEEMMMMd")).mutedSmall()
+                }
+                .multilineTextAlignment(.center)
+                Spacer(minLength: 0)
+                stepButton("chevron.right", "Day after", enabled: day < log.today) { step(1) }
             }
-            Spacer()
-            Button { step(1) } label: { Image(systemName: "chevron.right").frame(width: 36, height: 36) }
-                .disabled(!canForward)
-                .accessibilityLabel("Day after")
+            if entries.isEmpty {
+                Text("Nothing logged in healthOS on this day.").font(.app(size: 14, relativeTo: .subheadline)).foregroundStyle(Palette.ink3)
+                    .padding(.vertical, 8)
+            } else {
+                FoodEntryList(entries: entries, mode: log.mode, units: units)
+            }
+            let sum = FoodText.amounts(FoodText.addUp(entries), units: units)
+            if !entries.isEmpty, log.mode != .none, !sum.isEmpty {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Logged here").mutedSmall()
+                    Text(sum).font(.app(size: 14, relativeTo: .subheadline)).foregroundStyle(Palette.ink)
+                }
+                .padding(.top, 10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .overlay(alignment: .top) { Rectangle().fill(Palette.border).frame(height: 1) }
+                .accessibilityElement(children: .combine)
+            }
+            if let counted, !entries.isEmpty, counted != "healthOS" {
+                Text("This day's totals on the other tabs come from \(counted). When two apps log the same day, one app's totals count and the other's aren't added in, because apps copy each other's food through Apple Health. You can choose which app counts on the Macros tab.")
+                    .mutedSmall()
+            }
+            // Only the iPhone writes to Apple Health.
+            Text(log.mode == .none
+                 ? "You chose to see no amounts, so what you log here isn't saved to Apple Health."
+                 : "Food you log on this iPhone is saved to Apple Health too, with only the amounts you see. healthOS doesn't count it twice.")
+                .mutedSmall()
         }
-        .buttonStyle(.borderless)
+        .card()
+    }
+
+    private func stepButton(_ symbol: String, _ name: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.footnote.weight(.semibold))
+                .dynamicTypeSize(...DynamicTypeSize.xxLarge)
+                .foregroundStyle(Palette.ink2)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.35)
+        .accessibilityLabel(name)
     }
 }
 
-private struct FoodEntryRow: View {
-    let entry: FoodEntry
+// MARK: - Entries
+
+/// A day's entries, a hairline between each (.food-entries).
+struct FoodEntryList: View {
+    let entries: [FoodEntry]
+    let mode: NutritionMode
     let units: Units
 
     var body: some View {
-        let line = FoodText.amounts(entry.values, units: units)
-        HStack(alignment: .top, spacing: 12) {
-            Text(entry.time).font(.app(.caption).monospacedDigit()).foregroundStyle(Palette.ink3).frame(width: 40, alignment: .leading)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(entry.name).font(.app(.subheadline, weight: .semibold)).foregroundStyle(Palette.ink)
-                let detail = FoodText.detail(entry)
-                if !detail.isEmpty { Text(detail).font(.app(.caption)).foregroundStyle(Palette.ink3) }
-                if !line.isEmpty { Text(line).font(.app(.caption)).foregroundStyle(Palette.ink2) }
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(entries.enumerated()), id: \.element.id) { i, e in
+                FoodEntryRow(entry: e, mode: mode, units: units)
+                    .overlay(alignment: .top) { if i > 0 { Rectangle().fill(Palette.border).frame(height: 1) } }
             }
-            Spacer(minLength: 0)
         }
-        .accessibilityElement(children: .combine)
     }
 }
 
-// MARK: - Editing
-
-/// Name, time, how many, and the amounts this person sees. Only what changed is sent.
-private struct FoodEditSheet: View {
+/// One entry (EntryRow): when, what and how much, and its Edit and Delete. Delete asks once ("Delete it?") for four
+/// seconds, as on the web.
+struct FoodEntryRow: View {
     let entry: FoodEntry
     let mode: NutritionMode
     let units: Units
-    let onDone: () async -> Void
     @Environment(Dashboard.self) private var dashboard
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @State private var editing = false
+    @State private var confirming = false
+    @State private var error: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if typeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 4) {
+                    time
+                    text
+                    actions
+                }
+            } else {
+                HStack(alignment: .top, spacing: 10) {
+                    time.frame(width: 44, alignment: .leading)
+                    text.frame(maxWidth: .infinity, alignment: .leading)
+                    actions
+                }
+            }
+            if let error { NoteBad(error, size: 12) }
+            if editing { FoodEntryEditor(entry: entry, mode: mode, units: units) { editing = false } }
+        }
+        .padding(.vertical, 10)
+        .task(id: confirming) {
+            guard confirming else { return }
+            try? await Task.sleep(for: .seconds(4))
+            if !Task.isCancelled { confirming = false }
+        }
+    }
+
+    private var time: some View {
+        Text(entry.time).mutedSmall().padding(.top, 2).accessibilityLabel("At \(entry.time)")
+    }
+
+    private var text: some View {
+        let line = FoodText.amounts(entry.values, units: units)
+        let detail = FoodText.detail(entry)
+        return VStack(alignment: .leading, spacing: 2) {
+            Text(entry.name).font(.app(size: 14, weight: .medium, relativeTo: .subheadline)).foregroundStyle(Palette.ink)
+                .fixedSize(horizontal: false, vertical: true)
+            if !detail.isEmpty { Text(detail).mutedSmall() }
+            if !line.isEmpty { Text(line).font(.app(size: 12, relativeTo: .caption)).foregroundStyle(Palette.ink).fixedSize(horizontal: false, vertical: true) }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var actions: some View {
+        HStack(spacing: 2) {
+            Button(editing ? "Close" : "Edit") { editing.toggle() }
+                .buttonStyle(.quietText(size: 12))
+                .accessibilityLabel(editing ? "Close" : "Edit \(entry.name)")
+            Button(confirming ? "Delete it?" : "Delete", action: remove)
+                .buttonStyle(.quietText(size: 12))
+                .accessibilityLabel(confirming ? "Delete \(entry.name)? Press again to delete" : "Delete \(entry.name)")
+        }
+    }
+
+    private func remove() {
+        guard confirming else { return confirming = true }
+        error = nil
+        Task {
+            do {
+                try await dashboard.deleteFood(entry)
+            } catch {
+                guard !APIClient.isCancellation(error) else { return }
+                self.error = error.foodMessage
+            }
+        }
+    }
+}
+
+/// Fields side by side where they fit (.food-fields: at least 110pt each), one to a row at the largest text sizes.
+struct FoodFields<Content: View>: View {
+    @ViewBuilder var content: Content
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    var body: some View {
+        LazyVGrid(columns: typeSize.isAccessibilitySize ? [GridItem(.flexible())] : [GridItem(.adaptive(minimum: 110), spacing: 10, alignment: .bottomLeading)],
+                  alignment: .leading, spacing: 10) {
+            content
+        }
+    }
+}
+
+/// One labelled field.
+struct FoodLabeled<Field: View>: View {
+    let label: String
+    @ViewBuilder var field: Field
+
+    init(_ label: String, @ViewBuilder field: () -> Field) {
+        self.label = label
+        self.field = field()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            FieldLabel(label)
+            field
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// A clock time in the person's time zone (an entry's "HH:MM"), as a compact picker.
+struct FoodTimePicker: View {
+    let label: String
+    @Binding var time: String
+    @Environment(Dashboard.self) private var dashboard
+
+    var body: some View {
+        let zone = dashboard.timeZone
+        DatePicker(label, selection: Binding(get: { FoodBody.date(forTime: time, in: zone) }, set: { time = FoodBody.time($0, in: zone) }),
+                   displayedComponents: .hourAndMinute)
+            .labelsHidden()
+            .environment(\.timeZone, zone)
+            .accessibilityLabel(label)
+    }
+}
+
+/// Name, time, how many, and the amounts this person sees (EntryEditor). Only what changed is sent.
+struct FoodEntryEditor: View {
+    let entry: FoodEntry
+    let mode: NutritionMode
+    let units: Units
+    let onDone: () -> Void
+    @Environment(Dashboard.self) private var dashboard
     @State private var name: String
-    @State private var time: Date
+    @State private var time: String
     @State private var quantity: String
     @State private var typed: [String: String]
     @State private var busy = false
     @State private var error: String?
 
-    init(entry: FoodEntry, mode: NutritionMode, units: Units, onDone: @escaping () async -> Void) {
+    init(entry: FoodEntry, mode: NutritionMode, units: Units, onDone: @escaping () -> Void) {
         self.entry = entry
         self.mode = mode
         self.units = units
         self.onDone = onDone
         _name = State(initialValue: entry.name)
-        _time = State(initialValue: FoodBody.date(forTime: entry.time))
+        _time = State(initialValue: entry.time)
         _quantity = State(initialValue: FoodText.quantityText(entry.quantity))
         _typed = State(initialValue: Dictionary(uniqueKeysWithValues: FoodField.typed(mode).map { ($0.key, $0.text(entry.values[$0.key], units: units)) }))
     }
 
     var body: some View {
         let fields = FoodField.typed(mode)
-        NavigationStack {
-            Form {
-                Section {
-                    TextField("Name", text: $name).accessibilityIdentifier("editName")
-                    DatePicker("Time", selection: $time, displayedComponents: .hourAndMinute)
-                    LabeledContent("How many\(entry.portion.isEmpty ? "" : " (\(entry.portion))")") {
-                        TextField("1", text: $quantity).keyboardType(.decimalPad).multilineTextAlignment(.trailing).frame(maxWidth: 80)
-                            .accessibilityIdentifier("editQuantity")
-                    }
-                } footer: {
-                    Text([FoodText.detail(entry), FoodText.amounts(entry.values, units: units)].filter { !$0.isEmpty }.joined(separator: "\n"))
-                }
-                if !fields.isEmpty {
-                    Section {
-                        ForEach(fields) { f in
-                            LabeledContent("\(f.label) (\(f.unit(units)))") {
-                                TextField("–", text: Binding(get: { typed[f.key] ?? "" }, set: { typed[f.key] = $0 }))
-                                    .keyboardType(.decimalPad).multilineTextAlignment(.trailing).frame(maxWidth: 100)
-                                    .accessibilityLabel("\(f.label) in \(f.unit(units))")
-                            }
-                        }
-                    } footer: {
-                        Text("Amounts are for the whole entry. Changing only how many scales them all.")
-                    }
-                }
-                if let error { Section { Text(error).foregroundStyle(.red).font(.app(.footnote)) } }
+        VStack(alignment: .leading, spacing: 10) {
+            FoodLabeled("Name") {
+                TextField("Name", text: $name).foodInput().onChange(of: name) { _, v in if v.count > 100 { name = String(v.prefix(100)) } }
+                    .accessibilityLabel("Name").accessibilityIdentifier("editName")
             }
-            .navigationTitle("Edit")
-            .navigationBarTitleDisplayMode(.inline)
-            .keyboardDismissal()
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(busy ? "Saving…" : "Save") { save(fields) }.disabled(busy).accessibilityIdentifier("saveEntry")
+            FoodFields {
+                FoodLabeled("Time") { FoodTimePicker(label: "Time", time: $time) }
+                FoodLabeled("How many \(entry.portion.isEmpty ? "" : "(\(entry.portion))")") {
+                    TextField("1", text: $quantity).keyboardType(.decimalPad).foodInput()
+                        .accessibilityLabel("How many").accessibilityIdentifier("editQuantity")
                 }
+                ForEach(fields) { f in
+                    FoodLabeled("\(f.label) (\(f.unit(units)))") {
+                        TextField("–", text: Binding(get: { typed[f.key] ?? "" }, set: { typed[f.key] = $0 })).keyboardType(.decimalPad).foodInput()
+                            .accessibilityLabel("\(f.label) in \(f.unit(units))")
+                    }
+                }
+            }
+            if !fields.isEmpty { Text("Amounts are for the whole entry. Changing only how many scales them all.").mutedSmall() }
+            if let error { NoteBad(error, size: 12) }
+            HStack(spacing: 8) {
+                Button(busy ? "Saving…" : "Save") { save(fields) }
+                    .buttonStyle(.accentPill(size: .compact))
+                    .disabled(busy)
+                    .accessibilityIdentifier("saveEntry")
+                Button("Cancel", action: onDone).buttonStyle(.quietText)
             }
         }
+        .padding(12)
+        .background(Palette.surface2.opacity(0.6), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     private func save(_ fields: [FoodField]) {
         do {
-            let t = FoodBody.time(time)
-            guard let body = try FoodBody.patch(entry, name: name, time: t, quantity: foodQuantity(quantity), typed: typed, fields: fields, units: units) else {
-                return dismiss()
+            guard let body = try FoodBody.patch(entry, name: name, time: time, quantity: foodQuantity(quantity), typed: typed, fields: fields, units: units) else {
+                return onDone()
             }
             busy = true
             error = nil
             Task {
                 do {
                     try await dashboard.changeFood(entry, body)
-                    await onDone()
-                    dismiss()
+                    onDone()
                 } catch {
-                    self.error = error.foodMessage
+                    if !APIClient.isCancellation(error) { self.error = error.foodMessage }
                 }
                 busy = false
             }
@@ -309,7 +369,8 @@ private struct FoodEditSheet: View {
 // MARK: - Adding
 
 enum FoodAddMode: String, CaseIterable, Identifiable {
-    // "Estimate" where the web says "Photo or words": four segments leave a phone too little room for it.
+    // "Estimate" where the web says "Photo or words": four segments leave a phone too little room for it. Scan is the
+    // iPhone's own (VisionKit's barcode reader).
     case search = "Search", scan = "Scan", estimate = "Estimate", quick = "Quick add"
     var id: String { rawValue }
 
@@ -325,216 +386,362 @@ enum FoodAddMode: String, CaseIterable, Identifiable {
     }
 }
 
-/// When an entry is for: the day on screen, at a time (today defaults to now, a past day to midday).
-struct FoodWhen {
-    let date: String
-    var time: Date
-    var timeText: String { FoodBody.time(time) }
-}
-
-private struct FoodAddSheet: View {
+/// The Log's "Add food or drink" (AddFood): when, water in one tap, then the other ways in. An estimate waiting to be
+/// checked takes its place until it's saved or discarded.
+private struct FoodAddCard: View {
     let log: FoodLog
     let date: String
     let units: Units
-    let onChange: () async -> Void
-    /// McFly made drafts: close this sheet and review them, with its note.
-    let onDrafts: (String) -> Void
-    @Environment(\.dismiss) private var dismiss
+    @Environment(Dashboard.self) private var dashboard
     @State private var mode: FoodAddMode = .search
-    @State private var when: FoodWhen
-
-    init(log: FoodLog, date: String, units: Units, onChange: @escaping () async -> Void, onDrafts: @escaping (String) -> Void) {
-        self.log = log
-        self.date = date
-        self.units = units
-        self.onChange = onChange
-        self.onDrafts = onDrafts
-        _when = State(initialValue: FoodWhen(date: date, time: date == log.today ? Date() : FoodBody.date(forTime: "12:00")))
-    }
+    /// A time the person picked; nil: now on today (worked out when they add), midday on a past day.
+    @State private var picked: String?
+    /// McFly's note on what it assumed, kept while its estimate is reviewed (it isn't stored with the drafts).
+    @State private var note = ""
+    @State private var tick = 0
 
     var body: some View {
         let modes = FoodAddMode.available(log)
         let current = modes.contains(mode) ? mode : .search
-        NavigationStack {
-            Form {
-                // The web's order: when, water in one tap, then the other ways in.
-                Section {
-                    DatePicker("\(Fmt.relativeDay(date, today: log.today)) at", selection: $when.time, displayedComponents: .hourAndMinute)
+        VStack(alignment: .leading, spacing: 12) {
+            NutritionFlow(spacing: 12, rowSpacing: 8) {
+                Text("Add food or drink")
+                    .font(.app(.headline, weight: .medium)).foregroundStyle(Palette.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityAddTraits(.isHeader)
+                if log.drafts.isEmpty {
+                    HStack(spacing: 8) {
+                        Text("\(Fmt.relativeDay(date, today: log.today)) at").mutedSmall()
+                        FoodTimePicker(label: "Time", time: Binding(get: { picked ?? defaultTime }, set: { picked = $0 }))
+                    }
                 }
-                if log.mode != .none { FoodWaterSection(when: when, units: units, onChange: onChange) }
-                Section {
-                    Picker("How", selection: $mode) {
+            }
+            if !log.drafts.isEmpty {
+                FoodLogReview(drafts: log.drafts, batch: log.draftBatch ?? "", note: note, mode: log.mode, units: units)
+            } else {
+                if log.mode != .none { FoodWaterButtons(when: when, units: units) }
+                if modes.count > 1 {
+                    Picker("How to add", selection: $mode) {
                         ForEach(modes) { Text($0.rawValue).tag($0) }
                     }
                     .pickerStyle(.segmented)
-                    .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets())
                     .accessibilityIdentifier("addModes")
                 }
                 switch current {
-                case .search: FoodSearchSection(when: when, units: units, usda: log.can.usda, quick: modes.contains(.quick), onChange: onChange) { mode = .quick }
-                case .scan: FoodScanSection(when: when, units: units, quick: modes.contains(.quick), onChange: onChange) { mode = .quick }
-                case .estimate: FoodEstimateSection(when: when, onDrafts: onDrafts, onChange: onChange)
-                case .quick: FoodQuickSection(when: when, mode: log.mode, units: units, onChange: onChange)
+                case .search: FoodSearchPanel(when: when, units: units, usda: log.can.usda)
+                case .scan: FoodScanPanel(when: when, units: units, quick: modes.contains(.quick)) { mode = .quick }
+                case .estimate: FoodEstimatePanel(when: when, can: log.can) { note = $0 }
+                case .quick: FoodQuickPanel(when: when, mode: log.mode, units: units)
                 }
             }
-            .navigationTitle("Add food or drink")
-            .navigationBarTitleDisplayMode(.inline)
-            .keyboardDismissal()
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.accessibilityIdentifier("addDone") } }
-            .navigationDestination(for: FoodPick.self) { pick in
-                FoodPickView(pick: pick, when: when, units: units, onChange: onChange)
+        }
+        .card()
+        .onChange(of: date) { _, _ in picked = nil }
+        // "Now" moves on while the card is open.
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(30))
+                tick += 1
             }
         }
     }
+
+    private var defaultTime: String {
+        _ = tick
+        return date == log.today ? FoodBody.time(Date(), in: dashboard.timeZone) : "12:00"
+    }
+
+    private func when() -> FoodMoment {
+        FoodMoment(date: date, time: picked ?? (date == log.today ? FoodBody.time(Date(), in: dashboard.timeZone) : "12:00"))
+    }
 }
 
-/// Water in one tap: a glass or a bottle, at the sheet's time. Hidden with "No amounts", like Quick add.
-private struct FoodWaterSection: View {
-    let when: FoodWhen
+/// Water in one tap (WaterButtons): a glass or a bottle in the person's units, logged as a quick entry. Any other
+/// amount goes through typed amounts.
+struct FoodWaterButtons: View {
+    let when: () -> FoodMoment
     let units: Units
-    let onChange: () async -> Void
     @Environment(Dashboard.self) private var dashboard
     @State private var busy = false
-    @State private var added: String?
+    @State private var done: String?
     @State private var error: String?
 
     var body: some View {
-        Section("Water") {
-            HStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Water").mutedSmall()
+            NutritionFlow(spacing: 8, rowSpacing: 8) {
                 ForEach(FoodWater.choices(units)) { w in
-                    // Bordered, so each is its own button rather than the whole row.
-                    Button { add(w) } label: {
-                        Text("+ \(w.label)").font(.app(.subheadline)).lineLimit(1).minimumScaleFactor(0.8).frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(busy)
-                    .accessibilityIdentifier("water-\(Int(w.ml.rounded()))")
+                    Button("+ \(w.label)") { add(w) }
+                        .buttonStyle(.chip)
+                        .disabled(busy)
+                        .accessibilityLabel("Add \(w.label)")
+                        .accessibilityIdentifier("water-\(Int(w.ml.rounded()))")
                 }
             }
-            if let added { Text(added).font(.app(.footnote)) }
-            if let error { Text(error).font(.app(.footnote)).foregroundStyle(.red) }
+            if let done { Text(done).font(.app(size: 12, relativeTo: .caption)).foregroundStyle(Palette.goodText) }
+            if let error { NoteBad(error, size: 12) }
         }
-        .task(id: added) {
-            guard added != nil else { return }
+        .task(id: done) {
+            guard done != nil else { return }
             try? await Task.sleep(for: .seconds(4))
-            if !Task.isCancelled { added = nil }
+            if !Task.isCancelled { done = nil }
         }
     }
 
     private func add(_ w: FoodWater) {
         busy = true
         error = nil
-        added = nil
+        let at = when()
         Task {
             do {
-                _ = try await dashboard.addFood(w.body(date: when.date, time: when.timeText))
-                added = w.added
-                await onChange()
+                _ = try await dashboard.addFood(w.body(date: at.date, time: at.time))
+                done = w.added
+                AccessibilityNotification.Announcement(w.added).post()
             } catch {
-                self.error = error.foodMessage
+                if !APIClient.isCancellation(error) { self.error = error.foodMessage }
             }
             busy = false
         }
     }
 }
 
-/// A database food chosen from a search or a barcode, to pick its portion and how many.
-struct FoodPick: Hashable {
-    let food: FoodResult
-    let barcode: Bool
+/// Search foods, or type a barcode (SearchFood): USDA (when the server has its key) and Open Food Facts. Digits are
+/// looked up as a barcode, as the server decides. `scan` adds the iPhone's barcode reader where it has a camera.
+struct FoodSearchPanel: View {
+    let when: () -> FoodMoment
+    let units: Units
+    let usda: Bool
+    var scan = false
+    @Environment(Dashboard.self) private var dashboard
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @State private var query = ""
+    @State private var found: FoodSearch?
+    @State private var barcode = false
+    @State private var busy = false
+    @State private var error: String?
+    @State private var open: String?
+    @State private var added: String?
+    @State private var scanning = false
+    @State private var lastScanned: String?
 
-    static func == (a: FoodPick, b: FoodPick) -> Bool { a.food.ref == b.food.ref && a.barcode == b.barcode }
-    func hash(into h: inout Hasher) { h.combine(food.ref); h.combine(barcode) }
-}
-
-private struct FoodResultsList: View {
-    let found: FoodSearch
-    let barcode: Bool
-    let quick: Bool
-    let toQuick: () -> Void
+    private var canScan: Bool { scan && DataScannerViewController.isSupported && DataScannerViewController.isAvailable }
 
     var body: some View {
-        ForEach(found.notes, id: \.self) { Text($0).font(.app(.caption)).foregroundStyle(Palette.ink3) }
-        if found.results.isEmpty {
-            Text(barcode ? "That barcode isn’t in USDA FoodData Central or Open Food Facts." + (quick ? " Quick add from the label instead." : "")
-                         : "Nothing found. Try fewer or other words.")
-                .font(.app(.footnote)).foregroundStyle(Palette.ink2)
-            if barcode, quick { Button("Quick add from the label", action: toQuick) }
-        } else {
-            ForEach(found.results) { r in
-                NavigationLink(value: FoodPick(food: r, barcode: barcode)) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(r.name).font(.app(.subheadline, weight: .medium)).foregroundStyle(Palette.ink)
-                        Text([r.brand, r.source == "usda" ? "USDA" : "Open Food Facts"].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
-                            .font(.app(.caption)).foregroundStyle(Palette.ink3)
+        VStack(alignment: .leading, spacing: 10) {
+            let field = TextField("Search foods, or type a barcode", text: $query)
+                .submitLabel(.search)
+                .onSubmit(search)
+                .autocorrectionDisabled()
+                .foodInput()
+                .onChange(of: query) { _, v in if v.count > 100 { query = String(v.prefix(100)) } }
+                .accessibilityLabel("Search foods, or type a barcode")
+                .accessibilityIdentifier("foodQuery")
+            let button = Button(busy ? "Searching…" : "Search", action: search)
+                .buttonStyle(.accentPill(size: .compact))
+                .disabled(busy || query.trimmingCharacters(in: .whitespaces).count < 2)
+                .accessibilityIdentifier("foodSearch")
+            if typeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 8) { field; button }
+            } else {
+                HStack(spacing: 8) { field; button }
+            }
+            if canScan {
+                Button(scanning ? "Stop scanning" : "Scan a barcode") { scanning.toggle() }
+                    .buttonStyle(.quietPill(size: .compact))
+                if scanning {
+                    BarcodeScanner { code in
+                        guard code != lastScanned, !busy else { return }
+                        lastScanned = code
+                        lookUp(code)
+                    }
+                    .frame(height: 220)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .accessibilityLabel("Barcode reader")
+                }
+            }
+            if let error { NoteBad(error, size: 12) }
+            if let added { Text("Added \(added).").font(.app(size: 12, relativeTo: .caption)).foregroundStyle(Palette.goodText) }
+            if let found {
+                ForEach(found.notes, id: \.self) { Text($0).mutedSmall() }
+                if found.results.isEmpty {
+                    Text(barcode ? "That barcode isn’t in \(usda ? "USDA FoodData Central or " : "")Open Food Facts. Quick add from the label instead."
+                                 : "Nothing found. Try fewer or other words.")
+                        .font(.app(size: 14, relativeTo: .subheadline)).foregroundStyle(Palette.ink3)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    FoodResultsList(results: found.results, open: $open, when: when, units: units, barcode: barcode) { name in
+                        added = name
+                        open = nil
                     }
                 }
+            }
+            Text("Foods from \(usda ? "USDA FoodData Central and " : "")Open Food Facts. healthOS's server sends them your search, never your name.")
+                .mutedSmall()
+        }
+    }
+
+    private func search() {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard q.count >= 2, !busy else { return }
+        busy = true
+        error = nil
+        added = nil
+        let isBarcode = q.range(of: #"^[\d\s-]{8,}$"#, options: .regularExpression) != nil
+        Task {
+            do {
+                let r = try await dashboard.searchFoods(query)
+                found = r
+                barcode = isBarcode
+                open = r.results.count == 1 ? r.results[0].ref : nil
+            } catch {
+                if !APIClient.isCancellation(error) { self.error = error.foodMessage }
+            }
+            busy = false
+        }
+    }
+
+    private func lookUp(_ code: String) {
+        busy = true
+        error = nil
+        added = nil
+        query = code
+        Task {
+            do {
+                let r = try await dashboard.barcode(code)
+                found = r
+                barcode = true
+                open = r.results.count == 1 ? r.results[0].ref : nil
+                scanning = false
+            } catch {
+                if !APIClient.isCancellation(error) { self.error = error.foodMessage }
+            }
+            busy = false
+        }
+    }
+}
+
+/// Foods found, each opening in place to pick a portion and how many (.food-results).
+private struct FoodResultsList: View {
+    let results: [FoodResult]
+    @Binding var open: String?
+    let when: () -> FoodMoment
+    let units: Units
+    let barcode: Bool
+    let onAdded: (String) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(results.enumerated()), id: \.element.id) { i, r in
+                FoodResultRow(food: r, open: open == r.ref, toggle: { open = open == r.ref ? nil : r.ref }, when: when, units: units,
+                              barcode: barcode, onAdded: onAdded)
+                    .overlay(alignment: .top) { if i > 0 { Rectangle().fill(Palette.border).frame(height: 1) } }
             }
         }
     }
 }
 
-private struct FoodSearchSection: View {
-    let when: FoodWhen
+/// One database food (ResultRow): which portion, how many, what that comes to (only the amounts the setting shows),
+/// then Add.
+private struct FoodResultRow: View {
+    let food: FoodResult
+    let open: Bool
+    let toggle: () -> Void
+    let when: () -> FoodMoment
     let units: Units
-    let usda: Bool
-    let quick: Bool
-    let onChange: () async -> Void
-    let toQuick: () -> Void
+    let barcode: Bool
+    let onAdded: (String) -> Void
     @Environment(Dashboard.self) private var dashboard
-    @State private var query = ""
-    @State private var found: FoodSearch?
-    @State private var searched = ""
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var portion = 0
+    @State private var quantity = "1"
     @State private var busy = false
     @State private var error: String?
 
     var body: some View {
-        Section {
-            HStack {
-                TextField("Search foods, or type a barcode", text: $query)
-                    .submitLabel(.search)
-                    .onSubmit(search)
-                    .autocorrectionDisabled()
-                    .accessibilityIdentifier("foodQuery")
-                Button(busy ? "Searching…" : "Search", action: search)
-                    .disabled(busy || query.trimmingCharacters(in: .whitespaces).count < 2)
-                    .accessibilityIdentifier("foodSearch")
+        let q = FoodText.number(quantity)
+        let values = food.portions.indices.contains(portion) ? food.portions[portion].values : [:]
+        let preview = q.map { $0 > 0 ? FoodText.amounts(FoodText.scaled(values, by: $0), units: units) : "" } ?? ""
+        VStack(alignment: .leading, spacing: 10) {
+            Button(action: toggle) {
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(food.name).font(.app(size: 14, weight: .medium, relativeTo: .subheadline)).foregroundStyle(Palette.ink)
+                            .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+                        Text([food.brand, food.source == "usda" ? "USDA" : "Open Food Facts"].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
+                            .mutedSmall().multilineTextAlignment(.leading)
+                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Palette.ink3)
+                        .rotationEffect(.degrees(open ? 90 : 0))
+                        .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: open)
+                        .accessibilityHidden(true)
+                }
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
             }
-            if let error { Text(error).font(.app(.footnote)).foregroundStyle(.red) }
-        } footer: {
-            Text("Foods from \(usda ? "USDA FoodData Central and " : "")Open Food Facts. healthOS's server sends them your search, never your name.")
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(open ? .isSelected : [])
+            .accessibilityHint(open ? "" : "Opens it to choose a portion")
+            if open {
+                VStack(alignment: .leading, spacing: 10) {
+                    FoodLabeled("Portion") {
+                        Picker("Portion", selection: $portion) {
+                            ForEach(Array(food.portions.enumerated()), id: \.offset) { i, p in Text(p.label).tag(i) }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .tint(Palette.ink)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .foodInput(raised: true)
+                        .accessibilityLabel("Portion")
+                    }
+                    FoodFields {
+                        FoodLabeled("How many") {
+                            TextField("1", text: $quantity).keyboardType(.decimalPad).foodInput(raised: true)
+                                .accessibilityLabel("How many").accessibilityIdentifier("pickQuantity")
+                        }
+                    }
+                    if !preview.isEmpty { Text(preview).font(.app(size: 12, relativeTo: .caption)).foregroundStyle(Palette.ink) }
+                    if let error { NoteBad(error, size: 12) }
+                    Button(busy ? "Adding…" : "Add") { add(q) }
+                        .buttonStyle(.accentPill(size: .compact))
+                        .disabled(busy || !((q ?? 0) > 0) || food.portions.isEmpty)
+                        .accessibilityLabel("Add \(food.name)")
+                        .accessibilityIdentifier("pickAdd")
+                }
+                .padding(10)
+                .background(Palette.surface2, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
         }
-        if let found {
-            Section { FoodResultsList(found: found, barcode: isBarcode(searched), quick: quick, toQuick: toQuick) }
-        }
+        .padding(.vertical, 10)
     }
 
-    private func isBarcode(_ s: String) -> Bool { s.range(of: #"^[\d\s-]{8,}$"#, options: .regularExpression) != nil }
-
-    private func search() {
-        let q = query.trimmingCharacters(in: .whitespaces)
-        guard q.count >= 2 else { return }
+    private func add(_ q: Double?) {
+        guard let q, q > 0 else { return }
         busy = true
         error = nil
+        let at = when()
         Task {
             do {
-                found = try await dashboard.searchFoods(q)
-                searched = q
+                // The server rounds how many to hundredths, and refuses more than 50 in its own words.
+                let e = try await dashboard.addFood(FoodBody.food(ref: food.ref, portionIndex: portion, quantity: q, barcode: barcode, date: at.date, time: at.time))
+                onAdded(e.name)
+                AccessibilityNotification.Announcement("Added \(e.name).").post()
             } catch {
-                self.error = error.foodMessage
+                if !APIClient.isCancellation(error) { self.error = error.foodMessage }
             }
             busy = false
         }
     }
 }
 
-/// A barcode: the camera where the device has it, or typed (also when the camera is off).
-private struct FoodScanSection: View {
-    let when: FoodWhen
+/// A barcode: the iPhone's reader where it has a camera, or the numbers typed (also when the camera is off).
+private struct FoodScanPanel: View {
+    let when: () -> FoodMoment
     let units: Units
     let quick: Bool
-    let onChange: () async -> Void
     let toQuick: () -> Void
     @Environment(Dashboard.self) private var dashboard
     @State private var code = ""
@@ -542,11 +749,13 @@ private struct FoodScanSection: View {
     @State private var busy = false
     @State private var error: String?
     @State private var lastScanned: String?
+    @State private var open: String?
+    @State private var added: String?
 
     private var canScan: Bool { DataScannerViewController.isSupported && DataScannerViewController.isAvailable }
 
     var body: some View {
-        Section {
+        VStack(alignment: .leading, spacing: 10) {
             if canScan {
                 BarcodeScanner { scanned in
                     guard scanned != lastScanned, !busy else { return }
@@ -555,23 +764,36 @@ private struct FoodScanSection: View {
                     lookUp()
                 }
                 .frame(height: 220)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .listRowInsets(EdgeInsets())
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .accessibilityLabel("Barcode reader")
             } else {
-                Text("Scanning needs the camera. Type the numbers under the barcode instead.").font(.app(.footnote)).foregroundStyle(Palette.ink2)
+                Text("Scanning needs the camera. Type the numbers under the barcode instead.").font(.app(size: 14, relativeTo: .subheadline)).foregroundStyle(Palette.ink2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            HStack {
-                TextField("Barcode", text: $code).keyboardType(.numberPad).accessibilityIdentifier("barcodeField")
+            HStack(spacing: 8) {
+                TextField("Barcode", text: $code).keyboardType(.numberPad).foodInput().accessibilityLabel("Barcode").accessibilityIdentifier("barcodeField")
                 Button(busy ? "Looking up…" : "Look up", action: lookUp)
+                    .buttonStyle(.accentPill(size: .compact))
                     .disabled(busy || code.filter(\.isNumber).count < 8)
                     .accessibilityIdentifier("barcodeLookUp")
             }
-            if let error { Text(error).font(.app(.footnote)).foregroundStyle(.red) }
-        } footer: {
+            if let error { NoteBad(error, size: 12) }
+            if let added { Text("Added \(added).").font(.app(size: 12, relativeTo: .caption)).foregroundStyle(Palette.goodText) }
+            if let found {
+                ForEach(found.notes, id: \.self) { Text($0).mutedSmall() }
+                if found.results.isEmpty {
+                    Text("That barcode isn’t in USDA FoodData Central or Open Food Facts." + (quick ? " Quick add from the label instead." : ""))
+                        .font(.app(size: 14, relativeTo: .subheadline)).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
+                    if quick { Button("Quick add from the label", action: toQuick).buttonStyle(.quietPill(size: .compact)) }
+                } else {
+                    FoodResultsList(results: found.results, open: $open, when: when, units: units, barcode: true) { name in
+                        added = name
+                        open = nil
+                    }
+                }
+            }
             Text("Barcodes are looked up in Open Food Facts, then USDA FoodData Central. healthOS's server sends them the code, never your name.")
-        }
-        if let found {
-            Section { FoodResultsList(found: found, barcode: true, quick: quick, toQuick: toQuick) }
+                .mutedSmall()
         }
     }
 
@@ -580,182 +802,174 @@ private struct FoodScanSection: View {
         guard digits.count >= 8 else { return }
         busy = true
         error = nil
+        added = nil
         Task {
             do {
-                found = try await dashboard.barcode(digits)
+                let r = try await dashboard.barcode(digits)
+                found = r
+                open = r.results.count == 1 ? r.results[0].ref : nil
             } catch {
-                self.error = error.foodMessage
+                if !APIClient.isCancellation(error) { self.error = error.foodMessage }
             }
             busy = false
         }
     }
 }
 
-/// One database food: which portion, how many, what that comes to (only the amounts the setting shows), then Add.
-private struct FoodPickView: View {
-    let pick: FoodPick
-    let when: FoodWhen
-    let units: Units
-    let onChange: () async -> Void
-    @Environment(Dashboard.self) private var dashboard
-    @Environment(\.dismiss) private var dismiss
-    @State private var portion = 0
-    @State private var quantity = "1"
-    @State private var busy = false
-    @State private var error: String?
-    @State private var added: String?
-
-    var body: some View {
-        let food = pick.food
-        let q = foodQuantity(quantity)
-        let values = food.portions.indices.contains(portion) ? food.portions[portion].values : [:]
-        let preview = q.map { FoodText.amounts(FoodText.scaled(values, by: $0), units: units) } ?? ""
-        Form {
-            Section {
-                Text(food.name).font(.app(.headline))
-                if let brand = food.brand, !brand.isEmpty { Text(brand).font(.app(.footnote)).foregroundStyle(Palette.ink3) }
-            }
-            Section {
-                Picker("Portion", selection: $portion) {
-                    ForEach(Array(food.portions.enumerated()), id: \.offset) { i, p in Text(p.label).tag(i) }
-                }
-                LabeledContent("How many") {
-                    TextField("1", text: $quantity).keyboardType(.decimalPad).multilineTextAlignment(.trailing).frame(maxWidth: 80)
-                        .accessibilityIdentifier("pickQuantity")
-                }
-                if !preview.isEmpty { Text(preview).font(.app(.footnote)).foregroundStyle(Palette.ink2) }
-            }
-            if let error { Section { Text(error).font(.app(.footnote)).foregroundStyle(.red) } }
-            if let added { Section { Text("Added \(added).").font(.app(.footnote)) } }
-            Section {
-                Button(busy ? "Adding…" : "Add") { add(q) }
-                    .disabled(busy || q == nil || food.portions.isEmpty)
-                    .accessibilityIdentifier("pickAdd")
-            }
-        }
-        .navigationTitle(pick.barcode ? "Barcode" : "Food")
-        .navigationBarTitleDisplayMode(.inline)
-        .keyboardDismissal()
-    }
-
-    private func add(_ q: Double?) {
-        guard let q else { return }
-        busy = true
-        error = nil
-        Task {
-            do {
-                let e = try await dashboard.addFood(FoodBody.food(ref: pick.food.ref, portionIndex: portion, quantity: q, barcode: pick.barcode,
-                                                                  date: when.date, time: when.timeText))
-                added = e.name
-                await onChange()
-                dismiss()
-            } catch {
-                self.error = error.foodMessage
-            }
-            busy = false
-        }
-    }
-}
-
-/// McFly's estimate from a photo, a few words or both: a draft to check, never saved on its own.
-private struct FoodEstimateSection: View {
-    let when: FoodWhen
-    let onDrafts: (String) -> Void
-    let onChange: () async -> Void
+/// McFly's estimate from a photo, a few words or both (EstimateFood): a draft to check, never saved on its own.
+private struct FoodEstimatePanel: View {
+    let when: () -> FoodMoment
+    let can: FoodLog.Can
+    let onNote: (String) -> Void
     @Environment(Dashboard.self) private var dashboard
     @State private var description = ""
-    @State private var item: PhotosPickerItem?
-    @State private var photo: UIImage?
-    @State private var jpeg: Data?
-    @State private var camera = false
+    @State private var photo: AttachedPhoto?
+    @State private var choosing = false
     @State private var busy = false
     @State private var error: String?
     @State private var note: String?
 
     var body: some View {
-        Section {
+        VStack(alignment: .leading, spacing: 10) {
             TextField("What did you have? For example: pasta with pesto, cooked in olive oil, about half a plate.", text: $description, axis: .vertical)
-                .lineLimit(3...6)
+                .lineLimit(3...8)
+                .foodInput()
+                .onChange(of: description) { _, v in
+                    let capped = NutritionChat.prefix(v, utf16: NutritionChat.maxDescription)
+                    if capped != v { description = capped }
+                }
+                .accessibilityLabel("What did you have?")
                 .accessibilityIdentifier("estimateText")
             if let photo {
-                HStack {
-                    Image(uiImage: photo).resizable().scaledToFill().frame(width: 72, height: 72).clipShape(RoundedRectangle(cornerRadius: 10))
+                HStack(spacing: 10) {
+                    Image(uiImage: photo.preview).resizable().scaledToFill().frame(width: 72, height: 72)
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                         .accessibilityLabel("Your photo, as it will be sent")
-                    Spacer()
-                    Button("Remove photo", role: .destructive) { self.photo = nil; jpeg = nil; item = nil }
+                    Button("Remove photo") { self.photo = nil }.buttonStyle(.quietText)
                 }
             } else {
-                PhotosPicker(selection: $item, matching: .images) { Label("Choose a photo", systemImage: "photo") }
-                if UIImagePickerController.isSourceTypeAvailable(.camera) {
-                    Button { camera = true } label: { Label("Take a photo", systemImage: "camera") }
-                }
+                Button("Add a photo") { choosing = true }.buttonStyle(.quietPill(size: .compact))
             }
-            if let note { Text(note).font(.app(.footnote)).foregroundStyle(Palette.ink2) }
-            if let error { Text(error).font(.app(.footnote)).foregroundStyle(.red) }
+            Text("\(NutritionChat.estimatePrivacy(can)) Estimates are rough, often a third off on calories, so you check them before anything is saved. A few words about oil, sauces or portion size help most.")
+                .mutedSmall()
+            if let note { Text(note).font(.app(size: 14, relativeTo: .subheadline)).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true) }
+            if let error { NoteBad(error, size: 12) }
             Button(busy ? "Estimating…" : "Estimate", action: estimate)
-                .disabled(busy || (description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && jpeg == nil))
+                .buttonStyle(.accentPill(size: .compact))
+                .disabled(busy || (description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && photo == nil))
                 .accessibilityIdentifier("estimate")
-        } footer: {
-            Text("The photo and words go to Anthropic for this one estimate, and healthOS doesn't keep them. It counts as one McFly question. Estimates are rough, often a third off on calories, so you check them before anything is saved. A few words about oil, sauces or portion size help most.")
         }
-        .onChange(of: item) { _, new in
-            guard let new else { return }
-            Task {
-                if let data = try? await new.loadTransferable(type: Data.self), let image = UIImage(data: data) { use(image) }
-                else { error = "That photo couldn't be opened here. Try another, or describe it instead." }
-            }
+        .mealPhotoSource(isPresented: $choosing) { photo = $0 } failed: {
+            error = "That photo couldn't be opened here. Try a JPEG or PNG, or describe it instead."
         }
-        .fullScreenCover(isPresented: $camera) {
-            CameraPicker { image in
-                camera = false
-                if let image { use(image) }
-            }
-            .ignoresSafeArea()
-        }
-    }
-
-    private func use(_ image: UIImage) {
-        error = nil
-        guard let data = FoodPhoto.jpeg(from: image) else {
-            error = "That photo couldn't be opened here. Try another, or describe it instead."
-            return
-        }
-        jpeg = data
-        photo = UIImage(data: data)
     }
 
     private func estimate() {
         busy = true
         error = nil
         note = nil
+        let at = when()
         Task {
             do {
-                let r = try await dashboard.estimateFood(FoodBody.estimate(description: description.trimmingCharacters(in: .whitespacesAndNewlines), jpeg: jpeg,
-                                                                           date: when.date, time: when.timeText))
+                let r = try await dashboard.estimateFood(FoodBody.estimate(description: NutritionChat.words(description), jpeg: photo?.jpeg, date: at.date, time: at.time))
                 if r.drafts.isEmpty {
-                    note = (r.note?.isEmpty == false ? r.note : nil) ?? "McFly didn't find food or drink to estimate."
+                    note = r.note.flatMap { $0.isEmpty ? nil : $0 } ?? "McFly didn't find food or drink to estimate."
                 } else {
+                    onNote(r.note ?? "")
                     description = ""
                     photo = nil
-                    jpeg = nil
-                    item = nil
-                    await onChange()
-                    onDrafts(r.note ?? "")
                 }
+                await dashboard.estimated()
             } catch {
-                self.error = error.foodMessage
+                if !APIClient.isCancellation(error) { self.error = error.foodMessage }
             }
             busy = false
         }
     }
 }
 
-/// Amounts typed in: an optional name, calories (only when they're shown), protein, carbs, fat and water.
-private struct FoodQuickSection: View {
-    let when: FoodWhen
+/// McFly's draft on the Log (EstimateReview): rename, change how many, or drop items, then save what's left.
+private struct FoodLogReview: View {
+    let note: String
     let mode: NutritionMode
     let units: Units
-    let onChange: () async -> Void
+    @Environment(Dashboard.self) private var dashboard
+    @State private var review: EstimateReview
+
+    init(drafts: [FoodEntry], batch: String, note: String, mode: NutritionMode, units: Units) {
+        self.note = note
+        self.mode = mode
+        self.units = units
+        _review = State(initialValue: EstimateReview(drafts: drafts, batch: batch))
+    }
+
+    var body: some View {
+        let byID = review.byID
+        VStack(alignment: .leading, spacing: 10) {
+            (Text("McFly's estimate").font(.app(size: 12, weight: .semibold, relativeTo: .caption)).foregroundStyle(Palette.ink)
+             + Text(" for \(review.drafts.first?.time ?? ""). Check it, then save. Nothing counts until you do.").font(.app(size: 12, relativeTo: .caption)).foregroundStyle(Palette.ink3))
+                .fixedSize(horizontal: false, vertical: true)
+            if !note.isEmpty { NutriNote(text: note) }
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(review.kept.enumerated()), id: \.element.id) { i, k in
+                    let d = byID[k.id]
+                    VStack(alignment: .leading, spacing: 8) {
+                        FoodLabeled(d?.portion.isEmpty == false ? d!.portion : "Item") {
+                            TextField("Name", text: review.binding(k.id, \.name)).foodInput().accessibilityLabel("Name")
+                        }
+                        FoodFields {
+                            FoodLabeled("How many") {
+                                TextField("1", text: review.binding(k.id, \.quantity)).keyboardType(.decimalPad).foodInput().accessibilityLabel("How many of \(k.name)")
+                            }
+                        }
+                        Button("Leave out") { review.leaveOut(k.id) }
+                            .buttonStyle(.quietText(size: 12))
+                            .accessibilityLabel("Leave out \(k.name)")
+                        let line = review.line(k, mode: mode, units: units)
+                        if !line.isEmpty { Text(line).font(.app(size: 12, relativeTo: .caption)).foregroundStyle(Palette.ink) }
+                    }
+                    .padding(.vertical, 10)
+                    .overlay(alignment: .top) { if i > 0 { Rectangle().fill(Palette.border).frame(height: 1) } }
+                }
+            }
+            if let error = review.error { NoteBad(error, size: 12) }
+            HStack(spacing: 8) {
+                Button(review.saveTitle) {
+                    Task { _ = await review.save(.dashboard(dashboard)) }
+                }
+                .buttonStyle(.accentPill(size: .compact))
+                .disabled(review.busy || review.kept.isEmpty)
+                .accessibilityIdentifier("saveDrafts")
+                Button("Discard") { Task { _ = await review.discard(.dashboard(dashboard)) } }
+                    .buttonStyle(.quietText)
+                    .disabled(review.busy)
+            }
+            Text("You can fix any amount after saving, with Edit.").mutedSmall()
+        }
+    }
+}
+
+/// McFly's note on what it assumed (.nutri-note, .food-note).
+struct NutriNote: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.app(size: 13, relativeTo: .footnote))
+            .foregroundStyle(Palette.ink2)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Palette.surface2, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+}
+
+/// Amounts typed in (QuickAdd): an optional name, calories (only when they're shown), protein, carbs, fat and water.
+struct FoodQuickPanel: View {
+    let when: () -> FoodMoment
+    let mode: NutritionMode
+    let units: Units
     @Environment(Dashboard.self) private var dashboard
     @State private var name = ""
     @State private var typed: [String: String] = [:]
@@ -765,19 +979,27 @@ private struct FoodQuickSection: View {
 
     var body: some View {
         let fields = FoodField.typed(mode)
-        Section {
-            TextField("Name (optional)", text: $name).accessibilityIdentifier("quickName")
-            ForEach(fields) { f in
-                LabeledContent("\(f.label) (\(f.unit(units)))") {
-                    TextField("", text: Binding(get: { typed[f.key] ?? "" }, set: { typed[f.key] = $0 }))
-                        .keyboardType(.decimalPad).multilineTextAlignment(.trailing).frame(maxWidth: 100)
-                        .accessibilityLabel("\(f.label) in \(f.unit(units))")
-                        .accessibilityIdentifier("quick-\(f.key)")
+        VStack(alignment: .leading, spacing: 10) {
+            FoodLabeled("Name (optional)") {
+                TextField("Quick add", text: $name).foodInput()
+                    .onChange(of: name) { _, v in if v.count > 100 { name = String(v.prefix(100)) } }
+                    .accessibilityLabel("Name (optional)").accessibilityIdentifier("quickName")
+            }
+            FoodFields {
+                ForEach(fields) { f in
+                    FoodLabeled("\(f.label) (\(f.unit(units)))") {
+                        TextField("", text: Binding(get: { typed[f.key] ?? "" }, set: { typed[f.key] = $0 })).keyboardType(.decimalPad).foodInput()
+                            .accessibilityLabel("\(f.label) in \(f.unit(units))")
+                            .accessibilityIdentifier("quick-\(f.key)")
+                    }
                 }
             }
-            if let error { Text(error).font(.app(.footnote)).foregroundStyle(.red) }
-            if let added { Text("Added \(added).").font(.app(.footnote)) }
-            Button(busy ? "Adding…" : "Add") { add(fields) }.disabled(busy).accessibilityIdentifier("quickAdd")
+            if let error { NoteBad(error, size: 12) }
+            if let added { Text("Added \(added).").font(.app(size: 12, relativeTo: .caption)).foregroundStyle(Palette.goodText) }
+            Button(busy ? "Adding…" : "Add") { add(fields) }
+                .buttonStyle(.accentPill(size: .compact))
+                .disabled(busy)
+                .accessibilityIdentifier("quickAdd")
         }
     }
 
@@ -791,127 +1013,16 @@ private struct FoodQuickSection: View {
         guard !values.isEmpty else { return error = "Enter at least one amount." }
         busy = true
         error = nil
+        let at = when()
         Task {
             do {
-                let e = try await dashboard.addFood(FoodBody.quick(name: name, values: values, date: when.date, time: when.timeText))
+                let e = try await dashboard.addFood(FoodBody.quick(name: name, values: values, date: at.date, time: at.time))
                 added = e.name
+                AccessibilityNotification.Announcement("Added \(e.name).").post()
                 name = ""
                 typed = [:]
-                await onChange()
             } catch {
-                self.error = error.foodMessage
-            }
-            busy = false
-        }
-    }
-}
-
-// MARK: - Reviewing an estimate
-
-/// McFly's draft: rename, change how many, or leave items out, then save what's left. Nothing counts until then.
-private struct FoodReviewSheet: View {
-    let drafts: [FoodEntry]
-    let batch: String
-    let note: String
-    let mode: NutritionMode
-    let units: Units
-    let onDone: () async -> Void
-    @Environment(Dashboard.self) private var dashboard
-    @Environment(\.dismiss) private var dismiss
-    @State private var kept: [Kept]
-    @State private var busy = false
-    @State private var error: String?
-
-    struct Kept: Identifiable {
-        let id: String
-        var name: String
-        var quantity: String
-    }
-
-    init(drafts: [FoodEntry], batch: String, note: String, mode: NutritionMode, units: Units, onDone: @escaping () async -> Void) {
-        self.drafts = drafts
-        self.batch = batch
-        self.note = note
-        self.mode = mode
-        self.units = units
-        self.onDone = onDone
-        _kept = State(initialValue: drafts.map { Kept(id: $0.id, name: $0.name, quantity: FoodText.quantityText($0.quantity)) })
-    }
-
-    var body: some View {
-        let byID = Dictionary(uniqueKeysWithValues: drafts.map { ($0.id, $0) })
-        NavigationStack {
-            Form {
-                Section {
-                    Text("For \(drafts.first?.time ?? ""). Check it, then save. Nothing counts until you do.").font(.app(.footnote))
-                    if !note.isEmpty { Text(note).font(.app(.footnote)).foregroundStyle(Palette.ink2) }
-                }
-                ForEach($kept) { $k in
-                    if let d = byID[k.id] {
-                        Section(d.portion.isEmpty ? "Item" : d.portion) {
-                            TextField("Name", text: $k.name).accessibilityLabel("Name")
-                            LabeledContent("How many") {
-                                TextField("1", text: $k.quantity).keyboardType(.decimalPad).multilineTextAlignment(.trailing).frame(maxWidth: 80)
-                            }
-                            if mode != .none, let q = foodQuantity(k.quantity) {
-                                let line = FoodText.amounts(FoodText.scaled(d.values, by: q / d.quantity), units: units)
-                                if !line.isEmpty { Text(line).font(.app(.footnote)).foregroundStyle(Palette.ink2) }
-                            }
-                            Button("Leave out", role: .destructive) { kept.removeAll { $0.id == k.id } }
-                        }
-                    }
-                }
-                if let error { Section { Text(error).font(.app(.footnote)).foregroundStyle(.red) } }
-                Section {
-                    Button(busy ? "Saving…" : kept.count == 1 ? "Save 1 item" : "Save \(kept.count) items") { save(byID) }
-                        .disabled(busy || kept.isEmpty)
-                        .accessibilityIdentifier("saveDrafts")
-                    Button("Discard", role: .destructive, action: discard).disabled(busy)
-                } footer: {
-                    Text("You can fix any amount after saving, with Edit.")
-                }
-            }
-            .navigationTitle("McFly's estimate")
-            .navigationBarTitleDisplayMode(.inline)
-            .keyboardDismissal()
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Later") { dismiss() } } }
-        }
-    }
-
-    private func save(_ byID: [String: FoodEntry]) {
-        busy = true
-        error = nil
-        Task {
-            do {
-                for k in kept {
-                    guard let d = byID[k.id] else { continue }
-                    var patch: [String: Any] = [:]
-                    let name = k.name.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if name.isEmpty { throw FoodError("Give it a name.") }
-                    if name != d.name { patch["name"] = name }
-                    guard let q = foodQuantity(k.quantity) else { throw FoodError("Choose an amount above 0 and up to 50.") }
-                    if q != d.quantity { patch["quantity"] = q }
-                    if !patch.isEmpty { try await dashboard.changeFood(d, patch, draft: true) }
-                }
-                try await dashboard.saveDrafts(batch: batch, ids: kept.map(\.id))
-                await onDone()
-                dismiss()
-            } catch {
-                self.error = error.foodMessage
-            }
-            busy = false
-        }
-    }
-
-    private func discard() {
-        busy = true
-        Task {
-            do {
-                try await dashboard.discardDrafts(batch: batch)
-                await onDone()
-                dismiss()
-            } catch {
-                self.error = error.foodMessage
+                if !APIClient.isCancellation(error) { self.error = error.foodMessage }
             }
             busy = false
         }

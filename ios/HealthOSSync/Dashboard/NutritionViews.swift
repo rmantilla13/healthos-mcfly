@@ -7,14 +7,45 @@ import SwiftUI
 // no judgement of its own: no score, no "remaining" or "on track", nothing over or under, no red or green. A target
 // is one the person set, drawn as a plain dashed line. A day with nothing logged is a gap, never a zero.
 
+/// The page's views (TABS in src/pages/Nutrition.tsx): Today, then the views over more days. Each has its own link
+/// (?tab=trends, as the web's addresses): Trends is the old Overview, and ?tab=overview still opens it.
 enum NutritionTab: String, CaseIterable, Identifiable {
-    case overview = "Overview", log = "Log", macros = "Macros", hydration = "Hydration"
+    case today, trends, macros, hydration, log
     var id: String { rawValue }
 
-    /// With no amounts, there's nothing for Macros and Hydration to show, but food can still be logged. Log only where
-    /// the server has the food log.
-    static func visible(_ mode: NutritionMode, logging: Bool = true) -> [NutritionTab] {
-        (mode == .none ? [.overview, .log] : allCases).filter { $0 != .log || logging }
+    var label: String {
+        switch self {
+        case .today: "Today"
+        case .trends: "Trends"
+        case .macros: "Macros"
+        case .hydration: "Hydration"
+        case .log: "Log"
+        }
+    }
+
+    /// With no amounts, there's nothing for Macros and Hydration to show. Today only where the server has one day of
+    /// the food log (POST /nutrition/log/day), the Log only where it has the food log.
+    static func visible(_ mode: NutritionMode, today: Bool = true, logging: Bool = true) -> [NutritionTab] {
+        allCases.filter { tab in
+            switch tab {
+            case .macros, .hydration: mode != .none
+            case .today: today && logging
+            case .log: logging
+            case .trends: true
+            }
+        }
+    }
+
+    /// The view a link names (tabOf): "overview" is Trends's old name; anything unknown is Today.
+    static func of(_ param: String?) -> NutritionTab {
+        if param == "overview" { return .trends }
+        return param.flatMap(NutritionTab.init(rawValue:)) ?? .today
+    }
+
+    /// The view shown for the one asked: itself where it's there, else Today, else the Log (an older server without
+    /// one day of the log), else Trends.
+    static func current(_ asked: NutritionTab, in tabs: [NutritionTab]) -> NutritionTab {
+        [asked, .today, .log, .trends].first { tabs.contains($0) } ?? .trends
     }
 }
 
@@ -120,71 +151,10 @@ enum FoodMath {
     static func days(_ n: Int) -> String { "\(n) \(n == 1 ? "day" : "days")" }
 }
 
-// MARK: - The section
-
-/// The Nutrition tab while it's on: tabs, then the tab's cards. Overview reads the last 14 days; Macros and Hydration a
-/// range; Log is its own List (swipe to delete needs one), so each tab holds its own scrolling.
-struct NutritionTrends: View {
-    @Environment(Dashboard.self) private var dashboard
-    @AppStorage("nutritionTab") private var tab = NutritionTab.overview.rawValue
-    @AppStorage("nutritionDays") private var days = 30
-
-    var body: some View {
-        let tabs = NutritionTab.visible(dashboard.nutritionMode ?? .none, logging: dashboard.foodLogAvailable == true)
-        let current = tabs.first { $0.rawValue == tab } ?? .overview
-        Group {
-            if current == .log {
-                FoodLogTab { header(tabs) }
-            } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 14) {
-                        header(tabs)
-                        if current != .overview {
-                            HStack {
-                                Spacer()
-                                Picker("Range", selection: $days) {
-                                    Text("7 days").tag(7)
-                                    Text("30 days").tag(30)
-                                    Text("90 days").tag(90)
-                                }
-                                .pickerStyle(.menu)
-                            }
-                        }
-                        switch current {
-                        case .overview, .log: NutritionLoader(days: 14, insights: true) { NutritionOverview(data: $0, units: dashboard.units) }
-                        case .macros: NutritionLoader(days: days, insights: false) { NutritionMacros(data: $0) }
-                        case .hydration: NutritionLoader(days: days, insights: false) { NutritionHydration(data: $0, units: dashboard.units) }
-                        }
-                    }
-                    .padding(16)
-                }
-                .refreshable { await dashboard.load() }
-            }
-        }
-        // Whether this server has the food log decides the Log tab; Health catches up with the log on opening.
-        .task(id: "\(dashboard.generation)|\(dashboard.nutritionOn)") {
-            await dashboard.probeFoodLog()
-            await dashboard.reconcileFoodHealth()
-        }
-    }
-
-    private func header(_ tabs: [NutritionTab]) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("From the food app you log in, through Apple Health, or logged here. Only you can see it.")
-                .font(.app(.footnote)).foregroundStyle(Palette.ink3)
-            if tabs.count > 1 {
-                Picker("Nutrition", selection: $tab) {
-                    ForEach(tabs) { Text($0.rawValue).tag($0.rawValue) }
-                }
-                .pickerStyle(.segmented)
-                .accessibilityIdentifier("nutritionTabs")
-            }
-        }
-    }
-}
+// MARK: - Reading
 
 /// Reads GET /api/nutrition for its content, and says why when it can't.
-private struct NutritionLoader<Content: View>: View {
+struct NutritionLoader<Content: View>: View {
     let days: Int
     let insights: Bool
     @ViewBuilder let content: (NutritionData) -> Content
@@ -194,7 +164,7 @@ private struct NutritionLoader<Content: View>: View {
     @State private var error: String?
 
     var body: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 16) {
             if let data {
                 content(data)
             } else if let error {
@@ -222,7 +192,7 @@ private struct NutritionLoader<Content: View>: View {
 
 // MARK: - Overview
 
-private struct NutritionOverview: View {
+struct NutritionOverview: View {
     let data: NutritionData
     let units: Units
     @Environment(Dashboard.self) private var dashboard
@@ -236,7 +206,7 @@ private struct NutritionOverview: View {
             FoodNothingLoggedCard()
         } else if data.mode == .none {
             if layout.row.contains("nutrition.logged") { FoodLoggedCard(data: data) }
-            FoodNoAmountsCard(latest: latest, today: data.today, logging: dashboard.foodLogAvailable == true)
+            FoodNoAmountsCard(latest: latest, today: data.today)
         } else if layout.allHidden {
             AllCardsHiddenNote(text: "All the cards on this page are hidden.")
         } else {
@@ -385,13 +355,12 @@ private struct FoodWaterCard: View {
         VStack(alignment: .leading, spacing: 8) {
             FoodCardHead(title: "Water", day: last.map { Fmt.relativeDay($0.date, today: today) })
             if let last {
-                BigValue(value: FoodMath.glassesText(last.value), unit: FoodMath.glasses(last.value) == 1 ? "glass" : "glasses", size: 26)
-                Text(FoodMath.water(last.value, units: units)).font(.app(.caption)).foregroundStyle(Palette.ink3)
+                BigValue(value: FoodMath.glassesText(last.value), unit: "\(FoodMath.glasses(last.value) == 1 ? "glass" : "glasses") · \(FoodMath.water(last.value, units: units))", size: 26)
             } else {
                 Text("No water logged this week.").font(.app(.caption)).foregroundStyle(Palette.ink3)
             }
             Spacer(minLength: 0)
-            GlassBars(days: week, target: target, label: "Water in glasses, last 7 days") { "\(FoodMath.glassesText($0)) glasses, \(FoodMath.water($0, units: units))" }
+            GlassBars(days: week, target: target, label: "Water in glasses, last 7 days") { "\(FoodMath.glassesText($0)) glasses · \(FoodMath.water($0, units: units))" }
             FoodCardFoot(text: "1 glass = \(FoodMath.glassSize(units))", target: target.map { FoodMath.water($0, units: units) })
         }
         .frame(maxHeight: .infinity, alignment: .top)
@@ -407,17 +376,17 @@ private struct FoodLoggedCard: View {
     var body: some View {
         let logged = Set(data.days.map(\.date))
         let dates = FoodMath.dates(from: data.start, to: data.end)
-        let cell: CGFloat = dates.count > 31 ? 8 : compact ? 11 : 14
+        let cell: CGFloat = dates.count > 31 ? 9 : compact ? 11 : 14
         VStack(alignment: .leading, spacing: 8) {
             FoodCardHead(title: "Days logged", day: nil)
             Text("\(logged.count) of \(FoodMath.days(dates.count))")
                 .font(.app(fixedSize: compact ? 20 : 22, weight: .semibold)).monospacedDigit()
                 .foregroundStyle(Palette.ink)
             Spacer(minLength: 0)
-            FamilyWrap(spacing: 4, rowSpacing: 4) {
+            NutritionFlow(spacing: 4, rowSpacing: 4) {
                 ForEach(dates, id: \.self) { d in
-                    RoundedRectangle(cornerRadius: cell > 10 ? 4 : 2, style: .continuous)
-                        .fill(logged.contains(d) ? Palette.series1 : Palette.grid)
+                    RoundedRectangle(cornerRadius: cell > 10 ? 4 : 3, style: .continuous)
+                        .fill(logged.contains(d) ? Palette.barAccent : Palette.grid)
                         .frame(width: cell, height: cell)
                 }
             }
@@ -438,27 +407,28 @@ private struct FoodLoggedCard: View {
 private struct FoodNoAmountsCard: View {
     let latest: FoodDay?
     let today: String
-    /// The Log tab is there (a server with the food log), showing what was logged.
-    let logging: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(latest.map { Fmt.relativeDay($0.date, today: today) } ?? "Nothing logged lately").font(.app(.headline)).foregroundStyle(Palette.ink)
-            Text((latest.map { "You logged food \($0.app == "healthOS" ? "here" : "in \($0.app)"). " } ?? "")
-                + "You chose to see no amounts, so this shows only the days you logged\(logging ? ", and the Log tab what you logged" : ""). Change it on the web, in Profile.")
-                .font(.app(.footnote)).foregroundStyle(Palette.ink2)
-                .fixedSize(horizontal: false, vertical: true)
+            Text(latest.map { Fmt.relativeDay($0.date, today: today) } ?? "Nothing logged lately").font(.app(.headline, weight: .medium)).foregroundStyle(Palette.ink)
+            LinkedText((latest.map { "You logged food \($0.app == "healthOS" ? "here" : "in \($0.app)"). " } ?? "")
+                + "You chose to see no amounts, so this shows only the days you logged, and Today what you logged. Change it in [your Profile](healthos://profile).")
+                .font(.app(size: 14, relativeTo: .subheadline)).foregroundStyle(Palette.ink3)
         }
         .card()
     }
 }
 
+/// Nothing logged anywhere yet (NothingYet): where logging happens, and the food apps this iPhone reads through Health.
 private struct FoodNothingLoggedCard: View {
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Nothing logged yet").font(.app(.headline)).foregroundStyle(Palette.ink)
-            Text("healthOS reads what your food app writes to Apple Health: MyFitnessPal, Cronometer, Lose It!, MacroFactor and Yazio all can. Turn on its Apple Health connection in that app, and allow healthOS to read nutrition when Health asks.")
-                .font(.app(.footnote)).foregroundStyle(Palette.ink2)
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Nothing logged yet").font(.app(.headline, weight: .medium)).foregroundStyle(Palette.ink).accessibilityAddTraits(.isHeader)
+            LinkedText("Tell McFly what you ate on [Today](healthos://nutrition), or search foods and type amounts on the [Log](healthos://nutrition?tab=log) tab.")
+                .font(.app(size: 14, relativeTo: .subheadline)).foregroundStyle(Palette.ink3)
+            // The web's "then open the healthOS iPhone app": this is it.
+            Text("Or keep using a food app that writes to Apple Health, such as MyFitnessPal, Cronometer, Lose It!, MacroFactor or Yazio, and turn on its Apple Health connection in that app. This iPhone reads it at its next sync, once you allow healthOS to read nutrition when Health asks.")
+                .font(.app(size: 14, relativeTo: .subheadline)).foregroundStyle(Palette.ink3)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .card()
@@ -487,35 +457,32 @@ private struct MacroBalanceCard: View {
     var body: some View {
         let parts = FoodMath.parts(day)
         VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Macro balance").font(.app(.headline)).foregroundStyle(Palette.ink)
-                Spacer()
-                Text("\(Fmt.relativeDay(day.date, today: today)) · \(day.app)").font(.app(.caption)).foregroundStyle(Palette.ink3).lineLimit(1)
+            NutriCardHead(title: "Macro balance") {
+                Text("\(Fmt.relativeDay(day.date, today: today)) · \(day.app)").mutedSmall()
             }
             if parts.isEmpty {
-                Text("No protein, carbs or fat logged that day.").font(.app(.footnote)).foregroundStyle(Palette.ink3)
+                Text("No protein, carbs or fat logged that day.").font(.app(size: 14, relativeTo: .subheadline)).foregroundStyle(Palette.ink3)
             } else {
-                HStack(spacing: 18) {
-                    MacroDonut(parts: parts, energy: mode == .all ? day.values["energy_kcal"] : nil)
-                        .frame(width: 124, height: 124)
-                    VStack(alignment: .leading, spacing: 10) {
-                        ForEach(parts) { p in
-                            HStack(spacing: 8) {
-                                Circle().fill(MacroColor.of(p.key)).frame(width: 8, height: 8)
-                                Text(p.label).font(.app(.subheadline)).foregroundStyle(Palette.ink2)
-                                Spacer(minLength: 4)
-                                Text("\(Fmt.number(p.grams)) g").font(.app(.subheadline, weight: .semibold)).monospacedDigit().foregroundStyle(Palette.ink)
-                                Text("\(p.percent)%").font(.app(.caption)).monospacedDigit().foregroundStyle(Palette.ink3).frame(minWidth: 30, alignment: .trailing)
-                            }
-                            .accessibilityElement(children: .combine)
+                let donut = MacroDonut(parts: parts, energy: mode == .all ? day.values["energy_kcal"] : nil).frame(width: 124, height: 124)
+                let list = VStack(alignment: .leading, spacing: 10) {
+                    ForEach(parts) { p in
+                        HStack(spacing: 10) {
+                            Circle().fill(MacroColor.of(p.key)).frame(width: 10, height: 10)
+                            Text(p.label).font(.app(size: 14, relativeTo: .subheadline)).foregroundStyle(Palette.ink2)
+                            Spacer(minLength: 4)
+                            Text("\(Fmt.number(p.grams)) g").font(.app(size: 14, weight: .semibold, relativeTo: .subheadline)).foregroundStyle(Palette.ink)
+                            Text("\(p.percent)%").font(.app(.caption)).foregroundStyle(Palette.ink3).frame(minWidth: 40, alignment: .trailing)
                         }
+                        .accessibilityElement(children: .combine)
                     }
+                }
+                // Side by side where they fit (.macro-balance-body wraps), the list under the ring where they don't.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 24) { donut; list.frame(minWidth: 180) }
+                    VStack(alignment: .leading, spacing: 16) { donut; list }
                 }
             }
             MacroFooter(day: day, caffeine: caffeine)
-            if !day.otherApps.isEmpty {
-                Text("Also logged in \(day.otherApps.joined(separator: ", ")), not added in.").font(.app(.caption)).foregroundStyle(Palette.ink3)
-            }
         }
         .card()
     }
@@ -622,18 +589,21 @@ private struct FoodInsightsCard: View {
 
 // MARK: - Macros
 
-private struct NutritionMacros: View {
+struct NutritionMacros: View {
     let data: NutritionData
 
     var body: some View {
-        if let latest = data.days.last {
-            FoodDayCard(day: latest, today: data.today, mode: data.mode)
+        if !data.days.isEmpty {
+            FoodAverageCard(data: data)
             FoodLoggedCard(data: data)
             ForEach(FoodMath.order.filter { n in data.days.contains { $0.values[n] != nil } }, id: \.self) { n in
                 let target = n == "energy_kcal" || n == "protein_g" ? data.targets?[n] : nil
                 FoodChartCard(title: FoodMath.name(n), points: data.days.compactMap { d in d.values[n].map { Point(date: d.date, value: $0) } },
-                              start: data.start, end: data.end, target: target, format: { FoodMath.amount(n, $0) })
+                              start: data.start, end: data.end, target: target,
+                              table: FoodChartTable(columns: ["Date", "\(FoodMath.name(n)) (\(FoodMath.names[n]?.unit ?? ""))"]) { [Fmt.day($0.date, "MMMdyyyy"), Fmt.number($0.value)] },
+                              format: { FoodMath.amount(n, $0) })
             }
+            if data.apps.count > 1 { FoodAppChoice(data: data) }
             Text("Days with nothing logged are left out, not counted as zero. When two apps logged the same day, one is shown and the other isn't added in, because food apps often copy each other's entries through Apple Health.")
                 .font(.app(.caption)).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
         } else {
@@ -718,9 +688,10 @@ private struct MacroSplit: View {
 
 // MARK: - Hydration
 
-private struct NutritionHydration: View {
+struct NutritionHydration: View {
     let data: NutritionData
     let units: Units
+    let days: Int
 
     var body: some View {
         if data.water.isEmpty && data.caffeine.isEmpty {
@@ -731,11 +702,20 @@ private struct NutritionHydration: View {
             }
             .card()
         } else {
+            let water = { (ml: Double) in "\(FoodMath.glassesText(ml)) glasses · \(FoodMath.water(ml, units: units))" }
+            HydrationSummaryCard(title: "Water", points: data.water, format: water, target: data.targets?["water_ml"].map { FoodMath.water($0, units: units) }, days: days)
+            HydrationSummaryCard(title: "Caffeine", points: data.caffeine, format: { "\(Fmt.number($0)) mg" }, target: nil, days: days)
             FoodChartCard(title: "Water", points: data.water, start: data.start, end: data.end, target: data.targets?["water_ml"],
-                          note: "1 glass = \(FoodMath.glassSize(units))", format: { FoodMath.water($0, units: units) },
+                          note: "1 glass = \(FoodMath.glassSize(units))", medianNote: false,
+                          table: FoodChartTable(columns: ["Date", units == .imperial ? "Water (fl oz)" : "Water (mL)", "Glasses"]) {
+                              [Fmt.day($0.date, "MMMdyyyy"), FoodMath.water($0.value, units: units), Fmt.number(FoodMath.glasses($0.value), 1)]
+                          },
+                          format: { FoodMath.water($0, units: units) },
                           axis: { units == .imperial ? Fmt.number($0 / 29.5735) : Fmt.number($0) })
             FoodChartCard(title: "Caffeine", points: data.caffeine, start: data.start, end: data.end, target: nil,
-                          note: "daily total", format: { "\(Fmt.number($0)) mg" })
+                          note: "daily total", medianNote: false,
+                          table: FoodChartTable(columns: ["Date", "Caffeine (mg)"]) { [Fmt.day($0.date, "MMMdyyyy"), Fmt.number($0.value)] },
+                          format: { "\(Fmt.number($0)) mg" })
         }
     }
 }
@@ -751,16 +731,36 @@ struct FoodChartCard: View {
     let end: String
     let target: Double?
     var note: String?
+    /// Say "median line" in the note (the nutrients' charts; the web's hydration charts don't).
+    var medianNote = true
+    /// The same days as a table; nil: the date and the formatted value.
+    var table: FoodChartTable?
     let format: (Double) -> String
     var axis: (Double) -> String = { Fmt.compact($0) }
     @State private var selected: Date?
+    @State private var asTable = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.app(.subheadline, weight: .medium)).foregroundStyle(Palette.ink2)
-            Text(([FoodMath.days(points.count) + " logged", "median line"] + [note].compactMap { $0 }).joined(separator: " · "))
-                .font(.app(.caption)).foregroundStyle(Palette.ink3)
-            if !points.isEmpty { chart.frame(height: 180).padding(.top, 6) }
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title).font(.app(.subheadline, weight: .medium)).foregroundStyle(Palette.ink)
+                        .accessibilityAddTraits(.isHeader)
+                    Text(([FoodMath.days(points.count) + " logged"] + (medianNote ? ["median line"] : []) + [note].compactMap { $0 }).joined(separator: " · "))
+                        .font(.app(.caption)).foregroundStyle(Palette.ink3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+                if !points.isEmpty { ChartTableToggle(title: title, asTable: $asTable) }
+            }
+            if !points.isEmpty {
+                if asTable {
+                    FoodTableView(table: table ?? FoodChartTable(columns: ["Date", title]) { [Fmt.day($0.date, "MMMdyyyy"), format($0.value)] }, points: points)
+                        .padding(.top, 6)
+                } else {
+                    chart.frame(height: 180).padding(.top, 6)
+                }
+            }
         }
         .card()
     }
@@ -921,5 +921,217 @@ struct GlassBars: View {
         .accessibilityElement()
         .accessibilityLabel(label)
         .accessibilityValue(days.map { "\(Fmt.day($0.date, "EEE")) \($0.value.map(format) ?? "nothing logged")" }.joined(separator: ", "))
+    }
+}
+
+// MARK: - Tables, averages and the app that counts
+
+/// A chart's days as a table (ChartCard's table view): its columns, and each day's cells, newest first.
+struct FoodChartTable {
+    let columns: [String]
+    let row: (Point) -> [String]
+}
+
+/// Chart or table (ChartCard's .seg): two small icon buttons in a soft well, the one shown raised on white.
+private struct ChartTableToggle: View {
+    let title: String
+    @Binding var asTable: Bool
+
+    var body: some View {
+        HStack(spacing: 0) {
+            option("chart.bar", "Chart", on: !asTable) { asTable = false }
+            option("tablecells", "Table", on: asTable) { asTable = true }
+        }
+        .padding(3)
+        .background(Palette.surface2, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Palette.border))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(title) view")
+    }
+
+    private func option(_ symbol: String, _ name: String, on: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.caption)
+                .dynamicTypeSize(...DynamicTypeSize.xxLarge)
+                .foregroundStyle(on ? Palette.ink : Palette.ink2)
+                .frame(width: 30, height: 26)
+                .background {
+                    if on {
+                        RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Palette.surface).shadow(color: .black.opacity(0.08), radius: 1, y: 1)
+                    }
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(name)
+        .accessibilityAddTraits(on ? .isSelected : [])
+    }
+}
+
+/// The table itself, scrolling inside its card past a few dozen days (.table-wrap).
+private struct FoodTableView: View {
+    let table: FoodChartTable
+    let points: [Point]
+
+    var body: some View {
+        let rows = points.reversed().map(table.row)
+        ScrollView {
+            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 0) {
+                GridRow {
+                    ForEach(table.columns, id: \.self) { Text($0).font(.app(size: 12, weight: .medium, relativeTo: .caption)).foregroundStyle(Palette.ink3) }
+                }
+                .padding(.vertical, 6)
+                ForEach(Array(rows.enumerated()), id: \.offset) { _, cells in
+                    Divider().overlay(Palette.border).gridCellUnsizedAxes(.horizontal)
+                    GridRow {
+                        ForEach(Array(cells.enumerated()), id: \.offset) { _, cell in
+                            Text(cell).font(.app(size: 13, relativeTo: .footnote)).foregroundStyle(Palette.ink)
+                        }
+                    }
+                    .padding(.vertical, 6)
+                    .accessibilityElement(children: .combine)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(maxHeight: 360)
+    }
+}
+
+/// The range's average day (AverageCard): each nutrient's mean over the days it was logged (a day without it doesn't
+/// count as zero), and protein, carbs and fat by weight. In place of repeating the latest day, which Trends shows.
+struct FoodAverageCard: View {
+    let data: NutritionData
+
+    /// Each nutrient's mean over the days it was logged.
+    static func averages(_ days: [FoodDay]) -> [String: Double] {
+        var out: [String: Double] = [:]
+        for n in FoodMath.order {
+            let v = days.compactMap { $0.values[n] }
+            if !v.isEmpty { out[n] = v.reduce(0, +) / Double(v.count) }
+        }
+        return out
+    }
+
+    var body: some View {
+        let avg = Self.averages(data.days)
+        let shown = FoodMath.order.filter { avg[$0] != nil }
+        let parts = FoodMath.parts(FoodDay(date: data.end, app: "", values: avg, otherApps: []))
+        let span = Fmt.daysBetween(data.start, data.end) + 1
+        VStack(alignment: .leading, spacing: 14) {
+            NutriCardHead(title: "Average day") {
+                Text("\(data.days.count) logged \(data.days.count == 1 ? "day" : "days") in the last \(span)").mutedSmall()
+            }
+            let values = LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 16, alignment: .topLeading)], alignment: .leading, spacing: 12) {
+                ForEach(shown, id: \.self) { n in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(FoodMath.name(n)).font(.app(.caption)).foregroundStyle(Palette.ink2)
+                        Text(FoodMath.amount(n, avg[n]!)).font(.app(size: 22, weight: .medium, relativeTo: .title3)).tracking(-0.44).foregroundStyle(Palette.ink)
+                            .lineLimit(1).minimumScaleFactor(0.7)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+            }
+            if parts.count == 3 {
+                let donut = MacroDonut(parts: parts, energy: avg["energy_kcal"])
+                    .frame(width: 124, height: 124)
+                    .accessibilityLabel("Average by weight: " + parts.map { "\($0.label.lowercased()) \($0.percent)%" }.joined(separator: ", "))
+                // Side by side where the values have room (.average-day-body wraps), else the ring over them.
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .center, spacing: 24) { donut; values.frame(minWidth: 220) }
+                    VStack(alignment: .leading, spacing: 16) { donut; values }
+                }
+            } else {
+                values
+            }
+            Text("Each average counts only the days that nutrient was logged.").mutedSmall()
+        }
+        .card()
+    }
+}
+
+/// On days two apps logged (AppChoice): use one app's totals, or Automatic, which picks whichever logged the most that
+/// day. Saved as the person's setting (nutritionApp), then every view reads again.
+private struct FoodAppChoice: View {
+    let data: NutritionData
+    @Environment(Dashboard.self) private var dashboard
+    @State private var busy = false
+    @State private var error: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("On days two apps logged").font(.app(.headline, weight: .medium)).foregroundStyle(Palette.ink).accessibilityAddTraits(.isHeader)
+                Text("Use one app's totals. Automatic picks whichever logged the most that day.").mutedSmall()
+            }
+            NutritionFlow(spacing: 0, rowSpacing: 4) {
+                ForEach([String?.none] + data.apps.map(Optional.some), id: \.self) { app in
+                    let on = data.app == app
+                    Button(app ?? "Automatic") { save(app) }
+                        .buttonStyle(.plain)
+                        .font(.app(size: 13, weight: .medium, relativeTo: .footnote))
+                        .foregroundStyle(on ? Palette.ink : Palette.ink2)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .frame(minHeight: 36)
+                        .background {
+                            if on { RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Palette.surface).shadow(color: .black.opacity(0.08), radius: 1, y: 1) }
+                        }
+                        .contentShape(Rectangle())
+                        .disabled(busy)
+                        .accessibilityAddTraits(on ? .isSelected : [])
+                }
+            }
+            .padding(3)
+            .background(Palette.surface2, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Palette.border))
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("App to use")
+            if let error { NoteBad(error, size: 12) }
+        }
+        .card()
+    }
+
+    private func save(_ app: String?) {
+        guard app != data.app else { return }
+        busy = true
+        error = nil
+        Task {
+            do {
+                // The days' totals change with it: everything is read again.
+                try await dashboard.save(settings: ["nutritionApp": app.map { $0 as Any } ?? NSNull()], reload: true)
+            } catch {
+                if !APIClient.isCancellation(error) { self.error = error.localizedDescription }
+            }
+            busy = false
+        }
+    }
+}
+
+/// A drink's average over the days it was logged in the range, and how many days that was (HydrationSummary).
+private struct HydrationSummaryCard: View {
+    let title: String
+    let points: [Point]
+    let format: (Double) -> String
+    let target: String?
+    let days: Int
+
+    var body: some View {
+        let avg = points.isEmpty ? nil : points.map(\.value).reduce(0, +) / Double(points.count)
+        VStack(alignment: .leading, spacing: 6) {
+            NutriCardHead(title: title) { Text("Last \(days) days").mutedSmall() }
+            if let avg {
+                Text(format(avg)).font(.app(size: 28, weight: .medium, relativeTo: .title)).tracking(-0.84).foregroundStyle(Palette.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("a day on average, over the \(points.count) \(points.count == 1 ? "day" : "days") logged").font(.app(.footnote)).foregroundStyle(Palette.ink2)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let target { Text("Your target \(target)").mutedSmall() }
+            } else {
+                Text("Nothing logged in these \(days) days.").mutedSmall()
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .card()
     }
 }

@@ -52,15 +52,24 @@ extension Dashboard {
         await refreshIfChanged(includeStatus: false)
     }
 
-    /// Saves McFly's reviewed drafts (the rest are discarded); they count, and go to Health, from now on.
-    func saveDrafts(batch: String, ids: [String]) async throws {
+    /// Saves McFly's reviewed drafts (the rest are discarded); they count, and go to Health, from now on. The entries
+    /// saved: none when the estimate went (a day old, or saved elsewhere).
+    @discardableResult
+    func saveDrafts(batch: String, ids: [String]) async throws -> [FoodEntry] {
         let saved = try await fetch { try await $0.saveDrafts(batch: batch, ids: ids) }
         await wroteHere(saved)
         await refreshIfChanged(includeStatus: false)
+        return saved
     }
 
     func discardDrafts(batch: String) async throws {
         try await fetch { try await $0.discardDrafts(batch: batch) }
+        await refreshIfChanged(includeStatus: false)
+    }
+
+    /// McFly's estimate came back (a draft, or nothing found): the server's data moved, so what's on screen reads again.
+    func estimated() async {
+        await refreshIfChanged(includeStatus: false)
     }
 
     func searchFoods(_ query: String) async throws -> FoodSearch { try await fetch { try await $0.searchFoods(query) } }
