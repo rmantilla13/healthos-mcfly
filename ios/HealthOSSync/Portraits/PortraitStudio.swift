@@ -299,7 +299,7 @@ private struct PortraitTile: View {
     @ViewBuilder
     private func actions(chosen: Bool, using: Bool) -> some View {
         if p.status == "ready", !chosen {
-            Button { use(p) } label: { PillText(using ? PortraitWords.usingShort : PortraitWords.useThis) }
+            Button { use(p) } label: { PillText(using ? PortraitWords.usingShort : PortraitWords.useThis, size: TilePillStyle.size) }
                 .buttonStyle(TilePillStyle())
                 .disabled(model.locked)
                 .accessibilityIdentifier("portraits.use.\(p.id)")
@@ -434,11 +434,13 @@ struct QuietTextStyle: ButtonStyle {
 /// A tile's primary button (.portrait-tile-actions .btn-primary): the forest pill, a little smaller, so it fits half
 /// a phone's width.
 private struct TilePillStyle: ButtonStyle {
+    /// .portrait-tile-actions .btn: 12.5 px.
+    static let size: CGFloat = 12.5
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.app(size: 12.5, weight: .medium, relativeTo: .footnote))
+            .font(.app(size: Self.size, weight: .medium, relativeTo: .footnote))
             .foregroundStyle(Palette.accentInk)
             .padding(.horizontal, 12)
             .frame(minHeight: 30)
@@ -449,20 +451,50 @@ private struct TilePillStyle: ButtonStyle {
     }
 }
 
-
-/// A pill's words: one line, as the web's, shrinking a little before they'd be cut off; wrapped at the accessibility
-/// text sizes, so the whole label stays readable (the pill grows to fit).
+/// A pill's words: one line, as the web's, when they fit; else a little smaller (not at the accessibility text sizes,
+/// where they stay as large as asked for); else wrapped onto more lines at the spaces between words, the pill growing
+/// to fit. Never cut off. `size` is the size the pill's style sets (a compact pill's footnote, a tile's 12.5), for the
+/// smaller step.
 struct PillText: View {
     let text: String
+    var size: CGFloat
     @Environment(\.dynamicTypeSize) private var typeSize
 
-    init(_ text: String) { self.text = text }
+    /// How much smaller the second try is.
+    static let smaller: CGFloat = 0.85
+
+    init(_ text: String, size: CGFloat = AppFont.size(.footnote)) {
+        self.text = text
+        self.size = size
+    }
 
     var body: some View {
-        Text(text)
-            .lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
-            .minimumScaleFactor(typeSize.isAccessibilitySize ? 1 : 0.85)
-            .multilineTextAlignment(.center)
-            .padding(.vertical, typeSize.isAccessibilitySize ? 6 : 0)
+        let large = typeSize.isAccessibilitySize
+        ViewThatFits(in: .horizontal) {
+            line(nil)
+            // A stack lays a pill out a fraction of a point narrower than it asked for (rounded to the screen's
+            // pixels): the same line again, measured a point narrower each side, so that never makes it shrink or wrap.
+            line(nil).padding(.horizontal, -1)
+            if !large {
+                line(size * Self.smaller)
+                line(size * Self.smaller).padding(.horizontal, -1)
+            }
+            Text(text)
+                .lineLimit(nil)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.vertical, large ? 0 : 6)
+        }
+        .multilineTextAlignment(.center)
+        .padding(.vertical, large ? 6 : 0)
+    }
+
+    /// The words on one line, in the pill's own font or at `smaller` points.
+    @ViewBuilder
+    private func line(_ smaller: CGFloat?) -> some View {
+        if let smaller {
+            Text(text).lineLimit(1).font(.app(size: smaller, weight: .medium, relativeTo: .footnote))
+        } else {
+            Text(text).lineLimit(1)
+        }
     }
 }

@@ -520,6 +520,78 @@ final class PortraitsTests: XCTestCase {
         XCTAssertEqual(PortraitPhotosSection.readKey(generation: 3, photo: "1761300000000", welcomeOpen: false, ownOpenAIKey: false), now)
     }
 
+    // MARK: Pills never cut their words off
+
+    /// A compact pill's height for `text` in `width` points.
+    private func pillHeight(_ text: String, width: CGFloat, _ size: DynamicTypeSize = .large) throws -> CGFloat {
+        let view = Button {} label: { PillText(text) }
+            .buttonStyle(.quietPill(size: .compact))
+            .frame(width: width)
+            .dynamicTypeSize(size)
+        return try XCTUnwrap(Snapshot.render(view, scale: 1)).size.height
+    }
+
+    func testAPillShrinksALittleThenWraps() throws {
+        // "Choose a new photo" beside the cut-out on a 375-point phone has about 101 points for its words (the pill's
+        // padding is 15 a side): too few for one line at the default size, even a little smaller.
+        let oneLine = try pillHeight(PhotoWords.chooseAgain, width: 260)
+        XCTAssertEqual(oneLine, PillSize.compact.height, accuracy: 0.5)
+        XCTAssertEqual(try pillHeight(PhotoWords.chooseAgain, width: 140), oneLine, accuracy: 0.5, "a little smaller, still one line")
+        XCTAssertGreaterThan(try pillHeight(PhotoWords.chooseAgain, width: 131), oneLine + 8, "wrapped onto two lines, not cut off")
+        // A larger text size wraps sooner.
+        XCTAssertGreaterThan(try pillHeight(PortraitWords.useThis, width: 125, .xxLarge), try pillHeight(PortraitWords.useThis, width: 125) + 8)
+        // At the accessibility sizes it never shrinks: a few points short of one line, where a little smaller would
+        // fit, it wraps at the space.
+        let natural = try XCTUnwrap(Snapshot.render(Button {} label: { PillText(PortraitWords.makeMine) }
+            .buttonStyle(.quietPill(size: .compact)).fixedSize().dynamicTypeSize(.accessibility5), scale: 1)).size
+        XCTAssertEqual(try pillHeight(PortraitWords.makeMine, width: natural.width, .accessibility5), natural.height, accuracy: 0.5)
+        XCTAssertGreaterThan(try pillHeight(PortraitWords.makeMine, width: natural.width - 8, .accessibility5), natural.height + 20,
+                             "wrapped at the space, not shrunk")
+        let largeWidth = try XCTUnwrap(Snapshot.render(Button {} label: { PillText(PortraitWords.makeMine) }
+            .buttonStyle(.quietPill(size: .compact)).fixedSize(), scale: 1)).size.width
+        XCTAssertEqual(try pillHeight(PortraitWords.makeMine, width: largeWidth - 8), oneLine, accuracy: 0.5, "at the default size, shrunk a little")
+    }
+
+    /// How wide, in pixels, the darkest marks (the words) are in an image.
+    private static func inkWidth(_ image: UIImage) throws -> Int {
+        let cg = try XCTUnwrap(image.cgImage)
+        let w = cg.width, h = cg.height
+        var data = [UInt8](repeating: 0, count: w * h * 4)
+        let ctx = try XCTUnwrap(CGContext(data: &data, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                          space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+        var lo = w, hi = -1
+        for y in 0..<h {
+            for x in 0..<w {
+                let i = (y * w + x) * 4
+                if data[i + 3] > 200, Int(data[i]) + Int(data[i + 1]) + Int(data[i + 2]) < 450 {
+                    lo = min(lo, x)
+                    hi = max(hi, x)
+                }
+            }
+        }
+        return hi - lo
+    }
+
+    func testAPillWithRoomKeepsItsWordsFullSizeInARow() throws {
+        // A row lays a pill out a fraction of a point narrower than it asked for (rounded to the pixels): its words stay
+        // full size, as they would alone. "Making…" shrank this way beside Delete in a reference row.
+        for label in [PortraitWords.makingShort, PortraitWords.makeMine, PortraitWords.useThis, PortraitWords.usingShort, PortraitWords.add,
+                      PortraitWords.adding, PhotoWords.chooseAgain, PhotoWords.choose] {
+            let alone = try XCTUnwrap(Snapshot.render(Button {} label: { Text(label).lineLimit(1) }.buttonStyle(.quietPill(size: .compact)).fixedSize()))
+            for width in [CGFloat(239), 238.7, 238.3] {
+                let row = HStack(spacing: 6) {
+                    Button {} label: { PillText(label) }.buttonStyle(.quietPill(size: .compact))
+                    Color.clear.frame(width: 50, height: 10)
+                }
+                .frame(width: width, alignment: .leading)
+                let inRow = try XCTUnwrap(Snapshot.render(row))
+                XCTAssertEqual(Double(try Self.inkWidth(inRow)), Double(try Self.inkWidth(alone)), accuracy: 2, "\(label) in \(width)")
+                XCTAssertEqual(inRow.size.height, PillSize.compact.height, accuracy: 0.5, "\(label): one line")
+            }
+        }
+    }
+
     func testAFailedTileIsSurfaceAndEveryOtherOnTheCream() throws {
         let css = try web("src/styles/portraits.css")
         XCTAssertNotNil(css.firstMatch(of: /\.portrait-tile-art \{[^}]*background: var\(--grad-cream\);/))
@@ -555,14 +627,17 @@ final class PortraitsTests: XCTestCase {
             ("tiles", full, true, true), ("five", five, true, false), ("use-failed", failedUse, true, false), ("day-limit", refused, true, false),
         ]
         for (name, model, byok, ownKey) in states {
+            // Tiles and the reference row also at the large sizes short of the accessibility ones, where a half-width
+            // tile's pill wraps.
+            let sizes: [DynamicTypeSize] = ["tiles", "one-reference"].contains(name) ? [.large, .xxLarge, .xxxLarge, .accessibility5] : [.large, .accessibility5]
             for scheme in [ColorScheme.light, .dark] {
-                for size in [DynamicTypeSize.large, .accessibility5] {
+                for size in sizes {
                     let view = PortraitStudioContent(model: model, byok: byok, ownKey: ownKey)
                         .padding(18).frame(width: 343).background(Palette.page)
                         .environment(\.colorScheme, scheme).dynamicTypeSize(size)
-                    let image = try XCTUnwrap(Snapshot.render(view, scale: size == .large ? 3 : 1), name)
+                    let image = try XCTUnwrap(Snapshot.render(view, scale: size.isAccessibilitySize ? 1 : 3), name)
                     XCTAssertGreaterThan(image.size.height, 40, name)
-                    Snapshot.save(image, "portraits-\(name)-\(scheme == .dark ? "dark" : "light")\(size == .large ? "" : "-ax5")")
+                    Snapshot.save(image, "portraits-\(name)-\(scheme == .dark ? "dark" : "light")\(Self.sizeSuffix(size))")
                 }
             }
         }
@@ -573,6 +648,15 @@ final class PortraitsTests: XCTestCase {
                 .padding(18).frame(width: 343).background(Palette.page).environment(\.colorScheme, scheme)
             let image = try XCTUnwrap(Snapshot.render(view))
             Snapshot.save(image, "photo-preview-\(scheme == .dark ? "dark" : "light")")
+        }
+    }
+
+    private static func sizeSuffix(_ size: DynamicTypeSize) -> String {
+        switch size {
+        case .large: ""
+        case .xxLarge: "-xxl"
+        case .xxxLarge: "-xxxl"
+        default: "-ax5"
         }
     }
 }

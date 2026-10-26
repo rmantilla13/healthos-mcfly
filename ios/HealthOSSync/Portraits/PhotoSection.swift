@@ -79,6 +79,7 @@ private struct PhotoAsIs: View {
     @State private var error: String?
     /// The cut-out saved now, as the server keeps it (not the dashboard's grade), in memory only.
     @State private var current: UIImage?
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         let photo = dashboard.status?.photo
@@ -98,7 +99,11 @@ private struct PhotoAsIs: View {
             if let preview {
                 PhotoPreviewRow(photo: preview, saving: busy, save: { Task { await save(preview) } }, cancel: { self.preview = nil })
             } else {
-                HStack(alignment: .top, spacing: 16) {
+                // The cut-out above the choose area at the accessibility text sizes, so neither is squeezed.
+                let row = typeSize.isAccessibilitySize
+                    ? AnyLayout(VStackLayout(alignment: .leading, spacing: 16))
+                    : AnyLayout(HStackLayout(alignment: .top, spacing: 16))
+                row {
                     if photo != nil { CutoutFrame(image: current, label: PhotoWords.current) }
                     dropzone(hasPhoto: photo != nil)
                 }
