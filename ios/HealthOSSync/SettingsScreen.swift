@@ -145,7 +145,7 @@ private struct ProfileYoursCard: View {
                     Text(ProfileWords.peers(settings))
                 } action: {
                     Button("Edit preferences") { dashboard.open(.welcome) }
-                        .buttonStyle(.quietPill(size: .compact))
+                        .buttonStyle(ProfilePillStyle())
                         .accessibilityIdentifier("editPreferences")
                 }
             }
@@ -155,7 +155,7 @@ private struct ProfileYoursCard: View {
                     if let own = ProfileWords.ownChat(availability.ai.value) { Text(own) }
                 } action: {
                     Button("Manage chatbot AI") { open(.chatbot) }
-                        .buttonStyle(.quietPill(size: .compact))
+                        .buttonStyle(ProfilePillStyle())
                         .accessibilityIdentifier("manageChatbot")
                 }
             }
@@ -166,26 +166,26 @@ private struct ProfileYoursCard: View {
                     if let openAIKey { Text(ProfileWords.openAIConnected(last4: openAIKey.last4)).foregroundStyle(Palette.accentText) }
                 } action: {
                     Button(openAIKey == nil ? "Connect AI key" : "Manage AI key") { open(.openai) }
-                        .buttonStyle(.quietPill(size: .compact))
+                        .buttonStyle(ProfilePillStyle())
                         .accessibilityIdentifier("manageOpenAI")
                 }
             }
             ProfileRow("Connected sources", lines: ["Manage what comes into your health profile."]) {
                 Button("Manage sources") { dashboard.open(.integrations) }
-                    .buttonStyle(.quietPill(size: .compact))
+                    .buttonStyle(ProfilePillStyle())
                     .accessibilityIdentifier("manageSources")
             }
             if keys { ProfileExportRow() }
             ProfileRow("Privacy & data use", lines: ["Understand how files, food descriptions and recordings are handled."], divider: signedIn) {
                 Button("Read details") { dashboard.showWeb("privacy.html") }
-                    .buttonStyle(.quietPill(size: .compact))
+                    .buttonStyle(ProfilePillStyle())
                     .accessibilityHint("Opens the privacy page")
                     .accessibilityIdentifier("privacyDetails")
             }
             if signedIn {
                 ProfileRow("End your session", lines: ["Sign out on this device."], divider: false) {
                     Button("Sign out") { Task { await dashboard.signOut() } }
-                        .buttonStyle(.quietPill(size: .compact))
+                        .buttonStyle(ProfilePillStyle())
                         .accessibilityIdentifier("profileSignOut")
                 }
             }
@@ -220,7 +220,7 @@ private struct ProfileSettingsCard: View {
     private func row(_ sheet: ProfileSheet, _ title: String, _ line: String, _ action: String, last: ProfileSheet) -> some View {
         ProfileRow(title, lines: [line], divider: sheet != last) {
             Button(action) { open(sheet) }
-                .buttonStyle(.quietPill(size: .compact))
+                .buttonStyle(ProfilePillStyle())
                 .accessibilityLabel("\(action), \(title)")
                 .accessibilityIdentifier(sheet == .cards ? "cards" : "settings-\(sheet.rawValue)")
         }

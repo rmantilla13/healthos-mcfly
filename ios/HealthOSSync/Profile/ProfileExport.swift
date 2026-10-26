@@ -181,7 +181,7 @@ struct ProfileExportRow: View {
         } action: {
             if !missing {
                 Button(busy ? "Preparing…" : "Download JSON") { Task { await export() } }
-                    .buttonStyle(.quietPill(size: .compact))
+                    .buttonStyle(ProfilePillStyle())
                     .disabled(busy)
                     .accessibilityIdentifier("exportData")
             }

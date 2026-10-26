@@ -105,7 +105,7 @@ struct ProfilePasswordForm: View {
                     .accessibilityIdentifier("confirmPassword")
             }
             Button(busy ? "Changing…" : "Change password") { Task { await change() } }
-                .buttonStyle(.accentPill)
+                .buttonStyle(ProfilePillStyle(.accent, size: .regular))
                 .disabled(busy || !ready)
                 .accessibilityIdentifier("submitPassword")
             if let result {

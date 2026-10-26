@@ -20,7 +20,7 @@ struct ProfileThisIPhone: View {
             ProfileBlock("Simulator") {
                 ProfileFine("Fake data for testing. Use a scratch server only, never your real dashboard.")
                 Button("Add sample Health data", action: confirmSample)
-                    .buttonStyle(.quietPill(size: .compact))
+                    .buttonStyle(ProfilePillStyle())
                     .disabled(model.working)
                     .accessibilityIdentifier("addSampleData")
             }
@@ -28,7 +28,7 @@ struct ProfileThisIPhone: View {
             ProfileBlock("Upload all history again", divider: false) {
                 ProfileFine("Use this after clearing Apple Health data on the server, or after deleting old entries in Health.")
                 Button("Upload all history again", role: .destructive, action: confirmReupload)
-                    .buttonStyle(ProfileDangerStyle(size: .compact))
+                    .buttonStyle(ProfilePillStyle(.danger))
                     .disabled(model.syncing)
                     .accessibilityIdentifier("uploadAgain")
             }
@@ -90,7 +90,7 @@ private struct ProfileServerRow: View {
             if dashboard.phase == .signIn {
                 // The sign-in screen is on Home.
                 Button("Sign in") { dashboard.open(.home) }
-                    .buttonStyle(.accentPill(size: .compact))
+                    .buttonStyle(ProfilePillStyle(.accent))
                     .accessibilityIdentifier("profileSignIn")
             }
         }
@@ -128,7 +128,7 @@ private struct ProfileSyncRow: View {
             }
             HStack(spacing: 10) {
                 Button("Sync now") { Task { await model.syncAll(force: true) } }
-                    .buttonStyle(.accentPill(size: .compact))
+                    .buttonStyle(ProfilePillStyle(.accent))
                     .disabled(model.syncingSources || !model.serverValid)
                     .accessibilityIdentifier("syncNow")
                 if model.syncingSources { ProgressView() }
@@ -150,7 +150,7 @@ private struct ProfileSyncRow: View {
                     .accessibilityIdentifier("token")
             }
             Button("Test connection") { Task { await model.testConnection() } }
-                .buttonStyle(.quietPill(size: .compact))
+                .buttonStyle(ProfilePillStyle())
                 .disabled(!model.serverValid || model.token.isEmpty || model.working)
                 .accessibilityIdentifier("testConnection")
             ProfileFine("One tap syncs both: this iPhone's Apple Health data goes to your account, and the server refreshes WHOOP. It also runs when you open the app. Get your ingest token on the dashboard under Integrations → iPhone app.")
@@ -174,21 +174,26 @@ private struct ProfileLastSync: View {
             when("Apple Health", report.finishedAt)
             ProfileIconLine(report.ok ? "checkmark.circle" : "exclamationmark.triangle", report.message, bad: !report.ok)
         } else {
-            HStack {
-                Text("Last sync")
-                Spacer()
-                Text("Never").foregroundStyle(Palette.ink3)
-            }
-            .font(.app(.footnote))
-            .foregroundStyle(Palette.ink2)
+            pair(Text("Last sync"), Text("Never"))
         }
     }
 
     private func when(_ title: String, _ date: Date) -> some View {
-        HStack {
-            Text(title)
-            Spacer()
-            Text(date, format: .relative(presentation: .named)).foregroundStyle(Palette.ink3)
+        pair(Text(title), Text(date, format: .relative(presentation: .named)))
+    }
+
+    /// A name and its value: the value on the right, or under the name when they don't fit on one line.
+    private func pair(_ name: Text, _ value: Text) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack {
+                name.fixedSize()
+                Spacer(minLength: 12)
+                value.foregroundStyle(Palette.ink3).fixedSize()
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                name
+                value.foregroundStyle(Palette.ink3)
+            }
         }
         .font(.app(.footnote))
         .foregroundStyle(Palette.ink2)
@@ -204,7 +209,7 @@ private struct ProfileHealthRow: View {
         ProfileBlock("Health data") {
             if !model.healthRequested {
                 Button("Allow Health access") { Task { await model.requestHealthAccess() } }
-                    .buttonStyle(.accentPill(size: .compact))
+                    .buttonStyle(ProfilePillStyle(.accent))
                     .accessibilityIdentifier("allowHealth")
             }
             ProfileSwitch("Sync in the background", text: "Background sync runs when Health gets new data, as often as iOS allows (hourly for steps). Health data can't be read while the phone is locked.",
@@ -258,7 +263,7 @@ private struct ProfileDigestRow: View {
                 Button("Open notification settings") {
                     if let url = URL(string: UIApplication.openNotificationSettingsURLString) { openURL(url) }
                 }
-                .buttonStyle(.quietPill(size: .compact))
+                .buttonStyle(ProfilePillStyle())
             }
         }
         .task {

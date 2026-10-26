@@ -233,6 +233,63 @@ struct ProfileChoice: View {
     }
 }
 
+/// Profile's pills (.btn, .btn-primary and .btn-danger beside a row or in a sheet): the quiet white pill, the forest one,
+/// or the white one with critical words. As the shared pills, except that their words wrap at the largest text sizes
+/// rather than being cut off ("Manage chatbot AI", "Upload all history again"), the pill growing into a rounded card.
+struct ProfilePillStyle: ButtonStyle {
+    enum Kind { case quiet, accent, danger }
+    var kind: Kind = .quiet
+    var size: PillSize = .compact
+
+    init(_ kind: Kind = .quiet, size: PillSize = .compact) {
+        self.kind = kind
+        self.size = size
+    }
+
+    func makeBody(configuration: Configuration) -> some View {
+        ProfilePillBody(configuration: configuration, kind: kind, size: size)
+    }
+}
+
+private struct ProfilePillBody: View {
+    let configuration: ButtonStyleConfiguration
+    let kind: ProfilePillStyle.Kind
+    let size: PillSize
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: size.height / 2, style: .continuous)
+        configuration.label
+            .font(size.font)
+            .foregroundStyle(ink)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, size.padding)
+            .padding(.vertical, 6)
+            .frame(minHeight: size.height)
+            .background {
+                switch kind {
+                case .accent: GradientFill(configuration.isPressed ? .accentGradHover : .accentGrad).clipShape(shape)
+                case .quiet, .danger: shape.fill(kind == .danger && configuration.isPressed ? Palette.surfaceHover : Palette.surface)
+                }
+            }
+            .tokenShadow(.pill, in: shape)
+            .contentShape(shape)
+            .opacity(isEnabled ? 1 : 0.5)
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.98 : 1)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: configuration.isPressed)
+    }
+
+    private var ink: Color {
+        switch kind {
+        case .accent: Palette.accentInk
+        case .danger: Palette.critical
+        case .quiet: configuration.isPressed ? Palette.ink : Palette.ink2
+        }
+    }
+}
+
 /// The web's .btn-quiet: just its words in the muted ink, darker while pressed (a row's Change password, a sheet's
 /// Show all).
 struct ProfileQuietStyle: ButtonStyle {
@@ -252,39 +309,10 @@ private struct ProfileQuietBody: View {
         configuration.label
             .font(size.font)
             .foregroundStyle(configuration.isPressed ? Palette.ink : Palette.ink3)
-            .lineLimit(1)
+            .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, 8)
             .frame(minHeight: size.height)
             .contentShape(Rectangle())
-            .opacity(isEnabled ? 1 : 0.5)
-    }
-}
-
-/// The web's .btn-danger: the white pill with its words in the critical colour (Delete all cycle data).
-struct ProfileDangerStyle: ButtonStyle {
-    var size: PillSize = .regular
-
-    func makeBody(configuration: Configuration) -> some View {
-        ProfileDangerBody(configuration: configuration, size: size)
-    }
-}
-
-private struct ProfileDangerBody: View {
-    let configuration: ButtonStyleConfiguration
-    let size: PillSize
-    @Environment(\.isEnabled) private var isEnabled
-
-    var body: some View {
-        configuration.label
-            .font(size.font)
-            .foregroundStyle(Palette.critical)
-            .lineLimit(1)
-            .minimumScaleFactor(0.8)
-            .padding(.horizontal, size.padding)
-            .frame(minHeight: size.height)
-            .background(configuration.isPressed ? Palette.surfaceHover : Palette.surface, in: Capsule())
-            .tokenShadow(.pill, in: Capsule())
-            .contentShape(Capsule())
             .opacity(isEnabled ? 1 : 0.5)
     }
 }

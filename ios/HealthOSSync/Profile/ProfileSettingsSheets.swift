@@ -387,7 +387,7 @@ private struct ProfileDeleteLine: View {
     @ViewBuilder
     private var content: some View {
         Button(title, role: .destructive, action: action)
-            .buttonStyle(ProfileDangerStyle())
+            .buttonStyle(ProfilePillStyle(.danger, size: .regular))
             .disabled(busy)
             .accessibilityIdentifier(id)
         if busy {
