@@ -491,14 +491,36 @@ final class MetricSheetTests: XCTestCase {
         XCTAssertEqual(SheetPage.name(.home), "Home")
         XCTAssertEqual(SheetPage.name(AppRoute(.body, query: ["tab": "recovery"])), "Recovery on Body")
         XCTAssertEqual(SheetPage.name(AppRoute(.sleep, query: ["tab": "trends"])), "Trends on Sleep")
-        XCTAssertEqual(SheetPage.name(.activity), "Activity on Body")
+        XCTAssertEqual(SheetPage.name(AppRoute(.body, query: ["tab": "recovery"]), over: .home), "Recovery on Body", "only Activity has two addresses")
+    }
+
+    /// Body's Activity tab has two addresses on the web, named apart: Home's cards link #/activity, "Open Activity", and
+    /// Body's own card #/body?tab=activity, "Open Activity on Body". Both are `.activity` here, told apart by the page under the sheet.
+    func testActivityIsNamedAsTheWebsCardsLinkIt() throws {
+        let home = try web("src/pages/Home.tsx"), body = try web("src/pages/Body.tsx")
+        for card in ["title=\"Strain\" to={href('activity')} metric=\"strain\"", "metric={strain ? 'strain' : 'active_energy'}",
+                     "title=\"Activity\" to={href('activity')} metric=\"steps\""] {
+            XCTAssertTrue(home.contains(card), card)
+        }
+        XCTAssertTrue(home.contains("title={strain ? 'Strain' : 'Active energy'} to={href('activity')}"))
+        XCTAssertTrue(body.contains("metric=\"steps\" title=\"activity level\" date={s.date} section=\"Body\" to={bodyHref('activity')}"))
+        XCTAssertTrue(try web("src/components/MetricSheet.tsx").contains("return tab ? `${tab[0].toUpperCase()}${tab.slice(1)} on ${page}` : page;"))
+
+        XCTAssertEqual(SheetPage.name(.activity, over: .home), "Activity", "Home's cards: #/activity")
+        XCTAssertEqual(SheetPage.name(.activity, over: .body), "Activity on Body", "Body's card: #/body?tab=activity")
+        XCTAssertEqual(SheetPage.name(.activity, over: AppRoute(.body, query: ["tab": "activity"])), "Activity on Body")
+        XCTAssertEqual(SheetPage.name(.activity), "Activity on Body", "under no page")
+        // The same-page check names the page under the sheet over itself: Body's Activity tab hides Body's card's link.
+        let under = AppRoute.activity
+        XCTAssertEqual(SheetPage.name(under, over: under), SheetPage.name(.activity, over: under))
+        XCTAssertNotEqual(SheetPage.name(.home, over: .home), SheetPage.name(.activity, over: .home))
     }
 
     func testThePageUnderTheSheet() {
         let d = Dashboard()
         XCTAssertEqual(d.pageOnScreen, .home)
         d.open(AppRoute(.body, query: ["tab": "recovery"]))
-        XCTAssertEqual(d.pageOnScreen.map(SheetPage.name), "Recovery on Body")
+        XCTAssertEqual(d.pageOnScreen.map { SheetPage.name($0) }, "Recovery on Body")
         d.open(.sleep)
         XCTAssertEqual(d.pageOnScreen, .sleep, "pushed under More")
         d.paths[.more] = []

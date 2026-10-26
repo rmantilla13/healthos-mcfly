@@ -458,9 +458,14 @@ enum SheetMath {
 
 /// "Open Vitals", "Open Recovery on Body": the card's own page, named (pageName in MetricSheet.tsx).
 enum SheetPage {
-    static func name(_ route: AppRoute) -> String {
+    /// The web names a page by the address a card links to, and Body's Activity tab has two: Home's cards (Activity,
+    /// Strain, Active energy) link its old address, #/activity, "Activity"; Body's own card links #/body?tab=activity,
+    /// "Activity on Body". Both are `AppRoute.activity` here, so `origin`, the page the sheet was opened over, tells them
+    /// apart: from Body it's Body's tab, from anywhere else the old address.
+    static func name(_ route: AppRoute, over origin: AppRoute? = nil) -> String {
         let page = route.page.title
         guard let tab = route.query["tab"], let first = tab.first else { return page }
+        if route.page == .body, tab == "activity", let origin, origin.page != .body { return "Activity" }
         return "\(first.uppercased())\(tab.dropFirst()) on \(page)"
     }
 }

@@ -38,10 +38,13 @@ final class MetricSheetLiveTests: XCTestCase {
         if let savedServer { Config.serverText = savedServer } else { UserDefaults.standard.removeObject(forKey: "serverURL") }
     }
 
-    /// Presents the sheet over a page, as the shell does, waits for the server, and keeps a picture of the screen.
-    private func show(_ request: MetricRequest, _ name: String, dark: Bool = false, size: DynamicTypeSize = .large, wait: Double = 3) async throws {
+    /// Presents the sheet over a page (`over`, Home unless said), as the shell does, waits for the server, and keeps a
+    /// picture of the screen.
+    private func show(_ request: MetricRequest, _ name: String, over: AppRoute? = nil, dark: Bool = false, size: DynamicTypeSize = .large,
+                      wait: Double = 3) async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let dashboard = Dashboard()
+        if let over { dashboard.open(over) }
         let host = UIHostingController(rootView: AnyView(Presenter(request: request).environment(dashboard).environment(\.dynamicTypeSize, size)))
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(x: 0, y: 0, width: 402, height: 874)
@@ -72,22 +75,22 @@ final class MetricSheetLiveTests: XCTestCase {
     }
 
     func testTheSheetsAgainstTheServer() async throws {
-        let cases: [(MetricRequest, String)] = [
-            (MetricRequest(key: .hrv, section: "Your signals", page: .vitals), "hrv"),
-            (MetricRequest(key: .restingHr, section: "Your signals", page: .vitals, range: .week), "rhr-week"),
-            (MetricRequest(key: .steps, section: "Body", page: .activity, range: .day), "steps-day"),
-            (MetricRequest(key: .steps, section: "Your signals", page: .activity), "steps"),
-            (MetricRequest(key: .heartRate, section: "Body", page: .vitals), "heart-rate"),
-            (MetricRequest(key: .sleepHours, section: "Your signals", page: .sleep, range: .year), "sleep-year"),
-            (MetricRequest(key: .sleepEfficiency, section: "Sleep", page: AppRoute(.sleep, query: ["tab": "trends"])), "sleep-efficiency"),
-            (MetricRequest(key: .glucose, section: "Body", page: .body), "glucose"),
-            (MetricRequest(key: .leanMass, section: "Body", page: .body), "lean-mass"),
-            (MetricRequest(key: .vo2max, section: "Body", page: AppRoute(.body, query: ["tab": "cardiovascular"])), "vo2max"),
-            (MetricRequest(key: .recovery, section: "Your signals", page: AppRoute(.body, query: ["tab": "recovery"])), "recovery"),
+        let cases: [(MetricRequest, String, AppRoute?)] = [
+            (MetricRequest(key: .hrv, section: "Your signals", page: .vitals), "hrv", nil),
+            (MetricRequest(key: .restingHr, section: "Your signals", page: .vitals, range: .week), "rhr-week", nil),
+            (MetricRequest(key: .steps, section: "Body", page: .activity, range: .day), "steps-day", .body),
+            (MetricRequest(key: .steps, section: "Your signals", page: .activity), "steps", nil),
+            (MetricRequest(key: .heartRate, section: "Body", page: .vitals), "heart-rate", nil),
+            (MetricRequest(key: .sleepHours, section: "Your signals", page: .sleep, range: .year), "sleep-year", nil),
+            (MetricRequest(key: .sleepEfficiency, section: "Sleep", page: AppRoute(.sleep, query: ["tab": "trends"])), "sleep-efficiency", nil),
+            (MetricRequest(key: .glucose, section: "Body", page: .body), "glucose", nil),
+            (MetricRequest(key: .leanMass, section: "Body", page: .body), "lean-mass", nil),
+            (MetricRequest(key: .vo2max, section: "Body", page: AppRoute(.body, query: ["tab": "cardiovascular"])), "vo2max", nil),
+            (MetricRequest(key: .recovery, section: "Your signals", page: AppRoute(.body, query: ["tab": "recovery"])), "recovery", nil),
         ]
-        for (request, name) in cases {
-            try await show(request, name)
-            try await show(request, name, dark: true)
+        for (request, name, over) in cases {
+            try await show(request, name, over: over)
+            try await show(request, name, over: over, dark: true)
         }
     }
 

@@ -75,11 +75,12 @@ final class MetricSheetSnapshotTests: XCTestCase {
 
     func testAWeekOfBars() async throws {
         let s = try fixture("metric-steps-week")
-        try await both(shot(.steps, sheet: s, openPage: "Activity on Body"), "steps-week")
+        // From Home's Activity card, which the web links to #/activity: "Open Activity".
+        try await both(shot(.steps, sheet: s, openPage: "Activity"), "steps-week")
         for size: DynamicTypeSize in [.xxxLarge, .accessibility3, .accessibility5] {
-            try await draw(shot(.steps, sheet: s, openPage: "Activity on Body"), "steps-week", size: size)
+            try await draw(shot(.steps, sheet: s, openPage: "Activity"), "steps-week", size: size)
         }
-        try await draw(shot(.steps, sheet: s, openPage: "Activity on Body"), "steps-week", dark: true, size: .accessibility5)
+        try await draw(shot(.steps, sheet: s, openPage: "Activity"), "steps-week", dark: true, size: .accessibility5)
     }
 
     func testAYearOfWeeks() async throws {
@@ -115,7 +116,8 @@ final class MetricSheetSnapshotTests: XCTestCase {
     }
 
     func testADayByTheHour() async throws {
-        try await both(shot(.steps, sheet: try fixture("metric-steps-day"), openPage: "Activity on Body"), "steps-day")
+        // From Body's own card, which the web links to #/body?tab=activity: "Open Activity on Body".
+        try await both(shot(.steps, section: "Body", sheet: try fixture("metric-steps-day"), openPage: "Activity on Body"), "steps-day")
         try await both(shot(.heartRate, section: "Body", sheet: try fixture("metric-heart-rate-day"), openPage: "Vitals"), "heart-rate-day")
     }
 
@@ -139,7 +141,7 @@ final class MetricSheetSnapshotTests: XCTestCase {
     /// A point picked under the finger: the crosshair or lit bar, and the tooltip on that day, inside the chart.
     func testTheTooltips() async throws {
         let month = shot(.hrv, sheet: try fixture("metric-hrv-month"))
-        let week = shot(.steps, sheet: try fixture("metric-steps-week"), openPage: "Activity on Body")
+        let week = shot(.steps, sheet: try fixture("metric-steps-week"), openPage: "Activity")
         let year = shot(.sleepHours, section: "Sleep", sheet: try fixture("metric-sleep-year"), openPage: "Sleep")
         for (s, index, name) in [(month, 18, "hrv-month-tooltip"), (month, 29, "hrv-month-tooltip-end"), (week, 2, "steps-week-tooltip"),
                                  (week, 5, "steps-week-tooltip-end"), (year, 10, "sleep-year-tooltip")] {

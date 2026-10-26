@@ -42,8 +42,9 @@ struct MetricSheetView: View {
 
     /// "Open Vitals" names the card's page; not offered when that's the page under the sheet, where closing goes.
     private var openPage: String? {
-        let name = SheetPage.name(request.page)
-        return dashboard.pageOnScreen.map(SheetPage.name) == name ? nil : name
+        let under = dashboard.pageOnScreen
+        let name = SheetPage.name(request.page, over: under)
+        return under.map { SheetPage.name($0, over: $0) } == name ? nil : name
     }
 
     private func leave(for route: AppRoute) {
