@@ -48,6 +48,68 @@ final class ComponentsTests: XCTestCase {
         XCTAssertEqual(at(20, 39)[0], 0x29, accuracy: 3)
     }
 
+    /// A fill taller than one Canvas can draw in a Form or List row (8,192 pixels, about 2,730 points at 3×) is drawn
+    /// whole, top to bottom, at any height: such a card showed its shadow where its fill should be. On screen, in a
+    /// window, as the row draws it; the row's red background would show through anywhere the fill is missing.
+    func testAVeryTallFillIsDrawnWholeInAFormRow() async throws {
+        XCTAssertEqual(GradientFill.slabs(height: 640), [0..<640], "one Canvas, as before, for anything shorter")
+        XCTAssertEqual(GradientFill.slabs(height: 2888.5), [0..<1000, 1000..<2000, 2000..<2888.5])
+        XCTAssertEqual(GradientFill.slabs(height: 0), [])
+
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        for (height, bottom) in [(2600.0, false), (3200, false), (3200, true), (6000, false), (6000, true)] {
+            let window = UIWindow(windowScene: scene)
+            window.frame = CGRect(x: 0, y: 0, width: 402, height: 874)
+            window.rootViewController = UIHostingController(rootView: TallFormRow(height: height, bottom: bottom))
+            window.makeKeyAndVisible()
+            defer { window.isHidden = true }
+            try await Task.sleep(for: .milliseconds(1200))
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            let image = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
+                _ = window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+            }
+            let cg = try XCTUnwrap(image.cgImage)
+            let w = cg.width, h = cg.height
+            var data = [UInt8](repeating: 0, count: w * h * 4)
+            let ctx = try XCTUnwrap(CGContext(data: &data, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                              space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+            var sheen = 0, red = 0
+            for y in 0..<h {
+                let i = (y * w + w / 2) * 4
+                if data[i] > 200, data[i + 1] < 120 { red += 1 }
+                if data[i] > 235, data[i + 1] > 235, data[i + 2] > 235 { sheen += 1 }
+            }
+            XCTAssertEqual(red, 0, "\(height) pt, \(bottom ? "at its bottom" : "at its top"): the row shows through")
+            XCTAssertGreaterThan(sheen, 300, "\(height) pt, \(bottom ? "at its bottom" : "at its top"): the sheen fills it")
+        }
+    }
+
+    private struct TallFormRow: View {
+        let height: CGFloat
+        let bottom: Bool
+
+        var body: some View {
+            ScrollViewReader { proxy in
+                Form {
+                    Section {
+                        Color.clear.frame(height: height).frame(maxWidth: .infinity)
+                            .background { GradientFill(.sheen) }
+                            .listRowBackground(Color.red)
+                            .listRowInsets(EdgeInsets())
+                    }
+                    Section { Text("End").id("end") }
+                }
+                .task {
+                    guard bottom else { return }
+                    try? await Task.sleep(for: .milliseconds(300))
+                    proxy.scrollTo("end", anchor: .bottom)
+                }
+            }
+        }
+    }
+
     func testTheOrbHasADarkRedCore() throws {
         let at = try pixels(Orb(size: 40), width: 40, height: 40)
         let core = at(20, 18)

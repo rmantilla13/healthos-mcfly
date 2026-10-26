@@ -370,18 +370,42 @@ enum Radius {
 }
 
 /// A gradient token filling its frame, light or dark with the colour scheme.
+///
+/// A Canvas draws into one bitmap, and one taller than 8,192 pixels (about 2,730 points at 3×) isn't drawn at all in a
+/// Form or List row, so a card that tall (Profile's at the largest text sizes) showed its shadow where its fill should
+/// be. So the fill is drawn in slabs no taller than `slab`, each painting its own part of the one full-size gradient:
+/// the same picture at any height, and one Canvas, as before, for anything shorter.
 struct GradientFill: View {
     let token: GradientToken
     @Environment(\.colorScheme) private var scheme
 
     init(_ token: GradientToken) { self.token = token }
 
+    /// The tallest slab, in points: 3,000 pixels at 3×.
+    static let slab: CGFloat = 1000
+
     var body: some View {
         let layers = token.layers(scheme)
-        Canvas { ctx, size in
-            for layer in layers.reversed() { layer.draw(in: ctx, size: size) }
+        GeometryReader { geo in
+            let size = geo.size
+            VStack(spacing: 0) {
+                ForEach(Self.slabs(height: size.height), id: \.lowerBound) { slab in
+                    Canvas { ctx, _ in
+                        ctx.translateBy(x: 0, y: -slab.lowerBound)
+                        for layer in layers.reversed() { layer.draw(in: ctx, size: size) }
+                    }
+                    .frame(height: slab.upperBound - slab.lowerBound)
+                }
+            }
         }
         .accessibilityHidden(true)
+    }
+
+    /// Where each slab of a fill `height` points tall starts and ends: whole points from the top, the last one taking
+    /// what's left. One for anything up to `slab`.
+    static func slabs(height: CGFloat) -> [Range<CGFloat>] {
+        guard height > 0 else { return [] }
+        return stride(from: 0, to: height, by: slab).map { $0..<min($0 + slab, height) }
     }
 }
 
