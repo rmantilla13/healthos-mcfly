@@ -59,9 +59,10 @@ private struct TabRoot: View {
         NavigationStack(path: path) {
             root.navigationDestination(for: AppRoute.self) { ShellPage(route: $0) }
         }
-        // A new stack after Sign out (`resetNavigation`): one emptied while its tab was hidden (Profile under More, the
-        // sign-in screen on Home) kept a page it no longer had, and the next push ("Change server") showed it blank.
-        .id(dashboard.navigationResets)
+        // A new stack whenever this tab's pages are taken away other than by Back (Sign out, a session that ends, Family
+        // or Cycle going): one emptied while its tab was hidden (More, with the sign-in screen on Home) kept a page it no
+        // longer had, and the next push ("Change server") showed it blank.
+        .id(dashboard.navigationResets[tab, default: 0])
     }
 
     private var path: Binding<[AppRoute]> {

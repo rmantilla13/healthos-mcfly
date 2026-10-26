@@ -298,6 +298,50 @@ final class ShellTests: XCTestCase {
         }
     }
 
+    /// The same after a session that ends without Sign out (a 401): a page left open under More (Journal) goes while
+    /// another tab shows, and "Change server" still shows Profile rather than a blank page or the page that went.
+    func testChangeServerAfterASessionEndsUnderAnotherTabShowsProfile() async throws {
+        let saved = UserDefaults.standard.string(forKey: "serverURL")
+        defer {
+            if let saved { UserDefaults.standard.set(saved, forKey: "serverURL") } else { UserDefaults.standard.removeObject(forKey: "serverURL") }
+        }
+        Config.serverText = ""
+        let d = Dashboard()
+        d.authMode = "required"
+        d.phase = .ready
+        func identifiers(_ elements: [NSObject]) -> [String] {
+            let get = NSSelectorFromString("accessibilityIdentifier")
+            return elements.compactMap { $0.responds(to: get) ? $0.perform(get)?.takeUnretainedValue() as? String : nil }
+        }
+        @MainActor func settle(_ read: @MainActor () -> [NSObject], until: ([String]) -> Bool) async throws -> [String] {
+            var ids: [String] = []
+            for _ in 0..<40 {
+                try await Task.sleep(for: .milliseconds(100))
+                ids = identifiers(read())
+                if until(ids) { break }
+            }
+            return ids
+        }
+        try await HostedAccessibility.whileOnScreen(AppShell().environment(d).environment(AppModel())) { read in
+            d.open(.journal)
+            try await Task.sleep(for: .milliseconds(800))
+            XCTAssertEqual(d.paths[.more], [.journal])
+            d.tab = .home
+            try await Task.sleep(for: .milliseconds(800))
+
+            // The session ends (a 401 sets the phase): the pages pushed under More go, More not showing.
+            d.phase = .signIn
+            XCTAssertEqual(d.paths[.more], [])
+            let signedOut = try await settle(read) { $0.contains("changeServer") }
+            XCTAssertTrue(signedOut.contains("changeServer"), "the sign-in screen on Home: \(signedOut)")
+
+            d.tab = .settings
+            let profile = try await settle(read) { $0.contains("serverURL") }
+            XCTAssertEqual(d.paths[.more], [.profile])
+            XCTAssertTrue(profile.contains("serverURL"), "Profile, with the server address: \(profile)")
+        }
+    }
+
     /// The same ?connect= link opened again while Profile is still up under More, where its path doesn't change, opens
     /// its key sheet again, as each link is a request of its own. Profile showing again by itself (another tab, then
     /// More) doesn't. Shown as the app shows it.

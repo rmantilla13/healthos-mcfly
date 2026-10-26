@@ -93,8 +93,9 @@ final class Dashboard {
     }
     /// The pages each tab has pushed over its own, the top one last.
     var paths: [AppTab: [AppRoute]] = [:]
-    /// Goes up with every `resetNavigation()`: each tab's navigation starts again from nothing (Shell/AppShell.swift).
-    var navigationResets = 0
+    /// Goes up for a tab whenever its pushed pages are taken away other than by Back (`resetNavigation`, `dropPages`,
+    /// `dropMissingPages`): that tab's navigation starts again from nothing (Shell/AppShell.swift).
+    var navigationResets: [AppTab: Int] = [:]
     /// The last link to each page, for its query (Body's tab=activity, Profile's ?connect=).
     var requests: [AppPage: RouteRequest] = [:]
     var requestCount = 0

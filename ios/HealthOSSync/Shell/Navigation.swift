@@ -81,6 +81,7 @@ extension Dashboard {
     func dropPages() {
         for (tab, path) in paths where path.contains(where: { $0.page != .profile }) {
             paths[tab] = path.filter { $0.page == .profile }
+            navigationResets[tab, default: 0] += 1
         }
     }
 
@@ -90,7 +91,7 @@ extension Dashboard {
         requests = [:]
         webPage = nil
         tab = .home
-        navigationResets += 1
+        for tab in AppTab.bar { navigationResets[tab, default: 0] += 1 }
     }
 
     /// Family or Cycle went away (another server, tracking turned off) while open under More: back to More.
@@ -98,5 +99,6 @@ extension Dashboard {
         let gone: Set<AppPage> = Set([AppPage.family, .cycle]).subtracting(featurePages)
         guard let path = paths[.more], path.contains(where: { gone.contains($0.page) }) else { return }
         paths[.more] = Array(path.prefix { !gone.contains($0.page) })
+        navigationResets[.more, default: 0] += 1
     }
 }
