@@ -113,6 +113,8 @@ struct WelcomeFrame<End: View, Content: View>: View {
                     Spacer(minLength: 0)
                     end
                 }
+                // As tall with a link as without, so the mark never moves between pages.
+                .frame(minHeight: 44)
                 // The mark and the link stop growing at xxLarge, so "healthOS" is never cut short; VoiceOver reads both.
                 .dynamicTypeSize(...DynamicTypeSize.xxLarge)
                 .id(WelcomeLook.top)
