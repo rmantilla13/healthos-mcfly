@@ -269,7 +269,7 @@ enum Background {
     /// One background wake: changed recent days only (never the history backfill), then a throttled server refresh.
     /// Skipped in Low Power Mode; the anchors don't move, so the next wake or open catches up.
     static func wake() async {
-        // Signed out: nothing is read or sent until someone signs in.
+        // Paused (Sign out, or signed out with a token nobody can be told the owner of): nothing is read or sent until someone signs in.
         if Config.ingestOwner.paused { return }
         let foreground = await MainActor.run { UIApplication.shared.applicationState == .active }
         if !foreground, ProcessInfo.processInfo.isLowPowerModeEnabled { return }
