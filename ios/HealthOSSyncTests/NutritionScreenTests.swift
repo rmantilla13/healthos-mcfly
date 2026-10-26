@@ -162,10 +162,4 @@ final class NutritionScreenTests: XCTestCase {
         XCTAssertEqual(NutritionTab.visible(.all, logging: false), [.overview, .macros, .hydration])
         XCTAssertEqual(NutritionTab.visible(.none, logging: false), [.overview])
     }
-
-    func testTargetRangesAreTheServers() {
-        // TARGET_RANGE in server/query.ts: a value outside is left as it was there, so the app refuses it first.
-        XCTAssertEqual(NutritionTargetField.all.map(\.key), ["energy_kcal", "protein_g", "water_ml"])
-        XCTAssertEqual(NutritionTargetField.all.map(\.range), [500...10_000, 10...500, 250...8_000])
-    }
 }

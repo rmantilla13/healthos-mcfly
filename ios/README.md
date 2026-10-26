@@ -12,17 +12,21 @@ The app reads the same API as the website (`/api/summary`, `/api/trends`, `/api/
 - **Your avatar** at the top right of every page (in Home's header, which hides the bar) opens the account menu, "Your workspace", as the web's phone shows it: a sheet from the bottom on the pale green menu gradient, as tall as its rows, in DM Sans with sage icons (the system's menu can't take the app's font). Profile, Integrations, Privacy & data (the server's `privacy.html`, shown in the app), Admin for admins (the web dashboard's Admin page, shown in the app, where it asks for sign-in again), and Sign out (in the quiet grey) while signed in on a server with sign-in. The shell opens what was chosen once the menu has gone.
 - **Pages by the web's ids** (`AppRoute`): every button, card, insight, pattern and flag opens its page with `dashboard.open(_:)`, where the web's phone layout has it. A tab's page opens on its tab, at its top; one day by hour opens over Home; everything else is pushed under More. The web's old addresses still work: `settings` is Profile and `activity` is Body's Activity tab. Links carry the web's query (`body?tab=activity`, `family?member=<id>`, `profile?connect=openai`). The app's own text links are `healthos://<page>?<query>`; no URL scheme is registered, so only the app's text opens them.
 - **`dashboard.tab = .settings`** (Open Profile, Change server, the hidden-cards note) opens Profile under More, as the web's `#/settings` does.
-- **Pages not built here yet** show what the app had: Vitals, Sleep and Cycle show Trends' charts for them, and Body shows Body and Activity as two tabs. Journal, Blood records, Integrations and Admin show "coming in this build". Each page is its own file (`Vitals/`, `Body/`, `Sleep/`, `Cycle/`, `Journal/`, `Labs/`, `Integrations/`, `Admin/`), so building one changes only that file.
 - **Nothing outlives what it showed:** signed out, the server unreachable or another server, every pushed page goes except Profile. A page opened while signed out (a tapped digest's Insights) stays through the sign-in. A Family member's page goes with the board, Family closes when the server has no board and Cycle when tracking is turned off; with sharing off, More stops listing Family but an open Family page stays and says so.
 
-- **Home:**
+**Pages**, one bullet each, in the web's order: a page's own work edits only its bullet. Each page is its own file or folder, so building one changes only that.
+
+- **Home** (`Dashboard/TodayScreen.swift`, `OrganicHome.swift`, `TodayCards.swift`, `Home/`):
   - the greeting, then your profile photo as an organic portrait: it reveals through a short ASCII sweep once per launch (skipped with Reduce Motion), with heart, breathing and temperature dots, leader-line callouts, and Slept, Steps and HRV shapes around it;
   - four cards: recovery or VO₂ max, blood oxygen, HRV and sleep;
   - optional cards, off until you turn them on in Profile → Cards, as on the web: the day's path (and with it the portrait's heart following its marker), the "week so far" summary, recent insights, strain or active energy, and steps against your goal.
   - Arrows step through past days. Pull down to refresh, which also pushes any new Health data.
   - **Ask McFly:** a pill above the tab bar, on Home only, opens a chat with the dashboard's assistant (`/api/mcfly`, streamed from `/api/mcfly/chat`). More → Ask McFly is the same conversation as a page; on a server with McFly off it says so in the web's words. The conversation stays in memory only and is forgotten on sign-out, another person's sign-in or another server. It shows how many questions are left today, and the pill is hidden when the server has McFly off.
-- **Vitals, Sleep and Body** (Body with Activity as its second tab): charts over 7 days, 30 days, 90 days or a year. Sleep has stacked stages; sleep performance from WHOOP and sleep efficiency are separate cards, each hidden on its own. Activity has steps against goal, plus workouts. Drag across a chart to read a single day.
-- **Nutrition** (only while Nutrition is on): the web's Neka layout from `GET /api/nutrition`.
+- **Family** (`Dashboard/FamilyScreen.swift`; under More, signed in with sharing on): everyone who shares, each against their own last 30 days, and a person's page over the board.
+- **Vitals** (`Vitals/`): until it's built, Trends' Vitals charts over 7 days, 30 days, 90 days or a year. Drag across a chart to read a single day.
+- **Body** (`Body/`): until it's built, Trends' Body and Activity charts as two tabs. Activity has steps against goal, plus workouts.
+- **Cycle** (`Cycle/`, `Dashboard/CycleViews.swift`; only while cycle tracking is on): this cycle's phase ring and estimates, each fertile day's estimated chance, the temperature curve for any cycle (cover line, ovulation, the rise after it), a five-week calendar, past cycles split before and after ovulation, and patterns from your own cycles. Estimates never mark a day as safe.
+- **Nutrition** (`Dashboard/NutritionScreen.swift`, `NutritionViews.swift`, `FoodLog*.swift`, `Nutrition/`; only while Nutrition is on): the web's Neka layout from `GET /api/nutrition`.
   - **Overview:** Energy (only when calories are shown), Protein with a neutral week-on-week note, Water in glasses, Days logged, a macro balance donut with fiber, sugar, sodium and caffeine, and food insights worded as associations.
   - **Macros and Hydration:** a bar per logged day over 7, 30 or 90 days. With "No amounts", only the Overview and the Log show, and only which days were logged.
   - **Log** (only on servers with the food log, `GET /api/nutrition/log`): the same log as the web's Log tab, one day at a time. Tap an entry to change its name or portions, swipe to delete it. Entries from the web show here and the other way round.
@@ -31,12 +35,20 @@ The app reads the same API as the website (`/api/summary`, `/api/trends`, `/api/
     - **Photos** are turned upright, shrunk on the phone to 1,280 px on the long edge and re-encoded, which drops the location and other metadata (`PhotoPipeline`), and are sent only for that estimate.
     - **Saved to Apple Health:** see Apple Health sync below.
   - **No judgement:** a day with nothing logged is a gap, never a zero. A target you set (Profile → Nutrition targets) is a plain dashed line. No score, no "remaining", no red or green.
-- **Cycle** (only while cycle tracking is on): this cycle's phase ring and estimates, each fertile day's estimated chance, the temperature curve for any cycle (cover line, ovulation, the rise after it), a five-week calendar, past cycles split before and after ovulation, and patterns from your own cycles. Estimates never mark a day as safe.
-- **Profile** (until it's rebuilt as the web's, the app's settings):
+- **Journal** (`Journal/`): coming in this build. Its data (`Journal/JournalAPI.swift`) is the foundation's.
+- **Sleep** (`Sleep/`): until it's built, Trends' Sleep charts: stacked stages, and sleep performance from WHOOP and sleep efficiency as separate cards, each hidden on its own.
+- **Blood records** (`Labs/`): coming in this build. Its results' model, words and bar are in `Labs/LabsModel.swift`.
+- **Ask McFly** (`Dashboard/McFly.swift`, `AI/`): under More, the same conversation as Home's pill, as a page; signed out it asks for sign-in. On a server with McFly off it says so in the web's words.
+- **Profile** (`SettingsScreen.swift`, `Profile/`; until it's rebuilt as the web's, the app's settings):
   - server address and sign-in status;
   - the profile photo: **Change photo** picks one from Photos and cuts it out on the phone with Apple Vision, using the same steps as the Mac tool `server/photo/cutout.swift`. After a Save/Cancel preview it uploads to `POST /api/profile/photo/upload`;
   - **Cards:** the web's card switches, one list for both. Optional cards are marked and stay off until turned on (the server's `shownCards`). **Show all** brings back every card you hid and leaves the optional ones as they are. A server older than optional cards sends no `shownCards`: there every card shows unless it's hidden, Profile offers only the 33 cards that server knows (its sleep score hides sleep efficiency too), and Show all clears the whole list;
   - the Apple Health sync controls.
+- **Integrations** (`Integrations/`): coming in this build.
+- **Admin** (`Admin/`): the web dashboard's Admin page, shown in the app, until it's built here (`AdminScreen.native`).
+- **Insights** (`Dashboard/InsightsScreen.swift`; only the iPhone has it): the weekly digest, patterns from your own history, two scatter plots and a year heatmap.
+- **Day** (`Dashboard/DayScreen.swift`): one day by the hour, opened from Home.
+- **Live heart rate** (`Live/`): opened from the heart callout.
 
 Cards hide or switch to fit your sources, as on the web: no WHOOP means VO₂ max instead of recovery, active energy instead of strain, and HRV labelled SDNN.
 
@@ -98,6 +110,7 @@ What every page uses, so each page's work stays in its own files.
   - The welcome (`dashboard.onboarding`, `Shell/Welcome.swift`): full screen whenever the server says a new account's onboarding isn't done, after any sign-in, and for `open(.welcome)` (Profile's Edit preferences), drawn by `OnboardingView(mode:)` (`Onboarding/`). Only signed in, and only where the status names `perspective`.
   - Ask McFly on Home: the shell mounts `AskMcFlyEntry` (`Dashboard/McFly.swift`) in every phase; it decides whether it shows and what a tap opens.
   - Sheets other pages present: `ChatbotSheet` and `OpenAIKeySheet` (`AI/`, Profile's key rows and `?connect=`), and `FitbitImportSheet` (`FitbitImport/`, from Integrations).
+- **Tests:** a page's tests are in a file of its own, so a page's changes edit only its file: `FamilyTests` (the Family board), `HomeFigureTests` (Home's figure, Today's path and grid), `NutritionScreenTests` (Nutrition), `ProfileTargetsTests` (Profile's targets). The shell's and the shared models' are `ShellTests`, `SharedModelsTests`, `SharedTypesTests` (which fails to compile if a shared piece goes private again) and the rest.
 - **Shared reads and constants** (decoded once, so two pages never define the same type):
   - The journal (`Journal/JournalAPI.swift`): `dashboard.journal(days:)` (nil on a server without it), add, change and delete, `JournalEntry`, `JournalData` and the web's five moods. Home's card and the Journal page both use it.
   - Lab results (`Labs/LabsModel.swift`): `dashboard.labs()`, `LabsData` and its markers and panels, the web's words for a result against its range (`LabWords`), and its bar (`LabRangeBar`), for Blood records and Body's Key biomarkers card.
