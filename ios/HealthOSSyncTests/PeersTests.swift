@@ -3,9 +3,10 @@ import XCTest
 @testable import HealthOSSync
 
 /// Profile's age-group comparison (Peers/): GET /api/peers read as shared/peers.ts sends it, and shown in
-/// src/pages/Profile.tsx's words and formats. peers-ready.json and peers-demo.json are written by hand from
-/// shared/peers.ts and server/peers.ts (a group of 20 or more can't exist on a local server); the not-taking-part
-/// answers are a local server's.
+/// src/pages/Profile.tsx's words and formats. peers-ready.json and peers-demo.json are written by hand as server/peers.ts
+/// compare() would answer (a group of 20 or more can't exist on a local server): testTheFixturesAreAnswersTheServerCanSend
+/// holds them to it. peers-demo.json's group is the server's own sample group (SAMPLE, sampleGroup) for its two
+/// measurements. The not-taking-part answers are a local server's.
 @MainActor
 final class PeersTests: XCTestCase {
     private func fixture(_ name: String) throws -> Data {
@@ -59,12 +60,10 @@ final class PeersTests: XCTestCase {
         XCTAssertEqual(data.ageBand, "30–39")
         XCTAssertEqual(data.window, PeerData.Window(from: "2026-09-27", to: "2026-10-26"))
         XCTAssertNil(data.demo)
-        // The last element has no metric: it alone is dropped.
         XCTAssertEqual(data.metrics.map(\.id), ["resting_hr|whoop", "sleep_hours|apple", "steps|apple", "spo2|apple", "hrv_rmssd|whoop", "recovery|whoop", "resp_rate|whoop"])
         let rhr = try metric("resting_hr|whoop", in: data)
         XCTAssertEqual(rhr.quarter, .belowP25)
         XCTAssertEqual(rhr.group, PeerMetric.Group(size: "50+", median: 60, p25: 56, p75: 65))
-        XCTAssertNil(try metric("resp_rate|whoop", in: data).you, "no average of your own")
         XCTAssertNil(try metric("hrv_rmssd|whoop", in: data).group, "only a ready one has a group")
         // The fixture's quarters are what shared/peers.ts peerBand says for its rounded figures.
         for m in data.metrics where m.status == "ready" {
@@ -73,7 +72,55 @@ final class PeersTests: XCTestCase {
         }
     }
 
+    /// What compare() (server/peers.ts) can answer: every row has your own average, rounded to its pair's digits;
+    /// fewer than PEER_MIN_DAYS days of yours is not_enough_days, before the group is looked at; a ready row's
+    /// quartiles are rounded to the pair's digits, its quarter is peerBand's for them, and its size is a bucket.
+    func testTheFixturesAreAnswersTheServerCanSend() throws {
+        let server = try web("server/peers.ts")
+        XCTAssertTrue(server.contains("if (own.days < PEER_MIN_DAYS) return { ...base, status: 'not_enough_days' };"))
+        XCTAssertTrue(server.contains("const you = round(own.avg, digits);"))
+        XCTAssertTrue(server.contains("median: round(quantile(sorted, 0.5), digits), p25: round(quantile(sorted, 0.25), digits), p75: round(quantile(sorted, 0.75), digits)"))
+        func rounded(_ v: Double, _ digits: Int) -> Bool {
+            let scale = pow(10, Double(digits))
+            return abs((v * scale).rounded() / scale - v) < 1e-9
+        }
+        for name in ["peers-ready", "peers-demo"] {
+            let data = try JSONDecoder().decode(PeerData.self, from: fixture(name))
+            XCTAssertFalse(data.metrics.isEmpty, name)
+            for m in data.metrics {
+                let digits = try XCTUnwrap(Peers.pair(metric: m.metric, source: m.source), m.id).digits
+                let you = try XCTUnwrap(m.you, "\(name) \(m.id): compare() always sends your average")
+                XCTAssertTrue(rounded(you, digits), "\(name) \(m.id)")
+                switch m.status {
+                case "not_enough_days":
+                    XCTAssertLessThan(m.yourDays, Peers.minDays, "\(name) \(m.id)")
+                case "gathering":
+                    XCTAssertGreaterThanOrEqual(m.yourDays, Peers.minDays, "\(name) \(m.id)")
+                    XCTAssertNil(m.group)
+                case "ready":
+                    XCTAssertGreaterThanOrEqual(m.yourDays, Peers.minDays, "\(name) \(m.id)")
+                    let g = try XCTUnwrap(m.group, m.id)
+                    for q in [g.p25, g.median, g.p75] { XCTAssertTrue(rounded(q, digits), "\(name) \(m.id) \(q)") }
+                    XCTAssertTrue(["20+", "50+", "100+"].contains(g.size), m.id)
+                    XCTAssertEqual(Peers.band(you: you, p25: g.p25, median: g.median, p75: g.p75), m.quarter, "\(name) \(m.id)")
+                default:
+                    XCTFail("\(name) \(m.id): \(m.status)")
+                }
+            }
+        }
+        // The sample group is 64 made-up people: 50+.
+        XCTAssertTrue(server.contains("const SAMPLE_SIZE = 64;"))
+        XCTAssertTrue(server.contains("resting_hr: { center: 60, spread: 7 },"))
+        XCTAssertTrue(server.contains("sleep_hours: { center: 7, spread: 0.7 },"))
+    }
+
     func testOddShapesKeepWhatCanBeRead() throws {
+        // A row with no metric is dropped on its own; the rest stay.
+        let partial = try decode(#"{"participating":true,"ageBand":"30–39","window":{"from":"2026-09-27","to":"2026-10-26"},"metrics":[{"metric":"steps","source":"apple","you":8412,"yourDays":30,"status":"gathering"},{"source":"apple","status":"ready"}]}"#)
+        XCTAssertEqual(partial.metrics.map(\.id), ["steps|apple"])
+        // shared/peers.ts allows no average of your own (null): the row says so by leaving it out.
+        let noAverage = try decode(#"{"participating":true,"ageBand":"30–39","window":{"from":"2026-09-27","to":"2026-10-26"},"metrics":[{"metric":"resp_rate","source":"whoop","you":null,"yourDays":9,"status":"gathering"}]}"#)
+        XCTAssertNil(try XCTUnwrap(noAverage.metrics.first).you)
         // A band the app doesn't know, a group it can't read and no day count: the rest of the row stays.
         let data = try decode(#"{"participating":true,"ageBand":"70+","window":{"from":"2026-09-27","to":"2026-10-26"},"metrics":[{"metric":"steps","source":"apple","you":5000,"status":"ready","band":"top_tenth","group":"lots"}],"demo":true}"#)
         let m = try XCTUnwrap(data.metrics.first)
@@ -144,12 +191,21 @@ final class PeersTests: XCTestCase {
         XCTAssertEqual(PeerWords.value(8412, steps), Fmt.number(8412) + " steps")
         XCTAssertEqual(PeerWords.range(5100, 8100, steps), "\(Fmt.number(5100))–\(Fmt.number(8100)) steps")
         let spo2 = try metric("spo2|apple", in: data)
-        XCTAssertEqual(PeerWords.yours(spo2), "Your average \(Fmt.number(96.8, 1))% over 1 day")
+        XCTAssertEqual(PeerWords.yours(spo2), "Your average \(Fmt.number(96.8, 1))% over 26 days")
         XCTAssertEqual(PeerWords.range(96.1, 97.4, spo2), "\(Fmt.number(96.1, 1))–\(Fmt.number(97.4, 1))%")
+        // One day reads singular (a row that isn't ready can have one day of yours).
+        let oneDay = PeerMetric(metric: "spo2", source: "apple", you: 96.8, yourDays: 1, status: "not_enough_days")
+        XCTAssertEqual(PeerWords.yours(oneDay), "Your average \(Fmt.number(96.8, 1))% over 1 day")
+        XCTAssertEqual(PeerWords.notEnoughDays(oneDay), "1 of 7 recorded days so far: your result appears after 7.")
         // Waiting and not enough days.
         XCTAssertEqual(PeerWords.waiting(try metric("hrv_rmssd|whoop", in: data)),
                        "Your average 61 ms over 12 days. Waiting for enough people in your age group to compare with.")
-        XCTAssertEqual(PeerWords.waiting(try metric("resp_rate|whoop", in: data)), "Waiting for enough people in your age group to compare with.")
+        XCTAssertEqual(PeerWords.waiting(try metric("resp_rate|whoop", in: data)),
+                       "Your average \(Fmt.number(15.2, 1)) breaths/min over 9 days. Waiting for enough people in your age group to compare with.")
+        // Without an average of your own (the type allows it), only the waiting words.
+        let noAverage = PeerMetric(metric: "resp_rate", source: "whoop", you: nil, yourDays: 9, status: "gathering")
+        XCTAssertNil(PeerWords.yours(noAverage))
+        XCTAssertEqual(PeerWords.waiting(noAverage), "Waiting for enough people in your age group to compare with.")
         XCTAssertEqual(PeerWords.notEnoughDays(try metric("recovery|whoop", in: data)), "3 of 7 recorded days so far: your result appears after 7.")
         // The demo sample uses its metric's first pair; one the app doesn't know shows its id and no unit.
         let demo = PeerMetric(metric: "resp_rate", source: "demo", you: 14.8, yourDays: 30, status: "ready")
