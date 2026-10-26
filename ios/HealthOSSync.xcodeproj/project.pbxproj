@@ -48,6 +48,7 @@
 		43DFD663A8146CAF6B4CC5DC /* PageIntro.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2D4DC272C98EBF51B099683 /* PageIntro.swift */; };
 		44A5C2011D28476A534774B9 /* NutritionScreenTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 557B903874008E25C2245C9B /* NutritionScreenTests.swift */; };
 		45AE7C4484A901ADCFE8B2C7 /* ProfilePhoto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 052005D09276C20A065FB40A /* ProfilePhoto.swift */; };
+		45DB7F37A39486498643AA0D /* PortraitStudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC0098204B8E76B9971AE1CF /* PortraitStudio.swift */; };
 		461A1709DB433ABA8DF2B943 /* DayScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80E909361416FD077EA8EDEC /* DayScreen.swift */; };
 		463BE90AB15F967AAF2EAF68 /* DashboardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2F31692BC3B154539132A48 /* DashboardTests.swift */; };
 		47C5BCB224FD78CC0691C28A /* peers-demo.json in Resources */ = {isa = PBXBuildFile; fileRef = 171F4EEAD78B165EFDF7B229 /* peers-demo.json */; };
@@ -102,6 +103,7 @@
 		98AFDD35BF2A25BA1955B8E8 /* cycle.json in Resources */ = {isa = PBXBuildFile; fileRef = A376DF27CC036EEF54ED4978 /* cycle.json */; };
 		9922FA689E8C8465ECA64B8E /* Health.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FEC96C3667D657317BC171A /* Health.swift */; };
 		99ACA5396F646BB60AD84DC0 /* AppForm.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1E3F2C23FE1B631BDA3FB98 /* AppForm.swift */; };
+		99E77FCC0B13CCC2BE9CD915 /* PortraitStudioModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDA25170B5998854C6C0E6E8 /* PortraitStudioModel.swift */; };
 		9A87E75AA642B59ED0F0F7F4 /* PhotoCutout.swift in Sources */ = {isa = PBXBuildFile; fileRef = C24970C7FB0FE6CB2CDC010A /* PhotoCutout.swift */; };
 		9BFA0FDE5BF7965BCE23BC1A /* TodayScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11666CF6F7B56BD0D0592FAB /* TodayScreen.swift */; };
 		A0849F5F657D3908C00A67BB /* Format.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53180FBA0C9ADCF282A00B6B /* Format.swift */; };
@@ -119,6 +121,7 @@
 		AD8BC8E5F3940A7E1B24AEB9 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC1AF0514C3E330ABEA1FF41 /* Models.swift */; };
 		B105C64DC1C72F48997070B5 /* JournalScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93EEEF0D06C66755C5111002 /* JournalScreen.swift */; };
 		B3B7CEC6217127596464D2FC /* PhotoPipelineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDD7BCE19CEBCB1FCBCFEEF8 /* PhotoPipelineTests.swift */; };
+		B6444F8F8CB663D55EA97279 /* portraits-studio.json in Resources */ = {isa = PBXBuildFile; fileRef = F7FC8C3CD44B6BAE1511CA3F /* portraits-studio.json */; };
 		B68D6F584695A6D3394554D5 /* JournalAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = B87E652F9774B39E3612FFE5 /* JournalAPI.swift */; };
 		B7B36C55AB1357ADF9991A01 /* AvailabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6013ED7B1ED9EE50837FCF4 /* AvailabilityTests.swift */; };
 		B850D34258977AB1B8FE0181 /* Config.swift in Sources */ = {isa = PBXBuildFile; fileRef = B479E2FF3ECF8F9266A6F82C /* Config.swift */; };
@@ -143,6 +146,7 @@
 		E09D830321CC4664C62EB0CE /* digest.json in Resources */ = {isa = PBXBuildFile; fileRef = FE9ED67C191FB0AA5D98EBEC /* digest.json */; };
 		E2A6CFE97D35EA965DFF9FA0 /* NutritionScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6B59C95F0280EE6C16251E7 /* NutritionScreen.swift */; };
 		E458C38386E018FE9BF7351E /* FoodHealth.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEF8D849614BED4B9274FE64 /* FoodHealth.swift */; };
+		E4C7FF003FFE908184D38A2F /* PortraitsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 379BE570B48C3FD510252BDC /* PortraitsTests.swift */; };
 		E67138F70386B271D1386659 /* InsightsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD3BB6FDFBCD0DED917865FB /* InsightsScreen.swift */; };
 		E72C88A19985CC510375EDA8 /* OrganicHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 607D1113C58E632F9CB90E87 /* OrganicHome.swift */; };
 		E7BA2BE704107846AFDC794A /* SignInUnavailable.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC59950757F83DCAE2C28847 /* SignInUnavailable.swift */; };
@@ -202,6 +206,7 @@
 		316AC8D7649BE5581C8EEE9F /* ChartPageControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartPageControls.swift; sourceTree = "<group>"; };
 		3775E6E7872E65E05A16415F /* IngestClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IngestClient.swift; sourceTree = "<group>"; };
 		377F8CF3716B6E99B12E2655 /* TimelineScrub.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineScrub.swift; sourceTree = "<group>"; };
+		379BE570B48C3FD510252BDC /* PortraitsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortraitsTests.swift; sourceTree = "<group>"; };
 		3ABEA99C24FB4C804B7345E1 /* cycle-v2.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "cycle-v2.json"; sourceTree = "<group>"; };
 		3B5343DD7A76AF3586052896 /* summary.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = summary.json; sourceTree = "<group>"; };
 		3CCCEEB7D629A9785331673E /* CycleScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CycleScreen.swift; sourceTree = "<group>"; };
@@ -277,9 +282,11 @@
 		B479E2FF3ECF8F9266A6F82C /* Config.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Config.swift; sourceTree = "<group>"; };
 		B87E652F9774B39E3612FFE5 /* JournalAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalAPI.swift; sourceTree = "<group>"; };
 		B9E342D4A559387310772537 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		BC0098204B8E76B9971AE1CF /* PortraitStudio.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortraitStudio.swift; sourceTree = "<group>"; };
 		BCA618E51A2853EE3FA69588 /* trends-sleep.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "trends-sleep.json"; sourceTree = "<group>"; };
 		BD3BB6FDFBCD0DED917865FB /* InsightsScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsScreen.swift; sourceTree = "<group>"; };
 		BD53F734E61FD82B3D256C06 /* SignInView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignInView.swift; sourceTree = "<group>"; };
+		BDA25170B5998854C6C0E6E8 /* PortraitStudioModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortraitStudioModel.swift; sourceTree = "<group>"; };
 		C1E694F036A3D589AB6158D5 /* ServerErrorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerErrorTests.swift; sourceTree = "<group>"; };
 		C24970C7FB0FE6CB2CDC010A /* PhotoCutout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoCutout.swift; sourceTree = "<group>"; };
 		C8477505A0D2A223A6594503 /* BodyScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BodyScreen.swift; sourceTree = "<group>"; };
@@ -318,6 +325,7 @@
 		F555F043B0421EDF7E4BAC46 /* StatusDecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusDecodingTests.swift; sourceTree = "<group>"; };
 		F6013ED7B1ED9EE50837FCF4 /* AvailabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvailabilityTests.swift; sourceTree = "<group>"; };
 		F7445CD36B063431BB3F1392 /* nutrition-all.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "nutrition-all.json"; sourceTree = "<group>"; };
+		F7FC8C3CD44B6BAE1511CA3F /* portraits-studio.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "portraits-studio.json"; sourceTree = "<group>"; };
 		FA10EABB4D8994CA0CEDBA4C /* HealthOSSyncApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthOSSyncApp.swift; sourceTree = "<group>"; };
 		FAED77CBC97EE42B1A676F54 /* SettingsSaveTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsSaveTests.swift; sourceTree = "<group>"; };
 		FB0D4590D4192AA00B21E4E2 /* ThemeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeTests.swift; sourceTree = "<group>"; };
@@ -450,6 +458,7 @@
 				CD2F0A99D2A54D83358903BC /* NutritionTests.swift */,
 				F48EE7E87F902A5E1269B103 /* PeersTests.swift */,
 				DDD7BCE19CEBCB1FCBCFEEF8 /* PhotoPipelineTests.swift */,
+				379BE570B48C3FD510252BDC /* PortraitsTests.swift */,
 				0ABCF383530FAA8EB3117E5E /* ProfileTargetsTests.swift */,
 				C1E694F036A3D589AB6158D5 /* ServerErrorTests.swift */,
 				FAED77CBC97EE42B1A676F54 /* SettingsSaveTests.swift */,
@@ -554,6 +563,7 @@
 				2467D3DA7F3A0754100A23C3 /* patterns.json */,
 				171F4EEAD78B165EFDF7B229 /* peers-demo.json */,
 				F2986F894A740BF13E196A82 /* peers-ready.json */,
+				F7FC8C3CD44B6BAE1511CA3F /* portraits-studio.json */,
 				73AE4AF2E08289558F5FE74B /* portraits.json */,
 				572030574C60D416CD1909E1 /* sleep.json */,
 				D6C87B5E93B970D98B02681C /* status.json */,
@@ -579,6 +589,8 @@
 				4A30213197BAD249D34D98FF /* PhotoSection.swift */,
 				61EB2C7B76961D2FA7439ADA /* PortraitPhotosSection.swift */,
 				2C6553853766B0A4E7AB9B02 /* PortraitsAPI.swift */,
+				BC0098204B8E76B9971AE1CF /* PortraitStudio.swift */,
+				BDA25170B5998854C6C0E6E8 /* PortraitStudioModel.swift */,
 			);
 			path = Portraits;
 			sourceTree = "<group>";
@@ -826,6 +838,7 @@
 				FDB2E43925F6C4A59CCAE87A /* patterns.json in Resources */,
 				47C5BCB224FD78CC0691C28A /* peers-demo.json in Resources */,
 				16155A8230629696D6D0CB80 /* peers-ready.json in Resources */,
+				B6444F8F8CB663D55EA97279 /* portraits-studio.json in Resources */,
 				0EDCE35D1D564F2670CB8267 /* portraits.json in Resources */,
 				6F75846AD2856A20810C958A /* sleep.json in Resources */,
 				4CF714997DAE31577EA67475 /* status.json in Resources */,
@@ -859,6 +872,7 @@
 				4235342A47A876C689995E06 /* NutritionTests.swift in Sources */,
 				FCD57918110889FF0CA3E71D /* PeersTests.swift in Sources */,
 				B3B7CEC6217127596464D2FC /* PhotoPipelineTests.swift in Sources */,
+				E4C7FF003FFE908184D38A2F /* PortraitsTests.swift in Sources */,
 				3388E5336A1369CDA581FBCC /* ProfileTargetsTests.swift in Sources */,
 				F79947585EDFC0BDA10B4A4E /* ServerErrorTests.swift in Sources */,
 				C2F60DAABDA33D6BC506BB21 /* SettingsSaveTests.swift in Sources */,
@@ -953,6 +967,8 @@
 				0B7BB09A64E6EE89835059FD /* PhotoPipeline.swift in Sources */,
 				3AE598C3E3E2FAFCD36DA1C0 /* PhotoSection.swift in Sources */,
 				631DA0178641180E06F9658B /* PortraitPhotosSection.swift in Sources */,
+				45DB7F37A39486498643AA0D /* PortraitStudio.swift in Sources */,
+				99E77FCC0B13CCC2BE9CD915 /* PortraitStudioModel.swift in Sources */,
 				A367DFE8461A64C732C556F5 /* PortraitsAPI.swift in Sources */,
 				45AE7C4484A901ADCFE8B2C7 /* ProfilePhoto.swift in Sources */,
 				6C91A98BDE0DA9DCC73EAC6A /* ProfileRow.swift in Sources */,
