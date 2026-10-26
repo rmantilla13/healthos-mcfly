@@ -1,23 +1,38 @@
 import Foundation
 
-/// Home's cards in this app (shared/cards.ts page 'home'): the ones it shows, which Profile → Cards says show on
-/// Home, and the grid's order. A Home card missing here changes the web dashboard only.
+/// Home's cards in this app (shared/cards.ts page 'home'): every one the web's Home has, so Profile → Cards says each
+/// shows on Home. The rows' orders are Home.tsx's.
 enum HomeCards {
     static let places: [String: CardPlace] = [
+        "home.rhr": .home,
         "home.spo2": .home,
         "home.hrv": .home,
         "home.sleep": .home,
         "home.readiness": .home,
+        "home.resp": .home,
+        "home.nutrition": .home,
+        "home.journal": .home,
         "home.week": .home,
-        // Today's path, and with it the portrait's heart following its marker.
+        // Today's timeline, and with it the figure's heart following its marker.
         "home.timeline": .home,
         "home.insights": .home,
         "home.load": .home,
         "home.activity": .home,
+        // Only with Nutrition on.
+        "home.food": .home,
     ]
+
+    /// The signal cards, the first row (Home.tsx `home-signals`).
+    static let signals = Signal.ids
+    /// Today's nutrition and Your health journal, the pair under them (`home-lower`).
+    static let lower = ["home.nutrition", "home.journal"]
+    /// The optional row: strain or active energy, activity, and food totals with Nutrition on.
+    static let optionalRow = ["home.load", "home.activity", "home.food"]
 }
 
 extension Cards {
-    /// Home's metric cards, in the grid's order (the first row of the web's Home page).
+    /// The grid this app had before it took the web's Home (four signal cards and the two optional ones), kept as it
+    /// was for the foundation's card-visibility tests (DashboardTests, CardVisibilityTests), which use it as a list to
+    /// filter. Home lays out `HomeCards.signals` and `HomeCards.optionalRow`.
     static let todayGrid = ["home.readiness", "home.spo2", "home.hrv", "home.sleep", "home.load", "home.activity"]
 }
