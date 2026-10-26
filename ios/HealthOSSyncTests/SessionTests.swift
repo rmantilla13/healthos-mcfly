@@ -260,4 +260,37 @@ final class SessionTests: XCTestCase {
         XCTAssertNotNil(day)
         XCTAssertNotNil(d.availability.estimate, "still Alex: heard")
     }
+
+    /// A 401 is the server saying the session that asked has ended. The last person's request, refused after they
+    /// signed out, says nothing about whoever signed in since: they stay signed in. The same person's still signs out.
+    func testALate401NeverSignsOutWhoeverSignedInSince() async throws {
+        let refused = #"{"error":"Sign in required"}"#
+        let server = try await AIStubServer.start([
+            "POST /api/portraits/reference": .json(401, refused, delay: 0.3),
+            "PUT /api/settings": .json(401, refused, delay: 0.3),
+        ])
+        use(server)
+        let photo = PreparedPhoto(jpeg: Data([0xFF, 0xD8, 0xFF, 0xD9]), width: 1, height: 1)
+        let someoneElse = endings[1].1
+
+        let d = alexHere()
+        let added = await whileOnItsWay(server, "POST /api/portraits/reference", end: someoneElse, d: d) { _ = try await d.addReference(photo) }
+        XCTAssertTrue(added is CancellationError, String(describing: added))
+        XCTAssertEqual(d.phase, .ready, "Sam stays signed in")
+
+        let e = alexHere()
+        let saved = await whileOnItsWay(server, "PUT /api/settings", end: someoneElse, d: e) { try await e.save(settings: ["units": "imperial"]) }
+        XCTAssertTrue(saved is CancellationError, String(describing: saved))
+        XCTAssertEqual(e.phase, .ready, "Sam stays signed in")
+
+        // Still Alex's session: the 401 brings up sign-in, as always.
+        let f = alexHere()
+        do {
+            _ = try await f.addReference(photo)
+            XCTFail("refused")
+        } catch {
+            guard case .signInRequired? = error as? APIError else { return XCTFail("a 401: \(error)") }
+        }
+        XCTAssertEqual(f.phase, .signIn)
+    }
 }

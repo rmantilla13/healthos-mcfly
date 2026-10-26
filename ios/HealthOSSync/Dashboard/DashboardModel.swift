@@ -664,7 +664,7 @@ final class Dashboard {
     /// pass their own.
     func followTimeZone(_ zone: String = TimeZone.current.identifier, send: (@MainActor ([String: Any]) async throws -> ServerStatus)? = nil) async -> Bool {
         guard phase == .ready, let settings = status?.settings, settings.timeZone != zone, timeZoneSent != zone else { return false }
-        let send = send ?? { fields in try await self.fetch { try await $0.updateSettings(fields) } }
+        let send = send ?? { fields in try await self.fetchForThisSession { try await $0.updateSettings(fields) } }
         timeZoneSent = zone
         let asked = session
         do {
@@ -798,7 +798,7 @@ final class Dashboard {
     /// one is answered the screens follow the server's lists, so a refused change goes back. `send` is PUT
     /// /api/settings; tests pass their own.
     func changeCards(_ change: CardChange, send: (@MainActor ([String: Any]) async throws -> ServerStatus)? = nil) async throws {
-        let send = send ?? { fields in try await self.fetch { try await $0.updateSettings(fields) } }
+        let send = send ?? { fields in try await self.fetchForThisSession { try await $0.updateSettings(fields) } }
         pendingCards = change.applied(to: CardLists(hidden: hiddenCards, shown: shownCards))
         cardChanges += 1
         defer {
@@ -840,7 +840,7 @@ final class Dashboard {
     @discardableResult
     func save(settings fields: [String: Any], reload: Bool = false,
               send: (@MainActor ([String: Any]) async throws -> ServerStatus)? = nil) async throws -> ServerStatus {
-        let send = send ?? { fields in try await self.fetch { try await $0.updateSettings(fields) } }
+        let send = send ?? { fields in try await self.fetchForThisSession { try await $0.updateSettings(fields) } }
         let asked = session
         let status = try await send(fields)
         try keep(answeredUnder: asked)
@@ -895,9 +895,20 @@ final class Dashboard {
     /// 401, someone else's sign-in or a change of server (`session`) is dropped with a CancellationError, so it's never
     /// shown to, or kept for, whoever is here now. What the server can do for them (GET /api/ai, the lab reader, a food
     /// log's `can`), their portraits and their reference photos go through it.
+    ///
+    /// Its 401 asks for sign-in only for the session it was asked under: the last person's request, refused after their
+    /// Sign out, never signs out whoever signed in since.
     func fetchForThisSession<T>(_ request: (APIClient) async throws -> T) async throws -> T {
         let asked = session
-        let answer = try await fetch(request)
+        guard let client = APIClient.current() else { throw APIError.network("No server configured.") }
+        let answer: T
+        do {
+            answer = try await request(client)
+        } catch APIError.signInRequired {
+            try keep(answeredUnder: asked)
+            phase = .signIn
+            throw APIError.signInRequired
+        }
         try keep(answeredUnder: asked)
         return answer
     }
