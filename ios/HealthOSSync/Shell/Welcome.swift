@@ -19,9 +19,9 @@ extension Dashboard {
     }
 
     /// At launch, before the server has said who's signed in (`.starting`), the status kept from the last launch says
-    /// this person's welcome isn't done: the shell holds a plain page over the app rather than draw Home's frame first,
-    /// as the web shows nothing until the status is known. Signed in, the welcome takes its place at once; signed out,
-    /// the page goes and the sign-in screen shows.
+    /// this person's welcome isn't done: the shell shows a plain page in place of the app rather than draw Home's frame
+    /// first, as the web shows nothing until the status is known. Signed in, the welcome takes its place at once; signed
+    /// out, the page goes and the sign-in screen shows.
     var welcomeHeld: Bool {
         guard phase == .starting, let settings = status?.settings, settings.perspective != nil else { return false }
         return settings.onboarding != nil
