@@ -187,6 +187,21 @@ enum OnboardingFlow {
         }
     }
 
+    /// Whether the status on hand is the signed-in person's, as far as the app can tell: the account /auth/me named
+    /// and the status's user agree, or one of them isn't known (servers without accounts, older ones). A status left
+    /// from someone signed out before (a save that answered after their Sign out) names them, not who's signed in now.
+    static func statusIsTheirs(statusUser: String?, signedIn: String?) -> Bool {
+        guard let statusUser, let signedIn else { return true }
+        return statusUser == signedIn
+    }
+
+    /// The status now names someone else than the one the welcome was built for: build it again. A person the server
+    /// didn't name before, or no longer names, isn't a change.
+    static func personChanged(from before: String?, to now: String?) -> Bool {
+        guard let before, let now else { return false }
+        return before != now
+    }
+
     /// Step 1's line under the portrait's reference photo, true for this server (GET /api/ai): a portrait is made on the
     /// person's own OpenAI key, on one they can connect, on the server's, or not yet at all. nil until the server has
     /// said, so nothing untrue shows first.

@@ -18,7 +18,9 @@ struct OnboardingView: View {
         // A navigation stack, hidden, for the keyboard's Done (the age field's number pad has no return key).
         NavigationStack {
             Group {
-                if let model, let reference {
+                // Only on the signed-in person's own status: one read before they signed in (a save of the last
+                // person's that landed after their Sign out) shows nothing until theirs comes.
+                if let model, let reference, statusIsTheirs {
                     OnboardingSteps(model: model, reference: reference)
                 } else {
                     Palette.page.ignoresSafeArea()
@@ -26,19 +28,10 @@ struct OnboardingView: View {
             }
             .toolbar(.hidden, for: .navigationBar)
         }
-        .onAppear {
-            guard model == nil else { return }
-            let dashboard = dashboard
-            let mode = mode
-            model = OnboardingModel(mode: mode, settings: dashboard.status?.settings, save: { body, finishing in
-                // The last save reads the dashboard again (the web's reload and notifyDataChanged).
-                try await dashboard.save(settings: body, reload: finishing)
-            }, finish: {
-                if mode == .edit { dashboard.closeWelcome() } else { dashboard.open(.home) }
-            })
-            reference = ReferencePhoto(add: { try await dashboard.addReference($0) },
-                                       delete: { try await dashboard.deletePortrait(id: $0) },
-                                       list: { try await dashboard.portraits() })
+        // Built from the person's settings, and again if the status turns out to be someone else's than the one it was
+        // built from: never one person's answers on another's welcome, to be saved to their account.
+        .onChange(of: person, initial: true) { before, now in
+            if model == nil || OnboardingFlow.personChanged(from: before, to: now) { build() }
         }
         // Signed out (Sign out, or a session that ended): the photo on its way stops, and nothing of it stays.
         .onDisappear {
@@ -50,6 +43,26 @@ struct OnboardingView: View {
         .font(.app(.body))
         .tint(Palette.tint)
         .toggleStyle(.appSwitch)
+    }
+
+    /// Whose status the welcome reads (nil from servers that don't say).
+    private var person: String? { dashboard.status?.user?.id }
+
+    private var statusIsTheirs: Bool { OnboardingFlow.statusIsTheirs(statusUser: person, signedIn: dashboard.account?.id) }
+
+    private func build() {
+        reference?.forget()
+        let dashboard = dashboard
+        let mode = mode
+        model = OnboardingModel(mode: mode, settings: dashboard.status?.settings, save: { body, finishing in
+            // The last save reads the dashboard again (the web's reload and notifyDataChanged).
+            try await dashboard.save(settings: body, reload: finishing)
+        }, finish: {
+            if mode == .edit { dashboard.closeWelcome() } else { dashboard.open(.home) }
+        })
+        reference = ReferencePhoto(add: { try await dashboard.addReference($0) },
+                                   delete: { try await dashboard.deletePortrait(id: $0) },
+                                   list: { try await dashboard.portraits() })
     }
 }
 
@@ -69,8 +82,11 @@ private struct OnboardingSteps: View {
                     .buttonStyle(.welcomeTopLink)
                     .accessibilityIdentifier("backToProfile")
             } else if dashboard.signOutOffered {
+                // Not while a step saves: its answer, landing after the sign-out, would put this person's settings
+                // back in memory behind the sign-in screen.
                 Button(OnboardingWords.signOut) { Task { await dashboard.signOut() } }
                     .buttonStyle(.welcomeTopLink)
+                    .disabled(model.busy)
                     .accessibilityIdentifier("welcomeSignOut")
             }
         } content: {

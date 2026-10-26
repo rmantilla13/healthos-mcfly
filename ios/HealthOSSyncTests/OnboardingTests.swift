@@ -305,6 +305,22 @@ final class OnboardingTests: XCTestCase {
         XCTAssertFalse(m.takeSentForAge(), "once only")
     }
 
+    /// A status left from the person signed out before (a step's save that answered after their Sign out) names them,
+    /// not who signs in next: the welcome shows nothing on it, and is built again from the signed-in person's own.
+    func testTheWelcomeReadsOnlyTheSignedInPersonsOwnStatus() throws {
+        let stale = try JSONDecoder().decode(ServerStatus.self, from: Data(
+            #"{"user":{"id":"u-sam","email":"sam@example.test","role":"member"},"settings":{"perspective":"digital","onboarding":2,"age":44,"gender":"man"}}"#.utf8))
+        XCTAssertEqual(stale.user?.id, "u-sam")
+        XCTAssertFalse(OnboardingFlow.statusIsTheirs(statusUser: stale.user?.id, signedIn: "u-alex"), "Sam's answers never show on Alex's welcome")
+        XCTAssertTrue(OnboardingFlow.statusIsTheirs(statusUser: stale.user?.id, signedIn: "u-sam"))
+        XCTAssertTrue(OnboardingFlow.statusIsTheirs(statusUser: nil, signedIn: "u-alex"), "an older server's status names nobody")
+        XCTAssertTrue(OnboardingFlow.statusIsTheirs(statusUser: "u-sam", signedIn: nil), "the server couldn't say who signed in")
+        XCTAssertTrue(OnboardingFlow.personChanged(from: "u-sam", to: "u-alex"), "built again from Alex's own")
+        XCTAssertFalse(OnboardingFlow.personChanged(from: "u-alex", to: "u-alex"), "a step's save keeps the steps where they are")
+        XCTAssertFalse(OnboardingFlow.personChanged(from: nil, to: "u-alex"))
+        XCTAssertFalse(OnboardingFlow.personChanged(from: "u-alex", to: nil))
+    }
+
     func testATabThatJumpsPastStep2AsksForItsAgeFirstThenSavesBothStepsAtOnce() async throws {
         let (m, sent) = try model(.edit, #"{"perspective":"portrait","onboarding":null}"#)
         // Editing: every tab is open, and step 2 has no age yet.
