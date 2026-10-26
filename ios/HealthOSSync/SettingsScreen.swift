@@ -28,7 +28,9 @@ struct ProfileScreen: View {
                     ProfileSettingsCard(settings: settings) { sheet = $0 }
                     PeersSection()
                     PortraitPhotosSection()
-                    // "Use a photo as is", here until the portrait photos take it in.
+                    // "Use a photo as is", here until the portrait photos take it in. When slice F's
+                    // PortraitPhotosSection shows PhotoSection itself, delete this line and ProfilePhotoCard below, or it
+                    // shows twice (ProfileTests.testThePhotoPickerShowsOnce fails until then).
                     ProfilePhotoCard()
                 }
                 ProfileThisIPhone(confirmSample: { confirmSample = true }, confirmReupload: { confirmReupload = true })
@@ -58,13 +60,15 @@ struct ProfileScreen: View {
             if let now { shown = now }
         }
         // Signed out (Sign out, a 401) or the server gone: no sheet stays up on the last person's settings or keys.
+        // (An export on its way stops by itself, wherever the app is: ProfileExportJob.)
         .onChange(of: dashboard.phase) { _, phase in
-            if phase != .ready {
-                sheet = nil
-                ProfileExport.removeAll()
-            }
+            if phase != .ready { sheet = nil }
         }
-        .task(id: "\(dashboard.phase == .ready)|\(dashboard.availability.aiMissing)") { openLinked() }
+        // Again once the settings come (the status can land after the phase is ready) and once the server has said
+        // whether it has keys at all.
+        .task(id: "\(dashboard.phase == .ready)|\(dashboard.status?.settings != nil)|\(ProfileSheet.aiKnown(dashboard.availability.ai))") {
+            await openLinked()
+        }
         .alert(model.notice ?? "", isPresented: noticeShown) {
             Button("OK", role: .cancel) {}
         }
@@ -91,13 +95,28 @@ struct ProfileScreen: View {
         shown = nil
     }
 
-    /// ?connect=openai (Nutrition's setup line) or ?connect=chatbot: that sheet, once, as soon as someone's signed in,
-    /// and not on a server too old for keys.
-    private func openLinked() {
-        guard !linkHandled, let linked = ProfileSheet.linked(query) else { return }
-        guard dashboard.phase == .ready, dashboard.status?.settings != nil else { return }
-        linkHandled = true
-        if !dashboard.availability.aiMissing { sheet = linked }
+    /// ?connect=openai (Nutrition's setup line) or ?connect=chatbot: that sheet, once, as soon as someone's signed in
+    /// and their settings are here, and not on a server too old for keys. Whether it has them is asked first
+    /// (GET /api/ai); a read that fails says nothing either way, so the sheet opens and says what it can.
+    private func openLinked() async {
+        guard !linkHandled, ProfileSheet.linked(query) != nil else { return }
+        let ready = dashboard.phase == .ready
+        let settings = dashboard.status?.settings != nil
+        var asked = false
+        if ready, settings, dashboard.availability.ai == .unknown {
+            await dashboard.loadAI()
+            // The answer changed what this task looks at: the next one decides.
+            if Task.isCancelled { return }
+            asked = true
+        }
+        switch ProfileSheet.link(query, ready: dashboard.phase == .ready, settings: dashboard.status?.settings != nil,
+                                 ai: dashboard.availability.ai, asked: asked) {
+        case .none, .wait: break
+        case .drop: linkHandled = true
+        case .open(let linked):
+            linkHandled = true
+            sheet = linked
+        }
     }
 
     private var noticeShown: Binding<Bool> {
@@ -121,6 +140,40 @@ enum ProfileSheet: String, Identifiable {
         case "openai": .openai
         case "chatbot": .chatbot
         default: nil
+        }
+    }
+
+    /// What a ?connect= link does now.
+    enum Link: Equatable {
+        /// No link.
+        case none
+        /// Not yet: nobody's signed in, the settings haven't come, or whether the server has keys hasn't been asked.
+        case wait
+        /// Open its sheet, once.
+        case open(ProfileSheet)
+        /// Never: the server is older than own keys.
+        case drop
+    }
+
+    /// The link's sheet once someone's signed in with their settings here and the server has said it has keys, or a
+    /// read of that has been tried and failed (unknown isn't "not there"). A server that answered it has no keys
+    /// (GET /api/ai is a 404) never opens it.
+    static func link(_ query: [String: String], ready: Bool, settings: Bool, ai: Availability.Read<AiStatus>, asked: Bool) -> Link {
+        guard let linked = linked(query) else { return .none }
+        guard ready, settings else { return .wait }
+        switch ai {
+        case .missing: return .drop
+        case .known: return .open(linked)
+        case .unknown: return asked ? .open(linked) : .wait
+        }
+    }
+
+    /// For the task that decides: whether the server's answer about keys is in yet.
+    static func aiKnown(_ ai: Availability.Read<AiStatus>) -> String {
+        switch ai {
+        case .unknown: "unknown"
+        case .missing: "missing"
+        case .known: "known"
         }
     }
 }

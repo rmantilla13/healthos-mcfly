@@ -131,6 +131,23 @@ final class ProfileTests: XCTestCase {
         XCTAssertEqual(ProfileWords.openAIConnected(last4: "1a2b"), "Connected · key ending ••••1a2b")
     }
 
+    func testConnectLinksWaitForTheServersAnswerAboutKeys() throws {
+        let link = ["connect": "openai"]
+        let known = Availability.Read<AiStatus>.known(try JSONDecoder().decode(AiStatus.self, from: Data(#"{"byok":true}"#.utf8)))
+        XCTAssertEqual(ProfileSheet.link([:], ready: true, settings: true, ai: known, asked: false), ProfileSheet.Link.none)
+        // Not yet: nobody's signed in, or the status (with the settings) lands after the phase is ready.
+        XCTAssertEqual(ProfileSheet.link(link, ready: false, settings: true, ai: known, asked: true), .wait)
+        XCTAssertEqual(ProfileSheet.link(link, ready: true, settings: false, ai: known, asked: true), .wait)
+        // GET /api/ai hasn't answered: asked first, so an older server's 404 can still keep the sheet shut.
+        XCTAssertEqual(ProfileSheet.link(link, ready: true, settings: true, ai: .unknown, asked: false), .wait)
+        XCTAssertEqual(ProfileSheet.link(link, ready: true, settings: true, ai: .missing, asked: true), .drop, "a server older than own keys")
+        XCTAssertEqual(ProfileSheet.link(link, ready: true, settings: true, ai: known, asked: false), .open(.openai))
+        // Asked and the read failed (offline): unknown isn't "not there", so the sheet opens and says what it can.
+        XCTAssertEqual(ProfileSheet.link(["connect": "chatbot"], ready: true, settings: true, ai: .unknown, asked: true), .open(.chatbot))
+        // What the task that decides waits on changes with each of these.
+        XCTAssertEqual(Set([ProfileSheet.aiKnown(.unknown), ProfileSheet.aiKnown(.missing), ProfileSheet.aiKnown(known)]).count, 3)
+    }
+
     func testConnectLinksOpenTheKeySheets() {
         XCTAssertEqual(ProfileSheet.linked(["connect": "openai"]), .openai)
         XCTAssertEqual(ProfileSheet.linked(["connect": "chatbot"]), .chatbot)
@@ -144,15 +161,29 @@ final class ProfileTests: XCTestCase {
     func testCardNotesSayOnlyWhatTheGroupDoesnt() throws {
         // A card this iPhone shows on the page its group names: nothing to add.
         XCTAssertNil(ProfileCardsSheet.note(try XCTUnwrap(Cards.card("home.hrv")), in: .home))
-        // A card no page of this iPhone shows yet: the web dashboard only.
-        let unplaced = try XCTUnwrap(Cards.all.first { $0.place == nil })
-        XCTAssertEqual(ProfileCardsSheet.note(unplaced, in: unplaced.page), "Only on the web dashboard")
+        // A card no page of this iPhone shows: the web dashboard only. (Made up, so it stays unplaced once every page
+        // places all of its cards.)
+        let unplaced = DashboardCard(id: "test.unplaced", page: .sleep, label: "Not on this iPhone")
+        XCTAssertNil(unplaced.place)
+        XCTAssertEqual(ProfileCardsSheet.note(unplaced, in: .sleep), "Only on the web dashboard")
         // Every note is one of those two or names another tab of the page.
         for card in Cards.all {
             guard let note = ProfileCardsSheet.note(card, in: card.page), note != "Only on the web dashboard" else { continue }
             XCTAssertEqual(note, "On this iPhone: \(try XCTUnwrap(card.place).label)")
             XCTAssertNotNil(card.place?.tab)
         }
+    }
+
+    /// "Use a photo as is" (PhotoSection) shows once on Profile: on its own card until the portrait photos card shows it
+    /// itself (slice F), then only there. Both compile, so this is what says to delete Profile's own card at that merge.
+    func testThePhotoPickerShowsOnce() throws {
+        let portraits = try web("ios/HealthOSSync/Portraits/PortraitPhotosSection.swift")
+        let profile = try web("ios/HealthOSSync/SettingsScreen.swift")
+        let inPortraits = portraits.range(of: #"\bPhotoSection\(\)"#, options: .regularExpression) != nil
+        let ownCard = profile.contains("ProfilePhotoCard()")
+        XCTAssertTrue(inPortraits || ownCard, "Profile shows \"Use a photo as is\" somewhere")
+        XCTAssertFalse(inPortraits && ownCard,
+                       "PortraitPhotosSection shows PhotoSection now: delete ProfilePhotoCard() and its struct from SettingsScreen.swift")
     }
 
     // MARK: Units & daily goal
