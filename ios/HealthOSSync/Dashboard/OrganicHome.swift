@@ -624,39 +624,3 @@ struct TodayPath: View {
         }
     }
 }
-
-/// The day, its previous and next, your avatar and the greeting, until Home's own header (Home/HomeHeader.swift) takes its place.
-struct OrganicHeader: View {
-    let summary: Summary
-    let name: String?
-    @Environment(Dashboard.self) private var dashboard
-
-    var body: some View {
-        let isToday = summary.date == summary.today
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 2) {
-                Text(Fmt.day(summary.date, "EEEEMMMd")).font(.app(.subheadline, weight: .medium)).foregroundStyle(Palette.ink2)
-                Spacer()
-                Button { Task { await dashboard.show(date: Day.add(summary.date, -1)) } } label: {
-                    Image(systemName: "chevron.left").frame(width: 44, height: 44)
-                }
-                .accessibilityLabel("Previous day")
-                Button { Task { await dashboard.show(date: Day.add(summary.date, 1)) } } label: {
-                    Image(systemName: "chevron.right").frame(width: 44, height: 44)
-                }
-                .disabled(isToday)
-                .accessibilityLabel("Next day")
-                // Home hides its navigation bar, so your avatar and its account menu sit here, top right as on the
-                // other pages.
-                AccountMenu(size: 32).padding(.leading, 6)
-            }
-            .foregroundStyle(Palette.ink2)
-            .buttonStyle(.plain)
-            Text("Hello, \(name ?? "there").").font(.app(.title2, weight: .medium)).foregroundStyle(Palette.ink)
-            if !isToday {
-                Button("Back to today") { Task { await dashboard.show(date: nil) } }.font(.app(.footnote))
-            }
-            SyncStatusLine()
-        }
-    }
-}
