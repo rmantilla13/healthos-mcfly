@@ -9,6 +9,9 @@ struct JournalPromptCard: View {
     @Environment(\.colorScheme) private var scheme
     /// Today's latest check-in once read; nil while there's none (or it's still being read).
     @State private var latest: JournalEntry?
+
+    /// `latest` is what shows before the journal is read (tests and previews draw a day with a check-in).
+    init(latest: JournalEntry? = nil) { _latest = State(initialValue: latest) }
     /// The server answered that it has no journal.
     @State private var missing = false
     /// The card's width inside its padding, for the words' two thirds.
@@ -91,10 +94,8 @@ struct JournalPromptCard: View {
             .contentShape(shape)
         }
         .buttonStyle(CardPressStyle())
-        .accessibilityElement(children: .ignore)
         .accessibilityLabel(["Your health journal", "How are you feeling today?", m.mood, m.line ?? "A thought, a feeling, a little context."].compactMap { $0 }.joined(separator: ". "))
         .accessibilityHint(m.button == "Write a check-in" ? "Writes a check-in" : "Adds another check-in")
-        .accessibilityAddTraits(.isButton)
         .accessibilityIdentifier("card-home.journal")
     }
 

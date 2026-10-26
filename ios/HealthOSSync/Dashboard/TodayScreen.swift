@@ -161,7 +161,6 @@ private struct FlagBanner: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(CardPressStyle())
-        .accessibilityElement(children: .combine)
         .accessibilityHint("Opens \(route.title)")
     }
 }

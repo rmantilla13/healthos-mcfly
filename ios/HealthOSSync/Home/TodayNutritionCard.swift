@@ -11,7 +11,14 @@ struct TodayNutritionCard: View {
     let date: String
     let today: String
     @Environment(Dashboard.self) private var dashboard
-    @State private var entries: [FoodEntry] = []
+    @State private var entries: [FoodEntry]
+
+    /// `entries` is what shows before the log is read (tests and previews draw a day with them).
+    init(date: String, today: String, entries: [FoodEntry] = []) {
+        self.date = date
+        self.today = today
+        _entries = State(initialValue: entries)
+    }
 
     // MARK: The web's numbers
 
@@ -186,11 +193,12 @@ struct TodayNutritionCard: View {
                 entries = []
                 return
             }
-            if let log = try? await dashboard.loadFoodLog(days: back + 1) {
-                entries = log.enabled ? log.entries.filter { $0.date == date } : []
-            } else {
-                // A server without the food log, or a read that failed: nothing logged to show.
-                entries = []
+            do {
+                // nil: a server without the food log, so nothing logged to show.
+                let log = try await dashboard.loadFoodLog(days: back + 1)
+                entries = log?.enabled == true ? (log?.entries ?? []).filter { $0.date == date } : []
+            } catch {
+                // Offline or a server error: what's on screen stays until the next read.
             }
         }
     }

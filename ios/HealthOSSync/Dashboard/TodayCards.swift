@@ -94,7 +94,6 @@ struct MetricCard<Content: View>: View {
             .contentShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
         }
         .buttonStyle(CardPressStyle())
-        .accessibilityElement(children: .combine)
         .modifier(SpokenLabel(text: spoken))
         .accessibilityHint(metric == nil ? "Opens \(route.title)" : "Opens \(title) details")
     }

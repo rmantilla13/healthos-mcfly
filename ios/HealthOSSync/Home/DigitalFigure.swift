@@ -129,10 +129,8 @@ struct DigitalFigure: View {
         if text.key == .heart, let onHeart {
             Button(action: onHeart) { CalloutLabel(text: text, digital: true).contentShape(Rectangle()) }
                 .buttonStyle(.plain)
-                .accessibilityElement(children: .ignore)
                 .accessibilityLabel(text.spoken)
                 .accessibilityHint("Opens live heart rate")
-                .accessibilityAddTraits(.isButton)
                 .accessibilityIdentifier("callout-heart")
         } else {
             CalloutLabel(text: text, digital: true)

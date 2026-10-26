@@ -66,10 +66,8 @@ struct FoodTotalsCard: View {
             .contentShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
         }
         .buttonStyle(CardPressStyle())
-        .accessibilityElement(children: .ignore)
         .accessibilityLabel(spoken(m))
         .accessibilityHint("Opens Nutrition")
-        .accessibilityAddTraits(.isButton)
         .accessibilityIdentifier("card-home.food")
     }
 
