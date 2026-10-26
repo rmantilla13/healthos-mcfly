@@ -1,0 +1,173 @@
+import XCTest
+@testable import HealthOSSync
+
+/// Profile and its sheets (slice D): the words against the web's own files, the rows' lines, what closing Units &
+/// daily goal sends, the password form's rule and its answer, the ?connect= links, and the export's download, names
+/// and failures.
+@MainActor
+final class ProfileTests: XCTestCase {
+    /// A file of the web app, next to the iPhone app in the repository, with its runs of spaces and line breaks made
+    /// one space, so JSX text that wraps reads as the sentence it is.
+    private func web(_ path: String) throws -> String {
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent(path)
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { throw XCTSkip("\(path) isn't next to the app") }
+        return text.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+    }
+
+    private func settings(_ json: String) throws -> ServerStatus.Settings {
+        try XCTUnwrap(try JSONDecoder().decode(ServerStatus.self, from: Data(#"{"settings":\#(json)}"#.utf8)).settings)
+    }
+
+    // MARK: Words
+
+    func testProfileWordsAreTheWebsOwn() throws {
+        let profile = try web("src/pages/Profile.tsx")
+        let words = [
+            "Your profile & perspective", "Edit preferences", "Peer comparisons enabled.", "Peer comparisons off.",
+            "Change your image, age or participation anytime.", "Just the statistics", "Your portrait", "no age given",
+            ProfileWords.chatbot(byok: false), ProfileWords.chatbot(byok: true), "Manage chatbot AI", "Ask McFly uses your own",
+            ProfileWords.account(signedIn: false, email: nil, role: nil), "' · admin'", "Signed in", "Change password",
+            ProfileWords.openAI(byok: false), ProfileWords.openAI(byok: true), ProfileWords.openAIConnected(last4: ""), "Manage AI key", "Connect AI key",
+            "Connected sources", "Manage sources", "Manage what comes into your health profile.",
+            "Export your data", "Download JSON", "Preparing…", ProfileWords.exportLine, ProfileWords.exportUnreachable, ProfileWords.exportFailed,
+            ProfileWords.exportStopped, "Saved ${name}.", "healthos-export-${localToday()}.json",
+            "Privacy & data use", "Read details", "Understand how files, food descriptions and recordings are handled.",
+            "End your session", "Sign out on this device.",
+            "Units & daily goal", ProfileWords.metric, ProfileWords.imperial, "steps a day", "Choose cards", "Choose the cards you see on Home, Sleep",
+            "', Body and Nutrition'", "' and Body'", ProfileWords.cardsNote, "Show all", "Done",
+            ProfileWords.family(sharing: true), ProfileWords.family(sharing: false), "Family board", "Cycle tracking",
+            "Sex for health calculations: ", "'prefer not to say'", "'not set'",
+            "calories and nutrients", "nutrients without calories", "what you logged, no amounts",
+            "Name", "Daily step goal", ProfileWords.stepGoalHint, "Saved",
+            "Current password", "New password", "Confirm new password", ProfileWords.passwordHint, ProfileWords.passwordsDiffer,
+            "Changing…", ProfileWords.passwordChanged,
+        ]
+        for w in words { XCTAssertTrue(profile.contains(w), "Profile.tsx says \"\(w)\"") }
+        XCTAssertTrue(profile.contains("maxLength={\(ProfileWords.nameLimit)}"))
+        XCTAssertTrue(profile.contains("next.length >= \(ProfileWords.passwordMinimum)"))
+    }
+
+    func testSettingsSheetWordsAreTheWebsOwn() throws {
+        let cycle = try web("src/pages/Cycle.tsx")
+        for w in [
+            "Health profile", ProfileWords.healthProfile, "Sex for health calculations", "Track my cycle", ProfileWords.trackCycle, ProfileWords.trackWhenever,
+            "Show my cycle phase to family", ProfileWords.sharePhase, ProfileWords.cycleOff, "Delete cycle data", ProfileWords.deleteCycle,
+            "Delete all cycle data", ProfileWords.deleteCycleConfirm, "There was nothing to delete.", "'entry' : 'entries'",
+        ] { XCTAssertTrue(cycle.contains(w), "Cycle.tsx says \"\(w)\"") }
+        for (_, title) in ProfileWords.sexChoices { XCTAssertTrue(cycle.contains("'\(title)'"), title) }
+        XCTAssertTrue(cycle.contains("(['female', 'male', 'unspecified'] as const)"), "the same three, in the same order")
+
+        let family = try web("src/pages/Family.tsx")
+        for w in [ProfileWords.familyTile, ProfileWords.familyShare, "Share with family", " Sharing with: ${others.join(', ')}."] {
+            XCTAssertTrue(family.contains(w), "Family.tsx says \"\(w)\"")
+        }
+
+        let nutrition = try web("src/pages/Nutrition.tsx")
+        for w in [
+            ProfileWords.nutritionAbout, ProfileWords.chooseFirst, "What you see", ProfileWords.targetsTitle, ProfileWords.targetsNote,
+            ProfileWords.nutritionOff, "Delete nutrition data", ProfileWords.deleteNutrition, "Delete all nutrition data",
+            ProfileWords.deleteNutritionConfirm, "'Deleted.'", "There was nothing to delete.",
+        ] { XCTAssertTrue(nutrition.contains(w), "Nutrition.tsx says \"\(w)\"") }
+        for c in ProfileWords.numbersChoices {
+            XCTAssertTrue(nutrition.contains("{ value: '\(c.value)', title: '\(c.title)', text: '\(c.text)' }"), c.title)
+        }
+        // The web's own copy names "the healthOS iPhone app": on the iPhone, that's "this iPhone".
+        XCTAssertTrue(nutrition.contains("Your food log comes in from the healthOS iPhone app"))
+        XCTAssertTrue(nutrition.contains("History comes in with your next Health export import, or from the healthOS iPhone app at its next sync."))
+    }
+
+    func testProvidersAndRangesAreTheServers() throws {
+        let ai = try web("shared/ai.ts")
+        for p in ProfileWords.providers { XCTAssertTrue(ai.contains("{ provider: '\(p.provider)', label: '\(p.label)' }"), p.label) }
+        let query = try web("server/query.ts")
+        XCTAssertTrue(query.contains("energy_kcal: [500, 10_000], protein_g: [10, 500], water_ml: [250, 8_000]"))
+        XCTAssertEqual(NutritionTargetField.all.map(\.range), [500...10_000, 10...500, 250...8_000])
+        let app = try web("server/app.ts")
+        XCTAssertTrue(app.contains("if (goal >= \(ProfileWords.stepGoalRange.lowerBound) && goal <= 100_000)"), "the goal the server keeps")
+        XCTAssertEqual(ProfileWords.stepGoalRange.upperBound, 100_000)
+        XCTAssertTrue(app.contains("body.name.trim().slice(0, \(ProfileWords.nameLimit))"))
+        let auth = try web("server/auth.ts")
+        XCTAssertTrue(auth.contains("export const MIN_PASSWORD = \(ProfileWords.passwordMinimum);"))
+    }
+
+    // MARK: Rows
+
+    func testRowLines() throws {
+        let s = try settings(#"{"name":"Ada","units":"imperial","stepGoal":8500,"perspective":"digital","age":33,"peerComparison":true,"sex":"female","cycleTracking":true,"nutrition":true,"nutritionNumbers":"no_energy","familySharing":true}"#)
+        XCTAssertEqual(ProfileWords.perspective(s, drawn: .man), "Digital man · 33 years")
+        XCTAssertEqual(ProfileWords.peers(s), "Peer comparisons enabled. Change your image, age or participation anytime.")
+        XCTAssertEqual(ProfileWords.units(s), "Ada · Imperial (lb, °F, mi) · \(Fmt.number(8500)) steps a day")
+        XCTAssertEqual(ProfileWords.cycle(s), "On · Sex for health calculations: female")
+        XCTAssertEqual(ProfileWords.nutrition(s), "On · nutrients without calories")
+        XCTAssertEqual(ProfileWords.family(sharing: true), "Sharing on. Members who share see your tile and its last 30 days.")
+
+        let bare = try settings(#"{"name":"","units":"metric","stepGoal":10000,"perspective":"stats","nutrition":false,"nutritionNumbers":"all"}"#)
+        XCTAssertEqual(ProfileWords.perspective(bare, drawn: .man), "Just the statistics · no age given")
+        XCTAssertEqual(ProfileWords.peers(bare), "Peer comparisons off. Change your image, age or participation anytime.")
+        XCTAssertEqual(ProfileWords.units(bare), "Metric (kg, °C, km) · \(Fmt.number(10_000)) steps a day", "no name, no dot before it")
+        XCTAssertEqual(ProfileWords.cycle(bare), "Off · Sex for health calculations: not set")
+        XCTAssertEqual(ProfileWords.nutrition(bare), "Off")
+        XCTAssertEqual(ProfileWords.perspective(try settings(#"{"perspective":"portrait","age":40}"#), drawn: .woman), "Your portrait · 40 years")
+        XCTAssertEqual(ProfileWords.cycle(try settings(#"{"sex":"unspecified","cycleTracking":false}"#)), "Off · Sex for health calculations: prefer not to say")
+        XCTAssertEqual(ProfileWords.nutrition(try settings(#"{"nutrition":true,"nutritionNumbers":"none"}"#)), "On · what you logged, no amounts")
+        XCTAssertEqual(ProfileWords.nutrition(try settings(#"{"nutrition":true}"#)), "On · calories and nutrients", "as the web reads a missing choice")
+        XCTAssertEqual(ProfileWords.cardPages(nutrition: false), "Choose the cards you see on Home, Sleep and Body.")
+        XCTAssertEqual(ProfileWords.cardPages(nutrition: true), "Choose the cards you see on Home, Sleep, Body and Nutrition.")
+    }
+
+    func testAccountAndAILines() throws {
+        XCTAssertEqual(ProfileWords.account(signedIn: true, email: "ada@example.test", role: "admin"), "ada@example.test · admin")
+        XCTAssertEqual(ProfileWords.account(signedIn: true, email: "ada@example.test", role: "member"), "ada@example.test")
+        XCTAssertEqual(ProfileWords.account(signedIn: false, email: "", role: "admin"), "This Mac, no sign-in")
+        // Unknown says nothing of the server: the ordinary line, never "not set up".
+        XCTAssertEqual(ProfileWords.chatbot(byok: nil), ProfileWords.chatbot(byok: true))
+        XCTAssertTrue(ProfileWords.chatbot(byok: false).hasSuffix("but storing your own AI keys isn't set up on this server."))
+        XCTAssertEqual(ProfileWords.openAI(byok: nil), ProfileWords.openAI(byok: true))
+        let own = try JSONDecoder().decode(AiStatus.self, from: Data(#"{"byok":true,"keys":[{"provider":"anthropic","last4":"wxyz"}],"chat":{"provider":"anthropic","source":"own"}}"#.utf8))
+        XCTAssertEqual(ProfileWords.ownChat(own), "Ask McFly uses your own Claude key.")
+        let shared = try JSONDecoder().decode(AiStatus.self, from: Data(#"{"byok":true,"chat":{"provider":"anthropic","source":"shared"}}"#.utf8))
+        XCTAssertNil(ProfileWords.ownChat(shared))
+        XCTAssertEqual(ProfileWords.openAIConnected(last4: "1a2b"), "Connected · key ending ••••1a2b")
+    }
+
+    func testConnectLinksOpenTheKeySheets() {
+        XCTAssertEqual(ProfileSheet.linked(["connect": "openai"]), .openai)
+        XCTAssertEqual(ProfileSheet.linked(["connect": "chatbot"]), .chatbot)
+        XCTAssertNil(ProfileSheet.linked(["connect": "nutrition"]))
+        XCTAssertNil(ProfileSheet.linked([:]))
+        // The links the app's own text and routes make.
+        XCTAssertEqual(AppRoute(url: URL(string: "healthos://profile?connect=openai")!).flatMap { ProfileSheet.linked($0.query) }, .openai)
+        XCTAssertEqual(AppRoute(page: "settings", query: ["connect": "chatbot"]).flatMap { ProfileSheet.linked($0.query) }, .chatbot)
+    }
+
+    // MARK: Units & daily goal
+
+    func testClosingSendsOnlyWhatChanged() throws {
+        let s = try settings(#"{"name":"Ada","stepGoal":10000}"#)
+        XCTAssertFalse(ProfileBasicsSheet.patch(name: "Ada", goal: "10000", settings: s).changed)
+        XCTAssertFalse(ProfileBasicsSheet.patch(name: "  Ada ", goal: "10000", settings: s).changed, "trimmed, as the web compares it")
+        XCTAssertFalse(ProfileBasicsSheet.patch(name: "Ada", goal: "", settings: s).changed, "an empty goal isn't sent")
+        XCTAssertEqual(ProfileBasicsSheet.patch(name: "Ada L", goal: "10000", settings: s).fields, ["name": "Ada L"])
+        let goal = ProfileBasicsSheet.patch(name: "Ada", goal: "8000", settings: s)
+        XCTAssertEqual(goal.goal, 8000)
+        XCTAssertTrue(goal.fields.isEmpty)
+        // The server ignores these without saying: the phone says so and sends nothing.
+        for typed in ["499", "100001"] {
+            let p = ProfileBasicsSheet.patch(name: "Ada", goal: typed, settings: s)
+            XCTAssertTrue(p.goalOutOfRange, typed)
+            XCTAssertNil(p.goal)
+        }
+        XCTAssertEqual(ProfileBasicsSheet.patch(name: "Ada", goal: "500", settings: s).goal, 500)
+        XCTAssertEqual(ProfileBasicsSheet.patch(name: "Ada", goal: "100000", settings: s).goal, 100_000)
+        // No name yet on the server: a blank one is no change.
+        XCTAssertFalse(ProfileBasicsSheet.patch(name: "", goal: "10000", settings: try settings(#"{"stepGoal":10000}"#)).changed)
+    }
+
+    func testTargetsTheServerWouldIgnoreAreRefusedHere() {
+        let protein = NutritionTargetField.all[1]
+        XCTAssertNil(protein.problem(nil), "blank clears it")
+        XCTAssertNil(protein.problem(120))
+        XCTAssertEqual(protein.problem(5), "Protein: between 10 and 500 g, or blank for none.")
+    }
+}
