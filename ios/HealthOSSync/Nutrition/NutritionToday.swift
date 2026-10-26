@@ -942,6 +942,34 @@ struct DailyBalanceCard: View {
         .card()
     }
 
+    /// A macro's dot and name.
+    private func macroName(_ r: DailyBalanceMath.Row) -> some View {
+        HStack(spacing: 10) {
+            Circle().fill(NutriColor.macro(r.key)).frame(width: 6, height: 6)
+            Text(r.label).font(.app(size: 12.5, relativeTo: .footnote)).foregroundStyle(Palette.ink2)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// Its grams and its share of the three.
+    private func macroAmount(_ r: DailyBalanceMath.Row) -> some View {
+        HStack(spacing: 10) {
+            Group {
+                if let g = r.grams {
+                    Text(g).font(.app(size: 20, relativeTo: .title3)).foregroundStyle(Palette.ink)
+                        + Text(" g").font(.app(size: 11, relativeTo: .caption2)).foregroundStyle(Palette.ink3)
+                } else {
+                    Text(String.emptyValue).font(.app(size: 20, relativeTo: .title3)).foregroundStyle(Palette.ink)
+                }
+            }
+            .lineLimit(1)
+            Text(r.percent).font(.app(size: 10.5, relativeTo: .caption2)).foregroundStyle(Palette.ink3)
+                .lineLimit(1)
+                .frame(minWidth: 36, alignment: .trailing)
+        }
+    }
+
     @ViewBuilder
     private func side(_ m: DailyBalanceMath) -> some View {
         if mode == .none {
@@ -950,21 +978,22 @@ struct DailyBalanceCard: View {
         } else {
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(Array(m.rows.enumerated()), id: \.element.key) { i, r in
-                    HStack(spacing: 10) {
-                        Circle().fill(NutriColor.macro(r.key)).frame(width: 6, height: 6)
-                        Text(r.label).font(.app(size: 12.5, relativeTo: .footnote)).foregroundStyle(Palette.ink2)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        Group {
-                            if let g = r.grams {
-                                Text(g).font(.app(size: 20, relativeTo: .title3)).foregroundStyle(Palette.ink)
-                                    + Text(" g").font(.app(size: 11, relativeTo: .caption2)).foregroundStyle(Palette.ink3)
-                            } else {
-                                Text(String.emptyValue).font(.app(size: 20, relativeTo: .title3)).foregroundStyle(Palette.ink)
+                    // One line where it fits; at the largest sizes on a narrower phone, or on a day of three-digit
+                    // grams, the name over its grams and share, so no word breaks in the middle.
+                    // The amount keeps its own width (the line is chosen only where all of it fits), so the row never
+                    // shares its width out evenly and cuts the grams short.
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 10) {
+                            macroName(r)
+                            macroAmount(r).fixedSize()
+                        }
+                        VStack(alignment: .leading, spacing: 2) {
+                            macroName(r)
+                            HStack(spacing: 10) {
+                                Spacer(minLength: 16)
+                                macroAmount(r).layoutPriority(1)
                             }
                         }
-                        .lineLimit(1)
-                        Text(r.percent).font(.app(size: 10.5, relativeTo: .caption2)).foregroundStyle(Palette.ink3)
-                            .frame(minWidth: 36, alignment: .trailing)
                     }
                     .padding(.vertical, 11)
                     .overlay(alignment: .top) { if i > 0 { Rectangle().fill(Palette.border).frame(height: 1) } }
