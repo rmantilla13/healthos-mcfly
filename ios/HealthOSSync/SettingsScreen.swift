@@ -59,7 +59,10 @@ struct ProfileScreen: View {
         }
         // Signed out (Sign out, a 401) or the server gone: no sheet stays up on the last person's settings or keys.
         .onChange(of: dashboard.phase) { _, phase in
-            if phase != .ready { sheet = nil }
+            if phase != .ready {
+                sheet = nil
+                ProfileExport.removeAll()
+            }
         }
         .task(id: "\(dashboard.phase == .ready)|\(dashboard.availability.aiMissing)") { openLinked() }
         .alert(model.notice ?? "", isPresented: noticeShown) {

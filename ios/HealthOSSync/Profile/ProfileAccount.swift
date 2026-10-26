@@ -27,11 +27,11 @@ struct ProfileAccountRow: View {
                     .accessibilityIdentifier("accountEmail")
             } action: {
                 if signedIn {
-                    Badge("Signed in", tone: .sage)
-                    Button("Change password") { open.toggle() }
-                        .buttonStyle(ProfileQuietStyle())
-                        .accessibilityValue(open ? "Expanded" : "Collapsed")
-                        .accessibilityIdentifier("changePassword")
+                    // Side by side, or one over the other at the largest text sizes.
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 6) { actions }
+                        VStack(alignment: .leading, spacing: 6) { actions }
+                    }
                 }
             }
             if signedIn, open {
@@ -44,6 +44,15 @@ struct ProfileAccountRow: View {
         .overlay(alignment: .bottom) {
             if divider { Rectangle().fill(Palette.border).frame(height: 1) }
         }
+    }
+
+    @ViewBuilder
+    private var actions: some View {
+        Badge("Signed in", tone: .sage)
+        Button("Change password") { open.toggle() }
+            .buttonStyle(ProfileQuietStyle())
+            .accessibilityValue(open ? "Expanded" : "Collapsed")
+            .accessibilityIdentifier("changePassword")
     }
 }
 
