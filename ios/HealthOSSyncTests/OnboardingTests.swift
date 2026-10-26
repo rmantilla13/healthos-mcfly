@@ -27,7 +27,7 @@ final class OnboardingTests: XCTestCase {
         try JSONDecoder().decode(ServerStatus.self, from: Data(#"{"settings":\#(json)}"#.utf8)).settings
     }
 
-    private func answers(_ perspective: Perspective = .portrait, gender: Gender? = nil, figure: FigureVariant? = nil, age: String = "", peer: Bool = false) -> OnboardingAnswers {
+    private func answers(_ perspective: OnboardingPerspective = .portrait, gender: Gender? = nil, figure: FigureVariant? = nil, age: String = "", peer: Bool = false) -> OnboardingAnswers {
         OnboardingAnswers(perspective: perspective, gender: gender, figure: figure, age: age, peer: peer)
     }
 
@@ -41,7 +41,7 @@ final class OnboardingTests: XCTestCase {
     private func mode(_ s: Any?) -> OnboardingMode { (s as? String) == "edit" ? .edit : .new }
 
     private func answers(fromWeb a: [String: Any]) -> OnboardingAnswers {
-        OnboardingAnswers(perspective: Perspective(rawValue: a["perspective"] as? String ?? "") ?? .portrait,
+        OnboardingAnswers(perspective: OnboardingPerspective(rawValue: a["perspective"] as? String ?? "") ?? .portrait,
                           gender: (a["gender"] as? String).flatMap(Gender.init(rawValue:)),
                           figure: (a["figure"] as? String).flatMap(FigureVariant.init(rawValue:)),
                           age: a["age"] as? String ?? "", peer: a["peer"] as? Bool ?? false)
