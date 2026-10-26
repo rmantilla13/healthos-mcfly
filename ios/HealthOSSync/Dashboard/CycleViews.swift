@@ -587,13 +587,13 @@ private struct CycleTemperatureCard: View {
         .chartYScale(domain: lo...hi)
         .chartXAxis {
             AxisMarks(values: Array(stride(from: 1, through: length, by: length > 30 ? 7 : 5)).map(Double.init)) { v in
-                AxisValueLabel { if let d = v.as(Double.self) { Text("\(Int(d))").foregroundStyle(Palette.ink3) } }.font(.app(.caption2))
+                AxisValueLabel { if let d = v.as(Double.self) { Text("\(Int(d))").foregroundStyle(Palette.ink3) } }.font(.axis)
             }
         }
         .chartYAxis {
             AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { v in
                 AxisGridLine().foregroundStyle(Palette.grid)
-                AxisValueLabel { if let d = v.as(Double.self) { Text(Fmt.signed(d, abs(d) < 0.1 && d != 0 ? 2 : 1)).foregroundStyle(Palette.ink3) } }.font(.app(.caption2))
+                AxisValueLabel { if let d = v.as(Double.self) { Text(Fmt.signed(d, abs(d) < 0.1 && d != 0 ? 2 : 1)).foregroundStyle(Palette.ink3) } }.font(.axis)
             }
         }
         .frame(height: 190)

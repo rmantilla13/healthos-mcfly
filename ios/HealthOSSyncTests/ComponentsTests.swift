@@ -60,6 +60,31 @@ final class ComponentsTests: XCTestCase {
         XCTAssertTrue(SheetScaffold(title: "Edit widgets") { Text("Body") } footer: { Button("Done") {} }.hasFooter)
     }
 
+    /// The web's .card: 20px at the sides and top, 18px at the bottom (it has no phone override).
+    func testACardIsPaddedAsTheWebsCard() {
+        let size = UIHostingController(rootView: Color.red.frame(width: 100, height: 50).card().fixedSize())
+            .sizeThatFits(in: CGSize(width: 400, height: 400))
+        XCTAssertEqual(size.width, 140)
+        XCTAssertEqual(size.height, 88)
+    }
+
+    /// The initial on pale sage, as the web's .avatar, not white on a brown gradient (no photo: the local server).
+    func testAnAvatarWithoutAPhotoIsPaleSage() throws {
+        let at = try pixels(Avatar(photo: nil, name: "Ricky", size: 32), width: 36, height: 36)
+        let fill = at(9, 18) // inside the circle, left of the initial
+        XCTAssertEqual(fill[0], 0xE6, accuracy: 4, "--accent-soft #e6efe3: \(fill)")
+        XCTAssertEqual(fill[1], 0xEF, accuracy: 4, "\(fill)")
+        let dark = try pixels(Avatar(photo: nil, name: "Ricky", size: 32), width: 36, height: 36, scheme: .dark)(9, 18)
+        XCTAssertEqual(dark[0], 0x26, accuracy: 4, "--accent-soft dark #263529: \(dark)")
+    }
+
+    /// A row's icon grows with the text up to about xxLarge, then stops, so it never sits over the name beside it.
+    func testARowIconStopsGrowing() {
+        XCTAssertEqual(RowIcon.width(26), 26)
+        XCTAssertEqual(RowIcon.width(26 * 1.24), 26 * 1.24, accuracy: 0.01)
+        XCTAssertEqual(RowIcon.width(26 * 3.1), 26 * 1.3, accuracy: 0.01, "the largest text size")
+    }
+
     func testEveryCardTintIsAWash() {
         XCTAssertEqual(Set(CardTint.allCases.map(\.gradient)).count, CardTint.allCases.count)
         XCTAssertEqual(CardTint.plain.gradient, .sheen)

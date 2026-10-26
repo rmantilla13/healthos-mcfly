@@ -816,10 +816,10 @@ struct FoodChartCard: View {
         .chartXSelection(value: $selected)
         .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { v in
             AxisGridLine().foregroundStyle(Palette.grid)
-            AxisValueLabel { if let n = v.as(Double.self) { Text(axis(n)) } }.font(.app(.caption2)).foregroundStyle(Palette.ink3)
+            AxisValueLabel { if let n = v.as(Double.self) { Text(axis(n)) } }.font(.axis).foregroundStyle(Palette.ink3)
         } }
         .chartXAxis { AxisMarks(values: .automatic(desiredCount: 4)) { _ in
-            AxisValueLabel(format: .dateTime.month(.abbreviated).day()).font(.app(.caption2)).foregroundStyle(Palette.ink3)
+            AxisValueLabel(format: .dateTime.month(.abbreviated).day()).font(.axis).foregroundStyle(Palette.ink3)
         } }
         .accessibilityLabel("\(title) by day")
     }

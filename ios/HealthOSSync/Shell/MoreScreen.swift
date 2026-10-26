@@ -30,22 +30,30 @@ struct MoreScreen: View {
     }
 }
 
-/// One page: its icon in the accent, its name, a chevron (the web's .menu-item at phone width).
+/// One page: its icon in the accent, its name, a chevron (the web's .menu-item at phone width). At the accessibility
+/// text sizes the icon goes over the name, so the name has the row's width, and a one-word name shrinks a little rather
+/// than break in the middle ("Integrations").
 private struct MoreRow: View {
     let page: AppPage
     let divider: Bool
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @ScaledMetric(relativeTo: .body) private var column: CGFloat = RowIcon.column
 
     var body: some View {
-        HStack(spacing: 14) {
-            Image(systemName: page.symbol)
-                .font(.body)
-                .foregroundStyle(Palette.accentText)
-                .frame(width: 26)
-                .accessibilityHidden(true)
-            Text(page.title).font(.app(size: 15, relativeTo: .body)).foregroundStyle(Palette.ink)
-            Spacer(minLength: 8)
+        let stacked = typeSize.isAccessibilitySize
+        HStack(spacing: 8) {
+            (stacked ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6)) : AnyLayout(HStackLayout(spacing: 14))) {
+                RowIcon(systemName: page.symbol)
+                Text(page.title)
+                    .font(.app(size: 15, relativeTo: .body))
+                    .foregroundStyle(Palette.ink)
+                    .wholeWords(page.title)
+            }
+            .padding(.vertical, stacked ? 10 : 0)
+            Spacer(minLength: 0)
             Image(systemName: "chevron.right")
                 .font(.footnote.weight(.semibold))
+                .dynamicTypeSize(...DynamicTypeSize.xxLarge)
                 .foregroundStyle(Palette.ink3)
                 .accessibilityHidden(true)
         }
@@ -53,7 +61,7 @@ private struct MoreRow: View {
         .frame(minHeight: 52)
         .contentShape(Rectangle())
         .overlay(alignment: .bottom) {
-            if divider { Rectangle().fill(Palette.border).frame(height: 1).padding(.leading, 52) }
+            if divider { Rectangle().fill(Palette.border).frame(height: 1).padding(.leading, stacked ? 12 : 26 + RowIcon.width(column)) }
         }
     }
 }

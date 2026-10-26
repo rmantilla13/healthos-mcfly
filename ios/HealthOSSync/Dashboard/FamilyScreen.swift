@@ -156,11 +156,11 @@ private struct SharingOff: View {
                 Task { await turnOn() }
             } label: {
                 HStack(spacing: 8) {
-                    if busy { ProgressView().controlSize(.small) }
+                    if busy { ProgressView().controlSize(.small).tint(Palette.accentInk) }
                     Text("Turn on sharing")
                 }
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.accentPill)
             .disabled(busy)
             if let error { Text(error).font(.app(.footnote)).foregroundStyle(Palette.critical) }
         }
@@ -728,10 +728,10 @@ private struct FamilyChartCard: View {
         .chartXSelection(value: $selected)
         .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { v in
             AxisGridLine().foregroundStyle(Palette.grid)
-            AxisValueLabel { if let n = v.as(Double.self) { Text(chart.axis(n)).foregroundStyle(Palette.ink3) } }.font(.app(.caption2))
+            AxisValueLabel { if let n = v.as(Double.self) { Text(chart.axis(n)).foregroundStyle(Palette.ink3) } }.font(.axis)
         } }
         .chartXAxis { AxisMarks(values: .automatic(desiredCount: 4)) { _ in
-            AxisValueLabel(format: .dateTime.month(.abbreviated).day()).font(.app(.caption2)).foregroundStyle(Palette.ink3)
+            AxisValueLabel(format: .dateTime.month(.abbreviated).day()).font(.axis).foregroundStyle(Palette.ink3)
         } }
         .accessibilityLabel(chart.label)
     }

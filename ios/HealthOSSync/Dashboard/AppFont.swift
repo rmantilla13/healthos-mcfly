@@ -119,6 +119,10 @@ extension Font {
     static func app(fixedSize size: CGFloat, weight: Font.Weight = .regular) -> Font {
         .custom(AppFont.instanceName(weight), fixedSize: size)
     }
+
+    /// A chart's axis labels, on every `AxisValueLabel`: 11pt at every text size, as the web's .axis-label. Scaled, the
+    /// ticks piled on each other and ran off the card at the largest sizes; a chart's values are read out by VoiceOver.
+    static let axis = app(fixedSize: 11)
 }
 
 extension Font.TextStyle {

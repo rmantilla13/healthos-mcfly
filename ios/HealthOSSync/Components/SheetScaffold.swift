@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// A sheet laid out as the web's dialogs (Sheet.tsx, full screen on a phone): an eyebrow over the title, a round close
-/// button, the body, and buttons along the bottom, over the pale mint sheet gradient. It opens at full height.
+/// button, the body, and its buttons after it on the right (.sheet-foot), all over the pale mint sheet gradient and
+/// scrolling as one, as on the web. It opens at full height.
 ///
 ///     .sheet(isPresented: $editing) {
 ///         SheetScaffold(eyebrow: "Home", title: "Edit widgets") {
@@ -47,26 +48,24 @@ struct SheetScaffold<Content: View, Footer: View>: View {
                 }
                 VStack(alignment: .leading, spacing: 14) { content }
                     .frame(maxWidth: .infinity, alignment: .leading)
+                if hasFooter {
+                    // No band or line of its own: the web's footer sits on the sheet's gradient.
+                    HStack(spacing: 10) {
+                        Spacer(minLength: 0)
+                        footer
+                    }
+                    .padding(.top, 4)
+                }
             }
             .padding(.horizontal, 18)
             .padding(.top, 22)
             .padding(.bottom, 20)
         }
         .scrollDismissesKeyboard(.interactively)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if hasFooter {
-                HStack(spacing: 10) {
-                    Spacer(minLength: 0)
-                    footer
-                }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 12)
-                .background(Palette.surface)
-                .overlay(alignment: .top) { Rectangle().fill(Palette.border).frame(height: 1) }
-            }
-        }
         .font(.app(.body))
+        .foregroundStyle(Palette.ink)
         .tint(Palette.tint)
+        .toggleStyle(.appSwitch)
         .presentationDetents([.large])
         .presentationCornerRadius(Radius.sheet)
         .presentationBackground { GradientFill(.gradSheet) }

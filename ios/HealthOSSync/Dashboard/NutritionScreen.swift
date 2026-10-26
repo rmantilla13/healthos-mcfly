@@ -96,7 +96,7 @@ private struct NutritionOptIn: View {
                         choosing = true
                         DispatchQueue.main.async { showChoices() }
                     }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.accentPill)
                         .padding(.top, 4)
                         .accessibilityIdentifier("turnOnNutrition")
                 }

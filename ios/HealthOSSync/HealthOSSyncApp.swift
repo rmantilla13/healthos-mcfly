@@ -22,9 +22,12 @@ struct RootView: View {
         AppShell()
             .environment(dashboard)
             .environment(sync)
-            // DM Sans for any text that doesn't set its own font (Form rows, labels, fields).
+            // DM Sans for any text that doesn't set its own font (Form rows, labels, fields), and the web's green switches.
+            // No colour for all text here: a foreground style set this high also recolours Form headers, footers and
+            // values and text buttons to the one ink, flattening the system's greys; views set ink themselves.
             .font(.app(.body))
             .tint(Palette.tint)
+            .toggleStyle(.appSwitch)
             .onAppear {
                 sync.dashboard = dashboard
                 KeyboardDismisser.install()

@@ -80,7 +80,8 @@ enum PhotoTone {
     }
 }
 
-/// The round avatar from the web's top bar: photo, or the name's initial on a warm gradient.
+/// The round avatar from the web's top bar (.avatar): photo, or the name's initial in sage on pale sage, in a thin white
+/// ring with the pill's soft shadow.
 struct Avatar: View {
     let photo: PhotoMeta?
     let name: String?
@@ -93,15 +94,16 @@ struct Avatar: View {
             if let image {
                 Image(uiImage: image).resizable().scaledToFill()
             } else {
-                RadialGradient(colors: [Color(UIColor(hex: 0xA58A73)), Color(UIColor(hex: 0x4C3B2F))], center: .topLeading, startRadius: 0, endRadius: size * 1.2)
-                Text(initial).font(.app(fixedSize: size * 0.42, weight: .semibold)).foregroundStyle(.white)
+                Palette.accentSoft
+                // 12px in the web's 32px circle.
+                Text(initial).font(.app(fixedSize: size * 0.375, weight: .medium)).foregroundStyle(Palette.accentSoftInk)
             }
         }
         .frame(width: size, height: size)
         .clipShape(Circle())
-        .padding(3)
+        .padding(2)
         .background(Circle().fill(Palette.surface))
-        .overlay(Circle().strokeBorder(Palette.border, lineWidth: 1))
+        .tokenShadow(.pill, in: Circle())
         .task(id: "\(photo?.versionKey ?? "none")-\(scheme == .dark)") {
             image = nil
             guard let photo else { return }
@@ -110,7 +112,8 @@ struct Avatar: View {
         .accessibilityLabel(name.map { "Profile photo of \($0)" } ?? "Profile photo")
     }
 
-    private var initial: String { (name?.trimmingCharacters(in: .whitespaces).first).map { String($0).uppercased() } ?? "•" }
+    /// The web's initialOf: the name's first letter, or a middle dot without one.
+    private var initial: String { (name?.trimmingCharacters(in: .whitespaces).first).map { String($0).uppercased() } ?? "·" }
 }
 
 /// The Home page's figure: the cut-out photo fading out downward, with a dot where each vital is read

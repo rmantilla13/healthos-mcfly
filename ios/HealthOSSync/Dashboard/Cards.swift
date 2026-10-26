@@ -322,7 +322,7 @@ struct AllCardsHiddenNote: View {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "rectangle.grid.2x2").font(.subheadline.weight(.semibold)).foregroundStyle(Palette.ink3)
                     .accessibilityHidden(true)
-                Text("\(text) Choose the ones to show in **Profile → Cards**.")
+                Text("\(text) Choose the ones to show with Edit widgets on Home, or in **your Profile**.")
                     .font(.app(.footnote))
                     .foregroundStyle(Palette.ink2)
                     .multilineTextAlignment(.leading)

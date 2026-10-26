@@ -330,16 +330,16 @@ private struct CardTitle: View {
 private func yAxis(_ f: McFlyFormat) -> some AxisContent {
     AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { v in
         AxisGridLine().foregroundStyle(Palette.grid)
-        AxisValueLabel { if let n = v.as(Double.self) { Text(f.tick(n)).font(.app(.caption2)).foregroundStyle(Palette.ink3) } }
+        AxisValueLabel { if let n = v.as(Double.self) { Text(f.tick(n)).font(.axis).foregroundStyle(Palette.ink3) } }
     }
 }
 
 private func dateAxis(monthly: Bool) -> some AxisContent {
     AxisMarks(values: .automatic(desiredCount: 4)) { _ in
         if monthly {
-            AxisValueLabel(format: .dateTime.month(.abbreviated).year(.twoDigits)).font(.app(.caption2)).foregroundStyle(Palette.ink3)
+            AxisValueLabel(format: .dateTime.month(.abbreviated).year(.twoDigits)).font(.axis).foregroundStyle(Palette.ink3)
         } else {
-            AxisValueLabel(format: .dateTime.month(.abbreviated).day()).font(.app(.caption2)).foregroundStyle(Palette.ink3)
+            AxisValueLabel(format: .dateTime.month(.abbreviated).day()).font(.axis).foregroundStyle(Palette.ink3)
         }
     }
 }
@@ -664,7 +664,7 @@ private struct StagesCard: View {
             .chartYAxis {
                 AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { v in
                     AxisGridLine().foregroundStyle(Palette.grid)
-                    AxisValueLabel { if let h = v.as(Double.self) { Text("\(Fmt.number(h))h").font(.app(.caption2)).foregroundStyle(Palette.ink3) } }
+                    AxisValueLabel { if let h = v.as(Double.self) { Text("\(Fmt.number(h))h").font(.axis).foregroundStyle(Palette.ink3) } }
                 }
             }
             .chartXAxis { dateAxis(monthly: false) }

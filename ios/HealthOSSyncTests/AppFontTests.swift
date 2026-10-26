@@ -91,7 +91,9 @@ final class AppFontTests: XCTestCase {
     func testTextTheSystemWouldDrawIsGivenDMSans() throws {
         // Every explicit font is the app's, except on SF Symbols and the lines marked "system face". The system views
         // that set their own fonts, whatever the app's, go through the app's versions: Unavailable for
-        // ContentUnavailableView, ChartLegend for a chart's legend, and the app font on each axis label.
+        // ContentUnavailableView, ChartLegend for a chart's legend, and Font.axis on each axis label (one size, as the
+        // web's, so ticks never pile up at the largest text sizes). No filled system button either: its fill is the tint,
+        // which is the pale sage of words in dark mode (white on it reads under 2:1), so filled buttons are .accentPill.
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("HealthOSSync")
         let files = try XCTUnwrap(FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)).compactMap { $0 as? URL }
             .filter { $0.pathExtension == "swift" }
@@ -103,7 +105,8 @@ final class AppFontTests: XCTestCase {
             for (i, line) in lines.enumerated() where !line.trimmingCharacters(in: .whitespaces).hasPrefix("//") {
                 let at = "\(file.lastPathComponent):\(i + 1)"
                 if line.contains("ContentUnavailableView"), file.lastPathComponent != "Unavailable.swift" { problems.append("\(at): use Unavailable") }
-                if line.contains("AxisValueLabel"), !line.contains(".font(.app(") { problems.append("\(at): an axis label without .font(.app(…))") }
+                if line.contains("AxisValueLabel"), !line.contains(".font(.axis)") { problems.append("\(at): an axis label without .font(.axis)") }
+                if line.contains(".borderedProminent") { problems.append("\(at): use .accentPill") }
                 if line.contains(".chartLegend(position:"), !line.contains("ChartLegend(") { problems.append("\(at): use ChartLegend") }
                 let around = line + (i > 0 ? lines[i - 1] : "")
                 guard !around.contains("Image(systemName"), !around.contains("system face") else { continue }

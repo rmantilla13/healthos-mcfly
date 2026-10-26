@@ -57,12 +57,11 @@ struct SignInView: View {
             }
             Button(action: submit) {
                 Group {
-                    if busy { ProgressView() } else { Text("Sign in").font(.app(.body, weight: .bold)) }
+                    if busy { ProgressView().tint(Palette.accentInk) } else { Text("Sign in") }
                 }
                 .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
+            .buttonStyle(.accentPill)
             .disabled(!ready || busy)
             .accessibilityIdentifier("signIn")
             if dashboard.usesAccounts {

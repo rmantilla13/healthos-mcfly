@@ -28,9 +28,7 @@ struct Collapsible<Content: View>: View {
                 withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { open.toggle() }
             } label: {
                 HStack(spacing: 12) {
-                    if let systemImage {
-                        Image(systemName: systemImage).font(.app(.body)).foregroundStyle(Palette.accentText).frame(width: 22)
-                    }
+                    if let systemImage { RowIcon(systemName: systemImage, width: 22) }
                     VStack(alignment: .leading, spacing: 4) {
                         Text(title).font(.app(.subheadline, weight: .medium)).foregroundStyle(Palette.accentText)
                         if let meta, !meta.isEmpty { Text(meta).font(.app(.caption)).foregroundStyle(Palette.ink3) }

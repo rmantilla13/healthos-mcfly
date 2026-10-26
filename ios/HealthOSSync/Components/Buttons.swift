@@ -71,3 +71,16 @@ extension ButtonStyle where Self == QuietPillStyle {
     static var quietPill: QuietPillStyle { QuietPillStyle() }
     static func quietPill(size: PillSize) -> QuietPillStyle { QuietPillStyle(size: size) }
 }
+
+/// The web's switch (.switch): green when on (--good), in light and dark alike. It's the system's own switch, so it keeps
+/// its feel, haptics and VoiceOver; only its colour is the web's. The app's tint (sage words in dark mode) would make a
+/// pale track the white knob barely shows on. Set for the whole app at the root, and in SheetScaffold.
+struct AppSwitchStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Toggle(configuration).toggleStyle(.switch).tint(Palette.good)
+    }
+}
+
+extension ToggleStyle where Self == AppSwitchStyle {
+    static var appSwitch: AppSwitchStyle { AppSwitchStyle() }
+}

@@ -50,7 +50,9 @@ enum Palette {
     static let focus = ColorToken.focus.color
     static let navDot = ColorToken.navDot.color
     /// The app's tint: the forest accent. In dark mode it's the accent's text step (--accent-text), as the web uses for
-    /// words: the dark accent itself (#4d6b5a) reads under 3:1 as button text on the dark surface.
+    /// words: the dark accent itself (#4d6b5a) reads under 3:1 as button text on the dark surface. So it's for words and
+    /// marks only, never a fill: white on its dark-mode sage reads under 2:1. A filled button is `.accentPill` (the
+    /// accent gradient, white words) and a switch is green (`AppSwitchStyle`), as on the web.
     static let tint = Themed(ColorToken.accent.value.light, ColorToken.accentText.value.dark).color
 
     /// A chosen option (radio cards, chips): a sage edge over a faint green wash (GradientToken.choiceWash).
@@ -186,8 +188,11 @@ struct CardStyle: ViewModifier {
     var tint: CardTint = .plain
 
     func body(content: Content) -> some View {
+        // The web's .card padding, which its phone layout keeps.
         content
-            .padding(16)
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
+            .padding(.bottom, 18)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background { CardSurface(tint: tint, shape: RoundedRectangle(cornerRadius: Radius.card, style: .continuous)) }
     }

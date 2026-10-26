@@ -14,34 +14,9 @@ struct ProfileScreen: View {
     var body: some View {
         // One section per view: a single Form builder this size is too slow for the Release type checker.
         Form {
-            ServerSection()
-            if dashboard.phase == .ready { PhotoSection() }
-            // Servers with card hiding name the list (nil from older ones, where every card shows).
-            if dashboard.phase == .ready, dashboard.cardsAvailable { CardsSection() }
-            // Servers with the Family board name the setting; it needs sign-in, so each person has their own account.
-            if dashboard.phase == .ready, dashboard.status?.settings?.familySharing != nil, dashboard.authMode != "open" { FamilySection() }
-            if dashboard.phase == .ready, let mode = dashboard.nutritionMode, mode != .none { NutritionTargetsSection(mode: mode) }
-            SyncSection()
-            HealthSection()
-            if dashboard.phase == .ready || DigestNotifications.enabled { DigestSection() }
-            #if targetEnvironment(simulator)
-            Section {
-                Button("Add sample Health data") { confirmSample = true }
-                    .disabled(model.working)
-                    .accessibilityIdentifier("addSampleData")
-            } header: {
-                Text("Simulator")
-            } footer: {
-                Text("Fake data for testing. Use a scratch server only, never your real dashboard.")
-            }
-            #endif
-            Section {
-                Button("Upload all history again", role: .destructive) { confirmReupload = true }
-                    .disabled(model.syncing)
-            } footer: {
-                Text("Use this after clearing Apple Health data on the server, or after deleting old entries in Health.")
-            }
+            Group { sections }.appFormRows()
         }
+        .appForm()
         .keyboardDismissal()
         .alert(model.notice ?? "", isPresented: noticeShown) {
             Button("OK", role: .cancel) {}
@@ -59,6 +34,37 @@ struct ProfileScreen: View {
             Text("Every day back to \"\(model.history.label)\" is read from Health and sent again. Nothing is deleted.")
         }
         .onDisappear { Task { await dashboard.startIfNeeded() } }
+    }
+
+    @ViewBuilder
+    private var sections: some View {
+        ServerSection()
+        if dashboard.phase == .ready { PhotoSection() }
+        // Servers with card hiding name the list (nil from older ones, where every card shows).
+        if dashboard.phase == .ready, dashboard.cardsAvailable { CardsSection() }
+        // Servers with the Family board name the setting; it needs sign-in, so each person has their own account.
+        if dashboard.phase == .ready, dashboard.status?.settings?.familySharing != nil, dashboard.authMode != "open" { FamilySection() }
+        if dashboard.phase == .ready, let mode = dashboard.nutritionMode, mode != .none { NutritionTargetsSection(mode: mode) }
+        SyncSection()
+        HealthSection()
+        if dashboard.phase == .ready || DigestNotifications.enabled { DigestSection() }
+        #if targetEnvironment(simulator)
+        Section {
+            Button("Add sample Health data") { confirmSample = true }
+                .disabled(model.working)
+                .accessibilityIdentifier("addSampleData")
+        } header: {
+            Text("Simulator")
+        } footer: {
+            Text("Fake data for testing. Use a scratch server only, never your real dashboard.")
+        }
+        #endif
+        Section {
+            Button("Upload all history again", role: .destructive) { confirmReupload = true }
+                .disabled(model.syncing)
+        } footer: {
+            Text("Use this after clearing Apple Health data on the server, or after deleting old entries in Health.")
+        }
     }
 
     private var noticeShown: Binding<Bool> {
@@ -337,33 +343,37 @@ struct CardsScreen: View {
         let offeredHidden = Cards.hiddenOffered(Set(dashboard.hiddenCards), nutrition: nutrition, optionalCards: optional)
         let defaultsHidden = Cards.hiddenDefaults(dashboard.hiddenCards, optionalCards: optional)
         Form {
-            Section {
-                Text("Choose the cards you see on Home, Sleep\(nutrition ? ", Body and Nutrition" : " and Body"). Hiding one only changes the page; your data stays, and an unhidden card comes back as it was.\(optional ? " Optional cards stay off until you turn them on." : "") The web dashboard follows the same choices.")
-                    .font(.app(.footnote))
-                    .foregroundStyle(.secondary)
-                    .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets(top: 4, leading: 4, bottom: 4, trailing: 4))
-                if let error {
-                    Text(error).font(.app(.footnote)).foregroundStyle(.red)
+            Group {
+                Section {
+                    Text("Choose the cards you see on Home, Sleep\(nutrition ? ", Body and Nutrition" : " and Body"). Hiding one only changes the page; your data stays, and an unhidden card comes back as it was.\(optional ? " Optional cards stay off until you turn them on." : "") The web dashboard follows the same choices.")
+                        .font(.app(.footnote))
+                        .foregroundStyle(.secondary)
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets(top: 4, leading: 4, bottom: 4, trailing: 4))
+                    if let error {
+                        Text(error).font(.app(.footnote)).foregroundStyle(.red)
+                    }
                 }
-            }
-            // A server older than optional cards gets only the cards it knows: it refuses the newer ones.
-            ForEach(Cards.pages(nutrition: nutrition, optionalCards: optional)) { group in
-                Section(group.page.label) {
-                    ForEach(group.cards) { card in
-                        Toggle(isOn: Binding(get: { dashboard.cardShown(card.id) }, set: { set(card.id, shown: $0) })) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(Cards.label(card, optionalCards: optional))
-                                Text(note(for: card, optional: optional && card.optional))
-                                    .font(.app(.footnote))
-                                    .foregroundStyle(.secondary)
+                // A server older than optional cards gets only the cards it knows: it refuses the newer ones.
+                ForEach(Cards.pages(nutrition: nutrition, optionalCards: optional)) { group in
+                    Section(group.page.label) {
+                        ForEach(group.cards) { card in
+                            Toggle(isOn: Binding(get: { dashboard.cardShown(card.id) }, set: { set(card.id, shown: $0) })) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(Cards.label(card, optionalCards: optional))
+                                    Text(note(for: card, optional: optional && card.optional))
+                                        .font(.app(.footnote))
+                                        .foregroundStyle(.secondary)
+                                }
                             }
+                            .accessibilityIdentifier("card-\(card.id)")
                         }
-                        .accessibilityIdentifier("card-\(card.id)")
                     }
                 }
             }
+            .appFormRows()
         }
+        .appForm()
         .navigationTitle("Cards")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

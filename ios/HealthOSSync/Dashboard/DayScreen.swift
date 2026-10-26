@@ -534,14 +534,14 @@ private struct HoursAxes: ViewModifier {
                 .chartYAxis {
                     AxisMarks(position: .leading, values: ticks) { v in
                         AxisGridLine().foregroundStyle(Palette.grid)
-                        AxisValueLabel { if let n = v.as(Double.self) { Text(format(n)) } }.font(.app(.caption2))
+                        AxisValueLabel { if let n = v.as(Double.self) { Text(format(n)) } }.font(.axis)
                     }
                 }
                 // Labels sit just after their hour, as in Health; the day's end needs none.
                 .chartXAxis {
                     AxisMarks(values: [0.0, 6, 12, 18]) { v in
                         AxisTick().foregroundStyle(Palette.grid)
-                        AxisValueLabel { Text(DayMath.clock(Int(v.as(Double.self) ?? 0))) }.font(.app(.caption2))
+                        AxisValueLabel { Text(DayMath.clock(Int(v.as(Double.self) ?? 0))) }.font(.axis)
                             .foregroundStyle(Palette.ink3)
                     }
                 }

@@ -200,7 +200,7 @@ private struct SensorCard: View {
             .chartYAxis {
                 AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { _ in
                     AxisGridLine().foregroundStyle(Palette.grid)
-                    AxisValueLabel().font(.app(.caption2)).foregroundStyle(Palette.ink3)
+                    AxisValueLabel().font(.axis).foregroundStyle(Palette.ink3)
                 }
             }
             .frame(height: 120)

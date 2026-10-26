@@ -380,11 +380,11 @@ private struct ScatterCard: View {
         .chartYScale(domain: Self.padded(ys))
         .chartXAxis { AxisMarks(values: .automatic(desiredCount: 4)) { value in
             AxisGridLine().foregroundStyle(Palette.grid)
-            AxisValueLabel { if let v = value.as(Double.self) { Text(xText(v)) } }.font(.app(.caption2)).foregroundStyle(Palette.ink3)
+            AxisValueLabel { if let v = value.as(Double.self) { Text(xText(v)) } }.font(.axis).foregroundStyle(Palette.ink3)
         } }
         .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { _ in
             AxisGridLine().foregroundStyle(Palette.grid)
-            AxisValueLabel().font(.app(.caption2)).foregroundStyle(Palette.ink3)
+            AxisValueLabel().font(.axis).foregroundStyle(Palette.ink3)
         } }
         .chartXAxisLabel(position: .bottom, alignment: .center) { Text(xLabel).font(.app(.caption2)).foregroundStyle(Palette.ink3) }
         .chartYAxisLabel(position: .leading, alignment: .center) { Text(yLabel).font(.app(.caption2)).foregroundStyle(Palette.ink3) }

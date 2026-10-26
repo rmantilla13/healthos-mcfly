@@ -252,7 +252,7 @@ private struct SleepTrends: View {
                     .chartLegend(position: .bottom, alignment: .leading) { ChartLegend(SleepTrends.stages.map { ($0.label, $0.color) }) }
                     .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { v in
                         AxisGridLine().foregroundStyle(Palette.grid)
-                        AxisValueLabel { if let h = v.as(Double.self) { Text("\(Fmt.number(h))h") } }.font(.app(.caption2))
+                        AxisValueLabel { if let h = v.as(Double.self) { Text("\(Fmt.number(h))h") } }.font(.axis)
                     } }
                     .chartXAxis { dateAxis() }
                     .frame(height: 200)
@@ -317,7 +317,7 @@ private struct ActivityTrends: View {
                     }
                     .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { v in
                         AxisGridLine().foregroundStyle(Palette.grid)
-                        AxisValueLabel { if let n = v.as(Double.self) { Text(Fmt.compact(n)) } }.font(.app(.caption2))
+                        AxisValueLabel { if let n = v.as(Double.self) { Text(Fmt.compact(n)) } }.font(.axis)
                     } }
                     .chartXAxis { dateAxis() }
                     .frame(height: 200)
@@ -537,7 +537,7 @@ struct TrendCard: View {
         .chartXSelection(value: $selected)
         .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { _ in
             AxisGridLine().foregroundStyle(Palette.grid)
-            AxisValueLabel().font(.app(.caption2)).foregroundStyle(Palette.ink3)
+            AxisValueLabel().font(.axis).foregroundStyle(Palette.ink3)
         } }
         .chartXAxis { dateAxis() }
         .accessibilityLabel(smoothed == nil ? "\(title) trend" : "\(title) trend, each reading with a 7-day average line")
@@ -546,6 +546,6 @@ struct TrendCard: View {
 
 private func dateAxis() -> some AxisContent {
     AxisMarks(values: .automatic(desiredCount: 4)) { _ in
-        AxisValueLabel(format: .dateTime.month(.abbreviated).day()).font(.app(.caption2)).foregroundStyle(Palette.ink3)
+        AxisValueLabel(format: .dateTime.month(.abbreviated).day()).font(.axis).foregroundStyle(Palette.ink3)
     }
 }

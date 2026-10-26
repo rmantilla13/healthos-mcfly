@@ -84,11 +84,9 @@ struct FoodLogTab<Header: View>: View {
             .listRowBackground(Palette.surface)
             Button { adding = true } label: {
                 Label("Add food or drink", systemImage: "plus")
-                    .font(.app(.subheadline, weight: .semibold))
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 4)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.accentPill)
             .listRowBackground(Palette.surface)
             .accessibilityIdentifier("addFood")
             if !log.drafts.isEmpty {
