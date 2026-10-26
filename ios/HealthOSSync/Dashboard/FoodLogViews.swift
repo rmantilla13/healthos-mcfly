@@ -165,6 +165,8 @@ struct FoodEntryRow: View {
     let units: Units
     @Environment(Dashboard.self) private var dashboard
     @Environment(\.dynamicTypeSize) private var typeSize
+    /// The time's column: the web's 44 at the usual size, growing with the time's own text.
+    @ScaledMetric(relativeTo: .caption) private var timeColumn: CGFloat = 44
     @State private var editing = false
     @State private var confirming = false
     @State private var error: String?
@@ -179,8 +181,9 @@ struct FoodEntryRow: View {
                 }
             } else {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    // On one line at every size below the accessibility ones ("08:05", never "08:0" over "5").
-                    time.fixedSize().frame(minWidth: 44, alignment: .leading)
+                    // On one line at every size below the accessibility ones ("08:05", never "08:0" over "5"), in a
+                    // column that grows with it, so the names still line up.
+                    time.fixedSize().frame(minWidth: timeColumn, alignment: .leading)
                     text.frame(maxWidth: .infinity, alignment: .leading)
                     actions
                 }
