@@ -1,3 +1,4 @@
+import Accessibility
 import ImageIO
 import Observation
 import UIKit
@@ -98,6 +99,9 @@ final class PortraitStudioModel {
     private(set) var thumbs: [String: UIImage] = [:]
     /// Goes up with each photo added and each portrait put to use, for the success haptic.
     private(set) var successes = 0
+    /// The last thing to say to VoiceOver: what went wrong, a step of Use, or that a portrait is being made, as the web
+    /// reads out its role="alert" and role="status" lines.
+    private(set) var spoken: Spoken?
     /// Set by the view once it has the dashboard.
     var service: PortraitService?
     /// Each read's number, so an older answer never replaces a newer one.
@@ -171,9 +175,20 @@ final class PortraitStudioModel {
     }
 
     private func apply(_ answer: PortraitList) {
+        // One starts being made while the studio is open (not one already being made when it opened): said once, as
+        // the web's tile reads out its status.
+        let started = list != nil && !making
         list = answer
         let ids = Set(answer.portraits.map(\.id))
         thumbs = thumbs.filter { ids.contains($0.key) }
+        if started, making { say(PortraitWords.pending) }
+    }
+
+    private func say(_ text: String, urgent: Bool = false) { spoken = Spoken(text: text, urgent: urgent, after: spoken) }
+
+    private func step(_ p: Portrait, _ words: String) {
+        using = Using(id: p.id, step: words)
+        say(words)
     }
 
     /// A ready photo's image, shrunk to `maxPixel` on its long side, for its tile. Fetched once; one that's gone, or
@@ -196,8 +211,13 @@ final class PortraitStudioModel {
             try await work()
         } catch {
             if PortraitWords.cancelled(error) { return }
-            note = PortraitWords.message(error)
+            setNote(PortraitWords.message(error))
         }
+    }
+
+    private func setNote(_ words: String) {
+        note = words
+        say(words, urgent: true)
     }
 
     /// Adds a reference photo: shrunk on the phone as the web does (PhotoPipeline.reference), then kept.
@@ -214,7 +234,7 @@ final class PortraitStudioModel {
     }
 
     /// A photo the picker couldn't hand over as an image.
-    func notAnImage() { note = PortraitWords.notAnImage }
+    func notAnImage() { setNote(PortraitWords.notAnImage) }
 
     /// Make my portrait: the server starts it and answers at once; the list then shows it being made.
     func make(from ref: Portrait) async {
@@ -247,7 +267,7 @@ final class PortraitStudioModel {
     func use(_ p: Portrait) async {
         guard let service, !locked else { return }
         failed = nil
-        using = Using(id: p.id, step: PortraitWords.loadingPortrait)
+        step(p, PortraitWords.loadingPortrait)
         defer { using = nil }
         do {
             let data: Data
@@ -255,13 +275,13 @@ final class PortraitStudioModel {
                 if PortraitWords.cancelled(error) { throw error }
                 throw PortraitWords.Failure(PortraitWords.couldNotLoad)
             }
-            using = Using(id: p.id, step: PortraitWords.cuttingOut)
+            step(p, PortraitWords.cuttingOut)
             let cut: PhotoCutout
             do { cut = try await service.cutOut(data) } catch {
                 if PortraitWords.cancelled(error) { throw error }
                 throw PortraitWords.Failure(PortraitWords.cutOutFailure(error))
             }
-            using = Using(id: p.id, step: PortraitWords.saving)
+            step(p, PortraitWords.saving)
             do { try await service.upload(cut) } catch {
                 if PortraitWords.cancelled(error) { throw error }
                 throw PortraitWords.Failure(PortraitWords.uploadFailure(error))
@@ -272,7 +292,9 @@ final class PortraitStudioModel {
             await service.photoChanged()
         } catch {
             if PortraitWords.cancelled(error) { return }
-            failed = Failed(id: p.id, text: PortraitWords.message(error))
+            let words = PortraitWords.message(error)
+            failed = Failed(id: p.id, text: words)
+            say(words, urgent: true)
         }
         await read()
     }
@@ -292,6 +314,27 @@ enum PortraitImages {
             kCGImageSourceShouldCacheImmediately: true,
         ]
         return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary).map { UIImage(cgImage: $0) }
+    }
+}
+
+/// Something to say to VoiceOver as it happens, as a screen reader reads out the web's role="alert" (`urgent`: what
+/// went wrong, said over anything else) and role="status" lines (a step, a state). Each is new, so the same words
+/// said twice are said again.
+struct Spoken: Equatable {
+    let text: String
+    let urgent: Bool
+    let id: Int
+
+    init(text: String, urgent: Bool, after last: Spoken?) {
+        self.text = text
+        self.urgent = urgent
+        id = (last?.id ?? 0) + 1
+    }
+
+    @MainActor func post() {
+        var words = AttributedString(text)
+        words.accessibilitySpeechAnnouncementPriority = urgent ? .high : .default
+        AccessibilityNotification.Announcement(words).post()
     }
 }
 

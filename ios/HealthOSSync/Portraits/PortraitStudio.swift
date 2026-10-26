@@ -29,6 +29,9 @@ struct PortraitStudio: View {
             .task { await dashboard.loadAI() }
             .task(id: model.making) { await model.poll() }
             .sensoryFeedback(.success, trigger: model.successes)
+            // What the web's role="alert" and role="status" lines read out: a refusal, a failed Use, Use's steps, one
+            // being made.
+            .onChange(of: model.spoken) { _, spoken in spoken?.post() }
             .confirmationDialog(PortraitWords.add, isPresented: $askSource, titleVisibility: .hidden) {
                 Button("Choose a photo") { pickerShown = true }
                 Button("Take a photo") { cameraShown = true }

@@ -11,7 +11,7 @@ struct PhotoSection: View {
 
     var body: some View {
         if let person = dashboard.signedInPerson {
-            PhotoAsIs(person: person).id(person)
+            PhotoAsIs(dashboard: dashboard, person: person).id(person)
         }
     }
 }
@@ -67,22 +67,167 @@ extension APIClient {
     }
 }
 
-private struct PhotoAsIs: View {
-    /// Whose it is: a save or a remove checks they're still the one signed in before it's sent.
-    let person: String
-    @Environment(Dashboard.self) private var dashboard
-    @State private var item: PhotosPickerItem?
+/// What "Use a photo as is" asks the server and the phone for, so a test can stand in for each (`live` is the app's).
+struct PhotoAsIsService {
+    /// The person it's for is still the one signed in, on the same server; a CancellationError otherwise.
+    var still: @MainActor () throws -> Void
+    /// The on-device cut-out (PhotoCutout, Apple Vision), off the main thread.
+    var cutOut: @MainActor (Data) async throws -> PhotoCutout
+    /// POST /api/profile/photo/upload.
+    var upload: @MainActor (PhotoCutout) async throws -> Void
+    /// POST /api/profile/photo/clear: the status, now without a photo.
+    var clear: @MainActor () async throws -> ServerStatus
+    /// Shows a status the server answered with (`Dashboard.showChanged`).
+    var showChanged: @MainActor (ServerStatus) -> Void
+    /// Forgets the photo's copies kept on this phone (ProfileImages).
+    var forgetImages: @MainActor () -> Void
+    /// The photo changed: read the dashboard again, as the web's notifyDataChanged.
+    var reload: @MainActor () async -> Void
+
+    /// The app's, for `person`: nothing goes out, and no answer is shown, once they've signed out or someone else has
+    /// signed in.
+    @MainActor static func live(_ dashboard: Dashboard, for person: String) -> PhotoAsIsService {
+        PhotoAsIsService(
+            still: { try SignedInPerson.check(dashboard, is: person) },
+            cutOut: { data in try await Task.detached(priority: .userInitiated) { try PhotoCutout.process(data) }.value },
+            upload: { photo in try await PhotoPreview.upload(photo, dashboard, for: person) },
+            clear: { try await dashboard.fetch { try await $0.clearPhoto() } },
+            showChanged: { dashboard.showChanged($0) },
+            forgetImages: { ProfileImages.clear() },
+            reload: { if (try? SignedInPerson.check(dashboard, is: person)) != nil { await dashboard.load() } })
+    }
+}
+
+/// "Use a photo as is"'s state and steps (Profile.tsx PhotoSettings): cutting a photo out, the preview, saving it and
+/// removing the one there is. What it holds is one person's, in memory only.
+@MainActor
+@Observable
+final class PhotoAsIsModel {
     /// Cutting out, saving or removing.
-    @State private var busy = false
-    @State private var step: String?
-    @State private var preview: PhotoCutout?
-    @State private var error: String?
+    private(set) var busy = false
+    /// The step's words while cutting out.
+    private(set) var step: String?
+    /// How the cut-out came out, before it's saved.
+    private(set) var preview: PhotoCutout?
+    /// What went wrong, in the web's words.
+    private(set) var error: String?
+    /// The last thing to say to VoiceOver: the step, or what went wrong.
+    private(set) var spoken: Spoken?
+    let service: PhotoAsIsService
+
+    init(service: PhotoAsIsService) { self.service = service }
+
+    private func say(_ text: String, urgent: Bool = false) { spoken = Spoken(text: text, urgent: urgent, after: spoken) }
+
+    private func fail(_ words: String) {
+        error = words
+        say(words, urgent: true)
+    }
+
+    /// Cuts out a chosen photo here, for the preview. `load` reads the photo from the picker (nil: it couldn't).
+    func process(_ load: () async throws -> Data?) async {
+        error = nil
+        busy = true
+        step = PortraitWords.cuttingOut
+        say(PortraitWords.cuttingOut)
+        defer {
+            busy = false
+            step = nil
+        }
+        do {
+            guard let data = try await load() else { throw PhotoCutout.Failure(message: PhotoWords.couldNotLoad) }
+            preview = try await service.cutOut(data)
+        } catch {
+            if !APIClient.isCancellation(error) { fail(PhotoWords.cutOutFailure(error)) }
+        }
+    }
+
+    /// Save photo: the preview becomes the profile photo, and the dashboard is read again.
+    func save() async {
+        guard let preview, !busy else { return }
+        busy = true
+        error = nil
+        defer { busy = false }
+        do {
+            try await service.upload(preview)
+            self.preview = nil
+            await service.reload()
+        } catch {
+            if !APIClient.isCancellation(error) { fail(PhotoWords.saveFailure(error)) }
+        }
+    }
+
+    /// Cancel: the preview goes, nothing saved.
+    func cancel() { preview = nil }
+
+    /// Remove photo: it goes from Home, Body, the avatar and the Family board, and the copies kept on this phone go
+    /// with it. Only for the person it was opened for, and their answer is shown only while they're still signed in.
+    func remove() async {
+        guard !busy else { return }
+        busy = true
+        error = nil
+        defer { busy = false }
+        do {
+            try service.still()
+            let status = try await service.clear()
+            try service.still()
+            service.showChanged(status)
+            service.forgetImages()
+        } catch {
+            if !APIClient.isCancellation(error) { fail(PortraitWords.message(error)) }
+        }
+    }
+}
+
+/// The live section for the person signed in: the picker, the cut-out saved now (fetched into memory), and its model.
+private struct PhotoAsIs: View {
+    let dashboard: Dashboard
+    @State private var model: PhotoAsIsModel
+    @State private var item: PhotosPickerItem?
     /// The cut-out saved now, as the server keeps it (not the dashboard's grade), in memory only.
     @State private var current: UIImage?
-    @Environment(\.dynamicTypeSize) private var typeSize
+
+    /// For `person`: a save or a remove checks they're still the one signed in before it's sent.
+    init(dashboard: Dashboard, person: String) {
+        self.dashboard = dashboard
+        _model = State(initialValue: PhotoAsIsModel(service: .live(dashboard, for: person)))
+    }
 
     var body: some View {
         let photo = dashboard.status?.photo
+        PhotoAsIsContent(model: model, hasPhoto: photo != nil, current: current, item: $item)
+            // Read out as it happens: the step, or what went wrong.
+            .onChange(of: model.spoken) { _, spoken in spoken?.post() }
+            .onChange(of: item) { _, picked in
+                guard let picked else { return }
+                Task {
+                    await model.process { try await picked.loadTransferable(type: Data.self) }
+                    item = nil
+                }
+            }
+            .task(id: photo?.versionKey) { await loadCurrent(photo) }
+    }
+
+    private func loadCurrent(_ photo: PhotoMeta?) async {
+        current = nil
+        guard let photo else { return }
+        let data = try? await dashboard.fetch { try await $0.profileImage("cutout.png", version: photo.versionKey) }
+        guard let data else { return }
+        current = await Task.detached(priority: .utility) { PortraitImages.thumbnail(data, maxPixel: 480) }.value
+    }
+}
+
+/// What "Use a photo as is" shows for its model (no dashboard needed, so tests can draw it): the title and line; the
+/// cut-out saved now beside the dashed choose area (above it at the accessibility text sizes, so neither is squeezed),
+/// or the preview with Save photo and Cancel; what went wrong; and Remove photo.
+struct PhotoAsIsContent: View {
+    let model: PhotoAsIsModel
+    let hasPhoto: Bool
+    let current: UIImage?
+    @Binding var item: PhotosPickerItem?
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(PhotoWords.title)
@@ -96,39 +241,33 @@ private struct PhotoAsIs: View {
                     .lineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            if let preview {
-                PhotoPreviewRow(photo: preview, saving: busy, save: { Task { await save(preview) } }, cancel: { self.preview = nil })
+            if let preview = model.preview {
+                PhotoPreviewRow(photo: preview, saving: model.busy, save: { Task { await model.save() } }, cancel: { model.cancel() })
             } else {
-                // The cut-out above the choose area at the accessibility text sizes, so neither is squeezed.
                 let row = typeSize.isAccessibilitySize
                     ? AnyLayout(VStackLayout(alignment: .leading, spacing: 16))
                     : AnyLayout(HStackLayout(alignment: .top, spacing: 16))
                 row {
-                    if photo != nil { CutoutFrame(image: current, label: PhotoWords.current) }
-                    dropzone(hasPhoto: photo != nil)
+                    if hasPhoto { CutoutFrame(image: current, label: PhotoWords.current) }
+                    dropzone
                 }
             }
-            if let error { BadNote(text: error) }
-            if photo != nil, !busy, preview == nil {
-                Button(PhotoWords.remove) { Task { await remove() } }
+            if let error = model.error { BadNote(text: error) }
+            if hasPhoto, !model.busy, model.preview == nil {
+                Button(PhotoWords.remove) { Task { await model.remove() } }
                     .buttonStyle(QuietTextStyle())
                     .frame(maxWidth: .infinity)
                     .accessibilityIdentifier("photo.remove")
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .onChange(of: item) { _, picked in
-            guard let picked else { return }
-            Task { await process(picked) }
-        }
-        .task(id: photo?.versionKey) { await loadCurrent(photo) }
     }
 
     /// .dropzone: a dashed box with the choose pill, or the step while it works.
-    private func dropzone(hasPhoto: Bool) -> some View {
+    private var dropzone: some View {
         VStack(spacing: 10) {
-            if busy {
-                Text(step ?? "Working…").font(.app(.footnote)).foregroundStyle(Palette.ink2).multilineTextAlignment(.center)
+            if model.busy {
+                Text(model.step ?? "Working…").font(.app(.footnote)).foregroundStyle(Palette.ink2).multilineTextAlignment(.center)
             } else {
                 Image(systemName: "square.and.arrow.up").font(.system(size: 20)).foregroundStyle(Palette.ink2).accessibilityHidden(true)
                 PhotosPicker(selection: $item, matching: .images, photoLibrary: .shared()) {
@@ -141,60 +280,6 @@ private struct PhotoAsIs: View {
         .padding(20)
         .frame(maxWidth: .infinity, minHeight: 150)
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Palette.axis, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])))
-    }
-
-    private func loadCurrent(_ photo: PhotoMeta?) async {
-        current = nil
-        guard let photo else { return }
-        let data = try? await dashboard.fetch { try await $0.profileImage("cutout.png", version: photo.versionKey) }
-        guard let data else { return }
-        current = await Task.detached(priority: .utility) { PortraitImages.thumbnail(data, maxPixel: 480) }.value
-    }
-
-    private func process(_ picked: PhotosPickerItem) async {
-        error = nil
-        busy = true
-        step = PortraitWords.cuttingOut
-        defer {
-            busy = false
-            step = nil
-            item = nil
-        }
-        do {
-            guard let data = try await picked.loadTransferable(type: Data.self) else { throw PhotoCutout.Failure(message: PhotoWords.couldNotLoad) }
-            preview = try await Task.detached(priority: .userInitiated) { try PhotoCutout.process(data) }.value
-        } catch {
-            if !APIClient.isCancellation(error) { self.error = PhotoWords.cutOutFailure(error) }
-        }
-    }
-
-    private func save(_ photo: PhotoCutout) async {
-        busy = true
-        error = nil
-        defer { busy = false }
-        do {
-            try await PhotoPreview.upload(photo, dashboard, for: person)
-            preview = nil
-            await dashboard.load()
-        } catch {
-            if !APIClient.isCancellation(error) { self.error = PhotoWords.saveFailure(error) }
-        }
-    }
-
-    /// The photo goes from Home, Body, the avatar and the Family board; the copies kept on this phone go with it.
-    private func remove() async {
-        busy = true
-        error = nil
-        defer { busy = false }
-        do {
-            try SignedInPerson.check(dashboard, is: person)
-            let status = try await dashboard.fetch { try await $0.clearPhoto() }
-            dashboard.showChanged(status)
-            ProfileImages.clear()
-            current = nil
-        } catch {
-            if !APIClient.isCancellation(error) { self.error = PortraitWords.message(error) }
-        }
     }
 }
 

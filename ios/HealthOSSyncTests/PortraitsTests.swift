@@ -484,6 +484,60 @@ final class PortraitsTests: XCTestCase {
         XCTAssertTrue(process.contains("Couldn't separate you from the background."))
     }
 
+    // MARK: Read out as it happens
+
+    func testVoiceOverHearsWhatTheWebReadsOut() async throws {
+        let studio = try web("src/components/portraits/PortraitStudio.tsx")
+        // The web's live lines: a refusal and a failed Use are alerts; Use's steps and one being made, statuses.
+        XCTAssertTrue(studio.contains(#"<p className="note-bad" role="alert">"#))
+        XCTAssertTrue(studio.contains(#"<p className="portrait-tile-state is-bad" role="alert">"#))
+        XCTAssertEqual(studio.components(separatedBy: #"<p className="portrait-tile-state" role="status">"#).count - 1, 2)
+
+        // A refusal: said at once, over anything else.
+        let words = "You've made 10 portraits today, the most in a day. Try again tomorrow."
+        let refusedLog = Log()
+        let refused = await model(refusedLog, list: try settledList(), generate: { throw APIClient.error(status: 429, message: words, path: "/portraits/generate") })
+        XCTAssertNil(refused.spoken, "nothing said on opening")
+        await refused.make(from: refused.references[0])
+        XCTAssertEqual(refused.spoken?.text, words)
+        XCTAssertEqual(refused.spoken?.urgent, true)
+        // The same refusal again is said again.
+        let first = try XCTUnwrap(refused.spoken)
+        await refused.make(from: refused.references[0])
+        XCTAssertNotEqual(refused.spoken, first)
+        XCTAssertEqual(refused.spoken?.text, words)
+
+        // Use: each step as it starts, then a failure as an alert.
+        let log = Log()
+        let list = try settledList()
+        var said: [String] = []
+        let m = PortraitStudioModel()
+        m.service = service(log, list: { list }, model: { [weak m] in
+            if let s = m?.spoken { said.append(s.text) }
+            return m
+        }, image: { _ in Data([1]) }, cutOut: { self.cutout() }, upload: { throw APIError.network("Can't reach localhost.") })
+        await m.read()
+        await m.use(try XCTUnwrap(list.portraits.first { $0.id == "made-ready" }))
+        XCTAssertEqual(said, [PortraitWords.loadingPortrait, PortraitWords.cuttingOut, PortraitWords.saving])
+        XCTAssertEqual(m.spoken?.text, PortraitWords.unreachable)
+        XCTAssertEqual(m.spoken?.urgent, true)
+
+        // One starts being made: said once, as a status; one already being made when the studio opened isn't.
+        let pendingList = try studioList()
+        var answers = [list, pendingList]
+        let makeLog = Log()
+        let maker = PortraitStudioModel()
+        maker.service = service(makeLog, list: { answers.count > 1 ? answers.removeFirst() : answers[0] }, model: { nil })
+        await maker.read()
+        XCTAssertNil(maker.spoken)
+        await maker.make(from: maker.references[0])
+        XCTAssertEqual(maker.spoken?.text, PortraitWords.pending)
+        XCTAssertEqual(maker.spoken?.urgent, false)
+        let opened = await model(Log(), list: pendingList)
+        XCTAssertTrue(opened.making)
+        XCTAssertNil(opened.spoken, "already being made when it opened")
+    }
+
     // MARK: Whose answers count
 
     func testAnAnswerForSomeoneElseTellsAvailabilityNothing() throws {
@@ -518,6 +572,108 @@ final class PortraitsTests: XCTestCase {
         XCTAssertNotEqual(PortraitPhotosSection.readKey(generation: 3, photo: nil, welcomeOpen: false, ownOpenAIKey: false), now, "the photo removed")
         XCTAssertNotEqual(PortraitPhotosSection.readKey(generation: 4, photo: "1761300000000", welcomeOpen: false, ownOpenAIKey: false), now, "a load")
         XCTAssertEqual(PortraitPhotosSection.readKey(generation: 3, photo: "1761300000000", welcomeOpen: false, ownOpenAIKey: false), now)
+    }
+
+    // MARK: Use a photo as is: removing and saving
+
+    private func photoModel(_ log: Log, still: @escaping () throws -> Void = {}, clear: @escaping () throws -> ServerStatus = { try PortraitsTests.noPhoto() },
+                            cutOut: @escaping (Data) throws -> PhotoCutout = { _ in throw PhotoCutout.Failure(message: "unused") },
+                            upload: @escaping () throws -> Void = {}) -> PhotoAsIsModel {
+        PhotoAsIsModel(service: PhotoAsIsService(
+            still: { log.calls.append("still"); try still() },
+            cutOut: { data in log.calls.append("cutOut"); return try cutOut(data) },
+            upload: { _ in log.calls.append("upload"); try upload() },
+            clear: { log.calls.append("clear"); return try clear() },
+            showChanged: { status in log.calls.append(status.photo == nil ? "show no photo" : "show a photo") },
+            forgetImages: { log.calls.append("forget images") },
+            reload: { log.calls.append("reload") }))
+    }
+
+    nonisolated private static func noPhoto() throws -> ServerStatus {
+        try JSONDecoder().decode(ServerStatus.self, from: Data(#"{"settings":{"perspective":"portrait"}}"#.utf8))
+    }
+
+    func testRemovePhotoClearsItShowsTheAnswerAndForgetsTheCopies() async throws {
+        // The web: POST /profile/photo/clear, then the status read again and every view told.
+        XCTAssertTrue(try web("src/pages/Profile.tsx").contains("await sendJson('POST', '/profile/photo/clear');"))
+        let log = Log()
+        let m = photoModel(log)
+        await m.remove()
+        XCTAssertEqual(log.calls, ["still", "clear", "still", "show no photo", "forget images"])
+        XCTAssertNil(m.error)
+        XCTAssertFalse(m.busy)
+
+        // Refused: the server's words, and the copies on the phone stay with the photo that stays.
+        let refusedLog = Log()
+        let refused = photoModel(refusedLog, clear: { throw APIClient.error(status: 500, message: "Something went wrong", path: "/profile/photo/clear") })
+        await refused.remove()
+        XCTAssertEqual(refusedLog.calls, ["still", "clear"])
+        XCTAssertEqual(refused.error, "Something went wrong")
+        XCTAssertEqual(refused.spoken, Spoken(text: "Something went wrong", urgent: true, after: nil))
+        let offlineLog = Log()
+        let offline = photoModel(offlineLog, clear: { throw APIError.network("Can't reach localhost.") })
+        await offline.remove()
+        XCTAssertEqual(offline.error, PortraitWords.unreachable)
+    }
+
+    func testRemovePhotoIsOnlyEverTheirs() async throws {
+        // Someone else signed in before it was sent: nothing goes out, and nothing is said.
+        let log = Log()
+        let before = photoModel(log, still: { throw CancellationError() })
+        await before.remove()
+        XCTAssertEqual(log.calls, ["still"])
+        XCTAssertNil(before.error)
+        // Signed out while it was on its way: their answer isn't shown to whoever is here now.
+        var signedIn = true
+        let log2 = Log()
+        let during = photoModel(log2, still: { if !signedIn { throw CancellationError() } }, clear: {
+            signedIn = false
+            return try PortraitsTests.noPhoto()
+        })
+        await during.remove()
+        XCTAssertEqual(log2.calls, ["still", "clear", "still"])
+        XCTAssertNil(during.error)
+        // The app's own check, against the dashboard.
+        let d = Dashboard()
+        d.phase = .ready
+        d.account = AuthState.User(id: "person-a", email: nil, name: nil, role: nil)
+        let live = PhotoAsIsService.live(d, for: try XCTUnwrap(d.signedInPerson))
+        XCTAssertNoThrow(try live.still())
+        d.account = AuthState.User(id: "person-b", email: nil, name: nil, role: nil)
+        XCTAssertThrowsError(try live.still()) { XCTAssertTrue($0 is CancellationError) }
+    }
+
+    func testChoosingAndSavingAPhoto() async throws {
+        let cut = cutout()
+        // Can't be read here: the iPhone's words; can't be cut out: the web's.
+        let log = Log()
+        let m = photoModel(log, cutOut: { _ in throw PhotoCutout.Failure(message: "Couldn't read that image. Choose a photo.") })
+        await m.process { nil }
+        XCTAssertEqual(m.error, PhotoWords.couldNotLoad)
+        XCTAssertEqual(log.calls, [], "nothing to cut out")
+        await m.process { Data([1, 2, 3]) }
+        XCTAssertEqual(m.error, PhotoWords.unreadable)
+        XCTAssertEqual(m.spoken?.urgent, true)
+        XCTAssertNil(m.preview)
+        // Cut out: the preview, then Save photo uploads it and reads the dashboard again.
+        let log2 = Log()
+        let ok = photoModel(log2, cutOut: { _ in cut })
+        await ok.process { Data([1, 2, 3]) }
+        XCTAssertNotNil(ok.preview)
+        XCTAssertNil(ok.error)
+        XCTAssertFalse(ok.busy)
+        await ok.save()
+        XCTAssertEqual(log2.calls, ["cutOut", "upload", "reload"])
+        XCTAssertNil(ok.preview)
+        // Too large at the server: the web's words, and the preview stays to try again.
+        let log3 = Log()
+        let big = photoModel(log3, cutOut: { _ in cut }, upload: { throw APIClient.error(status: 413, message: "", path: "/profile/photo/upload") })
+        await big.process { Data([1]) }
+        await big.save()
+        XCTAssertEqual(big.error, PhotoWords.tooLarge)
+        XCTAssertNotNil(big.preview)
+        big.cancel()
+        XCTAssertNil(big.preview)
     }
 
     // MARK: Pills never cut their words off
@@ -648,6 +804,24 @@ final class PortraitsTests: XCTestCase {
                 .padding(18).frame(width: 343).background(Palette.page).environment(\.colorScheme, scheme)
             let image = try XCTUnwrap(Snapshot.render(view))
             Snapshot.save(image, "photo-preview-\(scheme == .dark ? "dark" : "light")")
+        }
+        // Use a photo as is, on a 375-point phone: none yet, one saved (beside the choose area, above it at the
+        // accessibility sizes), and a photo that couldn't be cut out.
+        let none = photoModel(Log())
+        let failed = photoModel(Log(), cutOut: { _ in throw PhotoCutout.Failure(message: "No face found. Choose a photo where your face is clearly visible.") })
+        await failed.process { Data([1]) }
+        let asIs: [(String, PhotoAsIsModel, Bool)] = [("none", none, false), ("saved", none, true), ("no-face", failed, false)]
+        for (name, model, hasPhoto) in asIs {
+            for scheme in [ColorScheme.light, .dark] {
+                for size in [DynamicTypeSize.large, .xxLarge, .xxxLarge, .accessibility5] {
+                    let view = PhotoAsIsContent(model: model, hasPhoto: hasPhoto, current: UIImage(cgImage: cut), item: .constant(nil))
+                        .padding(18).frame(width: 343).background(Palette.page)
+                        .environment(\.colorScheme, scheme).dynamicTypeSize(size)
+                    let image = try XCTUnwrap(Snapshot.render(view, scale: size.isAccessibilitySize ? 1 : 3), name)
+                    XCTAssertGreaterThan(image.size.height, 40, name)
+                    Snapshot.save(image, "photo-as-is-\(name)-\(scheme == .dark ? "dark" : "light")\(Self.sizeSuffix(size))")
+                }
+            }
         }
     }
 
