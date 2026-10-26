@@ -391,17 +391,21 @@ enum PortraitWords {
         return addedFormat.string(from: Date(timeIntervalSince1970: ms / 1000))
     }
 
-    /// An error in the words the web shows: the server's own message whatever its code (a 404's "That photo is already
-    /// gone.", a 429's day limit), or the app's for a failure that never reached it.
+    /// An error in the words the web shows (src/lib.ts): the server's own message whatever its code (a 404's "That
+    /// photo is already gone.", a 429's day limit), its plain fallback when it sent none, and "Couldn't reach
+    /// healthOS…" for a request that never got an answer; anything else as it describes itself.
     static func message(_ error: Error) -> String {
-        if case APIError.server(_, let said) = error { return said.isEmpty ? somethingWrong : said }
-        return error.localizedDescription
+        switch error {
+        case APIError.server(_, let said): said.isEmpty ? somethingWrong : said
+        case APIError.network: unreachable
+        default: error.localizedDescription
+        }
     }
 
-    /// The cut-out's failure on a portrait: without a face it can't place the vitals, in the web's words.
+    /// The cut-out's failure on a portrait (src/portraits.ts): without a face it can't place the vitals; any other in
+    /// the words "Use a photo as is" shows for it (src/photo/process.ts).
     static func cutOutFailure(_ error: Error) -> String {
-        let said = error.localizedDescription
-        return said.hasPrefix("No face found") ? noFace : said
+        error.localizedDescription.hasPrefix("No face found") ? noFace : PhotoWords.cutOutFailure(error)
     }
 
     /// Saving the cut-out failed: too large (here or at the server), unreachable, or the server's words.

@@ -204,6 +204,13 @@ final class PortraitsTests: XCTestCase {
             XCTAssertNil(m.busy)
             XCTAssertEqual(log.calls, ["generate ref-a"])
         }
+        // Offline: the web's request() words, not the phone's "Can't reach localhost".
+        let log = Log()
+        let offline = APIClient(base: URL(string: "http://localhost:8805")!).unreachable(URLError(.notConnectedToInternet))
+        let m = await model(log, list: try settledList(), generate: { throw offline })
+        await m.make(from: m.references[0])
+        XCTAssertEqual(m.note, "Couldn't reach healthOS. Check your connection and try again.")
+        XCTAssertTrue(try web("src/lib.ts").contains("\"\(PortraitWords.unreachable)\""))
         // The server says the day's limit: the phone keeps no count of its own.
         let server = try web("server/portraits.ts")
         XCTAssertTrue(server.contains("`You've made ${PORTRAITS_PER_DAY} portraits today, the most in a day. Try again tomorrow.`"))
@@ -268,6 +275,9 @@ final class PortraitsTests: XCTestCase {
              PortraitWords.noFace, ["image made-ready", "cutOut"]),
             ("other cut-out", { log in await self.model(log, list: list, cutOut: { throw PhotoCutout.Failure(message: "Couldn't separate you from the background.") }) },
              "Couldn't separate you from the background.", ["image made-ready", "cutOut"]),
+            // processPhoto's own words for an image it can't read (src/photo/process.ts), as the web shows them here.
+            ("unreadable", { log in await self.model(log, list: list, cutOut: { throw PhotoCutout.Failure(message: "Couldn't read that image. Choose a photo.") }) },
+             "Couldn't read that image. Use a JPEG or PNG photo.", ["image made-ready", "cutOut"]),
             ("too large here", { log in await self.model(log, list: list, cutOut: { cut }, upload: { throw PhotoCutout.Failure(message: "That photo is too large to upload. Try another one.") }) },
              PortraitWords.tooLarge, ["image made-ready", "cutOut", "upload"]),
             ("too large there", { log in await self.model(log, list: list, cutOut: { cut }, upload: { throw APIClient.error(status: 413, message: "", path: "/profile/photo/upload") }) },
@@ -280,6 +290,8 @@ final class PortraitsTests: XCTestCase {
              PortraitWords.couldNotSave, ["image made-ready", "cutOut", "upload"]),
             ("gone at choose", { log in await self.model(log, list: list, cutOut: { cut }, choose: { throw APIClient.error(status: 404, message: "That portrait is gone.", path: "/portraits/x/choose") }) },
              "That portrait is gone.", ["image made-ready", "cutOut", "upload", "choose made-ready"]),
+            ("offline at choose", { log in await self.model(log, list: list, cutOut: { cut }, choose: { throw APIError.network("Can't reach localhost. The Internet connection appears to be offline.") }) },
+             PortraitWords.unreachable, ["image made-ready", "cutOut", "upload", "choose made-ready"]),
         ]
         for (name, make, words, calls) in cases {
             let log = Log()
@@ -328,6 +340,7 @@ final class PortraitsTests: XCTestCase {
         }, model: { nil })
         await m.read()
         XCTAssertEqual(m.loadError, "Something went wrong. Try again in a moment.")
+        XCTAssertEqual(PortraitWords.loadFailed(try XCTUnwrap(m.loadError)), "Couldn't load your portrait photos: Something went wrong. Try again in a moment.")
         fail = false
         await m.read()
         XCTAssertNil(m.loadError)
@@ -335,6 +348,15 @@ final class PortraitsTests: XCTestCase {
         await m.read()
         XCTAssertNil(m.loadError, "a failure after a list keeps the list on screen")
         XCTAssertEqual(m.list, list)
+    }
+
+    func testAFirstReadOfflineSaysTheWebsWords() async throws {
+        let log = Log()
+        let m = PortraitStudioModel()
+        let offline = APIClient(base: URL(string: "http://localhost:8805")!).unreachable(URLError(.notConnectedToInternet))
+        m.service = service(log, list: { throw offline }, model: { nil })
+        await m.read()
+        XCTAssertEqual(m.loadError, PortraitWords.unreachable)
     }
 
     func testAddingShrinksOnThePhoneFirst() async throws {
