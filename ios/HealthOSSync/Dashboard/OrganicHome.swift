@@ -566,6 +566,7 @@ struct TodayPath: View {
             .onAppear { scrubbed.follow(HeartScrub.from(moment, live: live, date: timeline.date)) }
             .onChange(of: HeartScrub.from(moment, live: live, date: timeline.date)) { _, heart in scrubbed.follow(heart) }
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("card-home.timeline")
         .task(id: "\(timeline.date)|\(dashboard.generation)") { await fetchDay() }
         // A new day starts live, and the figure goes back to the resting rate with it.

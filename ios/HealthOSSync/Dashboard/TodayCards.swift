@@ -269,6 +269,7 @@ struct LoadCard: View {
                 EmptyMetric(text: "Strain comes from WHOOP; active energy from Apple Health.")
             }
             .cardLink("Connect data", hint: "Opens Integrations", id: "connect-home.load", action: { dashboard.open(.integrations) }) { ConnectData() }
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("card-home.load")
         }
     }
@@ -347,6 +348,7 @@ struct ActivityCard: View {
                 EmptyMetric(text: "No steps recorded yet.")
             }
             .cardLink("Connect data", hint: "Opens Integrations", id: "connect-home.activity", action: { dashboard.open(.integrations) }) { ConnectData() }
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("card-home.activity")
         }
     }
@@ -476,6 +478,7 @@ struct InsightsCard: View {
             }
         }
         .card()
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("card-home.insights")
     }
 

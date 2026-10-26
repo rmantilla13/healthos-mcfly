@@ -260,6 +260,7 @@ struct SignalCard: View {
         // Integrations and not to the sheet.
         .cardLink("Connect a source", hint: "Opens Integrations", id: "connect-\(signal.id)", action: { dashboard.open(.integrations) }) { connectLabel }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("card-\(signal.id)")
     }
 

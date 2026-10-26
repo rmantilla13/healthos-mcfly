@@ -178,6 +178,7 @@ struct TodayNutritionCard: View {
             }
         }
         .modifier(LowerCard(tint: .cream))
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("card-home.nutrition")
         // Only with Nutrition on, and only within the 31 days the log keeps: nothing is asked for otherwise.
         .task(id: "\(date)|\(back)|\(mode?.rawValue ?? "off")|\(dashboard.generation)") {
