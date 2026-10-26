@@ -49,6 +49,13 @@ The app reads the same API as the website (`/api/summary`, `/api/trends`, `/api/
 - **Insights** (`Dashboard/InsightsScreen.swift`; only the iPhone has it): the weekly digest, patterns from your own history, two scatter plots and a year heatmap.
 - **Day** (`Dashboard/DayScreen.swift`): one day by the hour, opened from Home.
 - **Live heart rate** (`Live/`): opened from the heart callout.
+- **Metric sheet** (`MetricSheet/`; over any page, from a card's arrow): the web's sheet (`GET /api/metric/:key`, all 17 metrics).
+  - Its ranges; where the values came from; the window's average beside the card's status; a line, bars or the day by the hour, each with a table of every value (one line a cell, scrolling sideways when it's wider than the sheet); lowest, highest and latest; the server's sentence; "What this means" (bundled from `shared/metrics.ts`, its source opened in the app's browser); and "Open {Page}" unless that's the page under it. Home's activity cards say "Open Activity" and Body's own "Open Activity on Body", as the web's do.
+  - An empty window moves to the longest range and says so, until you press a range yourself (the one already chosen too). Never measured, it says "No measurement yet." with Manage connections.
+  - A server without the sheet, or without this metric's, gets one built on the phone from `GET /api/trends` and `GET /api/day`, without the parts only the server can say (the status, the sentence, the devices).
+  - **Memory only:** the sheet's own answers go when it closes, and a sign-out closes it. Built on the phone, its trends and day reads share the Dashboard's in-memory caches with every page, which sign-out clears.
+  - **Every text size:** everything grows with the text, the chart and table switch and Manage connections included, and nothing breaks a word; the range and switch buttons take taps over 44 by 44 points.
+  - `MetricSheetTests` checks the bundled words and rules against the web's files; `MetricSheetSnapshotTests` and `MetricSheetLiveTests` draw its states when `TEST_RUNNER_METRIC_SHEET_SHOTS` is set.
 
 Cards hide or switch to fit your sources, as on the web: no WHOOP means VO₂ max instead of recovery, active energy instead of strain, and HRV labelled SDNN.
 
