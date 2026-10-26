@@ -138,9 +138,14 @@ struct ChatbotSheet: View {
         guard !model.busy, form.primary(status, busy: false).enabled, let plan = form.save(status) else { return }
         keyFocused = false
         Task {
+            let asked = dashboard.session
             let ok = await model.run(dashboard, done: plan.done) { client in
                 var last = status
-                for step in plan.steps { last = try await client.run(step) }
+                for step in plan.steps {
+                    // The session ended while the step before was on its way: the next is never sent as whoever is here now.
+                    guard dashboard.stillCurrent(asked) else { throw CancellationError() }
+                    last = try await client.run(step)
+                }
                 return last
             }
             if ok { form.saved() }

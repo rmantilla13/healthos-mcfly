@@ -176,4 +176,40 @@ final class SettingsSaveTests: XCTestCase {
         XCTAssertNil(t.status, "Sam's settings stay out of memory behind the sign-in screen")
         XCTAssertNil(SummaryCache.load(for: base))
     }
+
+    /// Card changes queued behind a slow one when the session ends are never sent as whoever is here next, and the
+    /// lists on their way go with the session.
+    func testQueuedCardChangesGoWithTheSession() async throws {
+        let d = try samsDashboard()
+        var bodies: [String] = []
+        var release: CheckedContinuation<Void, Never>?
+        let send: @MainActor ([String: Any]) async throws -> ServerStatus = { fields in
+            bodies.append(String(decoding: try APIClient.settingsBody(fields), as: UTF8.self))
+            // The first one is slow to arrive.
+            if bodies.count == 1 { await withCheckedContinuation { release = $0 } }
+            return try self.samsStatus()
+        }
+        let first = Task { try await d.changeCards(.card("home.hrv", shown: false), send: send) }
+        for _ in 0..<1000 where release == nil { await Task.yield() }
+        let second = Task { try await d.changeCards(.card("home.spo2", shown: false), send: send) }
+        for _ in 0..<1000 where !d.hiddenCards.contains("home.spo2") { await Task.yield() }
+        XCTAssertEqual(d.hiddenCards, ["home.hrv", "home.spo2"], "both show at once")
+
+        // Sam signs out while the first is on its way.
+        d.phase = .signIn
+        XCTAssertNil(d.pendingCards, "Sam's lists on their way don't stay for whoever is next")
+        XCTAssertEqual(d.hiddenCards, [])
+        release?.resume()
+        for task in [first, second] {
+            do {
+                try await task.value
+                XCTFail("an answer for Sam's session, once it's over")
+            } catch {
+                XCTAssertTrue(error is CancellationError, "\(error)")
+            }
+        }
+        XCTAssertEqual(bodies.count, 1, "the change queued behind it is never sent")
+        XCTAssertNil(d.pendingCards)
+        XCTAssertEqual(d.hiddenCards, [])
+    }
 }

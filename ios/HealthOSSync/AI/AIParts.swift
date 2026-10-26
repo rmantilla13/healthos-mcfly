@@ -37,10 +37,11 @@ final class AIKeysModel {
         case nil: break
         }
         #endif
-        let who = dashboard.personID
+        // The server and the person (`Dashboard.session`): the same account id on another server isn't the same person.
+        let asked = dashboard.session
         do {
-            let s = try await dashboard.fetch { try await $0.aiStatus() }
-            guard dashboard.phase == .ready, dashboard.personID == who else { return }
+            let s = try await dashboard.fetchForThisSession { try await $0.aiStatus() }
+            guard dashboard.phase == .ready, dashboard.stillCurrent(asked) else { return }
             if let s {
                 status = s
                 dashboard.availability.heard(ai: s)
@@ -59,14 +60,14 @@ final class AIKeysModel {
     @discardableResult
     func run(_ dashboard: Dashboard, done: String, _ work: (APIClient) async throws -> AiStatus) async -> Bool {
         guard !busy, dashboard.phase == .ready else { return false }
-        let who = dashboard.personID
+        let asked = dashboard.session
         busy = true
         note = nil
         defer { busy = false }
         do {
-            let s = try await dashboard.fetch(work)
-            // Signed out, or someone else signed in, while it was on its way: nothing of it lands.
-            guard dashboard.phase == .ready, dashboard.personID == who else { return false }
+            let s = try await dashboard.fetchForThisSession(work)
+            // Signed out, someone else signed in, or another server set, while it was on its way: nothing of it lands.
+            guard dashboard.phase == .ready, dashboard.stillCurrent(asked) else { return false }
             status = s
             note = AINote(ok: true, text: done)
             dashboard.availability.heard(ai: s)
@@ -77,6 +78,8 @@ final class AIKeysModel {
             }
             return true
         } catch {
+            // Answered for a session that's over: nothing to say to whoever is here now.
+            guard dashboard.stillCurrent(asked) else { return false }
             note = AINote(ok: false, text: APIClient.isCancellation(error) ? "Something went wrong. Try again in a moment." : error.aiMessage)
             return false
         }

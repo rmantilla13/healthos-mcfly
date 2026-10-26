@@ -340,6 +340,22 @@ final class AIKeysTests: XCTestCase {
         XCTAssertFalse(sent)
     }
 
+    /// The same account id on another server ("owner" repeats across servers) isn't the same person: a save answered
+    /// after Change server says nothing there.
+    func testAnAnswerThatLandsAfterChangeServerIsDropped() async throws {
+        let d = try signedIn("owner")
+        let model = AIKeysModel()
+        let answer = try status("ai-own-key")
+        let ok = await model.run(d, done: "Saved.") { _ in
+            Config.serverText = "http://127.0.0.1:8"
+            return answer
+        }
+        XCTAssertFalse(ok)
+        XCTAssertNil(model.status)
+        XCTAssertNil(model.note)
+        XCTAssertEqual(d.availability.ai, .unknown, "the other server's keys aren't this one's")
+    }
+
     // MARK: Against a server (AIStubServer: made-up answers on 127.0.0.1)
 
     private func serve(_ answers: [String: AIStubServer.Answer]) async throws -> AIStubServer {

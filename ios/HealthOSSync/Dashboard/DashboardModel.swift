@@ -266,11 +266,13 @@ final class Dashboard {
     func refreshIfChanged(includeStatus: Bool) async {
         guard phase == .ready, !loading, let client = APIClient.current() else { return }
         guard UIApplication.shared.applicationState == .active else { return }
+        let asked = session
         let version: String?
         do {
             version = try await client.dataVersion()
         } catch APIError.signInRequired {
-            phase = .signIn
+            // Only for the session it was asked under, as `fetch`.
+            if stillCurrent(asked) { phase = .signIn }
             return
         } catch {
             // Offline: keep what's on screen; the next check tries again.
@@ -460,24 +462,21 @@ final class Dashboard {
         await load()
     }
 
+    // The reads below keep what came for this person (cleared with their data), so each goes through
+    // `fetchForThisSession`: one that lands after a Sign out, a 401, someone else's sign-in or another server is dropped
+    // with a CancellationError, never kept or shown for whoever is here now.
+
     func trends(_ metrics: [String], days: Int) async throws -> Trends {
         let key = "\(metrics.joined(separator: ","))|\(days)"
         if let hit = trendCache[key] { return hit }
-        guard let client = APIClient.current() else { throw APIError.network("No server configured.") }
-        do {
-            let t = try await client.trends(metrics, days: days)
-            trendCache[key] = t
-            return t
-        } catch APIError.signInRequired {
-            phase = .signIn
-            throw APIError.signInRequired
-        }
+        let t = try await fetchForThisSession { try await $0.trends(metrics, days: days) }
+        trendCache[key] = t
+        return t
     }
 
     func workouts(days: Int) async throws -> [Workout] {
         if let hit = workoutCache[days] { return hit }
-        guard let client = APIClient.current() else { throw APIError.network("No server configured.") }
-        let w = try await client.workouts(days: days)
+        let w = try await fetchForThisSession { try await $0.workouts(days: days) }
         workoutCache[days] = w
         return w
     }
@@ -489,7 +488,7 @@ final class Dashboard {
     func day(date: String?) async throws -> DayData? {
         let key = date ?? "today"
         if let hit = dayCache[key] { return hit }
-        let d = try await fetch { try await $0.day(date: date) }
+        let d = try await fetchForThisSession { try await $0.day(date: date) }
         dayCache[key] = d
         return d
     }
@@ -498,7 +497,7 @@ final class Dashboard {
     func cycle(days: Int = 120) async throws -> CycleData? {
         guard cycleTrackingOn else { return nil }
         if let hit = cycleCache[days] { return hit }
-        let c = try await fetch { try await $0.cycle(days: days) }
+        let c = try await fetchForThisSession { try await $0.cycle(days: days) }
         let shown = c?.enabled == true ? c : nil
         cycleCache[days] = shown
         return shown
@@ -509,7 +508,7 @@ final class Dashboard {
         guard let mode = nutritionMode else { return nil }
         let key = "\(days)|\(insights)|\(mode.rawValue)"
         if let hit = nutritionCache[key] { return hit }
-        let n = try await fetch { try await $0.nutrition(days: days, insights: insights) }
+        let n = try await fetchForThisSession { try await $0.nutrition(days: days, insights: insights) }
         let shown = n?.enabled == true ? n : nil
         nutritionCache[key] = shown
         return shown
@@ -539,14 +538,14 @@ final class Dashboard {
 
     func sleepTiming(days: Int) async throws -> SleepTiming? {
         if let hit = sleepCache[days] { return hit }
-        let s = try await fetch { try await $0.sleepTiming(days: days) }
+        let s = try await fetchForThisSession { try await $0.sleepTiming(days: days) }
         sleepCache[days] = s
         return s
     }
 
     func patterns() async throws -> Patterns? {
         if let hit = patternsCache { return hit }
-        let p = try await fetch { try await $0.patterns() }
+        let p = try await fetchForThisSession { try await $0.patterns() }
         patternsCache = .some(p)
         return p
     }
@@ -554,7 +553,7 @@ final class Dashboard {
     /// The weekly digest reply; check `configured` and `digest` before showing it.
     func digest() async throws -> DigestReply? {
         if let hit = digestCache { return hit }
-        let d = try await fetch { try await $0.digest() }
+        let d = try await fetchForThisSession { try await $0.digest() }
         digestCache = .some(d)
         return d
     }
@@ -771,6 +770,9 @@ final class Dashboard {
     private var cardChanges = 0
     /// The last card change sent. Each waits for the one before, so they reach the server in the order they were made.
     private var cardQueue: Task<Void, Never>?
+    /// Goes up when one person's card changes are forgotten (`clearData`): a change of theirs still on its way then
+    /// leaves the count and the lists shown alone.
+    private var cardEpoch = 0
 
     /// The server can hide cards (its status names the list). Older servers can't: every card shows, and Profile
     /// has no Cards section.
@@ -799,16 +801,21 @@ final class Dashboard {
     /// /api/settings; tests pass their own.
     func changeCards(_ change: CardChange, send: (@MainActor ([String: Any]) async throws -> ServerStatus)? = nil) async throws {
         let send = send ?? { fields in try await self.fetchForThisSession { try await $0.updateSettings(fields) } }
+        let epoch = cardEpoch
         pendingCards = change.applied(to: CardLists(hidden: hiddenCards, shown: shownCards))
         cardChanges += 1
         defer {
-            cardChanges -= 1
-            if cardChanges == 0 { pendingCards = nil }
+            if epoch == cardEpoch {
+                cardChanges -= 1
+                if cardChanges == 0 { pendingCards = nil }
+            }
         }
         let previous = cardQueue
         let asked = session
         let work = Task { @MainActor in
             await previous?.value
+            // The session ended while the ones before it were on their way: it's never sent, as whoever is here now.
+            try self.keep(answeredUnder: asked)
             var status = try await send(change.body)
             try self.keep(answeredUnder: asked)
             // A server from before one-card changes ignored it: the same change again, as the whole list.
@@ -881,11 +888,16 @@ final class Dashboard {
         if let on = status.settings?.familySharing, let board = familyBoard, board.sharing != on { dropFamilyBoard() }
     }
 
+    /// One request to the server; a 401 asks for sign-in. Only for the session it was asked under (`session`): the last
+    /// person's request, refused after their Sign out or once someone else signed in, throws a CancellationError and
+    /// signs nobody out.
     func fetch<T>(_ request: (APIClient) async throws -> T) async throws -> T {
+        let asked = session
         guard let client = APIClient.current() else { throw APIError.network("No server configured.") }
         do {
             return try await request(client)
         } catch APIError.signInRequired {
+            try keep(answeredUnder: asked)
             phase = .signIn
             throw APIError.signInRequired
         }
@@ -934,6 +946,12 @@ final class Dashboard {
         loadedOn = nil
         foodLogAvailable = nil
         timeZoneSent = nil
+        // Card changes still on their way are the last person's: their lists don't show for whoever is next, and the
+        // ones queued behind are never sent (`changeCards`).
+        pendingCards = nil
+        cardChanges = 0
+        cardQueue = nil
+        cardEpoch += 1
         clearCaches()
         resetFamily()
         // Another server's conversation, or nobody's yet: it doesn't carry over, and nor does what it could do.

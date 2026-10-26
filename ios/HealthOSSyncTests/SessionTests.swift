@@ -244,6 +244,34 @@ final class SessionTests: XCTestCase {
         XCTAssertNotNil(d.availability.portraits)
     }
 
+    /// The Dashboard's own reads (the day by hour, the trends) answered once the person has gone are dropped, not kept for
+    /// whoever is here: asked again, they go to the server.
+    func testACachedReadForOnePersonNeverReachesTheNext() async throws {
+        let server = try await AIStubServer.start([
+            "GET /api/day": .json(200, try fixture("day"), delay: 0.3),
+            "GET /api/trends": .json(200, try fixture("trends-vitals"), delay: 0.3),
+        ])
+        use(server)
+        for (name, end) in endings {
+            let d = alexHere()
+            let day = await whileOnItsWay(server, "GET /api/day", end: end, d: d) { _ = try await d.day(date: nil) }
+            XCTAssertTrue(day is CancellationError, "\(name): \(String(describing: day))")
+            let asked = server.requests("GET /api/day").count
+            _ = try? await d.day(date: nil)
+            XCTAssertEqual(server.requests("GET /api/day").count, asked + 1, "\(name): the late day wasn't kept")
+
+            let e = alexHere()
+            let trends = await whileOnItsWay(server, "GET /api/trends", end: end, d: e) { _ = try await e.trends(["resting_hr"], days: 30) }
+            XCTAssertTrue(trends is CancellationError, "\(name): \(String(describing: trends))")
+        }
+        // Still Alex: kept, so asked again it isn't sent.
+        let d = alexHere()
+        _ = try await d.day(date: nil)
+        let asked = server.requests("GET /api/day").count
+        _ = try await d.day(date: nil)
+        XCTAssertEqual(server.requests("GET /api/day").count, asked)
+    }
+
     /// The food log's `can` (estimates, voice notes) answered once the person has gone says nothing for whoever is here.
     func testAFoodLogDayForOnePersonNeverReachesTheNext() async throws {
         let server = try await AIStubServer.start(["POST /api/nutrition/log/day": .json(200, try fixture("food-log-day"), delay: 0.3)])
@@ -295,6 +323,17 @@ final class SessionTests: XCTestCase {
         XCTAssertTrue(saved is CancellationError, String(describing: saved))
         XCTAssertEqual(e.phase, .ready, "Sam stays signed in")
         XCTAssertEqual(SessionStore.cookie(for: base), "v2.sam.1.s", "and keeps the session")
+
+        // A plain `fetch` (the key sheets, the password change, the delete sheets) follows the same rule, a request that
+        // went out with no session included.
+        SessionStore.clear()
+        let g = alexHere()
+        let fetched = await whileOnItsWay(server, "PUT /api/settings", end: someoneElse, d: g) {
+            _ = try await g.fetch { try await $0.updateSettings(["units": "imperial"]) }
+        }
+        XCTAssertTrue(fetched is CancellationError, String(describing: fetched))
+        XCTAssertEqual(g.phase, .ready, "Sam stays signed in")
+        XCTAssertEqual(SessionStore.cookie(for: base), "v2.sam.1.s")
 
         // Still Alex's session: the 401 brings up sign-in, as always, and Alex's session goes.
         store("v2.alex.1.a")
