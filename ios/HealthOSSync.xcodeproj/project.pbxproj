@@ -231,6 +231,7 @@
 		FA4A394CBB37998BD7A24A5F /* StatusDecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F555F043B0421EDF7E4BAC46 /* StatusDecodingTests.swift */; };
 		FB1865DBB690F3EF8386BA77 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63C3960DE078C3D0C9951540 /* AppModel.swift */; };
 		FC3C5C525A00D4C42F8173FC /* TrendsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDFE71549B0A68674DB9E571 /* TrendsScreen.swift */; };
+		FC5C897448D334CAD697184A /* CardChoicesCheckbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BF7E4E612F9522FD566BC51 /* CardChoicesCheckbox.swift */; };
 		FCD57918110889FF0CA3E71D /* PeersTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F48EE7E87F902A5E1269B103 /* PeersTests.swift */; };
 		FD5084DCB265F09653B4DFE4 /* NutritionStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA15773F31A81B942DD09FCE /* NutritionStyle.swift */; };
 		FDB2E43925F6C4A59CCAE87A /* patterns.json in Resources */ = {isa = PBXBuildFile; fileRef = 2467D3DA7F3A0754100A23C3 /* patterns.json */; };
@@ -335,6 +336,7 @@
 		6A2CB89DB440E98702315735 /* LiveHeartRate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveHeartRate.swift; sourceTree = "<group>"; };
 		6A5376F5B4BE6F8CD5BF48E6 /* Cards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cards.swift; sourceTree = "<group>"; };
 		6BC88596901D40FC8978D296 /* ComingSoon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComingSoon.swift; sourceTree = "<group>"; };
+		6BF7E4E612F9522FD566BC51 /* CardChoicesCheckbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardChoicesCheckbox.swift; sourceTree = "<group>"; };
 		6CD1A18F60F4DC3E46857139 /* WelcomeFrame.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeFrame.swift; sourceTree = "<group>"; };
 		6CF00FE6CAC4FB940559D6D2 /* HomeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeTests.swift; sourceTree = "<group>"; };
 		6D4786B823D07580F0C9DEFF /* NutritionChatModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NutritionChatModel.swift; sourceTree = "<group>"; };
@@ -683,6 +685,7 @@
 				7394BC14E20D6AA761A4531E /* BarcodeScanner.swift */,
 				9A475462832EEEBDED73A035 /* Buttons.swift */,
 				9D6DE975C07060312F574B97 /* CameraPicker.swift */,
+				6BF7E4E612F9522FD566BC51 /* CardChoicesCheckbox.swift */,
 				E617E2FB9DFD894B406765C5 /* ChartLegend.swift */,
 				316AC8D7649BE5581C8EEE9F /* ChartPageControls.swift */,
 				75B40DEA45C3FC6610DFF261 /* ChoiceCard.swift */,
@@ -1158,6 +1161,7 @@
 				6690B6F92D10553DC56FF06C /* BodyScreen.swift in Sources */,
 				2B51353BCB3C78544D6A25B6 /* Buttons.swift in Sources */,
 				DA697576231F464548FFB5D7 /* CameraPicker.swift in Sources */,
+				FC5C897448D334CAD697184A /* CardChoicesCheckbox.swift in Sources */,
 				421871CDE11297C1B6C2D4FE /* Cards.swift in Sources */,
 				180452B0990805753969B688 /* ChartLegend.swift in Sources */,
 				25E13EC820FD5FD2FC767FA4 /* ChartPageControls.swift in Sources */,

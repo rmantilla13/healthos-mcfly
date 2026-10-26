@@ -185,6 +185,37 @@ final class ComponentsTests: XCTestCase {
         XCTAssertEqual(RowIcon.width(26 * 3.1), 26 * 1.3, accuracy: 0.01, "the largest text size")
     }
 
+    /// Edit widgets and Profile → Cards tick a card alike, in the accent with the accent's ink, as the web draws its one
+    /// CardChoices: the last `.card-choices input` rule in src/styles.css (`accent-color: var(--accent)`) overrides the
+    /// earlier ink one.
+    func testACardChoiceIsTickedInTheAccent() throws {
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("src/styles.css")
+        guard let css = try? String(contentsOf: url, encoding: .utf8) else { throw XCTSkip("src/styles.css isn't next to the app") }
+        var colour: String?
+        for rule in css.matches(of: /([^{}]*)\{([^{}]*)\}/) {
+            let selectors = rule.1.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            guard selectors.contains(".card-choices input"), let decl = rule.2.firstMatch(of: /accent-color:\s*([^;]+);/) else { continue }
+            colour = String(decl.1).trimmingCharacters(in: .whitespaces)
+        }
+        XCTAssertEqual(colour, "var(--accent)", "the web's CardChoices box")
+        XCTAssertEqual(CardChoicesCheckboxStyle.ticked, Palette.accent)
+        XCTAssertEqual(CardChoicesCheckboxStyle.tick, Palette.accentInk)
+
+        // Drawn: a ticked box is the accent's colour, not the ink's.
+        func rgb(_ color: Color) -> [Int] {
+            var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+            UIColor(color).resolvedColor(with: UITraitCollection(userInterfaceStyle: .light)).getRed(&r, green: &g, blue: &b, alpha: &a)
+            return [r, g, b].map { Int(($0 * 255).rounded()) }
+        }
+        let accent = rgb(Palette.accent)
+        let ticked = Toggle(isOn: .constant(true)) { Text("Steps") }.toggleStyle(CardChoicesCheckboxStyle())
+        let at = try pixels(ticked, width: 120, height: 40)
+        var hits = 0
+        for x in 0..<30 { for y in 0..<40 where zip(at(x, y).prefix(3), accent).allSatisfy({ abs($0 - $1) <= 6 }) { hits += 1 } }
+        XCTAssertGreaterThan(hits, 40, "the ticked box in the accent \(accent)")
+    }
+
     func testEveryCardTintIsAWash() {
         XCTAssertEqual(Set(CardTint.allCases.map(\.gradient)).count, CardTint.allCases.count)
         XCTAssertEqual(CardTint.plain.gradient, .sheen)

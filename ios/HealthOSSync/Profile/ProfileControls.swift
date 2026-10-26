@@ -157,49 +157,6 @@ private struct ProfileSwitchBody: View {
     }
 }
 
-/// A box to tick (.card-choices input): a rounded square, filled with the accent and ticked while on, the card's name
-/// beside it.
-struct ProfileCheckboxStyle: ToggleStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        ProfileCheckboxBody(configuration: configuration)
-    }
-}
-
-private struct ProfileCheckboxBody: View {
-    let configuration: ToggleStyleConfiguration
-    @Environment(\.isEnabled) private var isEnabled
-    @ScaledMetric(relativeTo: .footnote) private var box: CGFloat = 18
-
-    var body: some View {
-        Button { configuration.isOn.toggle() } label: {
-            HStack(alignment: .top, spacing: 10) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 4, style: .continuous)
-                        .fill(configuration.isOn ? Palette.accent : Palette.surface)
-                    RoundedRectangle(cornerRadius: 4, style: .continuous)
-                        .strokeBorder(configuration.isOn ? Palette.accent : Palette.ink3, lineWidth: 1)
-                    if configuration.isOn {
-                        Image(systemName: "checkmark")
-                            .font(.system(size: min(box, 30) * 0.55, weight: .bold))
-                            .foregroundStyle(Palette.accentInk)
-                    }
-                }
-                .frame(width: min(box, 30), height: min(box, 30))
-                .padding(.top, 1)
-                configuration.label.frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .padding(.vertical, 6)
-            .frame(minHeight: 36)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .opacity(isEnabled ? 1 : 0.55)
-        .sensoryFeedback(.selection, trigger: configuration.isOn)
-        .accessibilityRepresentation {
-            Toggle(isOn: configuration.$isOn) { configuration.label }
-        }
-    }
-}
 
 /// The web's radio-like choice (.choice): a soft card with a name at 500 and a muted line; the chosen one white with an
 /// ink edge. Nutrition's "What you see".

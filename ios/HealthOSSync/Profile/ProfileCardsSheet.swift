@@ -31,7 +31,7 @@ struct ProfileCardsSheet: View {
                                 ProfileCardLabel(name: Cards.label(card, optionalCards: optional), optional: optional && card.optional,
                                                  note: Self.note(card, in: group.page))
                             }
-                            .toggleStyle(ProfileCheckboxStyle())
+                            .toggleStyle(CardChoicesCheckboxStyle())
                             .accessibilityIdentifier("card-\(card.id)")
                         }
                     }

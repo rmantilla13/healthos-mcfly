@@ -77,7 +77,7 @@ struct EditWidgetsSheet: View {
                 Toggle(isOn: Binding(get: { dashboard.cardShown(card.id) }, set: { set(card.id, shown: $0) })) {
                     Text(Cards.label(card, optionalCards: dashboard.optionalCards)).font(.app(.subheadline)).foregroundStyle(Palette.ink)
                 }
-                .toggleStyle(CheckboxToggleStyle())
+                .toggleStyle(CardChoicesCheckboxStyle())
                 .accessibilityIdentifier("widget-\(card.id)")
             }
         }
@@ -95,32 +95,5 @@ struct EditWidgetsSheet: View {
                 self.error = error.localizedDescription
             }
         }
-    }
-}
-
-/// The web's checkbox (.card-choices input: 16px, ink when ticked): a box and its words, the whole row to tap. VoiceOver
-/// reads it as a switch, on or off.
-struct CheckboxToggleStyle: ToggleStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        Button { configuration.isOn.toggle() } label: {
-            HStack(spacing: 10) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 3, style: .continuous)
-                        .fill(configuration.isOn ? Palette.ink : Palette.surface)
-                    RoundedRectangle(cornerRadius: 3, style: .continuous)
-                        .strokeBorder(configuration.isOn ? Palette.ink : Palette.ink3, lineWidth: 1)
-                    if configuration.isOn {
-                        Image(systemName: "checkmark").font(.system(size: 10, weight: .heavy)).foregroundStyle(Palette.surface)
-                    }
-                }
-                .frame(width: 17, height: 17)
-                configuration.label
-                Spacer(minLength: 0)
-            }
-            .frame(minHeight: 40)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityRepresentation { Toggle(isOn: configuration.$isOn) { configuration.label } }
     }
 }
