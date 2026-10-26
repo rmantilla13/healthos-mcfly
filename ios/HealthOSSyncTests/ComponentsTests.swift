@@ -155,6 +155,15 @@ final class ComponentsTests: XCTestCase {
         XCTAssertLessThanOrEqual(wrapped.width, 300)
     }
 
+    /// The radio mark grows with the card's name: 16 points at the default size, more at the accessibility sizes.
+    func testTheRadioMarkGrowsWithTheText() {
+        func side(_ type: DynamicTypeSize) -> CGFloat {
+            UIHostingController(rootView: RadioMark(isOn: true).environment(\.dynamicTypeSize, type)).sizeThatFits(in: CGSize(width: 400, height: 400)).width
+        }
+        XCTAssertEqual(side(.large), 16, accuracy: 0.5)
+        XCTAssertGreaterThan(side(.accessibility5), 16 * 2.5, "about as much bigger as the words beside it")
+    }
+
     /// The radio card's mark as the web's radio draws: empty, a grey ring on a grey disc in dark mode (not the card's
     /// own surface); chosen, an accent ring, a white band and an accent dot, in light and dark.
     func testTheRadioMarkIsTheWebsInLightAndDark() throws {

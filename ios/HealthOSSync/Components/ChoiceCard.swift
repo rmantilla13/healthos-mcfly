@@ -57,25 +57,27 @@ extension ChoiceCard where Accessory == EmptyView {
 
 /// A radio button's round mark, as the web's radio (a native one with the accent as its accent-color) draws in light and
 /// dark: an empty ring, on white in light mode and on a grey disc in dark mode; once chosen, an accent ring, a white band
-/// and an accent dot.
+/// and an accent dot. It grows with the card's name (16 points at the default text size), its rings in proportion.
 struct RadioMark: View {
     let isOn: Bool
+    @ScaledMetric(relativeTo: .subheadline) private var size: CGFloat = 16
     /// The empty radio's disc and ring in dark mode, the browser's own (light keeps the app's surface and ink).
     private static let offFill = Themed(CSSColor(0xFFFFFF), CSSColor(0x3B3B3B)).color
     private static let offRing = Themed(CSSColor(0x5F6661), CSSColor(0x858585)).color
 
     var body: some View {
+        let unit = size / 16
         ZStack {
             if isOn {
                 Circle().fill(Palette.accent)
-                Circle().fill(Color.white).padding(1)
-                Circle().fill(Palette.accent).padding(3)
+                Circle().fill(Color.white).padding(unit)
+                Circle().fill(Palette.accent).padding(3 * unit)
             } else {
                 Circle().fill(Self.offFill)
-                Circle().strokeBorder(Self.offRing, lineWidth: 1)
+                Circle().strokeBorder(Self.offRing, lineWidth: unit)
             }
         }
-        .frame(width: 16, height: 16)
+        .frame(width: size, height: size)
         .accessibilityHidden(true)
     }
 }
