@@ -49,8 +49,24 @@ extension Dashboard {
     var isAdmin: Bool { signOutOffered && (status?.user?.role ?? account?.role) == "admin" }
     /// The account menu offers Sign out: sign-in is on and someone is signed in.
     var signOutOffered: Bool { authMode == "required" && phase == .ready }
-    /// The pages under More for this person: Family on a server with the board, Cycle while tracking is on.
-    var morePages: [AppPage] { AppPage.more(family: familyAvailable, cycle: cycleTrackingOn) }
+    /// The pages under More for this person, as the web's navigation lists them (App.tsx): Family while signed in on a
+    /// server with accounts with sharing on, Cycle while tracking is on. Neither while signed out, so the last person's
+    /// settings never show there.
+    var morePages: [AppPage] { AppPage.more(family: familyListed, cycle: phase == .ready && cycleTrackingOn) }
+
+    /// More lists Family (the web's `signedIn && familySharing`). A server whose status doesn't name the setting but
+    /// has the board (RootView reads it once) lists it while the board says you share.
+    var familyListed: Bool {
+        guard phase == .ready, authMode == "required" else { return false }
+        if let sharing = status?.settings?.familySharing { return sharing }
+        return familyBoard?.sharing == true
+    }
+
+    /// Family and Cycle as far as this server and person have them. Their pages stay open while they do, listed in
+    /// More or not: with sharing off, the Family page says so (the web's FamilyOff) instead of closing.
+    var featurePages: Set<AppPage> {
+        Set((familyAvailable ? [AppPage.family] : []) + (cycleTrackingOn ? [.cycle] : []))
+    }
 
     /// Signed out, the server unreachable, another server, or someone else signing in: every pushed page goes, so none
     /// stays open on what it showed (a Family member's page, a day). Profile stays, for the server address.
@@ -68,9 +84,9 @@ extension Dashboard {
         tab = .home
     }
 
-    /// Family or Cycle went away (another server, sharing or tracking turned off) while open under More: back to More.
+    /// Family or Cycle went away (another server, tracking turned off) while open under More: back to More.
     func dropMissingPages() {
-        let gone: Set<AppPage> = Set([AppPage.family, .cycle]).subtracting(morePages)
+        let gone: Set<AppPage> = Set([AppPage.family, .cycle]).subtracting(featurePages)
         guard let path = paths[.more], path.contains(where: { gone.contains($0.page) }) else { return }
         paths[.more] = Array(path.prefix { !gone.contains($0.page) })
     }

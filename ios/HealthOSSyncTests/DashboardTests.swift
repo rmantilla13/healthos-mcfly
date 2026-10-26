@@ -864,13 +864,15 @@ final class FamilyStateTests: XCTestCase {
         guard case .notOnBoard = d.familyPerson("u2") else { return XCTFail("Ana isn't on the board any more") }
         XCTAssertNotNil(d.familyPerson("u3").member)
 
-        // Asked to sign in again: the board is still in memory, but no page shows from it.
+        // Asked to sign in again: the board goes from memory too, so no page shows from it.
         d.phase = .signIn
-        XCTAssertNotNil(d.familyBoard)
+        XCTAssertNil(d.familyBoard)
         guard case .noBoard = d.familyPerson("u3") else { return XCTFail("nothing behind a sign-in screen") }
 
-        // Back in, then sharing goes off: no one's page either.
+        // Back in, the board read again, then sharing goes off: no one's page either.
         d.phase = .ready
+        d.apply(status: try status(sharing: true))
+        d.receiveFamily(try board())
         XCTAssertNotNil(d.familyPerson("u3").member)
         d.apply(status: try status(sharing: false))
         guard case .noBoard = d.familyPerson("u3") else { return XCTFail("sharing off shows no one") }

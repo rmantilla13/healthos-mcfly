@@ -66,7 +66,7 @@ enum AppPage: String, CaseIterable, Hashable {
 
     /// More's pages for this person, in the web's order (TabBar in MobileNav.tsx: the main navigation's pages the tab
     /// bar has no room for, then Ask McFly, Profile and Integrations), then Insights, which only the iPhone has. Family
-    /// only on a server with the board, Cycle only while tracking is on, as the web's mainNav().
+    /// and Cycle only when the web's mainNav() lists them (Dashboard.morePages says when).
     static func more(family: Bool, cycle: Bool) -> [AppPage] {
         (family ? [.family] : []) + (cycle ? [.cycle] : []) + [.journal, .sleep, .labs, .mcfly, .profile, .integrations, .insights]
     }

@@ -459,11 +459,18 @@ struct McFlySheet: View {
 
 /// Ask McFly as a page (More → Ask McFly, the web's #/mcfly): the same conversation as the pill's sheet. Unlike the
 /// pill, it's always listed, so on a server with McFly off it says so in the web's words instead of a composer.
+/// Signed out it asks for sign-in, never showing a conversation.
 struct McFlyPage: View {
     @Environment(Dashboard.self) private var dashboard
 
     var body: some View {
-        if let status = dashboard.mcfly.status, !status.available {
+        if dashboard.signInRequired {
+            SignInView()
+        } else if dashboard.phase == .noServer {
+            Unavailable("No server yet", systemImage: "server.rack", description: "Add your healthOS address in Profile.")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Palette.page)
+        } else if let status = dashboard.mcfly.status, !status.available {
             let admin = dashboard.status?.user?.role == "admin"
             Unavailable(status.configured ? "Ask McFly is turned off" : "Ask McFly isn't set up yet", systemImage: AppPage.mcfly.symbol,
                         description: !admin ? "Ask the admin to turn it on."

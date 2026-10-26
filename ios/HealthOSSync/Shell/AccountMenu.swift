@@ -27,13 +27,16 @@ struct AccountMenu: View {
                 }
             }
         } label: {
-            Avatar(photo: dashboard.status?.photo, name: name, size: size)
+            Avatar(photo: signedIn ? dashboard.status?.photo : nil, name: name, size: size)
         }
         .accessibilityLabel("Your workspace")
         .accessibilityIdentifier("accountMenu")
     }
 
-    private var name: String? { dashboard.summary?.name ?? dashboard.status?.settings?.name }
+    /// Only while the dashboard shows someone: before the server says who (a cached status at launch) or signed out,
+    /// no one's photo or initial sits above the sign-in screen.
+    private var signedIn: Bool { dashboard.phase == .ready }
+    private var name: String? { signedIn ? dashboard.summary?.name ?? dashboard.status?.settings?.name : nil }
 }
 
 extension View {

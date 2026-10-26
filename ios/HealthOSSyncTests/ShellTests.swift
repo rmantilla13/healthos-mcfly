@@ -27,17 +27,51 @@ final class ShellTests: XCTestCase {
 
     // MARK: Tabs and More
 
+    /// The web's rule (App.tsx): `family = signedIn && familySharing`, and Cycle while tracking is on.
     func testMoreListsFamilyAndCycleOnlyWhenThePersonHasThem() throws {
+        let rest: [AppPage] = [.journal, .sleep, .labs, .mcfly, .profile, .integrations, .insights]
         let d = Dashboard()
-        XCTAssertEqual(d.morePages, [.journal, .sleep, .labs, .mcfly, .profile, .integrations, .insights], "before any status: no Family, no Cycle")
+        d.authMode = "required"
+        d.phase = .ready
+        XCTAssertEqual(d.morePages, rest, "before any status: no Family, no Cycle")
         // A server older than the Family board doesn't name the setting.
         d.apply(status: try status(#"{"cycleTracking":false}"#))
-        XCTAssertEqual(d.morePages, [.journal, .sleep, .labs, .mcfly, .profile, .integrations, .insights])
-        // Sharing turned off still means the server has the board: Family stays, to turn it on again.
+        XCTAssertEqual(d.morePages, rest)
+        d.apply(status: try status(#"{"familySharing":true,"cycleTracking":true}"#))
+        XCTAssertEqual(d.morePages, [.family, .cycle] + rest)
+        // Sharing off: the web leaves Family out of its navigation (its page still opens from a link, and says so).
         d.apply(status: try status(#"{"familySharing":false,"cycleTracking":true}"#))
-        XCTAssertEqual(d.morePages, [.family, .cycle, .journal, .sleep, .labs, .mcfly, .profile, .integrations, .insights])
+        XCTAssertEqual(d.morePages, [.cycle] + rest)
         d.apply(status: try status(#"{"familySharing":true,"cycleTracking":false}"#))
         XCTAssertEqual(d.morePages.prefix(2), [.family, .journal])
+
+        // A server whose status doesn't name the setting, but whose board was read: listed while you share.
+        d.apply(status: try status(#"{"cycleTracking":false}"#))
+        d.receiveFamily(try JSONDecoder().decode(FamilyBoard.self, from: Data(#"{"sharing":true,"today":"2026-10-17","members":[]}"#.utf8)))
+        XCTAssertEqual(d.morePages.first, .family)
+    }
+
+    /// No sign-in (a local server): the board needs accounts, so More doesn't offer it, as on the web.
+    func testAServerWithoutSignInListsNoFamily() throws {
+        let d = Dashboard()
+        d.authMode = "open"
+        d.phase = .ready
+        d.apply(status: try status(#"{"familySharing":true,"cycleTracking":true}"#))
+        XCTAssertEqual(d.morePages.prefix(2), [.cycle, .journal])
+    }
+
+    /// Signed out: nothing in More says what the last person had on (Cycle tracking, Family), even from a status
+    /// cached on the phone before the server answered.
+    func testSignedOutMoreNamesNoneOfTheLastPersonsPages() throws {
+        let d = Dashboard()
+        d.authMode = "required"
+        d.apply(status: try status(#"{"familySharing":true,"cycleTracking":true}"#))
+        XCTAssertEqual(d.morePages.prefix(1), [.journal], "starting, from a cached status: not yet")
+        d.phase = .ready
+        XCTAssertEqual(d.morePages.prefix(2), [.family, .cycle])
+        d.phase = .signIn
+        XCTAssertNil(d.status, "what was loaded for them goes")
+        XCTAssertEqual(d.morePages.prefix(1), [.journal])
     }
 
     /// The tab bar and More are the web's phone layout: TAB_PAGES as tabs, then More holds mainNav()'s other pages in
@@ -288,10 +322,51 @@ final class ShellTests: XCTestCase {
         d.phase = .unavailable("offline")
         XCTAssertEqual(d.paths[.more], [.profile])
 
-        // Someone signs in (maybe someone else): nothing of the last person's pages.
+        // Asked to sign in again: the last person's pages went with the sign-in screen, so signing in (maybe as
+        // someone else) keeps only what was opened since.
+        d.phase = .ready
         d.paths[.more] = [.family, .familyMember("u2")]
+        d.phase = .signIn
+        XCTAssertEqual(d.paths[.more], [])
         d.signedIn()
         XCTAssertEqual(d.paths[.more], [])
+    }
+
+    /// The weekly digest tapped while signed out opens Insights, behind the sign-in screen; signing in there lands on
+    /// the digest, not on the More list.
+    func testADigestTappedWhileSignedOutShowsAfterSignIn() {
+        let d = Dashboard()
+        d.authMode = "required"
+        d.phase = .signIn
+        d.open(.insights)
+        XCTAssertEqual(d.tab, .more)
+        XCTAssertEqual(d.paths[.more], [.insights])
+        d.signedIn()
+        XCTAssertEqual(d.phase, .ready)
+        XCTAssertEqual(d.tab, .more)
+        XCTAssertEqual(d.paths[.more], [.insights])
+    }
+
+    /// A session that ends without Sign out (it ran out, or was ended on the web or by an admin): the next read's 401
+    /// asks for sign-in, and nothing of the person stays for whoever holds the phone: not McFly's conversation, not
+    /// their settings, summary or Family board.
+    func testASessionThatEndsForgetsThePerson() throws {
+        let d = Dashboard()
+        d.authMode = "required"
+        d.phase = .ready
+        d.apply(status: try status(#"{"name":"Sam","familySharing":true,"cycleTracking":true}"#, user: #"{"id":"u1","role":"user"}"#))
+        d.receiveFamily(try JSONDecoder().decode(FamilyBoard.self, from: Data(#"{"sharing":true,"today":"2026-10-17","members":[]}"#.utf8)))
+        d.mcfly.messages = [McFlyMessage(role: .user, content: "Why is my heart rate up?"), McFlyMessage(role: .assistant, content: "…")]
+        d.mcfly.status = McFlyStatus(configured: true, limit: 30, usedToday: 2)
+        d.open(.mcfly)
+
+        d.phase = .signIn // what fetch, a load or a version check does with a 401
+        XCTAssertTrue(d.mcfly.messages.isEmpty)
+        XCTAssertNil(d.mcfly.status)
+        XCTAssertNil(d.status)
+        XCTAssertNil(d.summary)
+        XCTAssertNil(d.familyBoard)
+        XCTAssertEqual(d.paths[.more], [], "Ask McFly's page closes too")
     }
 
     /// Another server: its pages go too, even when both answer (two servers without sign-in). Not the first connect
@@ -321,6 +396,10 @@ final class ShellTests: XCTestCase {
         d.paths[.more] = [.family, .familyMember("u2")]
         d.dropMissingPages()
         XCTAssertEqual(d.paths[.more], [.family, .familyMember("u2")], "still there")
+        // Sharing turned off: More stops listing Family, but the page stays open and says so (the web's FamilyOff).
+        d.apply(status: try status(#"{"familySharing":false,"cycleTracking":true}"#))
+        d.dropMissingPages()
+        XCTAssertEqual(d.paths[.more], [.family, .familyMember("u2")])
         d.apply(status: try status(#"{"cycleTracking":true}"#))
         d.dropMissingPages()
         XCTAssertEqual(d.paths[.more], [])

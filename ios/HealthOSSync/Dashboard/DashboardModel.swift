@@ -32,7 +32,15 @@ final class Dashboard {
         didSet {
             // Signed out without Sign out (a session that ran out or was ended elsewhere, none at launch): a token
             // nobody can be told the owner of waits for a sign-in; one whose owner is known goes on (IngestTokenOwner).
-            if phase == .signIn, oldValue != .signIn { ingestSessionEnded() }
+            if phase == .signIn, oldValue != .signIn {
+                ingestSessionEnded()
+                // Asked to sign in, however it came (Sign out, a session that ran out or was ended elsewhere, none at
+                // launch): nothing of the last person stays in memory for whoever holds the phone, as the web clears
+                // what it loaded on a 401. Their summary, settings, Family board, McFly conversation and photo go;
+                // the summary kept on disk stays for their next launch (Sign out removes that too).
+                clearData()
+                forgetPerson()
+            }
             // Signed out, or the server can't be reached: no page stays open on what it showed.
             if phase != .ready, oldValue == .ready { dropPages() }
         }
@@ -318,11 +326,11 @@ final class Dashboard {
 
     /// A new session (sign-in or a new account from an invite), maybe as someone else after the last one expired:
     /// nothing of the last person's Family board, photos or dismissed notice carries over, and the ingest token is
-    /// checked against who it is.
+    /// checked against who it is. The pages open stay: the last person's went when the sign-in screen came (leaving
+    /// .ready), so any open now were opened since, by whoever is signing in (a tapped digest's Insights).
     func signedIn(newAccount: Bool = false) {
         resetFamily()
         forgetPerson()
-        dropPages()
         timeZoneSent = nil
         phase = .ready
         checkIngestToken(signedInAs: account, newAccount: newAccount)

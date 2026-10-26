@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// The More tab: the pages the tab bar has no room for (the web's More menu in MobileNav.tsx), each pushed on this tab.
-/// Family shows on a server with the board and Cycle while tracking is on. Always there, signed in or not, so Profile
-/// (and the server address on it) can be reached before sign-in.
+/// Family shows while you share on a server with accounts and Cycle while tracking is on, as the web lists them. Always
+/// there, signed in or not, so Profile (and the server address on it) can be reached before sign-in.
 struct MoreScreen: View {
     @Environment(Dashboard.self) private var dashboard
 

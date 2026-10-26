@@ -27,8 +27,10 @@ struct AppShell: View {
             await dashboard.mcfly.refreshStatus()
             await dashboard.loadAI(force: true)
         }
-        // Family or Cycle went away (another server, sharing or tracking off) while open under More.
-        .onChange(of: dashboard.morePages) { _, _ in dashboard.dropMissingPages() }
+        // Family or Cycle went away (another server, tracking off) while open under More.
+        .onChange(of: dashboard.featurePages) { _, _ in dashboard.dropMissingPages() }
+        // Asked to sign in (or the server went away) mid-conversation: the sheet doesn't stay up over the sign-in screen.
+        .onChange(of: dashboard.phase) { _, phase in if phase != .ready { chatOpen = false } }
     }
 }
 
