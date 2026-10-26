@@ -251,6 +251,8 @@ struct WelcomeField<Focus: Hashable, Below: View>: View {
             .foregroundStyle(readOnly ? Palette.ink2 : Palette.ink)
             .focused(focus, equals: field)
             .disabled(readOnly)
+            // The label over the field is hidden from VoiceOver: the field says it.
+            .accessibilityLabel(label)
             .accessibilityIdentifier(id)
             // The whole field takes the tap, not only the line of text in it.
             .frame(minHeight: 44)
