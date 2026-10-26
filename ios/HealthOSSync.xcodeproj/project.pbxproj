@@ -72,6 +72,7 @@
 		640DEB09F73229BB0A88F917 /* AppRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DC3708654566A1255AD0A12 /* AppRoute.swift */; };
 		650E57D3C25FE4211FC6FFCF /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79FA1E20BC3BE0C5269F578D /* APIClient.swift */; };
 		6690B6F92D10553DC56FF06C /* BodyScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8477505A0D2A223A6594503 /* BodyScreen.swift */; };
+		67083C5F99B05A00EF5B71C0 /* ProfileAccount.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5785192F23DB59253861175C /* ProfileAccount.swift */; };
 		6C672F4FF2AA094F01572202 /* AccountMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3EDCF0BEBCB913C3804AF386 /* AccountMenu.swift */; };
 		6C6C7DCCE697784424F3E782 /* FamilyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 921D0C88BED0295B748107F6 /* FamilyTests.swift */; };
 		6C91A98BDE0DA9DCC73EAC6A /* ProfileRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8793376CEAFA2A02DC49EEAF /* ProfileRow.swift */; };
@@ -226,6 +227,7 @@
 		557B903874008E25C2245C9B /* NutritionScreenTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NutritionScreenTests.swift; sourceTree = "<group>"; };
 		572030574C60D416CD1909E1 /* sleep.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = sleep.json; sourceTree = "<group>"; };
 		573469469E0FC1B1179C09AD /* FitbitImportSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FitbitImportSheet.swift; sourceTree = "<group>"; };
+		5785192F23DB59253861175C /* ProfileAccount.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileAccount.swift; sourceTree = "<group>"; };
 		5B4BFD7FDE79D03EB21530CF /* ProfileControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileControls.swift; sourceTree = "<group>"; };
 		5CCBCB73C14C4BDBBCAA4A45 /* SharedTypesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedTypesTests.swift; sourceTree = "<group>"; };
 		5DC3708654566A1255AD0A12 /* AppRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRoute.swift; sourceTree = "<group>"; };
@@ -714,6 +716,7 @@
 		DC7EB81460DCEFE10940D7EE /* Profile */ = {
 			isa = PBXGroup;
 			children = (
+				5785192F23DB59253861175C /* ProfileAccount.swift */,
 				773D4B98FFDA6E083B7A7328 /* ProfileBasicsSheet.swift */,
 				8A741F0E47E33A6BD3FEF6AF /* ProfileCardsSheet.swift */,
 				5B4BFD7FDE79D03EB21530CF /* ProfileControls.swift */,
@@ -968,6 +971,7 @@
 				3AE598C3E3E2FAFCD36DA1C0 /* PhotoSection.swift in Sources */,
 				631DA0178641180E06F9658B /* PortraitPhotosSection.swift in Sources */,
 				A367DFE8461A64C732C556F5 /* PortraitsAPI.swift in Sources */,
+				67083C5F99B05A00EF5B71C0 /* ProfileAccount.swift in Sources */,
 				E99DDB89F7B65C2D3F87F219 /* ProfileBasicsSheet.swift in Sources */,
 				2578216F805846611425475C /* ProfileCardsSheet.swift in Sources */,
 				DC0FAA65D3BEED0556EABE62 /* ProfileControls.swift in Sources */,

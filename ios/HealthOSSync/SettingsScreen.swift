@@ -159,6 +159,7 @@ private struct ProfileYoursCard: View {
                         .accessibilityIdentifier("manageChatbot")
                 }
             }
+            ProfileAccountRow()
             if keys {
                 ProfileRow("OpenAI · Nutrition & portraits") {
                     Text(ProfileWords.openAI(byok: availability.byok))

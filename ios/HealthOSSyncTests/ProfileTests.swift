@@ -170,4 +170,39 @@ final class ProfileTests: XCTestCase {
         XCTAssertNil(protein.problem(120))
         XCTAssertEqual(protein.problem(5), "Protein: between 10 and 500 g, or blank for none.")
     }
+
+    // MARK: Password
+
+    func testPasswordFormRule() {
+        XCTAssertFalse(ProfileWords.passwordReady(current: "", next: "0123456789", confirm: "0123456789"), "needs the current one")
+        XCTAssertFalse(ProfileWords.passwordReady(current: "old", next: "012345678", confirm: "012345678"), "9 is too short")
+        XCTAssertFalse(ProfileWords.passwordReady(current: "old", next: "0123456789", confirm: "0123456788"), "typed the same twice")
+        XCTAssertTrue(ProfileWords.passwordReady(current: "old", next: "0123456789", confirm: "0123456789"))
+    }
+
+    func testPasswordRefusalsAreTheServersWords() {
+        XCTAssertEqual(APIClient.error(status: 403, message: "Your current password is wrong.", path: "/auth/password").localizedDescription,
+                       "Your current password is wrong.")
+        XCTAssertEqual(APIClient.error(status: 400, message: "Use a password of at least 10 characters.", path: "/auth/password").localizedDescription,
+                       "Use a password of at least 10 characters.")
+        // A session already gone: the sign-in screen, not a wrong password.
+        guard case .signInRequired = APIClient.error(status: 401, message: "Sign in required", path: "/auth/password") else {
+            return XCTFail("a 401 from a password change is a session that ended")
+        }
+    }
+
+    /// The server moves the session version on and answers with a new cookie for this phone: it's kept, so the phone
+    /// stays signed in while every other device is signed out.
+    func testThePasswordChangesNewSessionIsKept() throws {
+        let saved = Keychain.read(service: "healthos.session")
+        defer { Keychain.write(saved ?? "", service: "healthos.session") }
+        let base = URL(string: "http://127.0.0.1:9")!
+        let client = APIClient(base: base)
+        SessionStore.update(from: "hos_session=v2.u1.1.111.old; Path=/; HttpOnly; Max-Age=600", url: base, base: base)
+        XCTAssertEqual(SessionStore.cookie(for: base), "v2.u1.1.111.old")
+        let answer = HTTPURLResponse(url: base.appendingPathComponent("api/auth/password"), statusCode: 200, httpVersion: "HTTP/1.1",
+                                     headerFields: ["Set-Cookie": "hos_session=v2.u1.2.222.new; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000"])!
+        _ = try client.checked(Data(#"{"ok":true}"#.utf8), answer, path: "/auth/password")
+        XCTAssertEqual(SessionStore.cookie(for: base), "v2.u1.2.222.new")
+    }
 }
