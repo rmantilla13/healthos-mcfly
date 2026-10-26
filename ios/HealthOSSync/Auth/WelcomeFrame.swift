@@ -371,15 +371,19 @@ struct BackLabel: View {
     }
 }
 
-/// What went wrong (.note-bad with its alert icon), in the server's own words when it gave any. VoiceOver reads it
-/// out when it appears, as the web's role="alert".
+/// What went wrong (.note-bad with its alert icon: the web's warning triangle, centred beside the words), in the
+/// server's own words when it gave any. VoiceOver reads it out when it appears, as the web's role="alert".
 struct ErrorNote: View {
     let text: String
     init(_ text: String) { self.text = text }
+    /// The symbol's size: Icon.tsx's "alert" fills about 12 of its 15px box, beside 13px words.
+    @ScaledMetric(relativeTo: .footnote) private var icon: CGFloat = 12
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Image(systemName: "exclamationmark.circle").imageScale(.small).accessibilityHidden(true)
+        HStack(alignment: .center, spacing: 6) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: icon))
+                .accessibilityHidden(true)
             Text(text).fixedSize(horizontal: false, vertical: true)
         }
         .font(.app(size: 13, relativeTo: .footnote))
