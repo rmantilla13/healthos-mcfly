@@ -509,6 +509,17 @@ final class PortraitsTests: XCTestCase {
         XCTAssertEqual(d.availability.portraits, false)
     }
 
+    func testTheListIsReadAgainWhenTheWelcomeClosesOrAKeyIsConnected() {
+        let now = PortraitPhotosSection.readKey(generation: 3, photo: "1761300000000", welcomeOpen: false, ownOpenAIKey: false)
+        XCTAssertNotEqual(PortraitPhotosSection.readKey(generation: 3, photo: "1761300000000", welcomeOpen: true, ownOpenAIKey: false), now,
+                          "the welcome opens, and again when it closes: its first step adds and replaces reference photos")
+        XCTAssertNotEqual(PortraitPhotosSection.readKey(generation: 3, photo: "1761300000000", welcomeOpen: false, ownOpenAIKey: true), now,
+                          "an OpenAI key connected: a portrait can be made now")
+        XCTAssertNotEqual(PortraitPhotosSection.readKey(generation: 3, photo: nil, welcomeOpen: false, ownOpenAIKey: false), now, "the photo removed")
+        XCTAssertNotEqual(PortraitPhotosSection.readKey(generation: 4, photo: "1761300000000", welcomeOpen: false, ownOpenAIKey: false), now, "a load")
+        XCTAssertEqual(PortraitPhotosSection.readKey(generation: 3, photo: "1761300000000", welcomeOpen: false, ownOpenAIKey: false), now)
+    }
+
     func testAFailedTileIsSurfaceAndEveryOtherOnTheCream() throws {
         let css = try web("src/styles/portraits.css")
         XCTAssertNotNil(css.firstMatch(of: /\.portrait-tile-art \{[^}]*background: var\(--grad-cream\);/))

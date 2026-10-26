@@ -16,6 +16,14 @@ struct PortraitPhotosSection: View {
             PortraitPhotosCard().id(person)
         }
     }
+
+    /// When the list is read again: on showing Profile (for the count) and after every load; when the profile photo
+    /// changes or goes (the portrait in use may have changed with it); when the welcome closes (its first step adds and
+    /// replaces reference photos without a load); and when the person connects or removes their own OpenAI key (whether
+    /// a portrait can be made). The web reads it again on each of these through notifyDataChanged.
+    static func readKey(generation: Int, photo: String?, welcomeOpen: Bool, ownOpenAIKey: Bool) -> String {
+        "\(generation)|\(photo ?? "none")|\(welcomeOpen ? "welcome" : "-")|\(ownOpenAIKey ? "key" : "-")"
+    }
 }
 
 private struct PortraitPhotosCard: View {
@@ -33,9 +41,9 @@ private struct PortraitPhotosCard: View {
                     .overlay(alignment: .top) { Hairline() }
             }
         }
-        // Read on showing Profile (for the count) and after every load; a new profile photo or none means the portrait
-        // in use may have changed.
-        .task(id: "\(dashboard.generation)|\(dashboard.status?.photo?.versionKey ?? "none")") {
+        .task(id: PortraitPhotosSection.readKey(generation: dashboard.generation, photo: dashboard.status?.photo?.versionKey,
+                                                welcomeOpen: dashboard.onboarding != nil,
+                                                ownOpenAIKey: dashboard.availability.ai.value?.key("openai") != nil)) {
             if model.service == nil { model.service = .live(dashboard) }
             await model.read()
         }
