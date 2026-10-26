@@ -270,20 +270,34 @@ final class SessionTests: XCTestCase {
             "PUT /api/settings": .json(401, refused, delay: 0.3),
         ])
         use(server)
+        let kept = Keychain.read(service: "healthos.session")
+        addTeardownBlock { Keychain.write(kept ?? "", service: "healthos.session") }
+        let base = server.url
+        // Each person's session cookie, as the server's sign-in sends it.
+        func store(_ value: String) { SessionStore.update(from: "hos_session=\(value); Path=/; Max-Age=600", url: base, base: base) }
         let photo = PreparedPhoto(jpeg: Data([0xFF, 0xD8, 0xFF, 0xD9]), width: 1, height: 1)
-        let someoneElse = endings[1].1
+        // Sam signs in: Sam's cookie is stored, as a sign-in stores it.
+        let someoneElse: @MainActor (Dashboard) -> Void = { d in
+            self.endings[1].1(d)
+            store("v2.sam.1.s")
+        }
 
+        store("v2.alex.1.a")
         let d = alexHere()
         let added = await whileOnItsWay(server, "POST /api/portraits/reference", end: someoneElse, d: d) { _ = try await d.addReference(photo) }
         XCTAssertTrue(added is CancellationError, String(describing: added))
         XCTAssertEqual(d.phase, .ready, "Sam stays signed in")
+        XCTAssertEqual(SessionStore.cookie(for: base), "v2.sam.1.s", "and Sam's session is still there for Sam's next request")
 
+        store("v2.alex.1.a")
         let e = alexHere()
         let saved = await whileOnItsWay(server, "PUT /api/settings", end: someoneElse, d: e) { try await e.save(settings: ["units": "imperial"]) }
         XCTAssertTrue(saved is CancellationError, String(describing: saved))
         XCTAssertEqual(e.phase, .ready, "Sam stays signed in")
+        XCTAssertEqual(SessionStore.cookie(for: base), "v2.sam.1.s", "and keeps the session")
 
-        // Still Alex's session: the 401 brings up sign-in, as always.
+        // Still Alex's session: the 401 brings up sign-in, as always, and Alex's session goes.
+        store("v2.alex.1.a")
         let f = alexHere()
         do {
             _ = try await f.addReference(photo)
@@ -292,5 +306,6 @@ final class SessionTests: XCTestCase {
             guard case .signInRequired? = error as? APIError else { return XCTFail("a 401: \(error)") }
         }
         XCTAssertEqual(f.phase, .signIn)
+        XCTAssertNil(SessionStore.cookie(for: base))
     }
 }

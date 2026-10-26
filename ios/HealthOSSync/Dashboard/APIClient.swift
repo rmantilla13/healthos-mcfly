@@ -98,17 +98,33 @@ struct APIClient {
         return req
     }
 
+    /// The routes that start a session, whose new cookie is kept whatever was stored before: a sign-in, a new account
+    /// from an invite, a new password from a reset link (server/auth.ts startSession).
+    static let sessionStarts: Set<String> = ["/auth/login", "/auth/invite", "/auth/reset"]
+
     /// The body of an answer to `path`, once it's known to be a yes: a new session cookie is kept, and a refusal is
     /// thrown as the error for it (`error(status:message:path:)`), a 401 also dropping the session.
-    func checked(_ data: Data, _ response: URLResponse, path: String) throws -> Data {
+    ///
+    /// `sent` is the session cookie the request carried (`SessionStore.carried(by:)`). Only while it's still the one
+    /// stored is the session the request's: then a new cookie (a password change's) replaces it and a 401 drops it. Once
+    /// it isn't (a Sign out, another 401, someone else's sign-in, a new password since), the answer says nothing about
+    /// whoever is signed in now. Its cookie isn't kept, so a password change answered after Sign out never signs that
+    /// person in again. Its 401 throws a CancellationError and drops nothing, so whoever signed in since stays signed in
+    /// (callers stay quiet about a CancellationError). Only the routes that start a session (`sessionStarts`) keep their
+    /// cookie whatever was stored.
+    func checked(_ data: Data, _ response: URLResponse, path: String, sent: String?) throws -> Data {
         guard let http = response as? HTTPURLResponse else { throw APIError.network("No response from the server.") }
-        if let setCookie = http.value(forHTTPHeaderField: "Set-Cookie") {
+        let stillSent = SessionStore.cookie(for: base) == sent
+        if let setCookie = http.value(forHTTPHeaderField: "Set-Cookie"), stillSent || Self.sessionStarts.contains(path) {
             SessionStore.update(from: setCookie, url: http.url ?? base, base: base)
         }
         if (200..<300).contains(http.statusCode) { return data }
 
         let error = Self.error(status: http.statusCode, message: (try? JSONDecoder().decode(ErrorBody.self, from: data))?.error, path: path)
-        if case .signInRequired = error { SessionStore.clear() }
+        if case .signInRequired = error, sent != nil {
+            guard stillSent else { throw CancellationError() }
+            SessionStore.clear()
+        }
         throw error
     }
 
@@ -130,7 +146,7 @@ struct APIClient {
         } catch {
             throw unreachable(error)
         }
-        return try checked(data, response, path: path)
+        return try checked(data, response, path: path, sent: SessionStore.carried(by: req))
     }
 
     /// The error for a refused request to `path`, from its status and the server's message (nil when it sent none).
@@ -157,20 +173,26 @@ struct APIClient {
         error is CancellationError || (error as? URLError)?.code == .cancelled
     }
 
-    /// A POST whose response is read as it arrives (server-sent events). Status handling is left to the caller.
+    /// A POST whose response is read as it arrives (server-sent events). Status handling is left to the caller. A 401
+    /// drops the session only while the cookie it carried is still the one stored, as `checked`; after that it throws a
+    /// CancellationError.
     func stream(_ path: String, body: Data) async throws -> (URLSession.AsyncBytes, HTTPURLResponse) {
         var req = urlRequest(path, method: "POST", headers: ["Accept": "text/event-stream"], timeout: 120)
         req.httpBody = body
+        let sent = SessionStore.carried(by: req)
+        let bytes: URLSession.AsyncBytes
+        let response: URLResponse
         do {
-            let (bytes, response) = try await Self.session.bytes(for: req)
-            guard let http = response as? HTTPURLResponse else { throw APIError.network("No response from the server.") }
-            if http.statusCode == 401 { SessionStore.clear() }
-            return (bytes, http)
-        } catch let e as APIError {
-            throw e
+            (bytes, response) = try await Self.session.bytes(for: req)
         } catch {
             throw unreachable(error)
         }
+        guard let http = response as? HTTPURLResponse else { throw APIError.network("No response from the server.") }
+        if http.statusCode == 401, sent != nil {
+            guard SessionStore.cookie(for: base) == sent else { throw CancellationError() }
+            SessionStore.clear()
+        }
+        return (bytes, http)
     }
 
     func post(_ path: String, body: Data) async throws -> Data { try await request(path, method: "POST", body: body) }
@@ -395,6 +417,12 @@ enum SessionStore {
         let server: String
         let value: String
         let expires: Date?
+    }
+
+    /// The session cookie a request carries (its Cookie header, set by `APIClient.urlRequest`); nil for none.
+    static func carried(by request: URLRequest) -> String? {
+        guard let header = request.value(forHTTPHeaderField: "Cookie"), header.hasPrefix(name + "=") else { return nil }
+        return String(header.dropFirst(name.count + 1))
     }
 
     static func cookie(for base: URL) -> String? {

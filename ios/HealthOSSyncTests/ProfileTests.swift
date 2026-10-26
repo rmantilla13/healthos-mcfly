@@ -258,8 +258,60 @@ final class ProfileTests: XCTestCase {
         XCTAssertEqual(SessionStore.cookie(for: base), "v2.u1.1.111.old")
         let answer = HTTPURLResponse(url: base.appendingPathComponent("api/auth/password"), statusCode: 200, httpVersion: "HTTP/1.1",
                                      headerFields: ["Set-Cookie": "hos_session=v2.u1.2.222.new; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000"])!
-        _ = try client.checked(Data(#"{"ok":true}"#.utf8), answer, path: "/auth/password")
+        _ = try client.checked(Data(#"{"ok":true}"#.utf8), answer, path: "/auth/password", sent: "v2.u1.1.111.old")
         XCTAssertEqual(SessionStore.cookie(for: base), "v2.u1.2.222.new")
+    }
+
+    /// A password change answered once its session is over (Sign out, or someone else signed in since) never puts that
+    /// person's new session back: what's stored stays. A sign-in's cookie is always kept, whatever was stored.
+    func testALateAnswersCookieNeverReplacesWhatsStoredSince() throws {
+        let saved = Keychain.read(service: "healthos.session")
+        defer { Keychain.write(saved ?? "", service: "healthos.session") }
+        let base = URL(string: "http://127.0.0.1:9")!
+        let client = APIClient(base: base)
+        func answer(_ path: String, _ value: String) -> HTTPURLResponse {
+            HTTPURLResponse(url: base.appendingPathComponent("api" + path), statusCode: 200, httpVersion: "HTTP/1.1",
+                            headerFields: ["Set-Cookie": "hos_session=\(value); Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000"])!
+        }
+        let ok = Data(#"{"ok":true}"#.utf8)
+
+        // Signed out since: nothing stored, and nothing is put back.
+        SessionStore.clear()
+        _ = try client.checked(ok, answer("/auth/password", "v2.alex.2.new"), path: "/auth/password", sent: "v2.alex.1.old")
+        XCTAssertNil(SessionStore.cookie(for: base), "Alex signed out: their new session isn't kept")
+
+        // Sam signed in since: Sam's session stays.
+        SessionStore.update(from: "hos_session=v2.sam.1.s; Path=/; Max-Age=600", url: base, base: base)
+        _ = try client.checked(ok, answer("/auth/password", "v2.alex.2.new"), path: "/auth/password", sent: "v2.alex.1.old")
+        XCTAssertEqual(SessionStore.cookie(for: base), "v2.sam.1.s", "Sam stays Sam")
+
+        // A sign-in, an invite and a reset link start a session: theirs is kept whatever was there.
+        for (path, value) in [("/auth/login", "v2.alex.3.in"), ("/auth/invite", "v2.kim.1.in"), ("/auth/reset", "v2.lee.4.in")] {
+            _ = try client.checked(ok, answer(path, value), path: path, sent: nil)
+            XCTAssertEqual(SessionStore.cookie(for: base), value, path)
+        }
+    }
+
+    /// A 401 drops the stored session only when it's the one the request carried. One that came for a session over
+    /// since is quiet (a CancellationError) and leaves whoever is signed in now signed in.
+    func testA401DropsOnlyTheSessionItCarried() throws {
+        let saved = Keychain.read(service: "healthos.session")
+        defer { Keychain.write(saved ?? "", service: "healthos.session") }
+        let base = URL(string: "http://127.0.0.1:9")!
+        let client = APIClient(base: base)
+        let refused = HTTPURLResponse(url: base.appendingPathComponent("api/summary"), statusCode: 401, httpVersion: "HTTP/1.1", headerFields: nil)!
+        let body = Data(#"{"error":"Sign in required"}"#.utf8)
+        SessionStore.update(from: "hos_session=v2.sam.1.s; Path=/; Max-Age=600", url: base, base: base)
+
+        XCTAssertThrowsError(try client.checked(body, refused, path: "/summary", sent: "v2.alex.1.old")) { error in
+            XCTAssertTrue(error is CancellationError, "\(error)")
+        }
+        XCTAssertEqual(SessionStore.cookie(for: base), "v2.sam.1.s", "Alex's late 401 leaves Sam's session")
+
+        XCTAssertThrowsError(try client.checked(body, refused, path: "/summary", sent: "v2.sam.1.s")) { error in
+            guard case .signInRequired? = error as? APIError else { return XCTFail("\(error)") }
+        }
+        XCTAssertNil(SessionStore.cookie(for: base), "Sam's own 401 ends Sam's session")
     }
 
     // MARK: Export

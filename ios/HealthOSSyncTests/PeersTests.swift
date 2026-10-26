@@ -238,7 +238,7 @@ final class PeersTests: XCTestCase {
         let client = APIClient(base: URL(string: "http://localhost:8805")!)
         let response = HTTPURLResponse(url: URL(string: "http://localhost:8805/api/peers")!, statusCode: status, httpVersion: nil, headerFields: nil)!
         do {
-            _ = try client.checked(Data(body.utf8), response, path: "/peers")
+            _ = try client.checked(Data(body.utf8), response, path: "/peers", sent: nil)
             XCTFail("a \(status) went through")
             return APIError.server(status, "")
         } catch {

@@ -62,10 +62,10 @@ enum ProfileExport {
                 defer { try? handle.close() }
                 return try? handle.read(upToCount: 64 * 1024)
             } ?? Data()
-            throw refusal(body, response, client: client)
+            throw refusal(body, response, client: client, sent: SessionStore.carried(by: request))
         }
         // A new session cookie, if one came, is kept as for any answer.
-        _ = try? client.checked(Data(), response, path: path)
+        _ = try? client.checked(Data(), response, path: path, sent: SessionStore.carried(by: request))
         let name = fileName(contentDisposition: http.value(forHTTPHeaderField: "Content-Disposition"), today: today)
         // Named in its own folder: the one it was written into, or a new one.
         let parent = file.deletingLastPathComponent()
@@ -97,9 +97,9 @@ enum ProfileExport {
 
     /// The error for a refused export: signed out, an older server, or the server's words (the web's fallback when
     /// it sent none).
-    static func refusal(_ body: Data, _ response: URLResponse, client: APIClient) -> Error {
+    static func refusal(_ body: Data, _ response: URLResponse, client: APIClient, sent: String?) -> Error {
         do {
-            _ = try client.checked(body, response, path: path)
+            _ = try client.checked(body, response, path: path, sent: sent)
             return Problem(message: ProfileWords.exportFailed)
         } catch let error as APIError {
             switch error {
@@ -110,6 +110,9 @@ enum ProfileExport {
             case .misconfigured(let message), .network(let message):
                 return Problem(message: message.isEmpty ? ProfileWords.exportFailed : message)
             }
+        } catch is CancellationError {
+            // A 401 for a session that ended since, someone else's now: nothing to say.
+            return CancellationError()
         } catch {
             return Problem(message: ProfileWords.exportFailed)
         }
