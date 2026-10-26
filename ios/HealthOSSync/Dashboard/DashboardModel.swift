@@ -42,8 +42,7 @@ final class Dashboard {
                 // launch): nothing of the last person stays in memory for whoever holds the phone, as the web clears
                 // what it loaded on a 401. Their summary, settings, Family board, McFly conversation and photo go;
                 // the summary kept on disk stays for their next launch (Sign out removes that too).
-                clearData()
-                forgetPerson()
+                forgetSignedOut()
             }
             // Signed out, or the server can't be reached: no page stays open on what it showed.
             if phase != .ready, oldValue == .ready { dropPages() }
@@ -221,8 +220,13 @@ final class Dashboard {
         case "required":
             phase = auth.authenticated ? .ready : .signIn
             // Every time, not only on the way into .signIn: the sign-in screen may be up already from a 401 that came
-            // while the sign-in mode wasn't known (offline at launch), when the token's owner wasn't looked at.
-            if !auth.authenticated { ingestSessionEnded() }
+            // while the sign-in mode wasn't known (offline at launch), when the token's owner wasn't looked at. And
+            // already up, it may have a summary cached for this server put in memory just now (an address changed while
+            // signed out): nobody's signed in to see it.
+            if !auth.authenticated {
+                ingestSessionEnded()
+                forgetSignedOut()
+            }
         default: phase = .misconfigured
         }
         // Signed in at launch (the first launch after an update included): a token with no known owner is theirs.
@@ -371,6 +375,12 @@ final class Dashboard {
 
     /// What the app keeps of the person signed in beyond their data: the McFly conversation, what the server can do
     /// for them, the profile photo kept in Caches, and what's open over the app for them (a metric, the welcome).
+    /// Nobody's signed in: what was loaded for the last person goes from memory (the disk's summary stays).
+    private func forgetSignedOut() {
+        clearData()
+        forgetPerson()
+    }
+
     private func forgetPerson() {
         mcfly.forget()
         availability.forget()

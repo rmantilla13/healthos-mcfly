@@ -72,6 +72,14 @@ final class ShellTests: XCTestCase {
         d.phase = .signIn
         XCTAssertNil(d.status, "what was loaded for them goes")
         XCTAssertEqual(d.morePages.prefix(1), [.journal])
+
+        // Already signed out, another server's cached summary put in memory (the address changed): the server's answer
+        // that nobody's signed in drops it too.
+        d.apply(status: try status(#"{"familySharing":true,"cycleTracking":true}"#))
+        let auth = try JSONDecoder().decode(AuthState.self, from: Data(#"{"mode":"required","authenticated":false}"#.utf8))
+        d.apply(auth: auth, host: nil)
+        XCTAssertEqual(d.phase, .signIn)
+        XCTAssertNil(d.status)
     }
 
     /// The tab bar and More are the web's phone layout: TAB_PAGES as tabs, then More holds mainNav()'s other pages in
