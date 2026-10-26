@@ -637,6 +637,8 @@ private struct ChatReview: View {
     let onDone: (Int?) -> Void
     @Environment(Dashboard.self) private var dashboard
     @Environment(\.dynamicTypeSize) private var typeSize
+    /// How many's column: 72 at the usual size, wider as the text grows, so "How many" stays on one line.
+    @ScaledMetric(relativeTo: .caption) private var quantityWidth: CGFloat = 72
     @State private var review: EstimateReview
 
     init(turn: EstimateTurn, drafts: [FoodEntry], today: String, mode: NutritionMode, units: Units, onDone: @escaping (Int?) -> Void) {
@@ -718,7 +720,7 @@ private struct ChatReview: View {
             .onChange(of: k.name) { _, v in if v.count > 100 { nameBinding.wrappedValue = String(v.prefix(100)) } }
             .accessibilityLabel("Item \(i + 1), name")
         let quantity = VStack(alignment: .leading, spacing: 3) {
-            FieldLabel("How many")
+            FieldLabel("How many").lineLimit(1).fixedSize()
             TextField("1", text: review.binding(k.id, \.quantity)).keyboardType(.decimalPad).foodInput()
                 .accessibilityLabel("How many of \(k.name.isEmpty ? "item \(i + 1)" : k.name)")
         }
@@ -731,7 +733,7 @@ private struct ChatReview: View {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(alignment: .bottom, spacing: 10) {
                     name
-                    quantity.frame(width: 72)
+                    quantity.frame(width: quantityWidth)
                 }
                 leave
             }
@@ -976,10 +978,24 @@ struct DailyBalanceCard: View {
 }
 
 /// The balance ring: the pale loop under protein, carbs and fat by weight, and its white middle with a soft edge.
+/// 112 points as on the web; at the accessibility text sizes, where the card stacks it over the rows, it grows with
+/// the text (to twice that at most), its figure and words with it, so the day's total reads at the size chosen.
 private struct BalanceRing: View {
     let m: DailyBalanceMath
-    private let size: CGFloat = 112
-    private let thickness: CGFloat = 11
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @ScaledMetric(relativeTo: .title2) private var grown: CGFloat = 1
+    /// The figure's words ("kcal logged") grow a little below the accessibility sizes too, inside the same ring.
+    @ScaledMetric(relativeTo: .caption2) private var captionGrown: CGFloat = 1
+
+    static let base: CGFloat = 112
+    static let most: CGFloat = 2
+
+    /// How much bigger than the web's ring it's drawn.
+    private var scale: CGFloat { typeSize.isAccessibilitySize ? min(max(grown, 1), Self.most) : 1 }
+    private var size: CGFloat { Self.base * scale }
+    private var thickness: CGFloat { 11 * scale }
+    /// The caption's size: with the ring at the accessibility sizes, up to 1.3 times the web's 10 below them.
+    private var captionScale: CGFloat { typeSize.isAccessibilitySize ? scale : min(max(captionGrown, 1), 1.3) }
 
     var body: some View {
         let parts = m.mode == .none ? [] : m.parts
@@ -1008,15 +1024,16 @@ private struct BalanceRing: View {
                 .fill(Palette.surface)
                 .overlay(Circle().strokeBorder(Palette.border))
                 .shadow(color: CSSColor.rgba(36, 49, 42, 0.12).color, radius: 4, y: 3)
-                .padding(15)
+                .padding(15 * scale)
             VStack(spacing: 1) {
                 if let value = center.value {
-                    Text(value).font(.app(fixedSize: 28)).foregroundStyle(Palette.ink).lineLimit(1).minimumScaleFactor(0.6)
+                    Text(value).font(.app(fixedSize: 28 * scale)).foregroundStyle(Palette.ink).lineLimit(1).minimumScaleFactor(0.6)
                 }
-                Text(center.caption).font(.app(fixedSize: 10)).foregroundStyle(Palette.ink3).multilineTextAlignment(.center)
-                    .frame(maxWidth: 64)
+                Text(center.caption).font(.app(fixedSize: 10 * captionScale)).foregroundStyle(Palette.ink3)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: min(64 * captionScale, size - 40 * scale))
             }
-            .padding(20)
+            .padding(20 * scale)
         }
         .frame(width: size, height: size)
         .accessibilityElement()

@@ -179,7 +179,8 @@ struct FoodEntryRow: View {
                 }
             } else {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    time.frame(width: 44, alignment: .leading)
+                    // On one line at every size below the accessibility ones ("08:05", never "08:0" over "5").
+                    time.fixedSize().frame(minWidth: 44, alignment: .leading)
                     text.frame(maxWidth: .infinity, alignment: .leading)
                     actions
                 }
