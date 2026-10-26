@@ -783,13 +783,18 @@ final class NutritionConversationTests: XCTestCase {
 
     private func withServer(_ body: (LoopbackServer) async throws -> Void) async throws {
         let server = try await LoopbackServer.start()
+        defer { server.stop() }
+        try await atServer(server.url.absoluteString) { try await body(server) }
+    }
+
+    /// The app's server set to `address` while `body` runs, then put back as it was (the tests run inside the app).
+    private func atServer(_ address: String, _ body: () async throws -> Void) async throws {
         let saved = UserDefaults.standard.string(forKey: "serverURL")
-        Config.serverText = server.url.absoluteString
+        Config.serverText = address
         defer {
-            server.stop()
             if let saved { UserDefaults.standard.set(saved, forKey: "serverURL") } else { UserDefaults.standard.removeObject(forKey: "serverURL") }
         }
-        try await body(server)
+        try await body()
     }
 
     /// POST /nutrition/log/day is new on this branch. A server older than it answers its catch-all (server/app.ts),
@@ -858,9 +863,9 @@ final class NutritionConversationTests: XCTestCase {
             await assertRefused(VoiceWords.notTranscribed) { try await d.transcribe(audio) }
         }
         // Nothing listening (the server stopped): the web's words for that.
-        Config.serverText = "http://127.0.0.1:9"
-        defer { UserDefaults.standard.removeObject(forKey: "serverURL") }
-        await assertRefused(VoiceWords.unreachable) { try await Dashboard().transcribe(Data([1])) }
+        try await atServer("http://127.0.0.1:9") {
+            await assertRefused(VoiceWords.unreachable) { try await Dashboard().transcribe(Data([1])) }
+        }
     }
 
     private func assertRefused(_ words: String, file: StaticString = #filePath, line: UInt = #line, _ call: () async throws -> String) async {
