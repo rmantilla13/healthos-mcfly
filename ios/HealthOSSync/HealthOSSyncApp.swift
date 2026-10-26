@@ -81,6 +81,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
             Config.ingestOwner = IngestTokenOwner(claim: .nextSignIn)
         }
         #endif
+        // An export a closed app left waiting for its share sheet (Profile → Export your data) goes: nobody's
+        // asked for it in this launch.
+        ProfileExport.removeAll()
         // HealthKit relaunches the app in the background for new data; the observer queries have to be
         // registered again before launch finishes, or that delivery is missed.
         Background.register()
