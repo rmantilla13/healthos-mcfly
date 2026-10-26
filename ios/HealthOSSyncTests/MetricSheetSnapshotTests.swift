@@ -83,6 +83,15 @@ final class MetricSheetSnapshotTests: XCTestCase {
         try await both(shot(.sleepHours, section: "Sleep", sheet: try fixture("metric-sleep-year"), openPage: "Sleep"), "sleep-year")
     }
 
+    func testTheTables() async throws {
+        let year = shot(.sleepHours, section: "Sleep", sheet: try fixture("metric-sleep-year"), openPage: "Sleep")
+        try await both(Shot(page: AnyView(year.page.environment(\.sheetChartOpensOnTable, true)),
+                            content: AnyView(year.content.environment(\.sheetChartOpensOnTable, true))), "sleep-year-table")
+        let heart = shot(.heartRate, section: "Body", sheet: try fixture("metric-heart-rate-day"))
+        try await draw(Shot(page: AnyView(heart.page.environment(\.sheetChartOpensOnTable, true)),
+                            content: AnyView(heart.content.environment(\.sheetChartOpensOnTable, true))), "heart-rate-day-table")
+    }
+
     func testADayByTheHour() async throws {
         try await both(shot(.steps, sheet: try fixture("metric-steps-day"), openPage: "Activity on Body"), "steps-day")
         try await both(shot(.heartRate, section: "Body", sheet: try fixture("metric-heart-rate-day"), openPage: "Vitals"), "heart-rate-day")

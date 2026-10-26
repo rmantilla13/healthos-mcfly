@@ -56,6 +56,7 @@
 		511E4AE0E6873FCC7A8432C4 /* HeartRateMeasurement.swift in Sources */ = {isa = PBXBuildFile; fileRef = 105DAA325ADAA76F13ED21C7 /* HeartRateMeasurement.swift */; };
 		52A801F21416D1DCBD9198E1 /* SharedModelsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74460881DC3ADAC4E527028B /* SharedModelsTests.swift */; };
 		5301936BF3D0B75906125BFD /* AdminScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6883EB7A5D276A39FD95C65 /* AdminScreen.swift */; };
+		533479867A7040D0A23A1F26 /* MetricSheetModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB5DE60C8E0B9006F91BFBD1 /* MetricSheetModel.swift */; };
 		5453DA7C24A4F94FF39E3D62 /* CycleScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CCCEEB7D629A9785331673E /* CycleScreen.swift */; };
 		555A9EE01ABBA4A5B0D4BFD2 /* McFly.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8831BE21705EE5AA0AF1C213 /* McFly.swift */; };
 		5632F5F056626F3BB97DE1C6 /* nutrition-none.json in Resources */ = {isa = PBXBuildFile; fileRef = 4FE808F612408F51C01FB9A2 /* nutrition-none.json */; };
@@ -323,6 +324,7 @@
 		E57D70AA436B77C04E6EB8CC /* MetricSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricSheetView.swift; sourceTree = "<group>"; };
 		E617E2FB9DFD894B406765C5 /* ChartLegend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartLegend.swift; sourceTree = "<group>"; };
 		E7D29E2F5C2A8ECB3EB8C238 /* PeersSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeersSection.swift; sourceTree = "<group>"; };
+		EB5DE60C8E0B9006F91BFBD1 /* MetricSheetModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricSheetModel.swift; sourceTree = "<group>"; };
 		EBD579D9FB433BBE4FFDD20C /* DayAggregator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayAggregator.swift; sourceTree = "<group>"; };
 		EBD7FFABE106E9D6F57CE6A0 /* metric-heart-rate-day.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "metric-heart-rate-day.json"; sourceTree = "<group>"; };
 		EC59950757F83DCAE2C28847 /* SignInUnavailable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignInUnavailable.swift; sourceTree = "<group>"; };
@@ -553,6 +555,7 @@
 				F52ED1D712CE37BC49897619 /* MetricInfo.swift */,
 				79C5EA1E51D1262831B1305D /* MetricSheetAPI.swift */,
 				90AC073F427A47BE0D2A66D3 /* MetricSheetChart.swift */,
+				EB5DE60C8E0B9006F91BFBD1 /* MetricSheetModel.swift */,
 				2739124E7A5AE19DF9FC2D0D /* MetricSheetModels.swift */,
 				E57D70AA436B77C04E6EB8CC /* MetricSheetView.swift */,
 			);
@@ -969,6 +972,7 @@
 				97D99CC4A0A626E2B6FCEBEE /* MetricRequest.swift in Sources */,
 				F9B7C3963FB2A7536709C3E6 /* MetricSheetAPI.swift in Sources */,
 				88C357F4893D83A06546CF61 /* MetricSheetChart.swift in Sources */,
+				533479867A7040D0A23A1F26 /* MetricSheetModel.swift in Sources */,
 				C950B90E273F61C827C3047F /* MetricSheetModels.swift in Sources */,
 				4A7AB3C9753FAD8ACCF6DAC3 /* MetricSheetView.swift in Sources */,
 				AD8BC8E5F3940A7E1B24AEB9 /* Models.swift in Sources */,

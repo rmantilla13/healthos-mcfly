@@ -13,42 +13,31 @@ import SwiftUI
 struct MetricSheetView: View {
     let request: MetricRequest
     @Environment(Dashboard.self) private var dashboard
-    @State private var ranges: SheetRanges
-    /// The last sheet that arrived, of any range: it stays up while another range loads (when `shows` says so).
-    @State private var data: MetricSheetData?
-    /// `data` is the answer for the range on screen as it is now, not a copy kept from before.
-    @State private var current = false
-    @State private var loading = false
-    @State private var error: String?
-    /// This sheet's answers by range, so going back to a range shows it at once; read again after a sync.
-    @State private var answers: [MetricRange: MetricSheetData] = [:]
-    @State private var answersFor = -1
-    /// The server has no sheet for this metric: built on the phone from its trends from then on.
-    @State private var onPhone = false
+    @State private var model: MetricSheetModel
     @State private var source: WebPage?
 
     init(request: MetricRequest) {
         self.request = request
-        _ranges = State(initialValue: SheetRanges(key: request.key, asked: request.range))
+        _model = State(initialValue: MetricSheetModel(key: request.key, range: request.range))
     }
 
     var body: some View {
         SheetScaffold(eyebrow: request.section, title: request.key.info.label) {
             MetricSheetContent(
-                key: request.key, range: ranges.range, sheet: data, picked: ranges.picked, note: ranges.note(shown: shownSheet),
-                loading: loading, error: error, openPage: openPage,
-                pick: { ranges.pick($0) },
+                key: request.key, range: model.range, sheet: model.data, picked: model.ranges.picked, note: model.note,
+                loading: model.loading, error: model.error, openPage: openPage,
+                pick: { model.pick($0) },
                 manageConnections: { leave(for: .integrations) },
                 open: { leave(for: request.page) },
                 readMore: { source = WebPage(url: $0) })
         }
         .sheet(item: $source) { SafariView(url: $0.url).ignoresSafeArea() }
-        .task(id: "\(ranges.range.rawValue)|\(dashboard.generation)") { await load(ranges.range) }
-    }
-
-    private var shownSheet: MetricSheetData? {
-        guard let data, data.key == request.key, data.shows(asked: ranges.range, picked: ranges.picked) else { return nil }
-        return data
+        .task(id: "\(model.range.rawValue)|\(dashboard.generation)") {
+            let key = request.key, date = request.date
+            await model.load(generation: dashboard.generation,
+                             fromServer: { range in try await dashboard.fetch { try await $0.metricSheet(key, range: range, date: date) } },
+                             onPhone: { range in try await MetricSheetFallback.load(key, range: range, date: date, dashboard: dashboard) })
+        }
     }
 
     /// "Open Vitals" names the card's page; not offered when that's the page under the sheet, where closing goes.
@@ -60,56 +49,6 @@ struct MetricSheetView: View {
     private func leave(for route: AppRoute) {
         dashboard.metricSheet = nil
         dashboard.open(route)
-    }
-
-    private func load(_ range: MetricRange) async {
-        if answersFor != dashboard.generation {
-            // New data since: every range is read again, and what's on screen stays up until it is.
-            answers = [:]
-            answersFor = dashboard.generation
-        } else if let hit = answers[range] {
-            data = hit
-            current = true
-            error = nil
-            loading = false
-            ranges.heard(hit, current: true)
-            return
-        }
-        current = false
-        loading = true
-        error = nil
-        do {
-            let sheet = try await fetch(range)
-            guard !Task.isCancelled, range == ranges.range else { return }
-            answers[range] = sheet
-            data = sheet
-            current = true
-            loading = false
-            ranges.heard(sheet, current: true)
-        } catch {
-            guard !Task.isCancelled, !APIClient.isCancellation(error), range == ranges.range else { return }
-            self.error = Self.message(error)
-            loading = false
-        }
-    }
-
-    private func fetch(_ range: MetricRange) async throws -> MetricSheetData {
-        if !onPhone {
-            let key = request.key, date = request.date
-            if let sheet = try await dashboard.fetch({ try await $0.metricSheet(key, range: range, date: date) }) { return sheet }
-            onPhone = true
-        }
-        return try await MetricSheetFallback.load(request.key, range: range, date: request.date, dashboard: dashboard)
-    }
-
-    /// The server's own words, as the web shows them after "Couldn't load this: ".
-    static func message(_ error: Error) -> String {
-        switch error as? APIError {
-        case .server(_, let message)?: message.isEmpty ? SheetWords.somethingWrong : message
-        case .misconfigured(let message)?, .network(let message)?: message
-        case .signInRequired?: APIError.signInRequired.localizedDescription
-        case nil: error is DecodingError ? SheetWords.somethingWrong : error.localizedDescription
-        }
     }
 }
 
@@ -240,6 +179,8 @@ private struct NeverMeasured: View {
                 }
             }
             .buttonStyle(.quietPill(size: .compact))
+            // A pill keeps to one line, as the web's: it stops growing before its words would be cut off.
+            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
             .padding(.top, 16)
         }
         .multilineTextAlignment(.center)

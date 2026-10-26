@@ -69,7 +69,13 @@ struct SheetChartCard<Chart: View>: View {
     let note: String?
     let table: SheetTable
     @ViewBuilder let chart: Chart
-    @State private var asTable = false
+    /// The person's choice; until they make one, the chart (or the table, for a picture of it).
+    @State private var chosen: Bool?
+    @Environment(\.sheetChartOpensOnTable) private var opensOnTable
+
+    private var asTable: Binding<Bool> {
+        Binding(get: { chosen ?? opensOnTable }, set: { chosen = $0 })
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -83,10 +89,22 @@ struct SheetChartCard<Chart: View>: View {
                     }
                 }
                 Spacer(minLength: 0)
-                ViewSwitch(asTable: $asTable, title: title)
+                ViewSwitch(asTable: asTable, title: title)
             }
-            if asTable { SheetTableView(table: table) } else { chart }
+            if asTable.wrappedValue { SheetTableView(table: table) } else { chart }
         }
+    }
+}
+
+private struct SheetChartOpensOnTable: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    /// The sheet's chart shows its table first (pictures of the sheet's states); the chart otherwise.
+    var sheetChartOpensOnTable: Bool {
+        get { self[SheetChartOpensOnTable.self] }
+        set { self[SheetChartOpensOnTable.self] = newValue }
     }
 }
 
@@ -110,7 +128,7 @@ private struct ViewSwitch: View {
     private func button(_ symbol: String, _ name: String, on: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: 14, weight: .light))
                 .foregroundStyle(on ? Palette.ink : Palette.ink2)
                 .frame(width: 32, height: 26)
                 .background { if on { Capsule().fill(Palette.surface).tokenShadow(.pill, in: Capsule()) } }
@@ -122,37 +140,49 @@ private struct ViewSwitch: View {
     }
 }
 
-/// The table twin: every value readable without touching the chart, newest first, as on the web.
+/// The table twin: every value readable without touching the chart, newest first, as on the web: the columns' names
+/// on white over hairlines, each column an even share of the width.
 private struct SheetTableView: View {
     let table: SheetTable
 
     var body: some View {
-        ScrollView {
-            Grid(alignment: .leading, horizontalSpacing: 0, verticalSpacing: 0) {
+        // A long table scrolls inside 360 points (.table-wrap), as the web's does; a short one is shown whole.
+        if table.rows.count > 9 {
+            ScrollView { grid }
+                .frame(height: 360)
+                .scrollBounceBehavior(.basedOnSize)
+        } else {
+            grid
+        }
+    }
+
+    private var grid: some View {
+        Grid(alignment: .leading, horizontalSpacing: 0, verticalSpacing: 0) {
+            GridRow {
+                ForEach(Array(table.columns.enumerated()), id: \.offset) { _, c in
+                    Text(c).font(.app(size: 12, weight: .medium, relativeTo: .caption)).foregroundStyle(Palette.ink3)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 10).padding(.vertical, 8)
+                }
+            }
+            .background(Palette.surface)
+            .accessibilityHidden(true)
+            Rectangle().fill(Palette.grid).frame(height: 1).gridCellUnsizedAxes(.horizontal)
+            ForEach(Array(table.rows.reversed().enumerated()), id: \.offset) { _, row in
                 GridRow {
-                    ForEach(Array(table.columns.enumerated()), id: \.offset) { _, c in
-                        Text(c).font(.app(size: 12, weight: .medium, relativeTo: .caption)).foregroundStyle(Palette.ink3)
+                    ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
+                        Text(cell).font(.app(size: 13, relativeTo: .footnote)).foregroundStyle(Palette.ink)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.horizontal, 10).padding(.vertical, 8)
                     }
                 }
-                .accessibilityHidden(true)
-                Divider().overlay(Palette.grid)
-                ForEach(Array(table.rows.reversed().enumerated()), id: \.offset) { _, row in
-                    GridRow {
-                        ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
-                            Text(cell).font(.app(size: 13, relativeTo: .footnote)).foregroundStyle(Palette.ink).lineLimit(1)
-                                .padding(.horizontal, 10).padding(.vertical, 8)
-                        }
-                    }
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(zip(table.columns, row).map { "\($0): \($1)" }.joined(separator: ", "))
-                    Divider().overlay(Palette.grid)
-                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(zip(table.columns, row).map { "\($0): \($1)" }.joined(separator: ", "))
+                Rectangle().fill(Palette.grid).frame(height: 1).gridCellUnsizedAxes(.horizontal)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxHeight: 360)
-        .scrollBounceBehavior(.basedOnSize)
     }
 }
 

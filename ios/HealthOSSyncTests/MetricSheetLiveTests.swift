@@ -40,6 +40,8 @@ final class MetricSheetLiveTests: XCTestCase {
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(x: 0, y: 0, width: 402, height: 874)
         window.overrideUserInterfaceStyle = dark ? .dark : .light
+        // A sheet takes its text size from the window's traits, not from the presenting view's environment.
+        if size != .large { window.traitOverrides.preferredContentSizeCategory = UIContentSizeCategory(size) }
         window.rootViewController = host
         window.makeKeyAndVisible()
         try await Task.sleep(for: .seconds(wait))
@@ -81,7 +83,11 @@ final class MetricSheetLiveTests: XCTestCase {
             try await show(request, name)
             try await show(request, name, dark: true)
         }
-        try await show(cases[0].0, "hrv", size: .accessibility5)
-        try await show(cases[3].0, "steps", size: .accessibility5)
+    }
+
+    func testTheLargestTextSize() async throws {
+        try await show(MetricRequest(key: .hrv, section: "Your signals", page: .vitals), "hrv", size: .accessibility5)
+        try await show(MetricRequest(key: .steps, section: "Your signals", page: .activity), "steps", size: .accessibility5)
+        try await show(MetricRequest(key: .glucose, section: "Body", page: .body), "glucose", size: .accessibility5)
     }
 }

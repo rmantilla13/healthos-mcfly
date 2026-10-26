@@ -301,6 +301,147 @@ final class MetricSheetTests: XCTestCase {
         XCTAssertEqual(never.range, .month)
     }
 
+    // MARK: - Loading (MetricSheetModel)
+
+    /// A server answering from a table of sheets by range, counting what it's asked.
+    private final class FakeServer {
+        var sheets: [MetricRange: MetricSheetData] = [:]
+        /// It has no sheet for the metric (an older server).
+        var missing = false
+        var failure: Error?
+        var asked: [MetricRange] = []
+        var whileAsked: ((MetricRange) -> Void)?
+
+        func answer(_ range: MetricRange) async throws -> MetricSheetData? {
+            asked.append(range)
+            whileAsked?(range)
+            if let failure { throw failure }
+            return missing ? nil : sheets[range]
+        }
+    }
+
+    private func load(_ model: MetricSheetModel, _ server: FakeServer, generation: Int = 1, phone: FakeServer? = nil) async {
+        await model.load(generation: generation, fromServer: { try await server.answer($0) }, onPhone: { range in
+            guard let sheet = try await phone?.answer(range) else { throw APIError.network("No phone sheet") }
+            return sheet
+        })
+    }
+
+    func testItLoadsTheRangeItOpensOn() async throws {
+        let server = FakeServer()
+        server.sheets[.month] = try fixture("metric-hrv-month")
+        let model = MetricSheetModel(key: .hrv, range: nil)
+        XCTAssertNil(model.shown, "nothing until the first answer")
+        await load(model, server)
+        XCTAssertEqual(server.asked, [.month])
+        XCTAssertEqual(model.shown?.range, .month)
+        XCTAssertFalse(model.loading)
+        XCTAssertTrue(model.current)
+        XCTAssertNil(model.error)
+        XCTAssertNil(model.note)
+    }
+
+    func testAnEmptyMonthMovesToTheYearWithoutShowingItself() async {
+        let server = FakeServer()
+        server.sheets[.month] = MetricSheetFallback.windowSheet(.vo2max, range: .month, metric: "vo2max", points: [], to: "2026-10-22",
+                                                               today: "2026-10-22", units: .metric, goal: nil)
+        server.sheets[.year] = sheet(.vo2max, range: .year, value: 42.5, points: [Point(date: "2026-09-02", value: 42.5)],
+                                     latest: Point(date: "2026-09-02", value: 42.5))
+        let model = MetricSheetModel(key: .vo2max, range: nil)
+        await load(model, server)
+        XCTAssertEqual(model.range, .year, "moved on its own")
+        XCTAssertNil(model.shown, "the empty month never flashes \"Nothing in the last 30 days\"")
+        await load(model, server)
+        XCTAssertEqual(model.shown?.range, .year)
+        XCTAssertEqual(model.note, "Nothing in the last 30 days, so this shows the last 12 months.")
+        XCTAssertEqual(server.asked, [.month, .year])
+    }
+
+    func testAnotherRangeStaysUpWhileThePressedOneLoads() async throws {
+        let server = FakeServer()
+        server.sheets[.month] = try fixture("metric-hrv-month")
+        var week = try fixture("metric-hrv-month")
+        week.range = .week
+        server.sheets[.week] = week
+        let model = MetricSheetModel(key: .hrv, range: nil)
+        await load(model, server)
+        model.pick(.week)
+        XCTAssertEqual(model.shown?.range, .month, "the month stays up while the week loads")
+        var dimmed = false
+        server.whileAsked = { _ in dimmed = model.loading && model.shown?.range == .month }
+        await load(model, server)
+        XCTAssertTrue(dimmed, "dimmed while it loads")
+        XCTAssertEqual(model.shown?.range, .week)
+        // Back to the month: answered from this sheet's memory, not asked again.
+        model.pick(.month)
+        await load(model, server)
+        XCTAssertEqual(model.shown?.range, .month)
+        XCTAssertEqual(server.asked, [.month, .week])
+    }
+
+    func testNewDataReadsEveryRangeAgainAndKeepsWhatsOnScreenMeanwhile() async throws {
+        let server = FakeServer()
+        server.sheets[.month] = try fixture("metric-hrv-month")
+        let model = MetricSheetModel(key: .hrv, range: nil)
+        await load(model, server, generation: 1)
+        var keptUp = false
+        server.whileAsked = { _ in keptUp = model.shown != nil && !model.current }
+        await load(model, server, generation: 2)
+        XCTAssertTrue(keptUp, "the old copy stays up, known not to be current")
+        XCTAssertTrue(model.current)
+        XCTAssertEqual(server.asked, [.month, .month])
+    }
+
+    func testAServerWithoutTheSheetHandsOverToThePhoneForGood() async {
+        let server = FakeServer()
+        server.missing = true
+        let phone = FakeServer()
+        phone.sheets[.month] = sheet(.weight, range: .month, value: 70, points: [Point(date: "2026-10-20", value: 70)])
+        phone.sheets[.week] = sheet(.weight, range: .week, value: 70, points: [Point(date: "2026-10-20", value: 70)])
+        let model = MetricSheetModel(key: .weight, range: nil)
+        await load(model, server, phone: phone)
+        XCTAssertTrue(model.onPhone)
+        XCTAssertEqual(model.shown?.range, .month)
+        model.pick(.week)
+        await load(model, server, phone: phone)
+        XCTAssertEqual(model.shown?.range, .week)
+        XCTAssertEqual(server.asked, [.month], "not asked again")
+        XCTAssertEqual(phone.asked, [.month, .week])
+    }
+
+    func testAFailureIsSaidUnlessAnotherRangeIsUp() async throws {
+        let server = FakeServer()
+        server.failure = APIClient.error(status: 500, message: "Something went wrong", path: "/metric/hrv")
+        let model = MetricSheetModel(key: .hrv, range: nil)
+        await load(model, server)
+        XCTAssertNil(model.shown)
+        XCTAssertEqual(model.error, "Something went wrong")
+        XCTAssertFalse(model.loading)
+        // With the month up, a failed week leaves the month on screen, as the web's does.
+        server.failure = nil
+        server.sheets[.month] = try fixture("metric-hrv-month")
+        await load(model, server)
+        model.pick(.week)
+        server.failure = APIError.network("Can't reach localhost.")
+        await load(model, server)
+        XCTAssertEqual(model.shown?.range, .month)
+        // A load cut short (the sheet closed, the range changed) isn't a failure.
+        server.failure = CancellationError()
+        model.pick(.year)
+        await load(model, server)
+        XCTAssertNil(model.error)
+    }
+
+    func testAnAnswerForARangeThePersonLeftIsDropped() async throws {
+        let server = FakeServer()
+        server.sheets[.month] = try fixture("metric-hrv-month")
+        let model = MetricSheetModel(key: .hrv, range: nil)
+        server.whileAsked = { _ in model.pick(.week) }
+        await load(model, server)
+        XCTAssertNil(model.data, "the month came back after the week was pressed")
+        XCTAssertEqual(model.range, .week)
+    }
+
     // MARK: - Words and numbers
 
     func testTheSourceLine() {
@@ -528,9 +669,9 @@ final class MetricSheetTests: XCTestCase {
         XCTAssertFalse(MetricSheetFallback.unknownMetric(APIClient.error(status: 400, message: "range must be day, week, month or year", path: "/metric/hrv")))
         XCTAssertFalse(MetricSheetFallback.unknownMetric(APIClient.error(status: 500, message: "Something went wrong", path: "/metric/hrv")))
         // Errors read as the web reads them after "Couldn't load this: ".
-        XCTAssertEqual(MetricSheetView.message(APIClient.error(status: 500, message: "Something went wrong", path: "/metric/hrv")), "Something went wrong")
-        XCTAssertEqual(MetricSheetView.message(APIClient.error(status: 502, message: nil, path: "/metric/hrv")), SheetWords.somethingWrong)
-        XCTAssertEqual(MetricSheetView.message(APIError.network("Can't reach localhost.")), "Can't reach localhost.")
+        XCTAssertEqual(MetricSheetModel.message(APIClient.error(status: 500, message: "Something went wrong", path: "/metric/hrv")), "Something went wrong")
+        XCTAssertEqual(MetricSheetModel.message(APIClient.error(status: 502, message: nil, path: "/metric/hrv")), SheetWords.somethingWrong)
+        XCTAssertEqual(MetricSheetModel.message(APIError.network("Can't reach localhost.")), "Can't reach localhost.")
     }
 
     func testTheWindowBuiltOnThePhoneFollowsTheServersRules() {
