@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import SwiftUI
 import UIKit
 
 /// The charts of the pages not built in the app yet (TrendsPage, src/pages/Detail.tsx): Vitals, Sleep and Cycle show
@@ -44,10 +45,35 @@ final class Dashboard {
                 // the summary kept on disk stays for their next launch (Sign out removes that too).
                 forgetSignedOut()
             }
-            // Signed out, or the server can't be reached: no page stays open on what it showed.
-            if phase != .ready, oldValue == .ready { dropPages() }
+            // Signed out, or the server can't be reached: no page stays open on what it showed, and no answer to a
+            // request made before lands on what shows next (`session`).
+            if phase != .ready, oldValue == .ready {
+                dropPages()
+                sessionCount += 1
+            }
         }
     }
+
+    /// Whom a request's answer is for: the server it went to, the person signed in, and how many times the app has
+    /// forgotten a person (`sessionCount`). A request takes one before it goes; an answer that lands under another one
+    /// is dropped, so one person's data never shows, or is saved, for another (`read`, `save`).
+    struct Session: Equatable {
+        let server: String
+        let person: String?
+        let count: Int
+    }
+
+    /// The session now (see `Session`).
+    var session: Session {
+        Session(server: Config.serverURL()?.absoluteString ?? "", person: account?.id ?? status?.user?.id, count: sessionCount)
+    }
+
+    /// The answer to a request made under `session` is still for whoever is here now.
+    func stillCurrent(_ session: Session) -> Bool { session == self.session }
+
+    /// Goes up whenever the app forgets a person (Sign out, a 401, another sign-in, another server) and whenever the
+    /// phase leaves `.ready`: what was asked for before is nobody's now.
+    @ObservationIgnored private(set) var sessionCount = 0
     var summary: Summary?
     var status: ServerStatus?
     /// nil means today.
@@ -255,7 +281,9 @@ final class Dashboard {
         if version == nil, !includeStatus, !rolledOver, summary != nil { return }
         if summary == nil || version == nil || version != dataVersion || rolledOver {
             await load(knownVersion: version)
-        } else if includeStatus, let status = try? await client.status() {
+        } else if includeStatus, case let asked = session, let status = try? await client.status() {
+            // Signed out, or someone else signed in, while it was on its way: it's nobody's now.
+            guard stillCurrent(asked) else { return }
             apply(status: status)
             if date == nil, let summary { SummaryCache.save(summary: summary, status: status, version: dataVersion, loadedOn: loadedOn, for: client.base) }
             if await statusRead() { await load() }
@@ -271,8 +299,16 @@ final class Dashboard {
 
     /// One read of the summary and status; true when it came.
     @discardableResult
-    private func download(knownVersion: String??) async -> Bool {
-        guard let client = APIClient.current() else { return false }
+    private func download(knownVersion: String??) async -> Bool { await read(knownVersion: knownVersion) == .loaded }
+
+    /// How a read of the summary and status went.
+    private enum Read { case loaded, signInRequired, failed }
+
+    /// One read of the summary and status. One that lands after a Sign out, a 401, another person's sign-in or another
+    /// server is nobody's, so nothing of it is shown or kept: not the summary, not the status, not on disk.
+    private func read(knownVersion: String??) async -> Read {
+        guard let client = APIClient.current() else { return .failed }
+        let asked = session
         loading = true
         defer { loading = false }
         do {
@@ -282,6 +318,7 @@ final class Dashboard {
             let version: String?
             if let knownVersion { version = knownVersion } else { version = try? await client.dataVersion() }
             let (summary, status) = try await (s, st)
+            guard stillCurrent(asked) else { return .failed }
             self.summary = summary
             apply(status: status)
             error = nil
@@ -296,15 +333,19 @@ final class Dashboard {
                 loadedOn = Day.today()
                 SummaryCache.save(summary: summary, status: status, version: version, loadedOn: loadedOn, for: client.base)
             }
-            return true
+            return .loaded
         } catch APIError.signInRequired {
+            // Only for the session it was asked under: the last person's request, refused after their Sign out, never
+            // signs out whoever signed in since.
+            guard stillCurrent(asked) else { return .failed }
             phase = .signIn
+            return .signInRequired
         } catch is CancellationError {
             // Interrupted, not failed: what's on screen stays, and the next check loads it.
         } catch {
-            self.error = error.localizedDescription
+            if stillCurrent(asked) { self.error = error.localizedDescription }
         }
-        return false
+        return .failed
     }
 
     /// After every status read, never a settings change's own answer: who's signed in against the ingest token's
@@ -330,6 +371,12 @@ final class Dashboard {
     /// The server just sent a session cookie for `email`: a sign-in, a new account from an invite, or a new password
     /// from a reset link (POST /auth/reset, slice A). Who it is and the sign-in mode are read again, the ingest token is
     /// checked against them, and the dashboard loads as theirs.
+    ///
+    /// Nothing of the dashboard shows until this person's own status and summary are read, as the web's App renders
+    /// nothing until the status is known: a new account goes straight to the welcome, with no Home before it, and no
+    /// status from before (the last person's, or a save of theirs that landed late) is ever shown or saved for them. The
+    /// sign-in screen stays up meanwhile, still signing in. A 401 there keeps it up; any other failure (offline, a
+    /// server error) opens the dashboard as before, saying why it couldn't load.
     func sessionStarted(email: String, newAccount: Bool = false) async {
         let auth = try? await APIClient.current()?.authState()
         if let auth {
@@ -343,19 +390,36 @@ final class Dashboard {
         tokenStore.lastEmail = email
         // Never the last person's, when the server can't say just now: the first status read says who it is.
         account = auth?.user
-        signedIn(newAccount: newAccount)
-        await load()
+        beginSession()
+        if await read(knownVersion: .none) == .signInRequired { return }
+        enterSession(newAccount: newAccount)
+        // The server's "today" moved with the time zone sent: read the day again, once (as `load`).
+        if await statusRead() { await download(knownVersion: .none) }
     }
 
     /// A new session (sign-in or a new account from an invite), maybe as someone else after the last one expired:
-    /// nothing of the last person's Family board, photos or dismissed notice carries over, and the ingest token is
-    /// checked against who it is. The pages open stay: the last person's went when the sign-in screen came (leaving
-    /// .ready), so any open now were opened since, by whoever is signing in (a tapped digest's Insights).
+    /// nothing of the last person's status, summary, Family board, photos or dismissed notice carries over, and the
+    /// ingest token is checked against who it is. The pages open stay: the last person's went when the sign-in screen
+    /// came (leaving .ready), so any open now were opened since, by whoever is signing in (a tapped digest's Insights).
     func signedIn(newAccount: Bool = false) {
-        resetFamily()
+        beginSession()
+        enterSession(newAccount: newAccount)
+    }
+
+    /// The first half of a new session: everything of whoever was here before goes from memory (what's on disk stays,
+    /// for the server's next launch), and an answer to anything they asked for is dropped when it lands (`session`).
+    private func beginSession() {
+        clearData()
         forgetPerson()
         timeZoneSent = nil
-        phase = .ready
+    }
+
+    /// The second half: the dashboard opens as theirs. With no animation, so a new account's welcome is there at once
+    /// rather than sliding up over Home.
+    private func enterSession(newAccount: Bool) {
+        var opening = Transaction()
+        opening.disablesAnimations = true
+        withTransaction(opening) { phase = .ready }
         checkIngestToken(signedInAs: account, newAccount: newAccount)
     }
 
@@ -382,6 +446,7 @@ final class Dashboard {
     }
 
     private func forgetPerson() {
+        sessionCount += 1
         mcfly.forget()
         availability.forget()
         ProfileImages.clear()
@@ -816,6 +881,7 @@ final class Dashboard {
     }
 
     private func clearData() {
+        sessionCount += 1
         summary = nil
         status = nil
         date = nil
