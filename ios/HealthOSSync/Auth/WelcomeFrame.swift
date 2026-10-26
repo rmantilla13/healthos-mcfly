@@ -51,6 +51,8 @@ enum WelcomeLook {
 
     /// The tagline under every card.
     static let tagline = "Your health, in perspective. Only yours."
+    /// The frame's top, where `scrollTop` goes back to.
+    static let top = "welcome-top"
 }
 
 /// CSS gradient layers filling the frame, the first on top, over an optional base colour.
@@ -74,16 +76,28 @@ struct GradientLayers: View {
 struct WelcomeFrame<End: View, Content: View>: View {
     /// Space above the card: a short form sits lower than the welcome's steps (.onb-body on a phone).
     var spacing: CGFloat = 24
+    /// Each change goes back to the frame's top (a new step starts there, as the web scrolls to the top).
+    var scrollTop = 0
     @ViewBuilder var end: End
     @ViewBuilder var content: Content
 
-    init(spacing: CGFloat = 24, @ViewBuilder end: () -> End, @ViewBuilder content: () -> Content) {
+    init(spacing: CGFloat = 24, scrollTop: Int = 0, @ViewBuilder end: () -> End, @ViewBuilder content: () -> Content) {
         self.spacing = spacing
+        self.scrollTop = scrollTop
         self.end = end()
         self.content = content()
     }
 
     var body: some View {
+        ScrollViewReader { scroll in
+            frame.onChange(of: scrollTop) { _, _ in
+                // Once the new content is laid out: in the same pass the scroll view still has the old one's height.
+                Task { @MainActor in scroll.scrollTo(WelcomeLook.top, anchor: .top) }
+            }
+        }
+    }
+
+    private var frame: some View {
         ScrollView {
             VStack(spacing: 0) {
                 HStack(spacing: 12) {
@@ -101,6 +115,7 @@ struct WelcomeFrame<End: View, Content: View>: View {
                 }
                 // The mark and the link stop growing at xxLarge, so "healthOS" is never cut short; VoiceOver reads both.
                 .dynamicTypeSize(...DynamicTypeSize.xxLarge)
+                .id(WelcomeLook.top)
                 content.padding(.top, spacing)
                 Text(WelcomeLook.tagline)
                     .font(.app(size: 12, relativeTo: .caption))
@@ -124,8 +139,8 @@ struct WelcomeFrame<End: View, Content: View>: View {
 }
 
 extension WelcomeFrame where End == EmptyView {
-    init(spacing: CGFloat = 24, @ViewBuilder content: () -> Content) {
-        self.init(spacing: spacing, end: { EmptyView() }, content: content)
+    init(spacing: CGFloat = 24, scrollTop: Int = 0, @ViewBuilder content: () -> Content) {
+        self.init(spacing: spacing, scrollTop: scrollTop, end: { EmptyView() }, content: content)
     }
 }
 

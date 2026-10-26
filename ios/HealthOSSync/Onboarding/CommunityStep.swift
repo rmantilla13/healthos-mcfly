@@ -67,6 +67,8 @@ struct CommunityStep: View {
 /// the web's label does; VoiceOver reads it as a switch, on or off.
 struct CheckboxStyle: ToggleStyle {
     @Environment(\.isEnabled) private var isEnabled
+    /// The box grows with the text beside it, up to a point.
+    @ScaledMetric(relativeTo: .subheadline) private var box: CGFloat = 18
 
     func makeBody(configuration: Configuration) -> some View {
         Button { configuration.isOn.toggle() } label: {
@@ -82,7 +84,7 @@ struct CheckboxStyle: ToggleStyle {
                             .foregroundStyle(Palette.accentInk)
                     }
                 }
-                .frame(width: 18, height: 18)
+                .frame(width: min(box, 30), height: min(box, 30))
                 .padding(.top, 1)
                 .opacity(isEnabled ? 1 : 0.5)
                 configuration.label

@@ -63,7 +63,7 @@ struct AboutStep: View {
                     .foregroundStyle(Palette.ink)
                     .frame(minHeight: 62)
                     .padding(.horizontal, 16)
-                    .frame(width: ageWidth)
+                    .frame(width: min(ageWidth, 170))
                     .background((reduceTransparency ? Palette.surface : WelcomeLook.field.color).clipShape(shape))
                     .overlay(shape.strokeBorder(model.ageError ? Palette.critical : WelcomeLook.fieldBorder.color))
                     .overlay {
@@ -75,6 +75,7 @@ struct AboutStep: View {
                 Text(OnboardingWords.ageUnit)
                     .font(.app(size: 13, relativeTo: .footnote))
                     .foregroundStyle(Palette.ink3)
+                    .fixedSize()
                     .accessibilityHidden(true)
             }
             if model.ageError {

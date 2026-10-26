@@ -59,9 +59,11 @@ private struct OnboardingSteps: View {
     let reference: ReferencePhoto
     @Environment(Dashboard.self) private var dashboard
     @AccessibilityFocusState private var headingFocused: Bool
+    /// Goes up for each new step that starts at the top.
+    @State private var toTop = 0
 
     var body: some View {
-        WelcomeFrame(spacing: 30) {
+        WelcomeFrame(spacing: 30, scrollTop: toTop) {
             if model.mode == .edit {
                 Button(OnboardingWords.backToProfile) { dashboard.closeWelcome() }
                     .buttonStyle(.welcomeTopLink)
@@ -72,50 +74,49 @@ private struct OnboardingSteps: View {
                     .accessibilityIdentifier("welcomeSignOut")
             }
         } content: {
-            ScrollViewReader { scroll in
-                WelcomeCard(narrow: false) {
-                    StepTabs(step: model.step, furthest: model.furthest, busy: model.busy) { target in
-                        Task { await model.go(target) }
-                    }
-                    .id("onb-top")
-                    WelcomeHead(eyebrow: OnboardingWords.eyebrow, title: model.step.title, lede: model.step.lede, lede14: true)
-                        .accessibilityElement(children: .combine)
-                        .accessibilityAddTraits(.isHeader)
-                        .accessibilityFocused($headingFocused)
-                        .padding(.top, 30)
-                        .accessibilityIdentifier("stepTitle")
-                    switch model.step {
-                    case .perspective: PerspectiveStep(model: model, reference: reference, hasPhoto: dashboard.status?.photo != nil)
-                    case .about: AboutStep(model: model, photo: dashboard.status?.photo)
-                    case .community: CommunityStep(model: model)
-                    }
-                    if let error = model.error {
-                        ErrorNote(error).padding(.top, 18).accessibilityIdentifier("stepError")
-                    }
-                    WelcomeFoot(top: 22) {
-                        WrapLayout(spacing: 18, lineSpacing: 2) {
-                            back
-                            Text(model.step.hint)
-                                .font(.app(size: 12, relativeTo: .footnote))
-                                .foregroundStyle(Palette.ink3)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .frame(minHeight: 44)
-                        }
-                    } main: {
-                        Button { Task { await model.next() } } label: {
-                            WelcomeButtonLabel(model.busy ? OnboardingWords.saving : model.nextTitle,
-                                               arrow: !model.busy && !(model.step == .community && model.mode == .edit))
-                        }
-                        .buttonStyle(.accentPill)
-                        .disabled(model.busy)
-                        .accessibilityIdentifier("stepNext")
-                    }
+            WelcomeCard(narrow: false) {
+                StepTabs(step: model.step, furthest: model.furthest, busy: model.busy) { target in
+                    Task { await model.go(target) }
                 }
-                // A new step starts at its top, and VoiceOver moves to its heading (the age field's, when sent back for it).
-                .onChange(of: model.step) { _, _ in
-                    scroll.scrollTo("onb-top", anchor: .top)
-                    if !model.focusAge { headingFocused = true }
+                WelcomeHead(eyebrow: OnboardingWords.eyebrow, title: model.step.title, lede: model.step.lede, lede14: true)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAddTraits(.isHeader)
+                    .accessibilityFocused($headingFocused)
+                    .padding(.top, 30)
+                    .accessibilityIdentifier("stepTitle")
+                switch model.step {
+                case .perspective: PerspectiveStep(model: model, reference: reference, hasPhoto: dashboard.status?.photo != nil)
+                case .about: AboutStep(model: model, photo: dashboard.status?.photo)
+                case .community: CommunityStep(model: model)
                 }
+                if let error = model.error {
+                    ErrorNote(error).padding(.top, 18).accessibilityIdentifier("stepError")
+                }
+                WelcomeFoot(top: 22) {
+                    WrapLayout(spacing: 18, lineSpacing: 2) {
+                        back
+                        Text(model.step.hint)
+                            .font(.app(size: 12, relativeTo: .footnote))
+                            .foregroundStyle(Palette.ink3)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.vertical, 6)
+                    }
+                } main: {
+                    Button { Task { await model.next() } } label: {
+                        WelcomeButtonLabel(model.busy ? OnboardingWords.saving : model.nextTitle,
+                                           arrow: !model.busy && !(model.step == .community && model.mode == .edit))
+                    }
+                    .buttonStyle(.accentPill)
+                    .disabled(model.busy)
+                    .accessibilityIdentifier("stepNext")
+                }
+            }
+            // A new step starts at the top, and VoiceOver moves to its heading. Sent back for the age, the age field
+            // takes the focus instead, and the page follows it there.
+            .onChange(of: model.step) { _, step in
+                guard !(step == .about && model.ageError) else { return }
+                toTop += 1
+                headingFocused = true
             }
         }
         .keyboardDismissal()

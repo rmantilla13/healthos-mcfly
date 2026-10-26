@@ -48,17 +48,23 @@ private struct PerspectiveCard: View {
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
+        // At the accessibility text sizes the illustration goes over the words (the web's wide layout), so they keep the
+        // card's width and no word breaks in the middle.
+        let stacked = typeSize.isAccessibilitySize
+        let layout = stacked ? AnyLayout(VStackLayout(alignment: .leading, spacing: 0)) : AnyLayout(HStackLayout(alignment: .center, spacing: 14))
         Button(action: choose) {
-            HStack(alignment: .center, spacing: 14) {
+            layout {
                 ZStack(alignment: .bottom) {
                     ArtShade()
                     art
                 }
-                .frame(width: 96)
-                .frame(minHeight: 96, maxHeight: .infinity)
-                .clipShape(UnevenRoundedRectangle(topLeadingRadius: 16, bottomLeadingRadius: 16, style: .continuous))
+                .frame(maxWidth: stacked ? .infinity : 96)
+                .frame(width: stacked ? nil : 96)
+                .frame(minHeight: stacked ? 110 : 96, maxHeight: stacked ? 110 : .infinity)
+                .clipShape(UnevenRoundedRectangle(topLeadingRadius: 16, bottomLeadingRadius: stacked ? 0 : 16, topTrailingRadius: stacked ? 16 : 0,
+                                                  style: .continuous))
                 VStack(alignment: .leading, spacing: 4) {
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    WrapLayout(spacing: 8, lineSpacing: 2) {
                         Text(title)
                             .font(.app(size: 14, weight: .medium, relativeTo: .subheadline))
                             .foregroundStyle(Palette.ink)
@@ -77,6 +83,7 @@ private struct PerspectiveCard: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.vertical, 16)
+                .padding(.leading, stacked ? 16 : 0)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(.trailing, 16)
