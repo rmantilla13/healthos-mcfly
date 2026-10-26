@@ -71,16 +71,42 @@ extension APIClient {
     /// use stops being chosen; the profile photo made from it stays. Its 404 ("That photo is already gone.") is the
     /// route's own, never an older server's.
     func deletePortrait(id: String) async throws -> PortraitList {
-        let data = try await request("/portraits/\(id)", method: "DELETE")
+        let data = try await request("/portraits/\(Self.pathPart(id))", method: "DELETE")
         return try JSONDecoder().decode(PortraitList.self, from: data)
+    }
+
+    /// Starts a portrait from a reference (POST /api/portraits/generate, answered 202): it's made in the background, and
+    /// the list says ready or failed. Refused in the server's words: no key (409), one already being made (409), 20
+    /// kept (409), the day's 10 made (429), the reference gone (404).
+    func generatePortrait(referenceId: String) async throws -> Portrait {
+        let created: PortraitCreated = try await sendJSON("POST", "/portraits/generate", ["referenceId": referenceId])
+        return created.portrait
+    }
+
+    /// Marks a ready portrait as the one in use (POST /api/portraits/:id/choose), once it's been saved as the profile
+    /// photo; the answer is the list as it is now.
+    func choosePortrait(id: String) async throws -> PortraitList {
+        try await sendJSON("POST", "/portraits/\(Self.pathPart(id))/choose")
+    }
+
+    /// One photo's image (GET /api/portraits/:id/image), to its owner only, sent private and no-store: a JPEG reference,
+    /// a WebP or PNG portrait. Held in memory by whoever asked, never written to disk. Its 404 means that one is gone.
+    func portraitImage(id: String) async throws -> Data {
+        try await request("/portraits/\(Self.pathPart(id))/image")
+    }
+
+    /// An id as one path segment, as the web's encodeURIComponent makes it.
+    static func pathPart(_ id: String) -> String {
+        id.addingPercentEncoding(withAllowedCharacters: .alphanumerics.union(CharacterSet(charactersIn: "-_.!~*'()"))) ?? id
     }
 }
 
 extension Dashboard {
     /// The person's portraits; nil from a server without them. Tells Availability whether one can be made.
     func portraits() async throws -> PortraitList? {
+        let who = signedInPerson
         let list = try await fetch { try await $0.portraits() }
-        if let can = list?.canGenerate { availability.heard(canGeneratePortraits: can) }
+        heardPortraits(list, for: who)
         return list
     }
 
@@ -93,8 +119,36 @@ extension Dashboard {
     /// portrait studio's Delete. Answers with the list as it is now, which tells Availability whether one can be made.
     @discardableResult
     func deletePortrait(id: String) async throws -> PortraitList {
+        let who = signedInPerson
         let list = try await fetch { try await $0.deletePortrait(id: id) }
-        if let can = list.canGenerate { availability.heard(canGeneratePortraits: can) }
+        heardPortraits(list, for: who)
         return list
+    }
+
+    /// Starts a portrait from a reference (the portrait studio's Make my portrait).
+    func generatePortrait(referenceId: String) async throws -> Portrait {
+        try await fetch { try await $0.generatePortrait(referenceId: referenceId) }
+    }
+
+    /// Marks a portrait as the one in use, after it became the profile photo. Answers with the list, which tells
+    /// Availability whether one can be made.
+    func choosePortrait(id: String) async throws -> PortraitList {
+        let who = signedInPerson
+        let list = try await fetch { try await $0.choosePortrait(id: id) }
+        heardPortraits(list, for: who)
+        return list
+    }
+
+    /// One photo's image, into memory only (the portrait studio's thumbnails, and Use this portrait).
+    func portraitImage(id: String) async throws -> Data {
+        try await fetch { try await $0.portraitImage(id: id) }
+    }
+
+    /// Tells Availability whether a portrait can be made, from a list asked for while `person` was signed in: only if
+    /// they still are, on the same server. An answer that lands after a sign-out, or once someone else has signed in,
+    /// says nothing about the person signed in now.
+    func heardPortraits(_ list: PortraitList?, for person: String?) {
+        guard let can = list?.canGenerate, let person, signedInPerson == person else { return }
+        availability.heard(canGeneratePortraits: can)
     }
 }
