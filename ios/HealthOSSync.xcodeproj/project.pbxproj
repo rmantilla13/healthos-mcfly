@@ -80,6 +80,7 @@
 		74C84BFC0CDD1CC3D35822F0 /* PhaseGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4568BDAE858AC5C02EB7A8F9 /* PhaseGate.swift */; };
 		757184DBB1E9DF7B9EECE466 /* labs-reader.json in Resources */ = {isa = PBXBuildFile; fileRef = 9697A85BF6D192823CA2AE87 /* labs-reader.json */; };
 		75EB4235ADBC9A1D6692527B /* day.json in Resources */ = {isa = PBXBuildFile; fileRef = 77F80A1210D0C76AF0017C5F /* day.json */; };
+		76A08B640A0A219B4371F7F1 /* McFlyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BA4D84D468C4393AE68A6E5 /* McFlyTests.swift */; };
 		78F5EE3925CD2BBEAACB0AB7 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E1080B46A2122D62513147F8 /* Assets.xcassets */; };
 		79AAD246191E879FAE9A478F /* CardVisibilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4E3C2CA58A4F6345F74E5A3 /* CardVisibilityTests.swift */; };
 		7B68BDE9B48212211C75CDDA /* TimelineScrub.swift in Sources */ = {isa = PBXBuildFile; fileRef = 377F8CF3716B6E99B12E2655 /* TimelineScrub.swift */; };
@@ -114,6 +115,7 @@
 		AA1189B667463082D9BF44BA /* SheetScaffold.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EB44AEBCB8666894C5B6AB9 /* SheetScaffold.swift */; };
 		AA4BC3375788535E3AD4C0DC /* FoodLogViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBF53558E735F452B9F2D02E /* FoodLogViews.swift */; };
 		AAB36BB03C9FC053BF2E5BC2 /* AIKeysTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FB653DA3B4F4F038C7D218C /* AIKeysTests.swift */; };
+		AC2173F6C8E34EAD998D982D /* McFlyPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5736650D2B78DA90A57F0357 /* McFlyPage.swift */; };
 		ACDF705A1D19D6334287C0CE /* SafariView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 509E5458B1A6201B625AD7CC /* SafariView.swift */; };
 		AD2FCA0181439C67F109F750 /* FoodLogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8457E60A4786255AE3EBB8F /* FoodLogTests.swift */; };
 		AD8BC8E5F3940A7E1B24AEB9 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC1AF0514C3E330ABEA1FF41 /* Models.swift */; };
@@ -223,6 +225,7 @@
 		557B903874008E25C2245C9B /* NutritionScreenTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NutritionScreenTests.swift; sourceTree = "<group>"; };
 		572030574C60D416CD1909E1 /* sleep.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = sleep.json; sourceTree = "<group>"; };
 		573469469E0FC1B1179C09AD /* FitbitImportSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FitbitImportSheet.swift; sourceTree = "<group>"; };
+		5736650D2B78DA90A57F0357 /* McFlyPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = McFlyPage.swift; sourceTree = "<group>"; };
 		5CCBCB73C14C4BDBBCAA4A45 /* SharedTypesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedTypesTests.swift; sourceTree = "<group>"; };
 		5CFA61D4066EC193CD336BCD /* AIKeysAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIKeysAPI.swift; sourceTree = "<group>"; };
 		5DC3708654566A1255AD0A12 /* AppRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRoute.swift; sourceTree = "<group>"; };
@@ -253,6 +256,7 @@
 		8831BE21705EE5AA0AF1C213 /* McFly.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = McFly.swift; sourceTree = "<group>"; };
 		889D5CAF7334BA122500E98A /* ai-own-key.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "ai-own-key.json"; sourceTree = "<group>"; };
 		8A5BF7BF824C173C4D551A7F /* food-log-day.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "food-log-day.json"; sourceTree = "<group>"; };
+		8BA4D84D468C4393AE68A6E5 /* McFlyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = McFlyTests.swift; sourceTree = "<group>"; };
 		8C44DD7D24D944427812524F /* HomeCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeCards.swift; sourceTree = "<group>"; };
 		8E75BFD8F2E0D97AEDC852BD /* IntegrationsScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntegrationsScreen.swift; sourceTree = "<group>"; };
 		8FEC96C3667D657317BC171A /* Health.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Health.swift; sourceTree = "<group>"; };
@@ -447,6 +451,7 @@
 				DCB8EE7A62B1F4AB7B71786B /* HeartRateMeasurementTests.swift */,
 				55267702FE778537DAF18F27 /* HomeFigureTests.swift */,
 				1D16ADB4EAC1CF6BB06E7F64 /* IngestTokenTests.swift */,
+				8BA4D84D468C4393AE68A6E5 /* McFlyTests.swift */,
 				557B903874008E25C2245C9B /* NutritionScreenTests.swift */,
 				CD2F0A99D2A54D83358903BC /* NutritionTests.swift */,
 				DDD7BCE19CEBCB1FCBCFEEF8 /* PhotoPipelineTests.swift */,
@@ -570,6 +575,7 @@
 				30D2692E7F1BAC716F541038 /* AIParts.swift */,
 				3014C561363943C743407A88 /* AISheets.swift */,
 				9BCAF5B6D73B3B6307876131 /* AIWords.swift */,
+				5736650D2B78DA90A57F0357 /* McFlyPage.swift */,
 			);
 			path = AI;
 			sourceTree = "<group>";
@@ -854,6 +860,7 @@
 				8901142952134DD35512BE8D /* HeartRateMeasurementTests.swift in Sources */,
 				8C2CB1B97BBC37FE2E70249E /* HomeFigureTests.swift in Sources */,
 				C5CA6CFB2FC4BA7F33A6EDFA /* IngestTokenTests.swift in Sources */,
+				76A08B640A0A219B4371F7F1 /* McFlyTests.swift in Sources */,
 				44A5C2011D28476A534774B9 /* NutritionScreenTests.swift in Sources */,
 				4235342A47A876C689995E06 /* NutritionTests.swift in Sources */,
 				B3B7CEC6217127596464D2FC /* PhotoPipelineTests.swift in Sources */,
@@ -933,6 +940,7 @@
 				CE7AD1CD1A055DE6AE28ECFB /* LocalTime.swift in Sources */,
 				555A9EE01ABBA4A5B0D4BFD2 /* McFly.swift in Sources */,
 				A39F2327BD8A0AAACA2ED78A /* McFlyCharts.swift in Sources */,
+				AC2173F6C8E34EAD998D982D /* McFlyPage.swift in Sources */,
 				97D99CC4A0A626E2B6FCEBEE /* MetricRequest.swift in Sources */,
 				4A7AB3C9753FAD8ACCF6DAC3 /* MetricSheetView.swift in Sources */,
 				AD8BC8E5F3940A7E1B24AEB9 /* Models.swift in Sources */,

@@ -1,7 +1,8 @@
 import SwiftUI
 
-// Ask McFly: the dashboard's health assistant (server/mcfly.ts). The conversation lives in memory only,
-// never on disk, like the web.
+// Ask McFly: the dashboard's health assistant (server/mcfly.ts). The conversation lives in memory only, never on
+// disk, and goes with a sign-out, another person's sign-in or another server. Home's pill (AskMcFlyEntry, below) opens
+// its page under More (AI/McFlyPage.swift), as the web's AskPill links to #/mcfly.
 
 /// GET /api/mcfly (shared/types.ts McflyStatus). On the shared key, limit and usedToday are the admin's daily limit; on
 /// the person's own key they're its anti-abuse cap, and `limited` is false. provider, source and limited are missing
@@ -20,6 +21,23 @@ struct McFlyStatus: Decodable, Equatable {
     /// Answers can be asked for: set up, and on the person's own key or under a shared limit above 0 (src/pages/McFly.tsx).
     var available: Bool { configured && (source == "own" || limit > 0) }
     var left: Int { max(0, limit - usedToday) }
+
+    /// On the person's own key.
+    var own: Bool { source == "own" }
+
+    /// The web's `left`: the shared key's questions left today; on the person's own key only 0, once its cap is
+    /// reached (its 200 isn't a quota to count down); nil when there's no count to show.
+    var questionsLeft: Int? {
+        if own { return usedToday >= limit ? 0 : nil }
+        return limit > 0 ? max(limit - usedToday, 0) : nil
+    }
+
+    /// Why nothing can be asked (the web's `unavailable`), or nil.
+    var unavailable: McFlyUnavailable? {
+        if !configured { return .notSetUp }
+        if !own, limit <= 0 { return .off }
+        return nil
+    }
 }
 
 extension McFlyStatus {
@@ -32,6 +50,65 @@ extension McFlyStatus {
         func count(_ key: CodingKeys) -> Int { value(key) ?? (value(key) as Double?).map { Int($0) } ?? 0 }
         self.init(configured: value(.configured) ?? false, limit: count(.limit), usedToday: count(.usedToday),
                   provider: value(.provider), source: value(.source), limited: value(.limited))
+    }
+}
+
+/// Why Ask McFly can't answer (src/pages/McFly.tsx `unavailable`).
+enum McFlyUnavailable: Equatable {
+    /// No assistant on this server: no shared Claude key, and no key of the person's own chosen.
+    case notSetUp
+    /// The admin set the shared daily limit to 0.
+    case off
+}
+
+/// Ask McFly's words, quoted from src/pages/McFly.tsx (a test checks them against it).
+enum McFlyWords {
+    static let sub = "Questions about your own sleep, recovery, heart and activity. McFly reads your data to answer. It isn't a doctor."
+    static let suggestions = [
+        "How did I sleep this week compared with last week?",
+        "Is my resting heart rate trending up or down?",
+        "What does my HRV say about my recovery lately?",
+        "How active was I this month?",
+        "When do I usually go to bed and wake up?",
+    ]
+    static let tryThese = "Try one of these, or ask your own."
+    static let thinking = "McFly is thinking…"
+    static let steps = "What McFly looked at"
+    static let stopped = "Stopped."
+    static let noAnswer = "McFly had no answer. Try asking another way."
+    static let couldNotAnswer = "McFly could not answer right now."
+    static let connect = "Connect your own key"
+
+    static func title(_ why: McFlyUnavailable) -> String { why == .off ? ServerWords.mcflyOff : ServerWords.mcflyNotSetUp }
+
+    /// What to do about it: for the admin, how to turn it on; for everyone else, whether a key of their own would do.
+    static func text(_ why: McFlyUnavailable, admin: Bool, byok: Bool) -> String {
+        let first: String
+        if admin {
+            first = why == .off ? "Set a daily question limit above 0 in Admin → Settings."
+                : "Add ANTHROPIC_API_KEY (from the Claude Console) to the Vercel project, then redeploy."
+        } else if byok {
+            first = why == .off ? "The shared assistant is off right now." : "There's no shared assistant on this server."
+        } else {
+            first = "Ask the admin to turn it on."
+        }
+        return byok ? first + " You can connect your own AI key in Profile → Chatbot: OpenAI, Claude or Gemini." : first
+    }
+
+    /// The line beside Ask: whose key answers, or the questions left today. Empty while there's nothing to say.
+    static func composerLine(_ s: McFlyStatus?) -> String {
+        guard let s else { return "" }
+        let left = s.questionsLeft
+        if s.own, left != 0 {
+            return AIProvider.label(s.provider).map { "On your \($0) key" } ?? "On your key"
+        }
+        guard let left else { return "" }
+        if s.own { return "You've reached today's limit on your own key." }
+        return "\(left) question\(left == 1 ? "" : "s") left today"
+    }
+
+    static func placeholder(_ s: McFlyStatus?) -> String {
+        s?.questionsLeft == 0 ? "You've reached today's question limit." : "Ask about your health data…"
     }
 }
 
@@ -133,7 +210,9 @@ struct McFlyTurn: Encodable, Equatable {
 extension APIClient {
     func mcflyStatus() async throws -> McFlyStatus { try await getJSON("/mcfly") }
 
-    /// Streams the answer to the last question (text/event-stream: text, tool, visual, refusal, error, done).
+    /// Streams the answer to the last question (text/event-stream: text, tool, visual, refusal, error, done). A
+    /// refusal before the stream starts (403 turned off, 429 over the limit, 503 not set up) comes in the server's
+    /// own words.
     func mcflyChat(_ turns: [McFlyTurn]) -> AsyncThrowingStream<McFlyEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
@@ -146,7 +225,7 @@ extension APIClient {
                         let message = (try? JSONDecoder().decode([String: String].self, from: data))?["error"]
                         switch http.statusCode {
                         case 401: throw APIError.signInRequired
-                        default: throw APIError.network(message ?? HTTPURLResponse.localizedString(forStatusCode: http.statusCode))
+                        default: throw APIError.network(message ?? McFlyWords.couldNotAnswer)
                         }
                     }
                     try await McFlySSEParser.read(bytes) { continuation.yield($0) }
@@ -172,12 +251,26 @@ struct McFlyMessage: Identifiable, Equatable {
     /// All of the answer's text.
     var content: String
     var parts: [Part] = []
+    /// Each piece of data McFly read for this answer, in order ("Looking at your sleep").
+    var steps: [String] = []
+    /// The answer is still coming in.
+    var pending = false
     /// What went wrong, shown under whatever of the answer had already arrived.
     var error: String?
 
     /// A failed answer stays on screen but is left out of the history.
     var failed: Bool { error != nil }
     var hasVisual: Bool { parts.contains { if case .visual = $0 { true } else { false } } }
+    private var hasWords: Bool { !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+    /// The step McFly is on: the last one, until its answer starts (the web's shimmering step). nil once it's working
+    /// on words or a chart, or done.
+    var workingStep: Int? {
+        pending && content.isEmpty && !hasVisual && !steps.isEmpty ? steps.count - 1 : nil
+    }
+
+    /// "McFly is thinking…": waiting, with nothing read or said yet.
+    var thinking: Bool { pending && content.isEmpty && steps.isEmpty }
 
     /// Folds one streamed event into the answer.
     mutating func apply(_ event: McFlyEvent) {
@@ -187,6 +280,8 @@ struct McFlyMessage: Identifiable, Equatable {
             if case .text(let run)? = parts.last { parts[parts.count - 1] = .text(run + t) } else { parts.append(.text(t)) }
         case .visual(let v):
             parts.append(.visual(v))
+        case .tool(let label):
+            steps.append(label)
         case .refusal(let e):
             // A refusal can arrive after some text: the partial answer and its charts go, like the web.
             content = ""
@@ -194,7 +289,7 @@ struct McFlyMessage: Identifiable, Equatable {
             error = e
         case .error(let e):
             fail(e)
-        case .tool, .done:
+        case .done:
             break
         }
     }
@@ -205,11 +300,15 @@ struct McFlyMessage: Identifiable, Equatable {
         if error == nil { error = message }
     }
 
+    /// Stop was pressed: what arrived stays as the answer; with nothing yet, it says so.
+    mutating func stop() {
+        if content.isEmpty, !hasVisual { fail(McFlyWords.stopped) }
+    }
+
     /// After the stream ends: an answer with neither words nor charts says so.
     mutating func finishAnswer() {
-        if error == nil, content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !hasVisual {
-            error = "No answer came back. Try again."
-        }
+        pending = false
+        if error == nil, !hasWords, !hasVisual { error = McFlyWords.noAnswer }
     }
 
     /// What McFly reads back next time: its words, with a one-line note where each chart was (spoken() on the web).
@@ -245,70 +344,116 @@ struct McFlyMessage: Identifiable, Equatable {
     }
 }
 
+/// The conversation, for the page under More (and the app's one holder of it, on Dashboard). In memory only.
 @MainActor
 @Observable
 final class McFlyChat {
     var messages: [McFlyMessage] = []
+    /// GET /api/mcfly, read after every load and every answer. Availability sees it (`mcflyState`).
     var status: McFlyStatus?
     var streaming = false
-    var lookingAt: String?
     /// Goes up when the conversation is forgotten, so an answer still streaming stops writing into it.
     private var thread = 0
+    /// The answer streaming now, for Stop.
+    private var task: Task<Void, Never>?
+    private var stopping = false
+    #if targetEnvironment(simulator)
+    /// A made-up status for scripted runs in the Simulator (McFlyLaunchHook), which the server's doesn't replace.
+    var preview: McFlyStatus?
+    #endif
 
+    /// Reads McFly's status. A read that fails (offline) keeps what was known.
     func refreshStatus() async {
+        #if targetEnvironment(simulator)
+        if let preview {
+            status = preview
+            return
+        }
+        #endif
         let thread = thread
-        let status = try? await APIClient.current()?.mcflyStatus()
+        guard let client = APIClient.current(), let status = try? await client.mcflyStatus() else { return }
         if thread == self.thread { self.status = status }
     }
 
     /// Signed out, someone else signed in, or another server: the conversation and the status go, an answer on its way
-    /// included.
+    /// included (its request is cancelled).
     func forget() {
         thread += 1
+        task?.cancel()
+        task = nil
         messages = []
         status = nil
         streaming = false
-        lookingAt = nil
+        stopping = false
+        #if targetEnvironment(simulator)
+        preview = nil
+        #endif
     }
 
     func newChat() {
         guard !streaming else { return }
         messages = []
-        lookingAt = nil
     }
 
-    func ask(_ question: String) async {
-        let q = String(question.trimmingCharacters(in: .whitespacesAndNewlines).prefix(4000))
-        guard !q.isEmpty, !streaming, let client = APIClient.current() else { return }
-        let turns = McFlyMessage.history(messages, question: q)
-        messages.append(McFlyMessage(role: .user, content: q))
-        messages.append(McFlyMessage(role: .assistant, content: ""))
-        let index = messages.count - 1
-        let thread = thread
+    /// Asks, in a task Stop can end. It's streaming from this moment, so a second tap can't send twice and Stop
+    /// shows at once.
+    func send(_ question: String) {
+        guard !streaming, let q = Self.question(question) else { return }
         streaming = true
+        stopping = false
+        let thread = thread
+        task = Task { await answer(q, thread: thread) }
+    }
+
+    /// Ends the answer coming in: what arrived stays, and with nothing yet it says "Stopped." (the web's abort).
+    func stop() {
+        guard streaming, let task else { return }
+        stopping = true
+        task.cancel()
+    }
+
+    /// Asks and waits for the whole answer.
+    func ask(_ question: String) async {
+        guard !streaming, let q = Self.question(question) else { return }
+        streaming = true
+        stopping = false
+        await answer(q, thread: thread)
+    }
+
+    /// What's sent of a question: trimmed, at most the web's 4,000 characters; nil when there's nothing.
+    private static func question(_ text: String) -> String? {
+        let q = String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(4000))
+        return q.isEmpty ? nil : q
+    }
+
+    /// `thread` is the conversation it was asked in: forgotten before it starts, it never lands in the next one.
+    private func answer(_ q: String, thread: Int) async {
         defer {
             if thread == self.thread {
                 streaming = false
-                lookingAt = nil
+                stopping = false
+                task = nil
             }
         }
+        guard thread == self.thread, let client = APIClient.current() else { return }
+        let turns = McFlyMessage.history(messages, question: q)
+        messages.append(McFlyMessage(role: .user, content: q))
+        messages.append(McFlyMessage(role: .assistant, content: "", pending: true))
+        let index = messages.count - 1
         do {
             for try await event in client.mcflyChat(turns) {
                 // Forgotten while it streamed: leaving the loop ends the request.
                 guard thread == self.thread else { return }
-                switch event {
-                case .tool(let label): lookingAt = label
-                case .text, .visual: lookingAt = nil
-                case .refusal, .error, .done: break
-                }
                 messages[index].apply(event)
             }
             guard thread == self.thread else { return }
-            messages[index].finishAnswer()
+            if stopping || Task.isCancelled { messages[index].stop() }
         } catch {
             guard thread == self.thread else { return }
-            messages[index].fail(error.localizedDescription)
+            if stopping || Task.isCancelled || APIClient.isCancellation(error) { messages[index].stop() }
+            else { messages[index].fail(error.localizedDescription) }
         }
+        messages[index].finishAnswer()
         await refreshStatus()
     }
 }
@@ -346,353 +491,88 @@ final class McFlyFollow {
     func sent() { following = true }
 }
 
-private let threadSpace = "mcfly-thread"
-
 /// Ask McFly over Home (the web's AskPill, src/components/shell/AskPill.tsx). The shell mounts it at the bottom of Home
-/// in every phase, so whether it shows, and what a tap opens, are decided here (slice E's, G32). For now: the pill while
-/// signed in with Home's summary on screen and McFly available, opening the conversation in its own sheet, which closes
-/// if the sign-in screen comes. The web shows it on Home always and links to #/mcfly (`dashboard.open(.mcfly)`).
+/// in every phase. Like the web's, it shows on Home whenever someone is signed in, whether or not McFly can answer
+/// here: the page it opens (More → Ask McFly) says why not, and how to connect a key of your own.
 struct AskMcFlyEntry: View {
     @Environment(Dashboard.self) private var dashboard
-    @State private var open = false
 
     var body: some View {
-        // A ZStack with a view in it even when the pill is hidden: an empty one has nothing to hang the sheet on.
-        ZStack {
-            Color.clear.frame(height: 0)
-            if dashboard.phase == .ready, dashboard.summary != nil, dashboard.mcfly.status?.available == true {
-                AskMcFlyPill { open = true }.padding(.top, 8).padding(.bottom, 18)
+        Group {
+            if dashboard.phase == .ready {
+                HStack {
+                    Spacer(minLength: 0)
+                    AskMcFlyPill { dashboard.open(.mcfly) }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 10)
             }
         }
-        .sheet(isPresented: $open) { McFlySheet(chat: dashboard.mcfly).font(.app(.body)) }
-        // Asked to sign in (or the server went away) mid-conversation: the sheet doesn't stay over the sign-in screen.
-        .onChange(of: dashboard.phase) { _, phase in if phase != .ready { open = false } }
+        #if targetEnvironment(simulator)
+        .modifier(AISheetLaunchHook())
+        .modifier(McFlyLaunchHook())
+        #endif
     }
 }
 
-/// The floating pill at the bottom of Today: a glassy indigo capsule with a softly pulsing sparkle and a slow shimmer,
-/// a spring and a light tap when pressed. Reduce Motion stills it; Reduce Transparency drops the glass highlight.
-/// White text on the gradient stays above 7:1 in light mode and 5:1 in dark.
+/// The pill at the bottom right of Home (.ask-pill at phone width): McFly's orb, "Ask McFly" over "A little more
+/// clarity", on a white pill with the pop shadow, a light tap when pressed. Its message icon hides on a phone, as the
+/// web's does.
 struct AskMcFlyPill: View {
     let action: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @State private var taps = 0
-
-    static let deep = Palette.dynamic(0x1E2552, 0x2E3A8C)
-    static let bright = Palette.dynamic(0x3C3FA8, 0x5B4FD0)
-    static let glow = Palette.dynamic(0x4B4FD6, 0x7A6CF0)
 
     var body: some View {
         Button {
             taps += 1
             action()
         } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "sparkles")
-                    .font(.subheadline.weight(.bold))
-                    .symbolRenderingMode(.palette)
-                    .foregroundStyle(Color.white, Color(UIColor(hex: 0xFFD98A)))
-                    .modifier(SparklePulse(active: !reduceMotion))
-                    .symbolEffect(.bounce, value: taps)
-                Text("Ask McFly")
-                    .font(.app(.subheadline, weight: .semibold))
-                    .foregroundStyle(.white)
+            HStack(spacing: 10) {
+                Orb(size: 24)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Ask McFly")
+                        .font(.app(size: 13, weight: .medium, relativeTo: .subheadline))
+                        .foregroundStyle(Palette.ink)
+                    Text("A little more clarity")
+                        .font(.app(size: 11, relativeTo: .caption2))
+                        .foregroundStyle(Palette.ink3)
+                }
+                .lineLimit(1)
             }
-            .padding(.horizontal, 20)
-            .frame(minHeight: 46)
-            .background {
-                Capsule()
-                    .fill(LinearGradient(colors: [Self.deep, Self.bright], startPoint: .leading, endPoint: .trailing))
-                    .overlay {
-                        if !reduceTransparency {
-                            // Glass: a soft light along the top edge.
-                            Capsule().fill(LinearGradient(colors: [.white.opacity(0.28), .white.opacity(0)], startPoint: .top, endPoint: .center))
-                        }
-                    }
-                    .overlay { if !reduceMotion { Shimmer().clipShape(Capsule()) } }
-                    .overlay(Capsule().strokeBorder(.white.opacity(0.22), lineWidth: 1))
-            }
-            .shadow(color: Self.glow.opacity(0.45), radius: 14, y: 6)
-            .shadow(color: .black.opacity(0.12), radius: 3, y: 1)
+            .padding(.leading, 10)
+            .padding(.trailing, 16)
+            .padding(.vertical, 7)
+            .frame(minHeight: 44)
+            .background(Palette.surface, in: Capsule())
+            .tokenShadow(.pop, in: Capsule())
             .contentShape(Capsule())
         }
         .buttonStyle(PillPress(animate: !reduceMotion))
         .sensoryFeedback(.impact(weight: .light), trigger: taps)
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel("Ask McFly")
+        .accessibilityValue("A little more clarity")
         .accessibilityHint("Opens a chat about your health data")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityIdentifier("askMcFly")
     }
 }
 
-/// A gentle repeating pulse on the sparkle, or none.
-private struct SparklePulse: ViewModifier {
-    let active: Bool
-    func body(content: Content) -> some View {
-        if active {
-            content.symbolEffect(.pulse.byLayer, options: .repeating.speed(0.5))
-        } else {
-            content
-        }
-    }
-}
-
-/// A slow band of light across the pill every few seconds.
-private struct Shimmer: View {
-    @State private var phase: CGFloat = -1
-    var body: some View {
-        GeometryReader { geo in
-            LinearGradient(colors: [.white.opacity(0), .white.opacity(0.22), .white.opacity(0)], startPoint: .leading, endPoint: .trailing)
-                .frame(width: geo.size.width * 0.45)
-                .offset(x: phase * geo.size.width * 1.5)
-                .blendMode(.plusLighter)
-        }
-        .allowsHitTesting(false)
-        .onAppear {
-            withAnimation(.easeInOut(duration: 1.6).delay(2.4).repeatForever(autoreverses: false)) { phase = 1 }
-        }
-    }
-}
-
-/// Shrinks a touch with a spring while pressed.
+/// Shrinks a touch while pressed (none with Reduce Motion).
 private struct PillPress: ButtonStyle {
     let animate: Bool
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.94 : 1)
-            .brightness(configuration.isPressed ? -0.04 : 0)
-            .animation(animate ? .spring(response: 0.28, dampingFraction: 0.6) : nil, value: configuration.isPressed)
+            .scaleEffect(configuration.isPressed && animate ? 0.97 : 1)
+            .brightness(configuration.isPressed ? -0.03 : 0)
+            .animation(animate ? .easeOut(duration: 0.15) : nil, value: configuration.isPressed)
     }
 }
 
-/// Ask McFly over Home, from the pill: the conversation in a sheet, with Done.
-struct McFlySheet: View {
-    @Bindable var chat: McFlyChat
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            McFlyThread(chat: chat)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
-                }
-        }
-    }
-}
-
-/// Ask McFly as a page (More → Ask McFly, the web's #/mcfly): the same conversation as the pill's sheet. Unlike the
-/// pill, it's always listed, so on a server with McFly off it says so in the web's words instead of a composer.
-/// Signed out it asks for sign-in (PhaseGate), never showing a conversation; it shows one only once signed in.
-struct McFlyPage: View {
-    @Environment(Dashboard.self) private var dashboard
-
-    var body: some View {
-        PhaseGate {
-            switch dashboard.phase {
-            case .ready: content
-            case .unavailable(let message):
-                Unavailable("Can't load Ask McFly", systemImage: "wifi.exclamationmark", description: message)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Palette.page)
-            default: ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity).background(Palette.page)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var content: some View {
-        if let status = dashboard.mcfly.status, !status.available {
-            let admin = dashboard.status?.user?.role == "admin"
-            Unavailable(status.configured ? "Ask McFly is turned off" : "Ask McFly isn't set up yet", systemImage: AppPage.mcfly.symbol,
-                        description: !admin ? "Ask the admin to turn it on."
-                            : status.configured ? "Set a daily question limit above 0 in Admin → Settings."
-                            : "Add ANTHROPIC_API_KEY (from the Claude Console) to the Vercel project, then redeploy.")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Palette.page)
-                .task { await dashboard.mcfly.refreshStatus() }
-        } else {
-            McFlyThread(chat: dashboard.mcfly)
-        }
-    }
-}
-
-/// The conversation and its composer, for the sheet and the page. Its NavigationStack is theirs.
-struct McFlyThread: View {
-    @Bindable var chat: McFlyChat
-    @State private var draft = ""
-    @State private var follow = McFlyFollow()
-    @FocusState private var focused: Bool
-
-    var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 14) {
-                    if chat.messages.isEmpty {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Ask about your health data").font(.app(.headline)).foregroundStyle(Palette.ink)
-                            Text("For example: How did I sleep this week? Is my resting heart rate trending down?")
-                                .font(.app(.subheadline)).foregroundStyle(Palette.ink3)
-                        }
-                        .padding(.top, 24)
-                    }
-                    ForEach(chat.messages) { m in
-                        Bubble(message: m).id(m.id)
-                    }
-                    if let label = chat.lookingAt {
-                        Label("Looking at \(label)…", systemImage: "magnifyingglass")
-                            .font(.app(.caption)).foregroundStyle(Palette.ink3)
-                    }
-                    Color.clear.frame(height: 1).id("end")
-                }
-                .padding(16)
-                .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(threadSpace)) } action: { [follow] frame in
-                    follow.contentMoved(top: frame.minY, bottom: frame.maxY)
-                }
-            }
-            .scrollDismissesKeyboard(.interactively)
-            .environment(\.mcflyChartTouched, { [follow] in follow.chartTouched() })
-            .onChange(of: followKey) { _, _ in
-                // Only while the reader is at the bottom: an earlier paragraph or chart stays put to be read.
-                guard follow.following else { return }
-                withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("end", anchor: .bottom) }
-            }
-        }
-        .background(Palette.page)
-        .safeAreaInset(edge: .bottom) {
-            composer.onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(threadSpace)).minY } action: { [follow] y in
-                follow.viewportBottom = y
-            }
-        }
-        .coordinateSpace(.named(threadSpace))
-        .navigationTitle("Ask McFly")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("New chat") { chat.newChat() }.disabled(chat.messages.isEmpty || chat.streaming)
-            }
-        }
-        .task { await chat.refreshStatus() }
-    }
-
-    private var composer: some View {
-        VStack(spacing: 6) {
-            if let s = chat.status {
-                Text(s.left == 1 ? "1 question left today" : "\(s.left) questions left today")
-                    .font(.app(.caption2)).foregroundStyle(Palette.ink3)
-            }
-            HStack(alignment: .bottom, spacing: 8) {
-                TextField("Ask a question", text: $draft, axis: .vertical)
-                    .lineLimit(1...5)
-                    .focused($focused)
-                    .submitLabel(.send)
-                    .onSubmit(send)
-                    .padding(.horizontal, 14).padding(.vertical, 10)
-                    .background(Palette.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(Palette.border))
-                Button(action: send) {
-                    Image(systemName: "arrow.up").font(.body.weight(.bold))
-                        .frame(width: 44, height: 44)
-                        .foregroundStyle(Palette.page)
-                        .background(canSend ? Palette.ink : Palette.ink3, in: Circle())
-                }
-                .disabled(!canSend)
-                .accessibilityLabel("Send")
-            }
-        }
-        .padding(.horizontal, 16).padding(.vertical, 8)
-        .background(.bar)
-    }
-
-    /// Changes whenever something new lands at the bottom of the thread.
-    private var followKey: [String] {
-        guard let m = chat.messages.last else { return [] }
-        return [m.id.uuidString, "\(m.content.count)", "\(m.parts.count)", m.error ?? "", chat.lookingAt ?? ""]
-    }
-
-    private var canSend: Bool {
-        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !chat.streaming && (chat.status?.left ?? 1) > 0
-    }
-
-    private func send() {
-        guard canSend else { return }
-        let q = draft
-        draft = ""
-        focused = false // the keyboard steps aside while the answer streams
-        follow.sent()
-        Task { await chat.ask(q) }
-    }
-}
-
-private struct Bubble: View {
-    let message: McFlyMessage
-
-    var body: some View {
-        if message.role == .assistant, message.hasVisual {
-            // Charts sit full width between the answer's paragraphs, in the order they arrived; anything that went
-            // wrong afterwards goes under them.
-            VStack(alignment: .leading, spacing: 10) {
-                ForEach(Array(message.parts.enumerated()), id: \.offset) { _, part in
-                    switch part {
-                    case .text(let t):
-                        if !t.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { shell(LightMarkdown(text: t)) }
-                    case .visual(let v):
-                        McFlyVisualView(visual: v)
-                    }
-                }
-                if let error = message.error { shell(ErrorLine(text: error)) }
-            }
-        } else {
-            shell(content)
-        }
-    }
-
-    @ViewBuilder
-    private var content: some View {
-        if message.role == .user {
-            Text(message.content)
-        } else {
-            let words = !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            if words { LightMarkdown(text: message.content) }
-            if let error = message.error {
-                ErrorLine(text: error)
-            } else if !words {
-                ProgressView().controlSize(.small)
-            }
-        }
-    }
-
-    private func shell(_ inner: some View) -> some View {
-        HStack {
-            if message.role == .user { Spacer(minLength: 40) }
-            VStack(alignment: .leading, spacing: 6) {
-                inner
-            }
-            .font(.app(.callout))
-            .foregroundStyle(message.role == .user ? Palette.page : Palette.ink)
-            .padding(.horizontal, 14).padding(.vertical, 10)
-            .background(message.role == .user ? Palette.ink : Palette.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay {
-                if message.role == .assistant { RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Palette.border) }
-            }
-            .textSelection(.enabled)
-            if message.role == .assistant { Spacer(minLength: 24) }
-        }
-    }
-}
-
-/// What went wrong with an answer, under the part of it that arrived (note-bad on the web).
-private struct ErrorLine: View {
-    let text: String
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Image(systemName: "exclamationmark.circle").accessibilityHidden(true)
-            Text(text).fixedSize(horizontal: false, vertical: true)
-        }
-        .foregroundStyle(Palette.critical)
-    }
-}
-
-/// Paragraphs, "- " and "1. " lists, and **bold**.
+/// Paragraphs, "- " and "1. " lists, and **bold**. Insights' digest uses it; McFly's answers use McFlyAnswer, the web's
+/// own rules.
 struct LightMarkdown: View {
     let text: String
 
