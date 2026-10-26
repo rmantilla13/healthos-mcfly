@@ -6,12 +6,12 @@ import SwiftUI
 // Home's set is blood oxygen and heart on the left, breathing on the right; Body shows the same.
 
 /// How the person chose to see themselves (settings.perspective): nil from servers older than onboarding, read as the
-/// portrait, as the web does.
-enum Perspective: String {
+/// portrait, as the web does. Home's own name for it: the welcome (slice A) keeps a Perspective of its own for its choices.
+enum HomePerspective: String {
     case portrait, digital, stats
 
-    static func of(_ settings: ServerStatus.Settings?) -> Perspective {
-        settings?.perspective.flatMap(Perspective.init(rawValue:)) ?? .portrait
+    static func of(_ settings: ServerStatus.Settings?) -> HomePerspective {
+        settings?.perspective.flatMap(HomePerspective.init(rawValue:)) ?? .portrait
     }
 }
 
@@ -287,7 +287,7 @@ struct HomeFigure: View {
 
     var body: some View {
         let settings = dashboard.status?.settings
-        let perspective = Perspective.of(settings)
+        let perspective = HomePerspective.of(settings)
         let photo = dashboard.status?.photo
         if perspective != .stats {
             VStack(alignment: .leading, spacing: 14) {

@@ -39,7 +39,7 @@ struct EditWidgetsSheet: View {
                 dismiss()
                 onEveryPage()
             }
-            .buttonStyle(QuietTextButtonStyle())
+            .buttonStyle(HomeQuietButtonStyle())
             .accessibilityHint("Opens Profile")
             .accessibilityIdentifier("everyPagesCards")
             Button("Done") { dismiss() }

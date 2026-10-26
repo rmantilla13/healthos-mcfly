@@ -252,8 +252,9 @@ struct SyncStatusLine: View {
     }
 }
 
-/// The web's quiet button (.btn-quiet): its words only, in ink-3, with a full-size place to tap.
-struct QuietTextButtonStyle: ButtonStyle {
+/// The web's quiet button (.btn-quiet): its words only, in ink-3, with a full-size place to tap. Home's own, by name:
+/// Nutrition (slice G) has a quiet text style of its own.
+struct HomeQuietButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.app(.footnote, weight: .medium))
@@ -354,7 +355,7 @@ struct FamilyNotice: View {
 
     private var gotIt: some View {
         Button("Got it") { Task { await dashboard.dismissFamilyNotice() } }
-            .buttonStyle(QuietTextButtonStyle())
+            .buttonStyle(HomeQuietButtonStyle())
             .accessibilityHint("Hides this note")
             .accessibilityIdentifier("familyNoticeGotIt")
     }

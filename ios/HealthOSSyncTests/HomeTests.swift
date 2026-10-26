@@ -324,12 +324,12 @@ final class HomeFigureCalloutTests: XCTestCase {
         func settings(_ perspective: String?) throws -> ServerStatus.Settings {
             try decode(ServerStatus.Settings.self, perspective.map { #"{"perspective":"\#($0)"}"# } ?? "{}")
         }
-        XCTAssertEqual(Perspective.of(try settings("portrait")), .portrait)
-        XCTAssertEqual(Perspective.of(try settings("digital")), .digital)
-        XCTAssertEqual(Perspective.of(try settings("stats")), .stats)
-        XCTAssertEqual(Perspective.of(try settings(nil)), .portrait, "servers before onboarding read as the portrait")
-        XCTAssertEqual(Perspective.of(try settings("hologram")), .portrait)
-        XCTAssertEqual(Perspective.of(nil), .portrait)
+        XCTAssertEqual(HomePerspective.of(try settings("portrait")), .portrait)
+        XCTAssertEqual(HomePerspective.of(try settings("digital")), .digital)
+        XCTAssertEqual(HomePerspective.of(try settings("stats")), .stats)
+        XCTAssertEqual(HomePerspective.of(try settings(nil)), .portrait, "servers before onboarding read as the portrait")
+        XCTAssertEqual(HomePerspective.of(try settings("hologram")), .portrait)
+        XCTAssertEqual(HomePerspective.of(nil), .portrait)
     }
 
     func testThePortraitNoteSaysWhatsTrueForThisServer() throws {
