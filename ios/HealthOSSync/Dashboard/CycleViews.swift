@@ -535,7 +535,7 @@ private struct CycleTemperatureCard: View {
         let lo = (values.min() ?? -0.1) - span * 0.25
         let hi = (values.max() ?? 0.1) + span * 0.15
         let ov = c.ovulation.map { cd($0.date) }
-        let bleeding = cycle.days.filter { CycleText.bleeding($0) && $0.date >= c.start }.map { cd($0.date) }.filter { $0 <= length }
+        let bleeding = cycle.days.filter { CycleText.bleeding($0.day) && $0.date >= c.start }.map { cd($0.date) }.filter { $0 <= length }
         let lh = cycle.days.filter { $0.ovulationTest == "lh_surge" && $0.date >= c.start }.map { cd($0.date) }.filter { $0 <= length }
         let fertile = c.end == nil ? cycle.fertility.map { Band(day: cd($0.date), level: $0.level) }.filter { $0.day <= length } : []
         let usable = readings.filter { !$0.excluded }
@@ -622,7 +622,7 @@ private struct CycleCalendarCard: View {
 
     var body: some View {
         let dates = Self.dates(cycle)
-        let byDate = Dictionary(cycle.days.map { ($0.date, $0) }, uniquingKeysWith: { _, b in b })
+        let byDate = Dictionary(cycle.days.map { ($0.date, $0.day) }, uniquingKeysWith: { _, b in b })
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
                 Text("Calendar").font(.app(.headline)).foregroundStyle(Palette.ink)

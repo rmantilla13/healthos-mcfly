@@ -77,6 +77,9 @@ final class Dashboard {
     var accountMenuOpen = false
     /// A metric's detail sheet showing over the app (`showMetric`, Shell/MetricRequest.swift).
     var metricSheet: MetricRequest?
+    /// The chart pages' range in days (RangeFilters), shared by Vitals, Body and Sleep as the web shares it in a
+    /// session (useRange): 30 to start with; 1 is Day. Memory only.
+    var rangeDays = 30
     /// The welcome flow asked for again (#/welcome: Profile's Edit preferences), until it's closed (Shell/Welcome.swift).
     var welcomeEditing = false
     /// A new account's welcome put off for this session: only the stub offers it, until slice A builds the flow.

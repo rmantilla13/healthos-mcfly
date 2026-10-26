@@ -40,6 +40,22 @@ final class SharedTypesTests: XCTestCase {
         _ = preview
         _ = PeersSection()
         _ = PortraitPhotosSection()
+        // Signal cards compact on Vitals and Sleep, opening their metric's sheet.
+        _ = MetricCard(title: "HRV", route: .vitals, tint: .lavender, variant: .compact, metric: .hrv, section: "Your signals") { Text("62 ms") }
+        // What the shell shows over the app, for slices to fill.
+        _ = MetricSheetView(request: MetricRequest(key: .hrv, section: "Your signals", page: .vitals))
+        _ = OnboardingView(mode: .new)
+        _ = SignInUnavailable()
+        _ = AskMcFlyEntry()
+        _ = ChatbotSheet()
+        _ = OpenAIKeySheet(onClose: {})
+        _ = FitbitImportSheet()
+        // The chart pages' shared controls (Vitals, Body, Sleep).
+        _ = RangeFilters(days: .constant(30), ranges: ChartRange.withDay)
+        _ = PageTabs(tabs: [PageTab(id: "overview", label: "Overview")], selection: .constant("overview"), label: "Sleep sections")
+        _ = DayNav(today: "2026-10-26", date: .constant(nil))
+        // Body's biomarkers card, from Blood records.
+        _ = LabRangeBar(result: LabResult(valueText: "5.4", value: 5.4, range: LabRange(low: 4, high: 6, text: "4–6"), status: .within), compact: true)
     }
 
     func testWorkoutSourcesInTheWebsWords() {

@@ -98,6 +98,15 @@ What every page uses, so each page's work stays in its own files.
   - The welcome (`dashboard.onboarding`, `Shell/Welcome.swift`): full screen whenever the server says a new account's onboarding isn't done, after any sign-in, and for `open(.welcome)` (Profile's Edit preferences), drawn by `OnboardingView(mode:)` (`Onboarding/`). Only signed in, and only where the status names `perspective`.
   - Ask McFly on Home: the shell mounts `AskMcFlyEntry` (`Dashboard/McFly.swift`) in every phase; it decides whether it shows and what a tap opens.
   - Sheets other pages present: `ChatbotSheet` and `OpenAIKeySheet` (`AI/`, Profile's key rows and `?connect=`), and `FitbitImportSheet` (`FitbitImport/`, from Integrations).
+- **Shared reads and constants** (decoded once, so two pages never define the same type):
+  - The journal (`Journal/JournalAPI.swift`): `dashboard.journal(days:)` (nil on a server without it), add, change and delete, `JournalEntry`, `JournalData` and the web's five moods. Home's card and the Journal page both use it.
+  - Lab results (`Labs/LabsModel.swift`): `dashboard.labs()`, `LabsData` and its markers and panels, the web's words for a result against its range (`LabWords`), and its bar (`LabRangeBar`), for Blood records and Body's Key biomarkers card.
+  - Cycle days carry each source's part (`CycleLogDay`: `apple` and `manual`), for the log sheet; a day's fields read as before.
+  - `dashboard.deletePortrait(id:)` beside `addReference` (`Portraits/PortraitsAPI.swift`).
+  - Ports of the web's `shared/` constants in `Shared/`: `Peers` (the minimums, age groups, measurement pairs and quarters, from `shared/peers.ts`) and `FigureVariant.of(settings)` (the digital human: the one chosen, else by gender, else the man; `.drawn` is the man until the woman's artwork exists). Their tests read the web's files.
+  - The art: `DigitalMan` and `JournalGut` in Assets.xcassets, the web's `figures/digital-man.webp` and `journal-gut.webp` as PNGs.
+  - The chart pages' controls (`Components/ChartPageControls.swift`): `RangeFilters` (7 days to a year, and Day), bound to `dashboard.rangeDays` so the range follows from page to page, `PageTabs` and `DayNav`.
+- **Permissions:** the camera's purpose covers meals, barcodes, portrait reference photos and paper lab reports, and names no provider; the microphone's is for voice notes (`project.yml`, which writes `Info.plist`).
 - **Shared views:**
   - `CameraPicker` and `BarcodeScanner` (`Components/`).
   - `PhotoSection` and `PhotoPreview`, "Use a photo as is" (`Portraits/PhotoSection.swift`).

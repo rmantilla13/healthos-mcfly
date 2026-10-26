@@ -66,6 +66,14 @@ extension APIClient {
                                                           ["image": photo.base64, "width": photo.width, "height": photo.height], timeout: 90)
         return created.portrait
     }
+
+    /// Deletes a reference photo or a portrait (DELETE /api/portraits/:id); the answer is the list as it is now. One in
+    /// use stops being chosen; the profile photo made from it stays. Its 404 ("That photo is already gone.") is the
+    /// route's own, never an older server's.
+    func deletePortrait(id: String) async throws -> PortraitList {
+        let data = try await request("/portraits/\(id)", method: "DELETE")
+        return try JSONDecoder().decode(PortraitList.self, from: data)
+    }
 }
 
 extension Dashboard {
@@ -79,5 +87,14 @@ extension Dashboard {
     /// Keeps a reference photo (onboarding's first step, the portrait studio).
     func addReference(_ photo: PreparedPhoto) async throws -> Portrait {
         try await fetch { try await $0.addReference(photo) }
+    }
+
+    /// Deletes a reference photo or a portrait: onboarding's Change (after the new one is kept) and Remove, and the
+    /// portrait studio's Delete. Answers with the list as it is now, which tells Availability whether one can be made.
+    @discardableResult
+    func deletePortrait(id: String) async throws -> PortraitList {
+        let list = try await fetch { try await $0.deletePortrait(id: id) }
+        if let can = list.canGenerate { availability.heard(canGeneratePortraits: can) }
+        return list
     }
 }

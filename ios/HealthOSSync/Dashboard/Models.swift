@@ -275,6 +275,55 @@ struct DaySeries: Codable {
     }
 }
 
+/// What one source logged on one day (CycleFields in shared/types.ts): a field that's absent wasn't logged.
+struct CycleFields: Codable, Equatable {
+    var flow: String?
+    var periodStart: Bool?
+    var spotting: Bool?
+    var ovulationTest: String?
+    var mucus: String?
+    /// Basal body temperature in °C.
+    var bbt: Double?
+    var sexualActivity: String?
+    var symptoms: [String]?
+    var tempDisturbed: String?
+}
+
+/// A logged day as GET /api/cycle shows it (CycleLogDay in shared/types.ts): its fields as shown, an entry made by hand
+/// overriding Apple Health's field by field, and each source's own part, for the log sheet to fill its form from the
+/// hand-made one and say what came from Apple Health (Cycle.tsx). `day.flow` and the other fields read as `logDay.flow`.
+/// The upload's own day stays CycleDay (Cycle.swift). A part that can't be read is nil, never the whole day.
+@dynamicMemberLookup
+struct CycleLogDay: Codable, Equatable {
+    var day: CycleDay
+    var apple: CycleFields?
+    var manual: CycleFields?
+
+    init(day: CycleDay, apple: CycleFields? = nil, manual: CycleFields? = nil) {
+        self.day = day
+        self.apple = apple
+        self.manual = manual
+    }
+
+    subscript<T>(dynamicMember path: KeyPath<CycleDay, T>) -> T { day[keyPath: path] }
+
+    private enum CodingKeys: String, CodingKey { case apple, manual }
+
+    init(from decoder: Decoder) throws {
+        day = try CycleDay(from: decoder)
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        apple = try? c.decodeIfPresent(CycleFields.self, forKey: .apple)
+        manual = try? c.decodeIfPresent(CycleFields.self, forKey: .manual)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        try day.encode(to: encoder)
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(apple, forKey: .apple)
+        try c.encodeIfPresent(manual, forKey: .manual)
+    }
+}
+
 /// Cycle tracking (GET /api/cycle), the part the app shows. Reproductive-health data: only fetched while the
 /// person has cycle tracking on, and never part of the summary, patterns, flags or the digest.
 struct CycleData: Codable {
@@ -422,8 +471,8 @@ struct CycleData: Codable {
 
     let enabled: Bool
     let today: String
-    /// Logged days in the window asked for, oldest first (CycleDay, the same shape the app sends).
-    @LossyArray var days: [CycleDay]
+    /// Logged days in the window asked for, oldest first: the fields as shown, and each source's own (CycleLogDay).
+    @LossyArray var days: [CycleLogDay]
     /// Detected periods over all history, oldest first.
     @LossyArray var periods: [Period]
     @Lossy var stats: Stats?
@@ -800,6 +849,9 @@ struct ServerStatus: Codable {
         let syncing: Bool?
         let lastSync: String?
         let lastError: String?
+        /// Where WHOOP sends people back after they sign in, for a server that isn't hosted to show in "Set up a WHOOP
+        /// developer app" (Integrations.tsx). Missing from older servers.
+        @Lossy var redirectUri: String?
     }
 
     // Each part on its own, like the settings: one the app can't read leaves the rest.
