@@ -167,7 +167,7 @@ private struct NutritionIntro: View {
                     IntroCard(title: "What it shows", items: [
                         ("fork.knife", "What you log, here or in your food app",
                          "Search for a food or type a barcode (or scan one on iPhone), describe it or snap a photo for McFly to estimate, or type the amounts. Or read the daily totals from MyFitnessPal, Cronometer, Lose It!, MacroFactor or Yazio, through Apple Health."),
-                        ("chart.bar", "Macro balance, water and caffeine", "Your day by weight, the water you log as glasses, and your daily caffeine."),
+                        ("chart.bar.xaxis", "Macro balance, water and caffeine", "Your day by weight, the water you log as glasses, and your daily caffeine."),
                         ("moon", "How it goes with your sleep and HRV", "Patterns from your own days, worded as things that tend to go together, never as causes."),
                     ])
                     IntroCard(title: "What stays private", items: [
@@ -209,7 +209,7 @@ private struct NutritionIntro: View {
                     .foregroundStyle(Palette.ink3)
                     .fixedSize(horizontal: false, vertical: true)
                 if !choosing {
-                    Button("Turn on Nutrition") { choosing = true }
+                    Button { choosing = true } label: { PillLabel("Turn on Nutrition") }
                         .buttonStyle(.accentPill)
                         .accessibilityIdentifier("turnOnNutrition")
                 } else {

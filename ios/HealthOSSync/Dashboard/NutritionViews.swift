@@ -223,8 +223,8 @@ struct NutritionOverview: View {
     }
 }
 
-/// Energy (only when everything is shown), protein, water and days logged: two to a row, without the hidden ones.
-/// An odd last card takes the whole row, so hiding one leaves no hole.
+/// Energy (only when everything is shown), protein, water and days logged, without the hidden ones: one to a row,
+/// as the web's phone lays out its cards (.cards-4 under 560px).
 private struct FoodOverviewCards: View {
     let data: NutritionData
     let week: [String]
@@ -232,14 +232,8 @@ private struct FoodOverviewCards: View {
     let ids: [String]
 
     var body: some View {
-        Grid(horizontalSpacing: 12, verticalSpacing: 12) {
-            ForEach(Array(Cards.rows(ids, max: 2).enumerated()), id: \.offset) { _, row in
-                GridRow {
-                    ForEach(row, id: \.self) { id in
-                        card(id, wide: row.count == 1).gridCellColumns(row.count == 1 ? 2 : 1)
-                    }
-                }
-            }
+        VStack(spacing: 16) {
+            ForEach(ids, id: \.self) { id in card(id, wide: true) }
         }
     }
 
@@ -262,15 +256,32 @@ private struct FoodOverviewCards: View {
     }
 }
 
+/// A card's figure (.metric-value): the number at 40, its unit under it in the muted ink.
+struct FoodMetricValue: View {
+    let value: String
+    let unit: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(value).font(.app(size: 40, weight: .medium, relativeTo: .largeTitle)).tracking(-1.2).foregroundStyle(Palette.ink)
+                .lineLimit(1).minimumScaleFactor(0.6)
+            Text(unit).font(.app(size: 13, relativeTo: .footnote)).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.top, 6)
+        .accessibilityElement(children: .combine)
+    }
+}
+
 private struct FoodCardHead: View {
     let title: String
     let day: String?
 
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text(title).font(.app(.subheadline, weight: .medium)).foregroundStyle(Palette.ink2)
+            Text(title).font(.app(size: 13, weight: .medium, relativeTo: .footnote)).foregroundStyle(Palette.ink)
+                .accessibilityAddTraits(.isHeader)
             Spacer(minLength: 4)
-            if let day { Text(day).font(.app(.caption)).foregroundStyle(Palette.ink3).lineLimit(1) }
+            if let day { Text(day).mutedSmall().lineLimit(1) }
         }
     }
 }
@@ -299,7 +310,7 @@ struct FoodEnergyCard: View {
         VStack(alignment: .leading, spacing: 8) {
             FoodCardHead(title: "Energy", day: last.map { Fmt.relativeDay($0.date, today: today) })
             if let last {
-                BigValue(value: Fmt.number(last.value), unit: "kcal", size: 26)
+                FoodMetricValue(value: Fmt.number(last.value), unit: "kcal")
             } else {
                 Text("No calories logged this week.").font(.app(.caption)).foregroundStyle(Palette.ink3)
             }
@@ -323,7 +334,7 @@ struct FoodProteinCard: View {
         VStack(alignment: .leading, spacing: 8) {
             FoodCardHead(title: "Protein", day: last.map { Fmt.relativeDay($0.date, today: today) })
             if let last {
-                BigValue(value: Fmt.number(last.value), unit: "grams", size: 26)
+                FoodMetricValue(value: Fmt.number(last.value), unit: "grams")
             } else {
                 Text("No protein logged this week.").font(.app(.caption)).foregroundStyle(Palette.ink3)
             }
@@ -355,7 +366,7 @@ private struct FoodWaterCard: View {
         VStack(alignment: .leading, spacing: 8) {
             FoodCardHead(title: "Water", day: last.map { Fmt.relativeDay($0.date, today: today) })
             if let last {
-                BigValue(value: FoodMath.glassesText(last.value), unit: "\(FoodMath.glasses(last.value) == 1 ? "glass" : "glasses") · \(FoodMath.water(last.value, units: units))", size: 26)
+                FoodMetricValue(value: FoodMath.glassesText(last.value), unit: "\(FoodMath.glasses(last.value) == 1 ? "glass" : "glasses") · \(FoodMath.water(last.value, units: units))")
             } else {
                 Text("No water logged this week.").font(.app(.caption)).foregroundStyle(Palette.ink3)
             }
@@ -378,10 +389,11 @@ private struct FoodLoggedCard: View {
         let dates = FoodMath.dates(from: data.start, to: data.end)
         let cell: CGFloat = dates.count > 31 ? 9 : compact ? 11 : 14
         VStack(alignment: .leading, spacing: 8) {
-            FoodCardHead(title: "Days logged", day: nil)
+            Text("Days logged").font(.app(.headline, weight: .medium)).foregroundStyle(Palette.ink).accessibilityAddTraits(.isHeader)
             Text("\(logged.count) of \(FoodMath.days(dates.count))")
-                .font(.app(fixedSize: compact ? 20 : 22, weight: .semibold)).monospacedDigit()
+                .font(.app(size: 13, weight: .medium, relativeTo: .footnote))
                 .foregroundStyle(Palette.ink)
+                .padding(.top, 6)
             Spacer(minLength: 0)
             NutritionFlow(spacing: 4, rowSpacing: 4) {
                 ForEach(dates, id: \.self) { d in
@@ -702,7 +714,7 @@ struct NutritionHydration: View {
             }
             .card()
         } else {
-            let water = { (ml: Double) in "\(FoodMath.glassesText(ml)) glasses · \(FoodMath.water(ml, units: units))" }
+            let water = { (ml: Double) in "\(FoodMath.glassesText(ml)) \(FoodMath.glasses(ml) == 1 ? "glass" : "glasses") · \(FoodMath.water(ml, units: units))" }
             HydrationSummaryCard(title: "Water", points: data.water, format: water, target: data.targets?["water_ml"].map { FoodMath.water($0, units: units) }, days: days)
             HydrationSummaryCard(title: "Caffeine", points: data.caffeine, format: { "\(Fmt.number($0)) mg" }, target: nil, days: days)
             FoodChartCard(title: "Water", points: data.water, start: data.start, end: data.end, target: data.targets?["water_ml"],
@@ -1122,7 +1134,7 @@ private struct HydrationSummaryCard: View {
         VStack(alignment: .leading, spacing: 6) {
             NutriCardHead(title: title) { Text("Last \(days) days").mutedSmall() }
             if let avg {
-                Text(format(avg)).font(.app(size: 28, weight: .medium, relativeTo: .title)).tracking(-0.84).foregroundStyle(Palette.ink)
+                Text(format(avg)).font(.app(size: 32, weight: .medium, relativeTo: .title)).tracking(-0.96).foregroundStyle(Palette.ink)
                     .fixedSize(horizontal: false, vertical: true)
                 Text("a day on average, over the \(points.count) \(points.count == 1 ? "day" : "days") logged").font(.app(.footnote)).foregroundStyle(Palette.ink2)
                     .fixedSize(horizontal: false, vertical: true)
