@@ -41,12 +41,19 @@ enum HostedAccessibility {
         try await run(elements)
     }
 
+    /// Each element once: one reached both as a view's element and through its subviews, or from two views over the
+    /// same place, is the one element VoiceOver reaches (same label and place on screen).
     private static func walk(_ o: NSObject, into out: inout [NSObject]) {
-        if o.isAccessibilityElement { out.append(o) }
+        if o.isAccessibilityElement, !out.contains(where: { same($0, o) }) { out.append(o) }
         let n = o.accessibilityElementCount()
         if n != NSNotFound, n > 0 {
             for i in 0..<n { if let e = o.accessibilityElement(at: i) as? NSObject { walk(e, into: &out) } }
         }
         for sub in (o as? UIView)?.subviews ?? [] { walk(sub, into: &out) }
+    }
+
+    private static func same(_ a: NSObject, _ b: NSObject) -> Bool {
+        a === b || (a.accessibilityLabel == b.accessibilityLabel && a.accessibilityFrame == b.accessibilityFrame
+            && a.accessibilityValue == b.accessibilityValue)
     }
 }

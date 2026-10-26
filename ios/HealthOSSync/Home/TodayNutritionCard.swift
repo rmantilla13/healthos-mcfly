@@ -62,6 +62,10 @@ struct TodayNutritionCard: View {
         times.count < 2 ? times.joined() : "\(times.dropLast().joined(separator: ", ")) and \(times.last!)"
     }
 
+    /// Where the orb goes (LogButton): Nutrition's Today composer with Nutrition on (#/nutrition?compose=1, which the
+    /// Nutrition page applies once: NutritionLink), Nutrition's own page while it's off.
+    static func logRoute(nutritionOn: Bool) -> AppRoute { nutritionOn ? AppRoute(.nutrition, query: ["compose": "1"]) : .nutrition }
+
     /// How many days back the day is (never a date in the address), within what the log keeps. While Nutrition is off
     /// there's nothing for any day, so it's today's invitation.
     static func daysBack(date: String, today: String, on: Bool) -> Int { on ? max(0, Fmt.daysBetween(date, today)) : 0 }
@@ -130,8 +134,7 @@ struct TodayNutritionCard: View {
                 Text(m.title).font(.app(.footnote, weight: .medium)).foregroundStyle(Palette.ink)
                     .accessibilityAddTraits(.isHeader)
                 Spacer(minLength: 0)
-                // Nutrition's Today composer with Nutrition on (compose=1), Nutrition's own page while it's off.
-                Button { dashboard.open(on ? AppRoute(.nutrition, query: ["compose": "1"]) : .nutrition) } label: {
+                Button { dashboard.open(Self.logRoute(nutritionOn: on)) } label: {
                     Orb(size: 22).frame(width: 44, height: 44).contentShape(Circle())
                 }
                 .buttonStyle(.plain)
