@@ -16,6 +16,7 @@
 		0BDF60A216902A26A4A8FE46 /* DayAggregatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF3AD1F8E32A8E71A82AA62D /* DayAggregatorTests.swift */; };
 		0EDCE35D1D564F2670CB8267 /* portraits.json in Resources */ = {isa = PBXBuildFile; fileRef = 73AE4AF2E08289558F5FE74B /* portraits.json */; };
 		0FB626BE268BECC37DF88D1F /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B00CB598628622D59B7DB55 /* Theme.swift */; };
+		16155A8230629696D6D0CB80 /* peers-ready.json in Resources */ = {isa = PBXBuildFile; fileRef = F2986F894A740BF13E196A82 /* peers-ready.json */; };
 		180452B0990805753969B688 /* ChartLegend.swift in Sources */ = {isa = PBXBuildFile; fileRef = E617E2FB9DFD894B406765C5 /* ChartLegend.swift */; };
 		1927B716006AE1725C3FE33A /* nutrition-no-energy.json in Resources */ = {isa = PBXBuildFile; fileRef = 05350E818E3C1D083459C737 /* nutrition-no-energy.json */; };
 		1DEB0D58FBB4C34B5097F48C /* AppFont.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29C1771A03EB3CB2D0A7C635 /* AppFont.swift */; };
@@ -49,6 +50,7 @@
 		45AE7C4484A901ADCFE8B2C7 /* ProfilePhoto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 052005D09276C20A065FB40A /* ProfilePhoto.swift */; };
 		461A1709DB433ABA8DF2B943 /* DayScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80E909361416FD077EA8EDEC /* DayScreen.swift */; };
 		463BE90AB15F967AAF2EAF68 /* DashboardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2F31692BC3B154539132A48 /* DashboardTests.swift */; };
+		47C5BCB224FD78CC0691C28A /* peers-demo.json in Resources */ = {isa = PBXBuildFile; fileRef = 171F4EEAD78B165EFDF7B229 /* peers-demo.json */; };
 		4A7AB3C9753FAD8ACCF6DAC3 /* MetricSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E57D70AA436B77C04E6EB8CC /* MetricSheetView.swift */; };
 		4B6F753B116E3809157B6DCA /* Availability.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86D3596D2AA5A63363B849BA /* Availability.swift */; };
 		4CF714997DAE31577EA67475 /* status.json in Resources */ = {isa = PBXBuildFile; fileRef = D6C87B5E93B970D98B02681C /* status.json */; };
@@ -130,6 +132,7 @@
 		CE7AD1CD1A055DE6AE28ECFB /* LocalTime.swift in Sources */ = {isa = PBXBuildFile; fileRef = D32EDE48EFEC42FFCB4C13F5 /* LocalTime.swift */; };
 		CECB1623485B831F5942D0B8 /* BodyCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92938888A38CE7BC259A2C5B /* BodyCards.swift */; };
 		D03644C55042D763704A778D /* FitbitImportSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 573469469E0FC1B1179C09AD /* FitbitImportSheet.swift */; };
+		D1993B83FEE1477B04462835 /* PeersModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84EC6E40792848C7A5619BA9 /* PeersModel.swift */; };
 		D2A4DEF302D46FF9F64E4E6B /* PeerConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 148F842C9C878918F567F7BF /* PeerConstants.swift */; };
 		D30B29BE559677E5D6DF1F1F /* DashboardModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B66D0CED8B26758004DE595 /* DashboardModel.swift */; };
 		D578AC38FFF23101381DF82B /* trends-sleep.json in Resources */ = {isa = PBXBuildFile; fileRef = BCA618E51A2853EE3FA69588 /* trends-sleep.json */; };
@@ -155,6 +158,7 @@
 		FA4A394CBB37998BD7A24A5F /* StatusDecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F555F043B0421EDF7E4BAC46 /* StatusDecodingTests.swift */; };
 		FB1865DBB690F3EF8386BA77 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63C3960DE078C3D0C9951540 /* AppModel.swift */; };
 		FC3C5C525A00D4C42F8173FC /* TrendsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDFE71549B0A68674DB9E571 /* TrendsScreen.swift */; };
+		FCD57918110889FF0CA3E71D /* PeersTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F48EE7E87F902A5E1269B103 /* PeersTests.swift */; };
 		FDB2E43925F6C4A59CCAE87A /* patterns.json in Resources */ = {isa = PBXBuildFile; fileRef = 2467D3DA7F3A0754100A23C3 /* patterns.json */; };
 /* End PBXBuildFile section */
 
@@ -182,6 +186,7 @@
 		11666CF6F7B56BD0D0592FAB /* TodayScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayScreen.swift; sourceTree = "<group>"; };
 		148F842C9C878918F567F7BF /* PeerConstants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeerConstants.swift; sourceTree = "<group>"; };
 		16EDADCA5887A7EF29F78F2F /* ShellTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShellTests.swift; sourceTree = "<group>"; };
+		171F4EEAD78B165EFDF7B229 /* peers-demo.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "peers-demo.json"; sourceTree = "<group>"; };
 		1D16ADB4EAC1CF6BB06E7F64 /* IngestTokenTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IngestTokenTests.swift; sourceTree = "<group>"; };
 		1D9BD0F2D418F925BBA11881 /* TimeZoneTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeZoneTests.swift; sourceTree = "<group>"; };
 		20BEE2707E300C12DC3F24CC /* NutritionCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NutritionCards.swift; sourceTree = "<group>"; };
@@ -241,6 +246,7 @@
 		7D1A7C3B5B9180992C13EE25 /* AppFontTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppFontTests.swift; sourceTree = "<group>"; };
 		7DF4A8A7E1D690C6DFD9708D /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		80E909361416FD077EA8EDEC /* DayScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayScreen.swift; sourceTree = "<group>"; };
+		84EC6E40792848C7A5619BA9 /* PeersModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeersModel.swift; sourceTree = "<group>"; };
 		86D3596D2AA5A63363B849BA /* Availability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Availability.swift; sourceTree = "<group>"; };
 		8793376CEAFA2A02DC49EEAF /* ProfileRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileRow.swift; sourceTree = "<group>"; };
 		8831BE21705EE5AA0AF1C213 /* McFly.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = McFly.swift; sourceTree = "<group>"; };
@@ -307,6 +313,8 @@
 		EDFE71549B0A68674DB9E571 /* TrendsScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrendsScreen.swift; sourceTree = "<group>"; };
 		EFF903C401BAB3E580094868 /* HealthTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthTypes.swift; sourceTree = "<group>"; };
 		F008DF762D744EBDC6621FF1 /* HealthOSSync.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = HealthOSSync.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F2986F894A740BF13E196A82 /* peers-ready.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "peers-ready.json"; sourceTree = "<group>"; };
+		F48EE7E87F902A5E1269B103 /* PeersTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeersTests.swift; sourceTree = "<group>"; };
 		F555F043B0421EDF7E4BAC46 /* StatusDecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusDecodingTests.swift; sourceTree = "<group>"; };
 		F6013ED7B1ED9EE50837FCF4 /* AvailabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvailabilityTests.swift; sourceTree = "<group>"; };
 		F7445CD36B063431BB3F1392 /* nutrition-all.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "nutrition-all.json"; sourceTree = "<group>"; };
@@ -440,6 +448,7 @@
 				1D16ADB4EAC1CF6BB06E7F64 /* IngestTokenTests.swift */,
 				557B903874008E25C2245C9B /* NutritionScreenTests.swift */,
 				CD2F0A99D2A54D83358903BC /* NutritionTests.swift */,
+				F48EE7E87F902A5E1269B103 /* PeersTests.swift */,
 				DDD7BCE19CEBCB1FCBCFEEF8 /* PhotoPipelineTests.swift */,
 				0ABCF383530FAA8EB3117E5E /* ProfileTargetsTests.swift */,
 				C1E694F036A3D589AB6158D5 /* ServerErrorTests.swift */,
@@ -543,6 +552,8 @@
 				05350E818E3C1D083459C737 /* nutrition-no-energy.json */,
 				4FE808F612408F51C01FB9A2 /* nutrition-none.json */,
 				2467D3DA7F3A0754100A23C3 /* patterns.json */,
+				171F4EEAD78B165EFDF7B229 /* peers-demo.json */,
+				F2986F894A740BF13E196A82 /* peers-ready.json */,
 				73AE4AF2E08289558F5FE74B /* portraits.json */,
 				572030574C60D416CD1909E1 /* sleep.json */,
 				D6C87B5E93B970D98B02681C /* status.json */,
@@ -609,6 +620,7 @@
 		B9F506755A899B869B689325 /* Peers */ = {
 			isa = PBXGroup;
 			children = (
+				84EC6E40792848C7A5619BA9 /* PeersModel.swift */,
 				E7D29E2F5C2A8ECB3EB8C238 /* PeersSection.swift */,
 			);
 			path = Peers;
@@ -812,6 +824,8 @@
 				1927B716006AE1725C3FE33A /* nutrition-no-energy.json in Resources */,
 				5632F5F056626F3BB97DE1C6 /* nutrition-none.json in Resources */,
 				FDB2E43925F6C4A59CCAE87A /* patterns.json in Resources */,
+				47C5BCB224FD78CC0691C28A /* peers-demo.json in Resources */,
+				16155A8230629696D6D0CB80 /* peers-ready.json in Resources */,
 				0EDCE35D1D564F2670CB8267 /* portraits.json in Resources */,
 				6F75846AD2856A20810C958A /* sleep.json in Resources */,
 				4CF714997DAE31577EA67475 /* status.json in Resources */,
@@ -843,6 +857,7 @@
 				C5CA6CFB2FC4BA7F33A6EDFA /* IngestTokenTests.swift in Sources */,
 				44A5C2011D28476A534774B9 /* NutritionScreenTests.swift in Sources */,
 				4235342A47A876C689995E06 /* NutritionTests.swift in Sources */,
+				FCD57918110889FF0CA3E71D /* PeersTests.swift in Sources */,
 				B3B7CEC6217127596464D2FC /* PhotoPipelineTests.swift in Sources */,
 				3388E5336A1369CDA581FBCC /* ProfileTargetsTests.swift in Sources */,
 				F79947585EDFC0BDA10B4A4E /* ServerErrorTests.swift in Sources */,
@@ -931,6 +946,7 @@
 				E72C88A19985CC510375EDA8 /* OrganicHome.swift in Sources */,
 				43DFD663A8146CAF6B4CC5DC /* PageIntro.swift in Sources */,
 				D2A4DEF302D46FF9F64E4E6B /* PeerConstants.swift in Sources */,
+				D1993B83FEE1477B04462835 /* PeersModel.swift in Sources */,
 				936C35D7290E2A71F49B52B2 /* PeersSection.swift in Sources */,
 				74C84BFC0CDD1CC3D35822F0 /* PhaseGate.swift in Sources */,
 				9A87E75AA642B59ED0F0F7F4 /* PhotoCutout.swift in Sources */,

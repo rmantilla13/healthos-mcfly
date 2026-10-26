@@ -1,0 +1,19 @@
+{
+  "participating": true,
+  "ageBand": "30–39",
+  "window": {"from": "2026-09-27", "to": "2026-10-26"},
+  "metrics": [
+    {"metric": "resting_hr", "source": "whoop", "you": 54, "yourDays": 28, "status": "ready", "band": "below_p25",
+     "group": {"size": "50+", "median": 60, "p25": 56, "p75": 65}},
+    {"metric": "sleep_hours", "source": "apple", "you": 7.4, "yourDays": 21, "status": "ready", "band": "median_p75",
+     "group": {"size": "100+", "median": 7.1, "p25": 6.5, "p75": 7.6}},
+    {"metric": "steps", "source": "apple", "you": 8412, "yourDays": 30, "status": "ready", "band": "above_p75",
+     "group": {"size": "20+", "median": 6900, "p25": 5100, "p75": 8100}},
+    {"metric": "spo2", "source": "apple", "you": 96.8, "yourDays": 1, "status": "ready", "band": "p25_median",
+     "group": {"size": "20+", "median": 96.8, "p25": 96.1, "p75": 97.4}},
+    {"metric": "hrv_rmssd", "source": "whoop", "you": 61, "yourDays": 12, "status": "gathering"},
+    {"metric": "recovery", "source": "whoop", "you": 58, "yourDays": 3, "status": "not_enough_days"},
+    {"metric": "resp_rate", "source": "whoop", "you": null, "yourDays": 9, "status": "gathering"},
+    {"source": "apple", "status": "ready"}
+  ]
+}
