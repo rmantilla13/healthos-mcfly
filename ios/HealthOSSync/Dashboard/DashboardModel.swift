@@ -400,14 +400,18 @@ final class Dashboard {
         if await statusRead() { await download(knownVersion: .none) }
     }
 
-    /// A new session (sign-in or a new account from an invite), maybe as someone else after the last one expired:
-    /// nothing of the last person's status, summary, Family board, photos or dismissed notice carries over, and the
-    /// ingest token is checked against who it is. The pages open stay: the last person's went when the sign-in screen
-    /// came (leaving .ready), so any open now were opened since, by whoever is signing in (a tapped digest's Insights).
+    #if DEBUG
+    /// Tests only: the two halves of `sessionStarted` (`beginSession`, `enterSession`) with no server, so no status or
+    /// summary is read and the dashboard opens at once. The app never calls it; every sign-in (a password, an invite, a
+    /// reset link) goes through `sessionStarted`, which reads who it is and their status and summary in between, so a
+    /// test of how a sign-in goes drives that one against a stub server (SessionTests). As there, nothing of the last
+    /// person's status, summary, Family board, photos or dismissed notice carries over, and the ingest token is checked
+    /// against who it is.
     func signedIn(newAccount: Bool = false) {
         beginSession()
         enterSession(newAccount: newAccount)
     }
+    #endif
 
     /// The first half of a new session: everything of whoever was here before goes from memory (what's on disk stays,
     /// for the server's next launch), and an answer to anything they asked for is dropped when it lands (`session`).
