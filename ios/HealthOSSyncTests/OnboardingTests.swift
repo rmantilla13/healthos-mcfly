@@ -437,6 +437,7 @@ final class OnboardingTests: XCTestCase {
         XCTAssertEqual(ref.note, "That photo couldn't be opened here. Try a JPEG or PNG.")
         XCTAssertEqual(ref.photo?.id, "r1", "the one before stays")
         XCTAssertEqual(store.added.count, 1)
+        XCTAssertFalse(ref.busy, "another can be chosen")
     }
 
     func testRemoveDeletesASavedPhotoAndKeepsItWhenTheDeleteFails() async throws {
@@ -476,6 +477,88 @@ final class OnboardingTests: XCTestCase {
         ref.forget()
         await ref.settle()
         XCTAssertNil(ref.photo)
+    }
+
+    /// Holds a photo "on its way" (being read from Photos and shrunk) until the test lets it go.
+    private actor Gate {
+        private var opened = false
+        private var waiting: [CheckedContinuation<Void, Never>] = []
+        func wait() async {
+            if opened { return }
+            await withCheckedContinuation { waiting.append($0) }
+        }
+        func open() {
+            opened = true
+            waiting.forEach { $0.resume() }
+            waiting = []
+        }
+    }
+
+    /// A second pick while the first is still being read and shrunk would read the first as not kept yet, so its
+    /// replacement would never delete it: an orphan on the server, counting toward its five references. The row is busy
+    /// from the pick, and a pick meanwhile is turned down.
+    func testAPhotoOnItsWayTurnsDownAnotherSoNoneIsLeftOnTheServer() async throws {
+        let store = Portraits()
+        let ref = reference(store)
+        ref.choose { [photo = photo(10)] in photo }
+        await ref.settle()
+        XCTAssertFalse(ref.busy)
+        let gate = Gate()
+        ref.choose { [photo = photo(20)] in
+            await gate.wait()
+            return photo
+        }
+        XCTAssertTrue(ref.busy, "busy as soon as it's picked, before it's read and shrunk")
+        XCTAssertTrue(ref.preparing)
+        XCTAssertEqual(ref.photo?.state, .saved, "the one before still shows meanwhile")
+        ref.choose { [photo = photo(30)] in photo }
+        await ref.remove()
+        await gate.open()
+        await ref.settle()
+        XCTAssertEqual(store.events, ["add r1", "add r2", "delete r1"], "the pick and Remove meanwhile did nothing")
+        XCTAssertEqual(store.added, [10, 20])
+        XCTAssertEqual(ref.photo?.id, "r2")
+        XCTAssertFalse(ref.busy)
+    }
+
+    /// Remove waits for the server; a photo chosen meanwhile would be wiped from the row when the delete lands, and
+    /// stay on the server unseen.
+    func testAPhotoPickedWhileRemoveIsDeletingIsTurnedDown() async throws {
+        let gate = Gate()
+        var added = 0
+        let ref = ReferencePhoto(add: { _ in
+            added += 1
+            return Portrait(id: "r\(added)", kind: "reference", status: "ready")
+        }, delete: { _ in await gate.wait() }, list: { nil })
+        ref.choose { [photo = photo()] in photo }
+        await ref.settle()
+        let removing = Task { await ref.remove() }
+        while !ref.removing { await Task.yield() }
+        XCTAssertTrue(ref.busy)
+        ref.choose { [photo = photo(20)] in photo }
+        await gate.open()
+        await removing.value
+        await ref.settle()
+        XCTAssertEqual(added, 1, "the pick during Remove was never sent")
+        XCTAssertNil(ref.photo)
+        XCTAssertFalse(ref.busy)
+    }
+
+    func testSigningOutWhileAPhotoIsReadLeavesNothingWhenItArrives() async throws {
+        let store = Portraits()
+        let ref = reference(store)
+        let gate = Gate()
+        ref.choose { [photo = photo()] in
+            await gate.wait()
+            return photo
+        }
+        ref.forget()
+        XCTAssertFalse(ref.busy, "a new sign-in can choose at once")
+        await gate.open()
+        await ref.settle()
+        XCTAssertNil(ref.photo)
+        XCTAssertEqual(store.added, [], "never sent")
+        XCTAssertFalse(ref.busy)
     }
 
     /// The real shrink, from a photo's bytes: upright, no metadata, within the server's limits.

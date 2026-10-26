@@ -198,9 +198,10 @@ private struct ReferenceRow: View {
         .onChange(of: item) { _, picked in
             guard let picked else { return }
             item = nil
-            Task {
+            // Busy from the pick: reading it from the library (an iCloud photo can take seconds) is part of the choice.
+            reference.choose {
                 let data = try? await picked.loadTransferable(type: Data.self)
-                reference.choose { data.flatMap { PhotoPipeline.reference($0) } }
+                return data.flatMap { PhotoPipeline.reference($0) }
             }
         }
         .fullScreenCover(isPresented: $camera) {
@@ -229,28 +230,29 @@ private struct ReferenceRow: View {
                 }
                 .menuStyle(.button)
                 .buttonStyle(.quietPill(size: .compact))
-                .disabled(reference.saving)
+                .disabled(reference.busy)
                 .accessibilityIdentifier("choosePhoto")
             } else {
                 Button(reference.photo == nil ? OnboardingWords.choosePhoto : OnboardingWords.change) { picking = true }
                     .buttonStyle(.quietPill(size: .compact))
-                    .disabled(reference.saving)
+                    .disabled(reference.busy)
                     .accessibilityIdentifier("choosePhoto")
             }
             if reference.photo != nil {
                 Button(OnboardingWords.remove) { Task { await reference.remove() } }
                     .buttonStyle(WelcomeLinkStyle(size: 13, color: Palette.ink3))
                     .padding(.horizontal, 10)
-                    .disabled(reference.saving)
+                    .disabled(reference.busy)
                     .accessibilityIdentifier("removePhoto")
             }
         }
         .fixedSize()
     }
 
-    /// Saving, saved, or a photo kept before.
+    /// Saving (from the moment a photo is picked), saved, or a photo kept before.
     private var state: AnyView? {
-        switch reference.photo?.state {
+        let shown: ReferencePhoto.State? = reference.preparing ? .saving : reference.photo?.state
+        switch shown {
         case .saving:
             return AnyView(Text(OnboardingWords.referenceSaving).font(.app(size: 12, relativeTo: .caption)).foregroundStyle(Palette.ink3))
         case .saved:
