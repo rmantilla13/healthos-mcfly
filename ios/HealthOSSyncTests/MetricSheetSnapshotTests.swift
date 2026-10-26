@@ -70,7 +70,7 @@ final class MetricSheetSnapshotTests: XCTestCase {
         try await both(shot(.hrv, sheet: s), "hrv-month")
         try await draw(shot(.hrv, sheet: s), "hrv-month", size: .accessibility5)
         // Loading another range: the month stays up, dimmed.
-        try await draw(shot(.hrv, sheet: s, range: .year, loading: true), "hrv-loading-year")
+        try await both(shot(.hrv, sheet: s, range: .year, loading: true), "hrv-loading-year")
     }
 
     func testAWeekOfBars() async throws {
@@ -88,7 +88,7 @@ final class MetricSheetSnapshotTests: XCTestCase {
         try await both(Shot(page: AnyView(year.page.environment(\.sheetChartOpensOnTable, true)),
                             content: AnyView(year.content.environment(\.sheetChartOpensOnTable, true))), "sleep-year-table")
         let heart = shot(.heartRate, section: "Body", sheet: try fixture("metric-heart-rate-day"))
-        try await draw(Shot(page: AnyView(heart.page.environment(\.sheetChartOpensOnTable, true)),
+        try await both(Shot(page: AnyView(heart.page.environment(\.sheetChartOpensOnTable, true)),
                             content: AnyView(heart.content.environment(\.sheetChartOpensOnTable, true))), "heart-rate-day-table")
     }
 
@@ -102,12 +102,24 @@ final class MetricSheetSnapshotTests: XCTestCase {
         try await both(shot(.glucose, section: "Body", sheet: s, openPage: "Body"), "glucose-never")
         try await draw(shot(.glucose, section: "Body", sheet: s, openPage: "Body"), "glucose-never", size: .accessibility5)
         let lean = MetricSheetData(key: .leanMass, range: .month, headline: MetricFigure(label: "Average", value: nil, unit: "kg"), everMeasured: false)
-        try await draw(shot(.leanMass, section: "Body", sheet: lean, openPage: "Body"), "lean-never")
+        try await both(shot(.leanMass, section: "Body", sheet: lean, openPage: "Body"), "lean-never")
     }
 
     func testLoadingAndFailing() async throws {
         try await both(shot(.restingHr, sheet: nil, loading: true), "loading")
-        try await draw(shot(.restingHr, sheet: nil, error: "Something went wrong"), "error")
+        try await both(shot(.restingHr, sheet: nil, error: "Something went wrong"), "error")
+    }
+
+    /// A point picked under the finger: the crosshair or lit bar, and the tooltip on that day, inside the chart.
+    func testTheTooltips() async throws {
+        let month = shot(.hrv, sheet: try fixture("metric-hrv-month"))
+        let week = shot(.steps, sheet: try fixture("metric-steps-week"), openPage: "Activity on Body")
+        let year = shot(.sleepHours, section: "Sleep", sheet: try fixture("metric-sleep-year"), openPage: "Sleep")
+        for (s, index, name) in [(month, 18, "hrv-month-tooltip"), (month, 29, "hrv-month-tooltip-end"), (week, 2, "steps-week-tooltip"),
+                                 (week, 5, "steps-week-tooltip-end"), (year, 10, "sleep-year-tooltip")] {
+            try await both(Shot(page: AnyView(s.page.environment(\.sheetChartPicksPoint, index)),
+                                content: AnyView(s.content.environment(\.sheetChartPicksPoint, index))), name)
+        }
     }
 
     func testAnEmptyMonthMovedToTheYear() async throws {
@@ -121,6 +133,6 @@ final class MetricSheetSnapshotTests: XCTestCase {
         try await both(shot(.vo2max, section: "Body", sheet: year, range: r.range, note: r.note(shown: year), openPage: "Cardiovascular on Body"),
                        "vo2max-widened")
         // The month pressed again: empty, and it says where to look.
-        try await draw(shot(.vo2max, section: "Body", sheet: month, picked: true, openPage: "Cardiovascular on Body"), "vo2max-month-empty")
+        try await both(shot(.vo2max, section: "Body", sheet: month, picked: true, openPage: "Cardiovascular on Body"), "vo2max-month-empty")
     }
 }

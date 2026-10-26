@@ -100,11 +100,21 @@ private struct SheetChartOpensOnTable: EnvironmentKey {
     static let defaultValue = false
 }
 
+private struct SheetChartPicksPoint: EnvironmentKey {
+    static let defaultValue: Int? = nil
+}
+
 extension EnvironmentValues {
     /// The sheet's chart shows its table first (pictures of the sheet's states); the chart otherwise.
     var sheetChartOpensOnTable: Bool {
         get { self[SheetChartOpensOnTable.self] }
         set { self[SheetChartOpensOnTable.self] = newValue }
+    }
+
+    /// The point a chart opens with picked, as if under the finger, by its index (pictures of the tooltip); none otherwise.
+    var sheetChartPicksPoint: Int? {
+        get { self[SheetChartPicksPoint.self] }
+        set { self[SheetChartPicksPoint.self] = newValue }
     }
 }
 
@@ -202,6 +212,7 @@ struct SheetTrendChart: View {
     let period: ((String) -> String)?
     @State private var selected: Date?
     @State private var width: CGFloat = 0
+    @Environment(\.sheetChartPicksPoint) private var picks
 
     /// What the chart draws, worked out once.
     private struct Plan {
@@ -232,7 +243,7 @@ struct SheetTrendChart: View {
             points.indices.min { abs(x(points[$0]).timeIntervalSince(s)) < abs(x(points[$1]).timeIntervalSince(s)) }
         }
         let first = x(points[0]), end = x(points[points.count - 1])
-        return Plan(ticks: ticks, lo: lo, hi: max(ticks.last ?? 1, lo + 1), step: ticks.count > 1 ? ticks[1] - ticks[0] : nil,
+        return Plan(ticks: ticks, lo: lo, hi: ticks.last.map { $0 > lo ? $0 : lo + 1 } ?? lo + 1, step: ticks.count > 1 ? ticks[1] - ticks[0] : nil,
                     median: points.count >= SheetMath.medianMinPoints ? SheetMath.median(values) : nil,
                     runs: runs, sizes: Dictionary(grouping: runs, by: { $0 }).mapValues(\.count), last: points.count - 1, picked: picked,
                     labels: SheetMath.xLabels(points.map(\.date), width: width),
@@ -254,9 +265,6 @@ struct SheetTrendChart: View {
                 RuleMark(x: .value("Day", x(points[picked])))
                     .foregroundStyle(Palette.ink3)
                     .lineStyle(StrokeStyle(lineWidth: 1))
-                    .annotation(position: .top, spacing: 4, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
-                        SheetTooltip(color: color, value: format.value(points[picked].value), label: when(points[picked]))
-                    }
                     .accessibilityHidden(true)
             }
             let focus = points[plan.picked ?? plan.last]
@@ -271,11 +279,21 @@ struct SheetTrendChart: View {
         .chartXSelection(value: $selected)
         // The latest value over the line's end, its right edge on the point, as the web anchors it. Drawn over the chart
         // rather than as a mark's annotation, which Swift Charts moves off the point.
-        .chartOverlay { proxy in endLabel(plan, proxy) }
+        .chartOverlay { proxy in
+            ZStack {
+                endLabel(plan, proxy)
+                if let picked = plan.picked {
+                    TooltipOverlay(proxy: proxy, x: x(points[picked]), y: points[picked].value, floor: nil) {
+                        SheetTooltip(color: color, value: format.value(points[picked].value), label: when(points[picked]))
+                    }
+                }
+            }
+        }
         // The web's top margin: room for the end label over a high last value.
         .frame(height: 200)
         .padding(.top, 20)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+        .onAppear { if let picks, points.indices.contains(picks) { selected = x(points[picks]) } }
         .accessibilityLabel(plan.median.map { "\(label), median \(format.value($0))" } ?? label)
     }
 
@@ -350,6 +368,7 @@ struct SheetBarChart: View {
     let goal: Double?
     @State private var selected: String?
     @State private var width: CGFloat = 0
+    @Environment(\.sheetChartPicksPoint) private var picks
 
     var body: some View {
         let values = points.map(\.value)
@@ -391,14 +410,6 @@ struct SheetBarChart: View {
             if let mid {
                 MedianRule(value: mid, text: format.value(mid))
             }
-            if let picked {
-                RuleMark(x: .value("Day", points[picked].date))
-                    .foregroundStyle(.clear)
-                    .annotation(position: .top, spacing: 0, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
-                        SheetTooltip(color: nil, value: format.value(points[picked].value), label: dateText(points[picked].date))
-                    }
-                    .accessibilityHidden(true)
-            }
         }
         .chartXScale(domain: points.map(\.date))
         .chartYScale(domain: 0...hi)
@@ -419,8 +430,17 @@ struct SheetBarChart: View {
             }
         }
         .chartXSelection(value: $selected)
+        .chartOverlay { proxy in
+            if let picked {
+                // Kept clear of the top, as the web keeps it 20 points into the plot.
+                TooltipOverlay(proxy: proxy, x: points[picked].date, y: points[picked].value, floor: 20) {
+                    SheetTooltip(color: nil, value: format.value(points[picked].value), label: dateText(points[picked].date))
+                }
+            }
+        }
         .frame(height: 220)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+        .onAppear { if let picks, points.indices.contains(picks) { selected = points[picks].date } }
         .accessibilityLabel(mid.map { "\(label), median \(format.value($0))" } ?? label)
     }
 }
@@ -489,6 +509,33 @@ private struct EndLabel: View {
     let text: String
     var body: some View {
         Text(text).font(.app(fixedSize: 12, weight: .semibold)).foregroundStyle(Palette.ink)
+    }
+}
+
+/// Where the web puts its tooltip (Tooltip in src/charts/core.tsx): beside the point, 12 points to its right, or to its
+/// left within 150 points of the chart's right edge, and level with it. Drawn over the chart rather than as a mark's
+/// annotation, which Swift Charts lifts above the plot onto the chart's head.
+private struct TooltipOverlay<X: Plottable, Content: View>: View {
+    let proxy: ChartProxy
+    let x: X
+    let y: Double
+    /// The least distance from the plot's top, for a bar's tooltip; none for a line's.
+    let floor: CGFloat?
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        GeometryReader { geo in
+            if let frame = proxy.plotFrame, let px = proxy.position(forX: x), let py = proxy.position(forY: y) {
+                let plot = geo[frame]
+                let flip = plot.minX + px > geo.size.width - 150
+                content
+                    .fixedSize()
+                    .frame(width: 0, height: 0, alignment: flip ? .trailing : .leading)
+                    .position(x: plot.minX + px + (flip ? -12 : 12), y: plot.minY + max(py, floor ?? -.infinity))
+            }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }
 

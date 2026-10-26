@@ -3,9 +3,11 @@ import XCTest
 @testable import HealthOSSync
 
 /// The sheet against a running server, presented as the shell presents it, for looking at by eye until Home's cards
-/// open it (slice B). Only when asked for: TEST_RUNNER_METRIC_SHEET_SERVER (a scratch server, never the hosted one),
-/// TEST_RUNNER_METRIC_SHEET_SESSION (a session cookie's value for it) and TEST_RUNNER_METRIC_SHEET_SHOTS (where the
-/// PNGs go). Otherwise every test here is skipped. The session and server address are put back as they were after.
+/// open it (slice B). Only when asked for: TEST_RUNNER_METRIC_SHEET_SERVER (a scratch server on this Mac, never the
+/// hosted one), TEST_RUNNER_METRIC_SHEET_SESSION_FILE (a file holding a session for it: a curl cookie jar, or the
+/// cookie's value alone; only its path is passed, so the session never lands in a test log) and
+/// TEST_RUNNER_METRIC_SHEET_SHOTS (where the PNGs go). Otherwise every test here is skipped. The session and the server
+/// address are put back as they were after.
 @MainActor
 final class MetricSheetLiveTests: XCTestCase {
     private var folder: URL!
@@ -13,10 +15,14 @@ final class MetricSheetLiveTests: XCTestCase {
 
     override func setUp() async throws {
         let env = ProcessInfo.processInfo.environment
-        guard let server = env["METRIC_SHEET_SERVER"], let session = env["METRIC_SHEET_SESSION"], let shots = env["METRIC_SHEET_SHOTS"],
+        guard let server = env["METRIC_SHEET_SERVER"], let file = env["METRIC_SHEET_SESSION_FILE"], let shots = env["METRIC_SHEET_SHOTS"],
               let url = URL(string: server), ["localhost", "127.0.0.1"].contains(url.host() ?? "") else {
-            throw XCTSkip("Set TEST_RUNNER_METRIC_SHEET_SERVER (a local server), _SESSION and _SHOTS to draw the sheet against it.")
+            throw XCTSkip("Set TEST_RUNNER_METRIC_SHEET_SERVER (a local server), _SESSION_FILE and _SHOTS to draw the sheet against it.")
         }
+        let text = try String(contentsOfFile: file, encoding: .utf8)
+        // A curl cookie jar's line ends with the cookie's name and value; a file of its own is the value.
+        let jar = text.split(separator: "\n").map { $0.split(separator: "\t") }.first { $0.count >= 7 && $0[5] == SessionStore.name }
+        let session = jar.map { String($0[6]) } ?? text.trimmingCharacters(in: .whitespacesAndNewlines)
         folder = URL(fileURLWithPath: shots)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         savedServer = UserDefaults.standard.string(forKey: "serverURL")
