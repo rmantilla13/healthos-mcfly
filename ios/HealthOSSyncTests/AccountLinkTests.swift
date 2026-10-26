@@ -141,6 +141,93 @@ final class AccountLinkTests: XCTestCase {
         XCTAssertTrue(lede.hasSuffix(String(after)))
     }
 
+    // MARK: The link page's form and a reset's new session
+
+    /// AccountLinkPage's button and hints, as Login.tsx has them, counted as JavaScript counts (`length`: UTF-16 units,
+    /// as the server's MIN_PASSWORD check does too).
+    func testTheLinkFormsButtonAndHintsFollowTheWebsRule() throws {
+        let login = try web("src/pages/Login.tsx")
+        XCTAssertTrue(login.contains("disabled={busy || password.length < MIN_PASSWORD || password !== confirm || (kind === 'invite' && !email)}"))
+        XCTAssertTrue(login.contains("const tooShort = password.length > 0 && password.length < MIN_PASSWORD;"))
+        XCTAssertTrue(login.contains("const mismatch = confirm.length > 0 && confirm !== password;"))
+        XCTAssertTrue(try web("server/auth.ts").contains("password.length < MIN_PASSWORD"))
+
+        let ten = "made-up-pw", nine = "made-uppw"
+        XCTAssertEqual(ten.count, 10)
+        XCTAssertTrue(AccountLink.canSubmit(.invite, email: "sam@example.test", password: ten, confirm: ten))
+        XCTAssertFalse(AccountLink.canSubmit(.invite, email: "", password: ten, confirm: ten), "an invite needs an email")
+        XCTAssertFalse(AccountLink.canSubmit(.invite, email: "   ", password: ten, confirm: ten), "spaces aren't one")
+        XCTAssertTrue(AccountLink.canSubmit(.reset, email: "", password: ten, confirm: ten), "a reset asks for none")
+        XCTAssertFalse(AccountLink.canSubmit(.reset, email: "", password: nine, confirm: nine), "too short")
+        XCTAssertFalse(AccountLink.canSubmit(.reset, email: "", password: ten, confirm: ten + "!"), "not confirmed")
+        XCTAssertFalse(AccountLink.canSubmit(.reset, email: "", password: ten, confirm: ""))
+        // Five emoji are ten UTF-16 units: the server takes them, so the phone does too.
+        let emoji = "🌿🌿🌿🌿🌿"
+        XCTAssertEqual(emoji.count, 5)
+        XCTAssertTrue(AccountLink.canSubmit(.reset, email: "", password: emoji, confirm: emoji))
+        XCTAssertFalse(AccountLink.tooShort(emoji))
+
+        XCTAssertFalse(AccountLink.tooShort(""), "nothing typed isn't red yet")
+        XCTAssertTrue(AccountLink.tooShort(nine))
+        XCTAssertFalse(AccountLink.tooShort(ten))
+        XCTAssertFalse(AccountLink.mismatch(ten, confirm: ""), "nothing typed isn't a mismatch yet")
+        XCTAssertTrue(AccountLink.mismatch(ten, confirm: nine))
+        XCTAssertFalse(AccountLink.mismatch(ten, confirm: ten))
+    }
+
+    /// A reset link carries no email: the new session is kept under the one /auth/me names now, or the one kept already
+    /// when it can't say. Never "": that email says whose an older build's ingest token is.
+    func testAResetsSessionIsKeptUnderTheEmailTheServerNamesNow() {
+        XCTAssertEqual(AccountLink.sessionEmail(signedIn: "alex@example.test", kept: "sam@example.test"), "alex@example.test")
+        XCTAssertEqual(AccountLink.sessionEmail(signedIn: nil, kept: "sam@example.test"), "sam@example.test")
+        XCTAssertEqual(AccountLink.sessionEmail(signedIn: "", kept: "sam@example.test"), "sam@example.test")
+        XCTAssertEqual(AccountLink.sessionEmail(signedIn: " \n", kept: "sam@example.test"), "sam@example.test")
+    }
+
+    /// Dashboard.resetPassword: POST /auth/reset, then a sign-in's bookkeeping for the email the server names. A
+    /// refused link starts nothing. (APIClient.resetPassword's own check, that a session cookie came back, needs a
+    /// network stub the shared URLSession can't take, so it isn't here.)
+    func testASetPasswordSignsInAsTheServerSaysAndARefusedOneStartsNothing() async throws {
+        let saved = UserDefaults.standard.string(forKey: "serverURL")
+        defer {
+            if let saved { UserDefaults.standard.set(saved, forKey: "serverURL") } else { UserDefaults.standard.removeObject(forKey: "serverURL") }
+        }
+        // No server: the session's own reads (/auth/me, the load) ask nobody.
+        Config.serverText = ""
+        let store = MemoryTokenStore(lastEmail: "sam@example.test")
+        let d = Dashboard(tokenStore: store)
+        d.phase = .signIn
+
+        var asked = false
+        do {
+            try await d.resetPassword(token: resetToken, password: "made-up-pw-1", reset: { _, _ in
+                throw APIError.network(AccountLink.invalid)
+            }, signedIn: {
+                asked = true
+                return "alex@example.test"
+            }, kept: store.lastEmail)
+            XCTFail("a refused link throws")
+        } catch {
+            XCTAssertEqual(error.localizedDescription, AccountLink.invalid, "in the server's words")
+        }
+        XCTAssertFalse(asked)
+        XCTAssertEqual(d.phase, .signIn, "no session")
+        XCTAssertEqual(store.lastEmail, "sam@example.test")
+
+        var sent: [String] = []
+        try await d.resetPassword(token: resetToken, password: "made-up-pw-1", reset: { token, password in
+            sent = [token, password]
+        }, signedIn: { "alex@example.test" }, kept: store.lastEmail)
+        XCTAssertEqual(sent, [resetToken, "made-up-pw-1"])
+        XCTAssertEqual(d.phase, .ready, "signed in")
+        XCTAssertEqual(store.lastEmail, "alex@example.test", "kept under the email the server names now")
+
+        d.phase = .signIn
+        try await d.resetPassword(token: resetToken, password: "made-up-pw-2", reset: { _, _ in }, signedIn: { nil }, kept: store.lastEmail)
+        XCTAssertEqual(d.phase, .ready)
+        XCTAssertEqual(store.lastEmail, "alex@example.test", "the server couldn't say who: the email kept stays, never \"\"")
+    }
+
     // MARK: Words against Login.tsx
 
     func testTheWayInSaysWhatTheWebSays() throws {

@@ -133,11 +133,9 @@ private struct LinkForm: View {
         .keyboardDismissal()
     }
 
-    private var tooShort: Bool { !password.isEmpty && password.count < AccountLink.minPassword }
-    private var mismatch: Bool { !confirm.isEmpty && confirm != password }
-    private var ready: Bool {
-        password.count >= AccountLink.minPassword && password == confirm && (kind == .reset || !email.trimmingCharacters(in: .whitespaces).isEmpty)
-    }
+    private var tooShort: Bool { AccountLink.tooShort(password) }
+    private var mismatch: Bool { AccountLink.mismatch(password, confirm: confirm) }
+    private var ready: Bool { AccountLink.canSubmit(kind, email: email, password: password, confirm: confirm) }
 
     private func submit() {
         guard ready, !busy else { return }

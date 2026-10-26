@@ -1,3 +1,4 @@
+import UniformTypeIdentifiers
 import XCTest
 @testable import HealthOSSync
 
@@ -577,21 +578,87 @@ final class OnboardingTests: XCTestCase {
         XCTAssertFalse(ref.busy)
     }
 
-    /// The real shrink, from a photo's bytes: upright, no metadata, within the server's limits.
+    /// A camera photo as a phone keeps it: stored on its side (2400×1800, left half red, right half blue) with EXIF
+    /// orientation 6, so it shows upright as 1800×2400, red on top; plus where and when it was taken, and the camera.
+    private func cameraJPEG() throws -> Data {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let stored = UIGraphicsImageRenderer(size: CGSize(width: 2400, height: 1800), format: format).image { ctx in
+            UIColor.red.setFill()
+            ctx.fill(CGRect(x: 0, y: 0, width: 1200, height: 1800))
+            UIColor.blue.setFill()
+            ctx.fill(CGRect(x: 1200, y: 0, width: 1200, height: 1800))
+        }
+        let out = NSMutableData()
+        let dest = try XCTUnwrap(CGImageDestinationCreateWithData(out, UTType.jpeg.identifier as CFString, 1, nil))
+        let properties: [CFString: Any] = [
+            kCGImagePropertyOrientation: 6,
+            kCGImagePropertyTIFFDictionary: [kCGImagePropertyTIFFOrientation: 6, kCGImagePropertyTIFFMake: "MadeUpCam"],
+            kCGImagePropertyExifDictionary: [kCGImagePropertyExifDateTimeOriginal: "2026:10:26 04:00:00", kCGImagePropertyExifUserComment: "made-up"],
+            kCGImagePropertyGPSDictionary: [kCGImagePropertyGPSLatitude: 51.5, kCGImagePropertyGPSLatitudeRef: "N",
+                                            kCGImagePropertyGPSLongitude: 0.12, kCGImagePropertyGPSLongitudeRef: "W"],
+        ]
+        CGImageDestinationAddImage(dest, try XCTUnwrap(stored.cgImage), properties as CFDictionary)
+        XCTAssertTrue(CGImageDestinationFinalize(dest))
+        return out as Data
+    }
+
+    private func properties(_ jpeg: Data) throws -> [CFString: Any] {
+        let source = try XCTUnwrap(CGImageSourceCreateWithData(jpeg as CFData, nil))
+        return try XCTUnwrap(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
+    }
+
+    /// One pixel's red and blue, from the top left.
+    private func redAndBlue(_ image: CGImage, x: Int, y: Int) throws -> (red: UInt8, blue: UInt8) {
+        var pixel = [UInt8](repeating: 0, count: 4)
+        let ctx = try XCTUnwrap(CGContext(data: &pixel, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                                          space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        ctx.draw(image, in: CGRect(x: -x, y: -(image.height - 1 - y), width: image.width, height: image.height))
+        return (pixel[0], pixel[2])
+    }
+
+    /// The real shrink, from a camera photo's bytes: turned upright on the phone (the server never rotates), with
+    /// nothing of where, when or with what it was taken, within the server's limits.
     func testAChosenPhotoGoesThroughThePhotoPipeline() async throws {
         var kept: PreparedPhoto?
         let ref = ReferencePhoto(add: { photo in
             kept = photo
             return Portrait(id: "r1", kind: "reference", status: "ready")
         }, delete: { _ in }, list: { nil })
-        let big = UIGraphicsImageRenderer(size: CGSize(width: 2400, height: 1800), format: { let f = UIGraphicsImageRendererFormat(); f.scale = 1; return f }())
-            .image { ctx in UIColor.orange.setFill(); ctx.fill(CGRect(x: 0, y: 0, width: 2400, height: 1800)) }
-        let data = try XCTUnwrap(big.jpegData(compressionQuality: 0.9))
+        let data = try cameraJPEG()
+        // The photo as picked does carry it all.
+        let before = try properties(data)
+        XCTAssertEqual(before[kCGImagePropertyOrientation] as? Int, 6)
+        XCTAssertNotNil(before[kCGImagePropertyGPSDictionary])
+
         ref.choose { PhotoPipeline.reference(data) }
         await ref.settle()
         let photo = try XCTUnwrap(kept)
         XCTAssertEqual(max(photo.width, photo.height), PortraitLimits.maxReferenceEdge)
         XCTAssertLessThanOrEqual(photo.base64Count, PortraitLimits.maxReferenceBase64)
+
+        // Upright: taller than wide, red on top and blue below, with no orientation left to apply.
+        XCTAssertLessThan(photo.width, photo.height)
+        let after = try properties(photo.jpeg)
+        XCTAssertEqual(after[kCGImagePropertyPixelWidth] as? Int, photo.width)
+        XCTAssertEqual(after[kCGImagePropertyPixelHeight] as? Int, photo.height)
+        XCTAssertEqual((after[kCGImagePropertyOrientation] as? Int) ?? 1, 1)
+        let image = try XCTUnwrap(UIImage(data: photo.jpeg)?.cgImage)
+        let top = try redAndBlue(image, x: image.width / 2, y: image.height / 8)
+        let bottom = try redAndBlue(image, x: image.width / 2, y: image.height * 7 / 8)
+        XCTAssertGreaterThan(top.red, 200)
+        XCTAssertLessThan(top.blue, 60)
+        XCTAssertGreaterThan(bottom.blue, 200)
+        XCTAssertLessThan(bottom.red, 60)
+
+        // No metadata: no place, no time taken, no camera, no comment.
+        XCTAssertNil(after[kCGImagePropertyGPSDictionary], "where it was taken")
+        let exif = after[kCGImagePropertyExifDictionary] as? [CFString: Any] ?? [:]
+        XCTAssertNil(exif[kCGImagePropertyExifDateTimeOriginal], "when")
+        XCTAssertNil(exif[kCGImagePropertyExifUserComment])
+        let tiff = after[kCGImagePropertyTIFFDictionary] as? [CFString: Any] ?? [:]
+        XCTAssertNil(tiff[kCGImagePropertyTIFFMake], "with what")
+        XCTAssertEqual((tiff[kCGImagePropertyTIFFOrientation] as? Int) ?? 1, 1)
     }
 
     // MARK: Words and look against the web's files

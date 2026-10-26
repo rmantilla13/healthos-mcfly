@@ -97,6 +97,32 @@ enum AccountLink {
         return "\(token.prefix(4))-\(token.suffix(4))"
     }
 
+    /// A new password shorter than the server takes, once something's typed (the hint turns red). Counted as the web
+    /// and the server count (`password.length`: UTF-16 units), so the phone never turns down what they take.
+    static func tooShort(_ password: String) -> Bool {
+        !password.isEmpty && password.utf16.count < minPassword
+    }
+
+    /// The confirmation, once typed, isn't the password.
+    static func mismatch(_ password: String, confirm: String) -> Bool {
+        !confirm.isEmpty && confirm != password
+    }
+
+    /// Create account or Set password can be pressed (AccountLinkPage's button): a password long enough, confirmed,
+    /// and for an invite an email. The phone also takes an email of spaces as none.
+    static func canSubmit(_ kind: AccountLinkKind, email: String, password: String, confirm: String) -> Bool {
+        password.utf16.count >= minPassword && password == confirm
+            && (kind == .reset || !email.trimmingCharacters(in: .whitespaces).isEmpty)
+    }
+
+    /// The email a reset link's new session is kept under (a reset link carries none): the one /auth/me now says is
+    /// signed in, or, when it can't say, the one kept already. Never "": the email kept says whose an older build's
+    /// ingest token is (IngestTokenOwner).
+    static func sessionEmail(signedIn: String?, kept: String) -> String {
+        let email = signedIn?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return email.isEmpty ? kept : email
+    }
+
     /// The invite page's lede (AccountLinkPage), with the Family board's disclosure.
     static func inviteLede(_ token: String) -> String {
         "Invite code \(codeLabel(token)). Your full dashboard is private to you. Members who share, the admin included, see your daily tile and your last 30 days of sleep, recovery or HRV, steps, resting heart rate and training load on the Family board; you can turn that off in your Profile."
@@ -171,10 +197,17 @@ extension Dashboard {
     /// says is signed in (a reset link carries none).
     func resetPassword(token: String, password: String) async throws {
         guard let client = APIClient.current() else { throw APIError.network("Enter the server address in Profile.") }
-        try await client.resetPassword(token: token, password: password)
-        // Never "": the email kept says whose an older build's ingest token is (IngestTokenOwner). Should the server not
-        // answer just then, the one kept stays as it was; the status read after says who it is.
-        let me = try? await client.authState()
-        await sessionStarted(email: me?.user?.email ?? Config.lastEmail)
+        try await resetPassword(token: token, password: password,
+                                reset: { try await client.resetPassword(token: $0, password: $1) },
+                                signedIn: { try? await client.authState().user?.email })
+    }
+
+    /// The same with its requests passed in (tests): `reset` is POST /auth/reset, `signedIn` the email /auth/me says
+    /// is signed in now (nil when it can't say). Should the server not answer just then, the email kept stays as it
+    /// was; the status read after says who it is.
+    func resetPassword(token: String, password: String, reset: (String, String) async throws -> Void,
+                       signedIn: () async -> String?, kept: String = Config.lastEmail) async throws {
+        try await reset(token, password)
+        await sessionStarted(email: AccountLink.sessionEmail(signedIn: await signedIn(), kept: kept))
     }
 }
