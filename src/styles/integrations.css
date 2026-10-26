@@ -1,0 +1,204 @@
+/* ---------- Integrations (src/pages/Integrations.tsx, FitbitImport.tsx) ----------
+   Three source cards side by side (stacked below 1080px), each a letter tile, its name and state chip, what it brings,
+   then its pills and a footnote pinned to the bottom so the three line up; a full-width note under them. Colours are
+   the shell's tokens only, so light, dark and forced dark need nothing here. */
+.sources-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.source-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 268px;
+  padding: 20px 20px 18px;
+}
+.source-tile {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-tile);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--card-edge);
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+}
+.source-title {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 9px;
+  margin-top: 18px;
+}
+.source-title h2 {
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+}
+.source-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+.source-body .note-good,
+.source-body .note-bad {
+  font-size: 12.5px;
+}
+/* A status line under the description: when it last synced, what an import covered. */
+.source-state {
+  color: var(--ink-3);
+}
+.source-body code,
+.iphone-token code {
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+.source-end {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: auto;
+  padding-top: 22px;
+}
+.source-end .btn-row {
+  gap: 8px;
+}
+.source-foot {
+  font-size: 11.5px;
+  color: var(--ink-3);
+}
+
+/* A quiet disclosure: the WHOOP developer-app steps, the iPhone app's token. */
+.source-more {
+  width: 100%;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+.source-more > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  list-style: none;
+  color: var(--ink-2);
+  font-weight: 500;
+  border-radius: var(--r-nav);
+}
+.source-more > summary::-webkit-details-marker {
+  display: none;
+}
+.source-more > summary:hover {
+  color: var(--ink);
+}
+.source-more > summary .icon {
+  transition: transform 0.15s;
+}
+.source-more[open] > summary .icon {
+  transform: rotate(180deg);
+}
+.source-more > :not(summary) {
+  margin-top: 12px;
+}
+.source-more .steps {
+  font-size: 12.5px;
+}
+.iphone-token {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border-radius: var(--r-field);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.iphone-token .settings-row {
+  font-size: 12px;
+}
+.iphone-token .btn-primary {
+  align-self: auto;
+}
+
+.sources-note {
+  padding: 18px 20px;
+}
+.sources-note h2 {
+  font-size: 13.5px;
+  font-weight: 500;
+}
+.sources-note p {
+  margin-top: 8px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+
+.demo-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+}
+.demo-card p {
+  margin-top: 4px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+
+/* The Fitbit import sheet: what was found, the unit question, progress. */
+.fitbit-steps a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.fitbit-found {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--ink);
+}
+.fitbit-unit {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px;
+  border-radius: var(--r-field);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--border);
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.fitbit-unit .filters button {
+  min-width: 56px;
+}
+.fitbit-progress {
+  max-width: none;
+  padding: 8px 0;
+}
+.sheet .dropzone .btn-row {
+  justify-content: center;
+}
+
+@media (max-width: 1080px) {
+  .sources-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .source-card {
+    min-height: 0;
+  }
+}
+@media (max-width: 560px) {
+  .source-card {
+    padding: 18px 16px 16px;
+  }
+  .demo-card {
+    align-items: flex-start;
+  }
+}

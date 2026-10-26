@@ -1,10 +1,12 @@
 // Admin panel: accounts, invite links and platform settings. It shows how much data each account has and
 // whether its syncs are healthy, never the health values themselves (the server doesn't send them).
 import { useState } from 'react';
+import { hiddenDefaults } from '../../shared/cards.ts';
 import type { AdminInvite, AdminOverview, AdminUser, PlatformSettings, Role, SessionUser } from '../../shared/types.ts';
 import { Icon } from '../components/Icon.tsx';
 import { fmt, fmtDate, notifyDataChanged, sendJson, useApi } from '../lib.ts';
 import { CardChoices, useCardEditor } from '../components/CardChoices.tsx';
+import { PageIntro } from '../components/PageIntro.tsx';
 import { CopyField } from './Integrations.tsx';
 
 type Tab = 'users' | 'invites' | 'settings';
@@ -45,19 +47,18 @@ export function Admin({ me }: { me: SessionUser }) {
 
   return (
     <div className="page">
-      <header className="page-head">
-        <div>
-          <h1>Admin</h1>
-          <p>Accounts, invites and platform settings. Nobody's health values are shown here.</p>
-        </div>
-        <div className="filters" role="tablist" aria-label="Admin sections">
-          {(['users', 'invites', 'settings'] as const).map((t) => (
-            <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>
-              {t === 'users' ? `People${data ? ` · ${data.users.length}` : ''}` : t === 'invites' ? 'Invites' : 'Settings'}
-            </button>
-          ))}
-        </div>
-      </header>
+      <PageIntro
+        sub="Accounts, invites and platform settings. Nobody's health values are shown here."
+        actions={
+          <div className="filters" role="tablist" aria-label="Admin sections">
+            {(['users', 'invites', 'settings'] as const).map((t) => (
+              <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>
+                {t === 'users' ? `People${data ? ` · ${data.users.length}` : ''}` : t === 'invites' ? 'Invites' : 'Settings'}
+              </button>
+            ))}
+          </div>
+        }
+      />
 
       {shown && (
         <section className="card admin-link" aria-live="polite">
@@ -181,11 +182,16 @@ function People({ data, me, act, onLink }: { data: AdminOverview; me: SessionUse
                   <td>
                     {u.mcfly.questions30d ? `${fmt(u.mcfly.questions30d)} question${u.mcfly.questions30d === 1 ? '' : 's'}` : <span className="muted">None</span>}
                     {u.mcfly.tokens30d > 0 && <div className="muted small">{fmt(u.mcfly.tokens30d / 1000)}K tokens</div>}
+                    {(u.mcfly.voiceNotes30d ?? 0) > 0 && (
+                      <div className="muted small">
+                        {fmt(u.mcfly.voiceNotes30d ?? 0)} voice note{u.mcfly.voiceNotes30d === 1 ? '' : 's'} on the server's key
+                      </div>
+                    )}
                   </td>
                   <td>
                     <AdminCards u={u} self={self} act={act} />
                     {self ? (
-                      <span className="muted small">Change your own password in Settings</span>
+                      <span className="muted small">Change your own password in your Profile.</span>
                     ) : (
                       <div className="btn-row admin-actions">
                         <button
@@ -226,18 +232,20 @@ function People({ data, me, act, onLink }: { data: AdminOverview; me: SessionUse
 
 /** The cards a person sees, which an admin can change for them (only the layout, never their data). */
 function AdminCards({ u, self, act }: { u: AdminUser; self: boolean; act: Act }) {
-  const cards = useCardEditor(u.hiddenCards ?? [], async (body) => {
-    const r = await act(() => sendJson<{ hiddenCards: string[] }>('PATCH', `/admin/users/${u.id}`, body));
+  // A server older than optional cards sends no shownCards: then they aren't offered.
+  const optional = u.shownCards !== undefined;
+  const cards = useCardEditor({ hidden: u.hiddenCards ?? [], shown: u.shownCards ?? [] }, async (body) => {
+    const r = await act(() => sendJson<{ hiddenCards: string[]; shownCards?: string[] }>('PATCH', `/admin/users/${u.id}`, body));
     if (!r) throw new Error('Not saved.');
     // Your own pages pick it up now, not at the next background check.
     if (self) notifyDataChanged();
-    return r.hiddenCards;
+    return { hidden: r.hiddenCards, shown: r.shownCards ?? [] };
   });
   return (
     <details className="admin-cards">
-      <summary>{cards.hidden.length ? `Cards · ${cards.hidden.length} hidden` : 'Cards · all shown'}</summary>
-      <p className="muted small">{self ? 'The cards on your Home, Sleep and Body pages.' : `The cards ${u.name || u.email} sees on Home, Sleep and Body. They can change these in their Settings too.`}</p>
-      <CardChoices hidden={cards.hidden} onToggle={cards.toggle} idPrefix={`admin-${u.id}`} />
+      <summary>{hiddenDefaults(cards.lists.hidden) ? `Cards · ${hiddenDefaults(cards.lists.hidden)} hidden` : 'Cards · all shown'}</summary>
+      <p className="muted small">{self ? 'The cards on your Home, Sleep and Body pages.' : `The cards ${u.name || u.email} sees on Home, Sleep and Body. They can change these in their Profile too.`}</p>
+      <CardChoices lists={cards.lists} onToggle={cards.toggle} idPrefix={`admin-${u.id}`} optional={optional} />
     </details>
   );
 }
@@ -409,7 +417,7 @@ function PlatformSettingsCard({ data, act }: { data: AdminOverview; act: Act }) 
           <span>Daily step goal</span>
           <input inputMode="numeric" value={goal} onChange={(e) => setGoal(e.target.value.replace(/\D/g, ''))} onBlur={() => goal !== s.default_step_goal && save({ default_step_goal: goal })} />
         </label>
-        <small className="muted">For anyone who hasn't picked their own in Settings.</small>
+        <small className="muted">For anyone who hasn't picked their own in their Profile.</small>
         <p className={`muted small saved ${saved ? 'is-on' : ''}`}>
           <Icon name="check" size={14} /> Saved
         </p>

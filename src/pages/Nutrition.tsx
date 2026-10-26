@@ -1,8 +1,10 @@
-// The Nutrition page, its Home card and its Settings card: what a person logs in healthOS (the Log tab, FoodLog.tsx)
-// or in a food app, read through Apple Health, laid out like the Neka reference (tabs, a row of four cards, macro balance beside insights). The server
-// has already removed every number the person chose not to see (server/nutrition.ts). This page adds no judgement
-// on top: no score, no "remaining" or "on track", nothing over or under, no red or green. A target is one the
-// person set, drawn as a plain line. A day with nothing logged is a gap, never a zero.
+// The Nutrition page, its Home card and its Settings card: what a person logs in healthOS or in a food app, read
+// through Apple Health. Today (NutritionChat.tsx) is a conversation with McFly beside the day it adds up to; Trends,
+// Macros, Hydration and Log (FoodLog.tsx) keep their own addresses under it. The server has already removed every
+// number the person chose not to see (server/nutrition.ts). This page adds no judgement on top: no score, no
+// "remaining" or "on track", nothing over or under, no red or green. A target is one the person set, drawn as a plain
+// line. A day with nothing logged is a gap, never a zero.
+import '../styles/nutrition.css';
 import { type ReactNode, useState } from 'react';
 import type { Nutrient, NutritionData, NutritionDay, NutritionNumbers, NutritionTargets, Pattern, Settings, Status } from '../../shared/types.ts';
 import { BarChart, ChartCard } from '../charts/Charts.tsx';
@@ -10,8 +12,11 @@ import { DayBars, GlassBars } from '../charts/DayBars.tsx';
 import { Donut } from '../charts/Donut.tsx';
 import { AllHiddenNote, CardRow } from '../components/CardRow.tsx';
 import { Icon, type IconName } from '../components/Icon.tsx';
-import { PageHead, RANGES, Tabs } from './Detail.tsx';
+import { Orb } from '../components/Orb.tsx';
+import { IntroTools, RANGES } from './Detail.tsx';
+import { PageIntro } from '../components/PageIntro.tsx';
 import { FoodLogTab } from './FoodLog.tsx';
+import { NutritionToday } from './NutritionChat.tsx';
 import { fmt, fmtDate, href, notifyDataChanged, relativeDay, sendJson, shiftDate, useApi, useCardShown, useCardsKnown } from '../lib.ts';
 
 const NUTRIENT: Record<Nutrient, { name: string; unit: string }> = {
@@ -43,15 +48,20 @@ const CHOICES: { value: NutritionNumbers; title: string; text: string }[] = [
 
 // ---------- the page ----------
 
-type Tab = 'overview' | 'log' | 'macros' | 'hydration';
+type Tab = 'today' | 'trends' | 'macros' | 'hydration' | 'log';
 const TABS: { id: Tab; label: string }[] = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'log', label: 'Log' },
+  { id: 'today', label: 'Today' },
+  { id: 'trends', label: 'Trends' },
   { id: 'macros', label: 'Macros' },
   { id: 'hydration', label: 'Hydration' },
+  { id: 'log', label: 'Log' },
 ];
-/** Each tab has its own address (#/nutrition?tab=macros), as on Sleep and Body, so the back button works. */
-const tabHref = (id: string) => (id === 'overview' ? '#/nutrition' : `#/nutrition?tab=${id}`);
+/**
+ * Each view has its own address, as on Sleep and Body, so the back button works: Today is #/nutrition, the others
+ * #/nutrition?tab=trends and so on. Trends is the old Overview, and ?tab=overview still opens it.
+ */
+const tabHref = (id: Tab) => (id === 'today' ? '#/nutrition' : `#/nutrition?tab=${id}`);
+const tabOf = (param: string | null): Tab => (param === 'overview' ? 'trends' : (TABS.find((t) => t.id === param)?.id ?? 'today'));
 
 /** A run of calendar days ending at `end`. */
 function datesTo(end: string, count: number) {
@@ -68,20 +78,19 @@ export function Nutrition({ status, params, refresh }: { status: Status; params:
 
   if (!nutrition || !numbers) return <NutritionIntro refresh={refresh} />;
   // With no amounts, there's nothing for the Macros and Hydration tabs to show.
-  const tabs = numbers === 'none' ? TABS.slice(0, 2) : TABS;
-  const current = tabs.find((t) => t.id === params.get('tab'))?.id ?? 'overview';
+  const tabs = numbers === 'none' ? TABS.filter((t) => t.id !== 'macros' && t.id !== 'hydration') : TABS;
+  const asked = tabOf(params.get('tab'));
+  const current = tabs.some((t) => t.id === asked) ? asked : 'today';
+  const views = <NutritionViews tabs={tabs} current={current} />;
+  // #/nutrition?compose=1 (Home's orb) opens Today with the composer focused.
+  if (current === 'today') return <NutritionToday status={status} views={views} compose={params.get('compose') === '1'} />;
   const ranged = current === 'macros' || current === 'hydration';
   return (
     <div className="page page-wide nutrition-page">
-      <PageHead
-        title="Nutrition"
-        sub="What you log here or in your food app. Only you can see it."
-        tabs={<Tabs tabs={tabs} current={current} hrefOf={tabHref} label="Nutrition" center />}
-        days={ranged ? days : undefined}
-        setDays={ranged ? setDays : undefined}
-        ranges={RANGES.filter((r) => r.days <= 90)}
-      />
-      {current === 'overview' && <Overview status={status} />}
+      <PageIntro sub="What you log here or in your food app. Only you can see it.">
+        <IntroTools tabs={views} days={ranged ? days : undefined} setDays={ranged ? setDays : undefined} ranges={RANGES.filter((r) => r.days <= 90)} />
+      </PageIntro>
+      {current === 'trends' && <Overview status={status} />}
       {current === 'log' && <FoodLogTab status={status} />}
       {current === 'macros' && <Macros days={days} hosted={status.hosted} numbers={numbers} />}
       {current === 'hydration' && <Hydration days={days} units={status.settings.units} numbers={numbers} />}
@@ -89,11 +98,24 @@ export function Nutrition({ status, params, refresh }: { status: Status; params:
   );
 }
 
+/** Today, then the views over more days: a quiet row of links rather than tabs, as Today is where logging happens. */
+function NutritionViews({ tabs, current }: { tabs: { id: Tab; label: string }[]; current: Tab }) {
+  return (
+    <nav className="nutrition-views" aria-label="Nutrition views">
+      {tabs.map((t) => (
+        <a key={t.id} href={tabHref(t.id)} aria-current={t.id === current ? 'page' : undefined}>
+          {t.label}
+        </a>
+      ))}
+    </nav>
+  );
+}
+
 // ---------- while it's off ----------
 
 /**
- * Nutrition while it's off: what it shows, what stays private, and turning it on from here through the same choice
- * as Settings (what to see first, nothing preselected). Nothing is read or kept until then.
+ * Nutrition while it's off: turning it on, through the same choice as Profile → Nutrition (what to see first, nothing
+ * preselected), then what it shows and what stays private. Nothing is read or kept until then.
  */
 function NutritionIntro({ refresh }: { refresh: () => void }) {
   const [choosing, setChoosing] = useState(false);
@@ -114,13 +136,34 @@ function NutritionIntro({ refresh }: { refresh: () => void }) {
   }
   return (
     <div className="page page-wide nutrition-page">
-      {/* No tabs here, so no PageHead: its tools row keeps a fixed height for pages that switch tabs. */}
-      <header className="page-head">
-        <div>
-          <h1>Nutrition</h1>
-          <p>What you eat, next to how you sleep and recover. Off until you turn it on.</p>
+      <PageIntro sub="A conversation about what nourishes you. Off until you turn it on." />
+      <section className="card nutrition-turn-on nutri-intro-hero" aria-labelledby="nutri-intro-title">
+        <Orb size={48} />
+        <div className="nutri-intro-text">
+          <p className="eyebrow">healthOS nutrition</p>
+          <h2 id="nutri-intro-title">{choosing ? 'First, choose what you want to see' : "What's on your plate?"}</h2>
+          <p className="muted">
+            {choosing
+              ? 'You can change it any time in your Profile.'
+              : 'Tell McFly what you ate in your own words, or show it a photo, and it works out the numbers for you to check. Nothing is read or kept until you turn it on.'}
+          </p>
+          {!choosing ? (
+            <button className="btn btn-primary" onClick={() => setChoosing(true)}>
+              Turn on Nutrition
+            </button>
+          ) : (
+            <>
+              <NumbersChoice current={null} busy={busy} onChoose={turnOn} />
+              <div className="btn-row">
+                <button className="btn btn-quiet" disabled={busy} onClick={() => setChoosing(false)}>
+                  Cancel
+                </button>
+              </div>
+            </>
+          )}
+          {error && <p className="note-bad small">{error}</p>}
         </div>
-      </header>
+      </section>
       <div className="split split-even">
         <section className="card nutrition-intro">
           <h2>What it shows</h2>
@@ -184,41 +227,17 @@ function NutritionIntro({ refresh }: { refresh: () => void }) {
               </span>
               <div>
                 <strong>No scores, streaks or set targets</strong>
-                <span className="muted small">Set your own targets later if you like; they show only as a plain line. Turn it off or delete it any time in Settings.</span>
+                <span className="muted small">Set your own targets later if you like; they show only as a plain line. Turn it off or delete it any time in your Profile.</span>
               </div>
             </li>
           </ul>
         </section>
       </div>
-      <section className="card nutrition-turn-on">
-        {!choosing ? (
-          <div className="turn-on-row">
-            <p className="muted">Nothing is read or kept until you turn it on.</p>
-            <button className="btn btn-primary" onClick={() => setChoosing(true)}>
-              Turn on Nutrition
-            </button>
-          </div>
-        ) : (
-          <>
-            <div>
-              <h2>First, choose what you want to see</h2>
-              <p className="muted small">You can change it any time in Settings.</p>
-            </div>
-            <NumbersChoice current={null} busy={busy} onChoose={turnOn} />
-            <div className="btn-row">
-              <button className="btn btn-quiet" disabled={busy} onClick={() => setChoosing(false)}>
-                Cancel
-              </button>
-            </div>
-          </>
-        )}
-        {error && <p className="note-bad small">{error}</p>}
-      </section>
     </div>
   );
 }
 
-/** The three ways to see Nutrition, shared by Settings and the page above. Nothing is preselected for someone turning it on. */
+/** The three ways to see Nutrition, shared by Profile → Nutrition and the page above. Nothing is preselected for someone turning it on. */
 function NumbersChoice({ current, busy, onChoose }: { current: NutritionNumbers | null; busy: boolean; onChoose: (numbers: NutritionNumbers) => void }) {
   return (
     <div className="choice-list" role="group" aria-label="What you see">
@@ -275,8 +294,8 @@ function Overview({ status }: { status: Status }) {
               <section className="card">
                 <h2>{latest ? relativeDay(latest.date, data.today) : 'Nothing logged lately'}</h2>
                 <p className="muted">
-                  {latest ? `You logged food ${latest.app === 'healthOS' ? 'here' : `in ${latest.app}`}.` : ''} You chose to see no amounts, so this shows only the days you logged, and the Log tab what you logged. Change it in{' '}
-                  <a href={href('settings')}>Settings</a>.
+                  {latest ? `You logged food ${latest.app === 'healthOS' ? 'here' : `in ${latest.app}`}.` : ''} You chose to see no amounts, so this shows only the days you logged, and Today what you logged. Change it in{' '}
+                  <a href={href('profile')}>your Profile</a>.
                 </p>
               </section>,
             ],
@@ -285,7 +304,7 @@ function Overview({ status }: { status: Status }) {
       </div>
     );
   }
-  // Rows lay out from the cards left after the ones the person hid (Settings → Cards), like Home, Sleep and Body.
+  // Rows lay out from the cards left after the ones the person hid (Profile → Cards), like Home, Sleep and Body.
   const cards: [string, ReactNode][] = [
     ...(numbers === 'all' ? ([['nutrition.energy', <EnergyCard week={series('energy_kcal', week)} target={data.targets.energy_kcal} today={data.today} />]] as [string, ReactNode][]) : []),
     ['nutrition.protein', <ProteinCard week={series('protein_g', week)} before={series('protein_g', before)} target={data.targets.protein_g} today={data.today} />],
@@ -653,7 +672,7 @@ function NothingYet({ hosted }: { hosted: boolean }) {
     <section className="card nutrition-empty">
       <h2>Nothing logged yet</h2>
       <p className="muted">
-        Log food here, on the <a href={tabHref('log')}>Log</a> tab.
+        Tell McFly what you ate on <a href={tabHref('today')}>Today</a>, or search foods and type amounts on the <a href={tabHref('log')}>Log</a> tab.
       </p>
       <p className="muted">
         Or keep using a food app that writes to Apple Health, such as MyFitnessPal, Cronometer, Lose It!, MacroFactor or Yazio, and turn on its Apple Health connection in that

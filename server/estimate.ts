@@ -1,19 +1,23 @@
 // McFly's food estimate (POST /api/nutrition/estimate): a photo and/or a few words in, a draft of what was eaten
 // out, for the person to correct and save. It's an estimate, labelled as one: photo estimates of energy are
 // typically about a third off, so nothing is saved until the person confirms (server/foodlog.ts, /log/save).
-// - The photo and words go to Anthropic for this one call, and nowhere else: never stored, never logged.
-// - It counts as a McFly question, against the same daily limit, and runs on McFly's model.
+// - Who reads it (server/ai/resolve.ts): the person's own OpenAI key, else their own Claude key, else the server's
+//   shared Claude key. The photo and words go to that one provider for this one call, and nowhere else: never
+//   stored, never logged. Never the server's OPENAI_API_KEY: OpenAI sees someone's food only if they connected it.
+// - On the shared key it counts as a McFly question, against the same daily limit, and runs on McFly's model. On a
+//   person's own key it counts toward that key's daily cap instead, on the admin's model for that provider.
 // - The draft is stored on the server (draft = true, not counted), so a person who hides some numbers can review
 //   and save it without those numbers ever reaching their device.
 import { randomUUID } from 'node:crypto';
-import type Anthropic from '@anthropic-ai/sdk';
 import type { Request, Response } from 'express';
 import type { FoodEstimate, FoodValues, Nutrient, NutritionNumbers } from '../shared/types.ts';
 import { platformSettings } from './admin.ts';
+import { AiError, type AiFetch, PROVIDER_LABEL, type Reply } from './ai/provider.ts';
+import { estimateFor, noteOwnUse } from './ai/resolve.ts';
 import { HttpError } from './auth.ts';
 import { type Db, bumpDataVersion } from './db.ts';
 import { type FoodKey, type NewEntry, draftsOf, foodEntryOf, insertEntries, loggingContext, textFrom, whenFrom } from './foodlog.ts';
-import { type McflyClient, claimQuestion, refundQuestion, usageDay } from './mcfly.ts';
+import { type McflyClient, OWN_DAILY_LIMIT, addTokens, claimFor, refundFor, usageDay } from './mcfly.ts';
 import { NUTRIENT_MAX } from './nutrients.ts';
 
 /**
@@ -30,7 +34,10 @@ const ESTIMATED: Exclude<FoodKey, 'water_ml'>[] = ['energy_kcal', 'protein_g', '
 const number = { type: 'number' };
 const maybe = { anyOf: [{ type: 'number' }, { type: 'null' }] };
 
-/** The draft's shape, enforced by structured outputs. Ranges are checked here afterwards (the schema can't carry them). */
+/**
+ * The draft's shape, enforced by structured outputs. Ranges are checked here afterwards (the schema can't carry them).
+ * It also meets OpenAI's strict mode as it is: every property required, no extra ones, null as an anyOf.
+ */
 const SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -142,7 +149,7 @@ function detectedType(b: Buffer): MediaType | null {
 
 type Item = { name: string; portion: string; values: FoodValues };
 
-/** Claude's answer, checked: at most 15 items, names and portions trimmed, every amount a number in range. */
+/** The model's answer, checked: at most 15 items, names and portions trimmed, every amount a number in range. */
 export function readEstimate(text: string): { items: Item[]; note: string } {
   const parsed = JSON.parse(text) as { items?: unknown; note?: unknown };
   const note = typeof parsed.note === 'string' ? parsed.note.replace(/\s+/g, ' ').trim().slice(0, 400) : '';
@@ -164,66 +171,61 @@ export function readEstimate(text: string): { items: Item[]; note: string } {
   return { items, note };
 }
 
-/** Whether estimates can run here: Claude is set up and McFly's daily limit isn't 0. */
-export async function estimateAvailable(db: Db, client: () => McflyClient | null) {
-  return Boolean(client()) && Number((await platformSettings(db)).mcfly_daily_limit) > 0;
-}
-
-export function estimateHandler(db: Db, hosted: boolean, client: () => McflyClient | null) {
+export function estimateHandler(db: Db, hosted: boolean, client: () => McflyClient | null, aiFetch?: AiFetch) {
   return async (req: Request, res: Response) => {
     const { scope, numbers, now } = await loggingContext(db, hosted, res);
     const input = parseEstimateInput(req.body);
     const when = whenFrom((req.body ?? {}) as Record<string, unknown>, now);
-    const anthropic = client();
-    if (!anthropic) throw new HttpError(503, "McFly isn't set up on this server yet.");
-    const platform = await platformSettings(db);
-    const limit = Number(platform.mcfly_daily_limit);
-    if (!(limit > 0)) throw new HttpError(403, 'McFly is turned off right now.');
+    const route = await estimateFor(db, scope.userId, client, aiFetch);
+    if (route === 'none') throw new HttpError(503, "McFly isn't set up on this server yet.");
+    if (route === 'off') throw new HttpError(403, 'McFly is turned off right now.');
+    const limit = Number((await platformSettings(db)).mcfly_daily_limit);
     const day = usageDay();
-    if ((await claimQuestion(db, scope.userId, day, limit)) === null) {
-      throw new HttpError(429, `You've used McFly ${limit} times today, the daily limit (estimates count too). Try again tomorrow, or search or quick add instead.`);
+    if ((await claimFor(db, scope.userId, day, route.source, limit)) === null) {
+      throw new HttpError(
+        429,
+        route.source === 'own'
+          ? `You've used McFly ${OWN_DAILY_LIMIT} times today on your own ${PROVIDER_LABEL[route.provider]} key, the most it takes in a day. Try again tomorrow, or search or quick add instead.`
+          : `You've used McFly ${limit} times today, the daily limit (estimates count too). Try again tomorrow, or search or quick add instead.`,
+      );
     }
+    const refund = () => refundFor(db, scope.userId, day, route.source).catch(() => {});
 
-    const content: Anthropic.Beta.BetaContentBlockParam[] = [];
-    if (input.image) content.push({ type: 'image', source: { type: 'base64', media_type: input.image.mediaType, data: input.image.data } });
-    content.push({ type: 'text', text: input.description ? `What I had: ${input.description}` : 'Estimate what is in this photo.' });
-
-    let message: Anthropic.Beta.BetaMessage;
+    let reply: Reply;
     try {
-      message = await anthropic.beta.messages.create({
-        model: platform.mcfly_model,
-        max_tokens: 8_000,
-        output_config: { effort: 'medium', format: { type: 'json_schema', schema: SCHEMA } },
+      reply = await route.api.json({
         system: SYSTEM + SETTING[numbers],
-        messages: [{ role: 'user', content }],
+        text: input.description ? `What I had: ${input.description}` : 'Estimate what is in this photo.',
+        image: input.image,
+        schema: SCHEMA,
+        name: 'food_estimate',
+        maxTokens: 8_000,
       });
     } catch (err) {
-      await refundQuestion(db, scope.userId, day).catch(() => {});
+      await refund();
+      await noteOwnUse(db, scope.userId, route.provider, route.source, err);
       // The kind of failure only: never the request, which carries the photo and words.
-      console.error('estimate:', (err as Error).name, (err as { status?: number }).status ?? '');
+      console.error('estimate:', route.provider, err instanceof AiError ? err.kind : (err as Error).name, (err as { status?: number }).status ?? '');
+      const label = PROVIDER_LABEL[route.provider];
+      const kind = err instanceof AiError ? err.kind : null;
+      if (route.source === 'own' && kind === 'auth') throw new HttpError(502, `Your ${label} key isn't working. Check it in your Profile.`);
+      if (route.source === 'own' && kind === 'quota') throw new HttpError(502, `Your ${label} account is out of credit. Search or quick add instead.`);
       throw new HttpError(502, "McFly couldn't make an estimate just now. Try again, or search or quick add instead.");
     }
-    await db
-      .query('UPDATE mcfly_usage SET input_tokens = input_tokens + $3, output_tokens = output_tokens + $4 WHERE user_id = $1 AND day = $2', [
-        scope.userId,
-        day,
-        message.usage.input_tokens + (message.usage.cache_read_input_tokens ?? 0) + (message.usage.cache_creation_input_tokens ?? 0),
-        message.usage.output_tokens,
-      ])
-      .catch(() => {});
+    await addTokens(db, scope.userId, day, route.source, reply.usage.input, reply.usage.output).catch(() => {});
+    await noteOwnUse(db, scope.userId, route.provider, route.source);
 
     // No estimate came back: the question is given back, as the weekly digest does.
-    if (message.stop_reason === 'refusal') {
-      await refundQuestion(db, scope.userId, day).catch(() => {});
+    if (reply.stop === 'refusal') {
+      await refund();
       throw new HttpError(422, "McFly can't estimate that one. Try describing it, or search instead.");
     }
-    const text = message.content.find((b): b is Anthropic.Beta.BetaTextBlock => b.type === 'text')?.text;
     let estimate: { items: Item[]; note: string };
     try {
-      if (!text || message.stop_reason === 'max_tokens') throw new Error('incomplete');
-      estimate = readEstimate(text);
+      if (!reply.text || reply.stop === 'length') throw new Error('incomplete');
+      estimate = readEstimate(reply.text);
     } catch {
-      await refundQuestion(db, scope.userId, day).catch(() => {});
+      await refund();
       throw new HttpError(502, "McFly's estimate came back incomplete. Try again, or describe it in fewer words.");
     }
 

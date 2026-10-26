@@ -185,9 +185,35 @@ export async function bumpDataVersion(q: Queryable, userId: string) {
   await setUserSetting(q, userId, 'data_version', `${Date.now().toString(36)}-${randomBytes(3).toString('hex')}`);
 }
 
+/**
+ * Every table holding one person's rows (a user_id column). Account deletion removes all of them;
+ * test/user-tables.test.ts checks this list against the schema, so a new table can't be missed.
+ */
+export const USER_TABLES = [
+  'daily',
+  'hourly',
+  'workouts',
+  'events',
+  'cycle',
+  'sleep_stages',
+  'nutrition_daily',
+  'food_log',
+  'lab_results',
+  'lab_documents',
+  'journal_entries',
+  'body_entries',
+  'portraits',
+  'ai_keys',
+  'whoop_cycle_steps',
+  'tokens',
+  'profile_assets',
+  'user_settings',
+  'mcfly_usage',
+] as const;
+
 /** Everything one person stored, removed together (account deletion). */
 export async function deleteUserData(q: Queryable, userId: string) {
-  for (const table of ['daily', 'hourly', 'workouts', 'events', 'cycle', 'sleep_stages', 'nutrition_daily', 'food_log', 'lab_results', 'whoop_cycle_steps', 'tokens', 'profile_assets', 'user_settings', 'mcfly_usage']) {
+  for (const table of USER_TABLES) {
     await q.query(`DELETE FROM ${table} WHERE user_id = $1`, [userId]);
   }
 }

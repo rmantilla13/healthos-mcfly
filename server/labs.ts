@@ -3,13 +3,17 @@
 //   admin view and the Family board can't reach them. Ask McFly reads them through get_lab_results only.
 // - A status is where a number sits against a range: the one printed by the lab, or, only when none was printed, a
 //   typical adult range from shared/labs.ts, labelled as such. Never a diagnosis.
-// - Importing a report sends the file to Claude to read the rows and returns them as a draft. Nothing is saved
-//   until the person checks the rows and adds them; the file is never kept, and nothing here logs values.
-import { randomUUID } from 'node:crypto';
+// - The original report can be kept in the person's account (lab_documents): a PDF or a photo, readable by its owner
+//   alone, never by the Family board, the admin screens, McFly's tools or the export (which lists its name and size).
+// - Reading a report sends the file to Claude only when the person asks, and returns the rows as a draft. Nothing is
+//   saved until the person checks the rows and adds them, and nothing here logs values or file names.
+import { createHash, randomUUID } from 'node:crypto';
 import Anthropic from '@anthropic-ai/sdk';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import {
   type Bounds,
+  type LabDocument,
+  type LabDocuments,
   type LabDraft,
   type LabExtract,
   type LabInput,
@@ -17,8 +21,10 @@ import {
   type LabPanel,
   type LabRange,
   type LabResult,
+  type LabReader,
   type LabsData,
   type Sex,
+  MAX_LAB_DOCUMENTS,
   biomarker,
   convert,
   isOther,
@@ -35,10 +41,14 @@ import {
   specimenOf,
   typicalRange,
 } from '../shared/labs.ts';
+import type { AiSource } from '../shared/ai.ts';
 import { platformSettings } from './admin.ts';
+import { anthropicError } from './ai/anthropic.ts';
+import { AiError, type AiFetch } from './ai/provider.ts';
+import { anthropicFor, noteOwnUse } from './ai/resolve.ts';
 import { currentUser } from './auth.ts';
 import { type Db, type Queryable, type Scope, bumpDataVersion } from './db.ts';
-import { type McflyClient, claimQuestion, defaultClient, usageDay } from './mcfly.ts';
+import { type McflyClient, OWN_DAILY_LIMIT, addTokens, claimFor, defaultClient, refundFor, usageDay } from './mcfly.ts';
 import { requestContext } from './query.ts';
 import { insertMany } from './store.ts';
 
@@ -377,7 +387,7 @@ export function draftRows(raw: unknown, today: string): LabDraft[] {
   return out;
 }
 
-/** The file's first bytes match what it says it is, so a mislabelled file isn't charged as a question. */
+/** The file's first bytes match what it says it is, so a mislabelled file is neither kept nor charged as a question. */
 function looksLike(type: ReportType, b: Buffer) {
   const at = (i: number, s: string) => b.subarray(i, i + s.length).toString('latin1') === s;
   if (type === 'application/pdf') return at(0, '%PDF-');
@@ -389,14 +399,149 @@ function looksLike(type: ReportType, b: Buffer) {
 
 class ExtractError extends Error {}
 
+// ---------- lab documents ----------
+
+/** What can be kept: a PDF or a photo of the report. An iPhone's HEIC photo is made a JPEG on the device first. */
+const DOCUMENT_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'] as const satisfies readonly ReportType[];
+type DocumentType = (typeof DOCUMENT_TYPES)[number];
+const EXTENSIONS: Record<DocumentType, RegExp> = { 'application/pdf': /\.pdf$/i, 'image/jpeg': /\.jpe?g$/i, 'image/png': /\.png$/i, 'image/webp': /\.webp$/i };
+const EXTENSION: Record<DocumentType, string> = { 'application/pdf': '.pdf', 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp' };
+/** Extensions a report arrives with, dropped when they don't match what the file turned out to be. */
+const REPORT_EXTENSION = /\.(pdf|jpe?g|png|webp|gif|heic|heif)$/i;
+const MAX_NAME = 120;
+
+/**
+ * The file's name as the device sent it (X-Filename, URI-encoded): its last path segment, without control characters,
+ * at most 120 characters and ending in its type's extension ("IMG_2041.HEIC" made a JPEG is "IMG_2041.jpg").
+ */
+export function documentName(header: unknown, type: DocumentType): string {
+  let raw = typeof header === 'string' ? header : '';
+  try {
+    raw = decodeURIComponent(raw);
+  } catch {
+    // Not URI-encoded: used as it came.
+  }
+  let name = (raw.split(/[/\\]/).pop() ?? '').replace(/[\p{Cc}\p{Cf}]/gu, '').replace(/\s+/g, ' ').trim();
+  if (!EXTENSIONS[type].test(name)) name = `${name.replace(REPORT_EXTENSION, '')}${EXTENSION[type]}`;
+  const dot = name.lastIndexOf('.');
+  const ext = name.slice(dot);
+  const base = [...name.slice(0, dot).replace(/^[.\s]+/, '')].slice(0, MAX_NAME - ext.length).join('').trim();
+  return `${base || 'Lab report'}${ext}`;
+}
+
+/** Shown in the browser under its own name: an ASCII fallback, and the exact name (RFC 6266). */
+function disposition(name: string) {
+  const ascii = name.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_');
+  const exact = encodeURIComponent(name).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+  return `inline; filename="${ascii}"; filename*=UTF-8''${exact}`;
+}
+
+type DocumentRow = { id: string; name: string; mime: LabDocument['mime']; size: number; read_at: number | null; created_at: number };
+
+const toDocument = (r: DocumentRow): LabDocument => ({
+  id: r.id,
+  name: r.name,
+  mime: r.mime,
+  size: Number(r.size),
+  uploadedAt: Number(r.created_at),
+  readAt: r.read_at === null ? null : Number(r.read_at),
+});
+
+const contentType = (req: Request) =>
+  String(req.headers['content-type'] ?? '')
+    .split(';')[0]
+    .trim()
+    .toLowerCase();
+
+const NOT_SET_UP = "Reading reports isn't set up on this server yet. You can still type results in.";
+const TURNED_OFF = 'Reading reports uses Ask McFly, which is turned off right now. You can still type results in.';
+
 // ---------- the router ----------
 
-export function labsRouter(db: Db, { hosted, client = defaultClient }: { hosted: boolean; client?: () => McflyClient | null }) {
+export function labsRouter(db: Db, { hosted, client = defaultClient, aiFetch }: { hosted: boolean; client?: () => McflyClient | null; aiFetch?: AiFetch }) {
   const router = express.Router();
   const scopeOf = (res: Response): Scope => ({ db, userId: currentUser(res).id });
 
   router.get('/', async (_req, res) => {
     res.json(await labsView(scopeOf(res), hosted));
+  });
+
+  // Original reports, each read only by its owner: every query here names the signed-in person's user_id.
+
+  router.get('/documents', async (_req, res) => {
+    const rows = await db.query<DocumentRow>('SELECT id, name, mime, size, read_at, created_at FROM lab_documents WHERE user_id = $1 ORDER BY created_at DESC, id', [
+      currentUser(res).id,
+    ]);
+    res.json({ documents: rows.map(toDocument) } satisfies LabDocuments);
+  });
+
+  /** Keep a report: the file as the request body with its own Content-Type, and its name in X-Filename (URI-encoded). */
+  router.post('/documents', express.raw({ type: [...DOCUMENT_TYPES], limit: MAX_REPORT_BYTES }), async (req, res) => {
+    const userId = currentUser(res).id;
+    const type = contentType(req) as DocumentType;
+    if (!DOCUMENT_TYPES.includes(type) || !Buffer.isBuffer(req.body)) return void res.status(415).json({ error: 'Choose a PDF, or a photo or screenshot of the report.' });
+    const file = req.body as Buffer;
+    if (!file.length) return void res.status(400).json({ error: 'That file is empty.' });
+    if (!looksLike(type, file)) return void res.status(400).json({ error: "That file doesn't look like a PDF or an image. Try exporting it again." });
+    const doc: DocumentRow = { id: randomUUID(), name: documentName(req.headers['x-filename'], type), mime: type, size: file.length, read_at: null, created_at: Date.now() };
+    const sha256 = createHash('sha256').update(file).digest('hex');
+    // One upload at a time per person, so two copies sent together can't both pass the duplicate check.
+    const outcome = await db.tx(async (q) => {
+      await q.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`lab_documents:${userId}`]);
+      const [have] = await q.query<{ n: number; dup: boolean }>(
+        'SELECT COUNT(*)::int AS n, COALESCE(BOOL_OR(sha256 = $2), false) AS dup FROM lab_documents WHERE user_id = $1',
+        [userId, sha256],
+      );
+      if (have.dup) return 'duplicate';
+      if (Number(have.n) >= MAX_LAB_DOCUMENTS) return 'full';
+      await q.query(
+        'INSERT INTO lab_documents (user_id, id, name, mime, size, sha256, data, read_at, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, NULL, $8)',
+        [userId, doc.id, doc.name, doc.mime, doc.size, sha256, file, doc.created_at],
+      );
+      return 'saved';
+    });
+    if (outcome === 'duplicate') return void res.status(409).json({ error: "You've already uploaded this report." });
+    if (outcome === 'full') return void res.status(409).json({ error: `You've kept ${MAX_LAB_DOCUMENTS} reports, the most there's room for. Delete one to add another.` });
+    await bumpDataVersion(db, userId);
+    res.json({ document: toDocument(doc) });
+  });
+
+  /** The file itself, shown in the browser. Sandboxed and never sniffed, so a crafted file can't run script on this site. */
+  router.get('/documents/:id', async (req, res) => {
+    const [row] = await db.query<{ name: string; mime: string; data: Uint8Array }>('SELECT name, mime, data FROM lab_documents WHERE user_id = $1 AND id = $2', [
+      currentUser(res).id,
+      req.params.id,
+    ]);
+    if (!row) return void res.status(404).json({ error: 'No such report' });
+    res.setHeader('Content-Type', row.mime);
+    res.setHeader('Content-Disposition', disposition(row.name));
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Security-Policy', 'sandbox');
+    res.send(Buffer.from(row.data));
+  });
+
+  router.delete('/documents/:id', async (req, res) => {
+    const userId = currentUser(res).id;
+    const gone = await db.query('DELETE FROM lab_documents WHERE user_id = $1 AND id = $2 RETURNING 1', [userId, req.params.id]);
+    if (!gone.length) return void res.status(404).json({ error: 'No such report' });
+    await bumpDataVersion(db, userId);
+    res.json({ deleted: 1 });
+  });
+
+  /** What reading a report would use right now: the person's own Claude key, or the shared one and its daily limit. */
+  router.get('/reader', async (_req, res) => {
+    const userId = currentUser(res).id;
+    const [reader, platform, [usage]] = await Promise.all([
+      anthropicFor(db, userId, client, aiFetch),
+      platformSettings(db),
+      db.query<{ questions: number; own_questions: number }>('SELECT questions, own_questions FROM mcfly_usage WHERE user_id = $1 AND day = $2', [userId, usageDay()]),
+    ]);
+    const body: LabReader = !reader
+      ? { source: null, reason: client() ? 'off' : 'none', limit: 0, usedToday: 0 }
+      : reader.source === 'own'
+        ? { source: 'own', reason: null, limit: OWN_DAILY_LIMIT, usedToday: Number(usage?.own_questions ?? 0) }
+        : { source: 'shared', reason: null, limit: Number(platform.mcfly_daily_limit), usedToday: Number(usage?.questions ?? 0) };
+    res.json(body);
   });
 
   /** Add one result or many: { results: [...] }, or a single result object. */
@@ -461,38 +606,51 @@ export function labsRouter(db: Db, { hosted, client = defaultClient }: { hosted:
   });
 
   /**
-   * Read a report: the file as the request body, with its own Content-Type (a PDF or a JPEG, PNG, WebP or GIF image).
-   * Claude reads it and the rows come back as a draft; nothing is saved. Counted as one Ask McFly question.
+   * Read a report: one kept in Lab documents (?document=<id>), or a file sent as the request body with its own
+   * Content-Type (a PDF or a JPEG, PNG, WebP or GIF image). Claude reads it and the rows come back as a draft; nothing
+   * is saved. On the person's own Claude key it's counted apart; otherwise it's one of their Ask McFly questions.
    */
   router.post(
     '/extract',
-    (_req, res, next) => {
-      if (!client()) return void res.status(503).json({ error: "Reading reports isn't set up on this server yet. You can still type results in." });
+    async (_req, res, next) => {
+      const reader = await anthropicFor(db, currentUser(res).id, client, aiFetch);
+      if (!reader) return void (client() ? res.status(403).json({ error: TURNED_OFF }) : res.status(503).json({ error: NOT_SET_UP }));
+      res.locals.reader = reader;
       next();
     },
     express.raw({ type: [...REPORT_TYPES], limit: MAX_REPORT_BYTES }),
     async (req, res) => {
       const scope = scopeOf(res);
-      const anthropic = client();
-      if (!anthropic) return void res.status(503).json({ error: "Reading reports isn't set up on this server yet. You can still type results in." });
-      const type = String(req.headers['content-type'] ?? '')
-        .split(';')[0]
-        .trim()
-        .toLowerCase() as ReportType;
-      if (!REPORT_TYPES.includes(type) || !Buffer.isBuffer(req.body)) {
-        return void res.status(415).json({ error: 'Choose a PDF, or a photo or screenshot of the report (JPEG or PNG).' });
+      const { client: anthropic, source } = res.locals.reader as { client: McflyClient; source: AiSource };
+      const documentId = typeof req.query.document === 'string' ? req.query.document : null;
+      let type: ReportType;
+      let file: Buffer;
+      if (documentId !== null) {
+        // A kept report: read from the person's own rows, so nothing is uploaded twice.
+        const [doc] = await db.query<{ mime: DocumentType; data: Uint8Array }>('SELECT mime, data FROM lab_documents WHERE user_id = $1 AND id = $2', [scope.userId, documentId]);
+        if (!doc) return void res.status(404).json({ error: 'No such report' });
+        [type, file] = [doc.mime, Buffer.from(doc.data)];
+      } else {
+        type = contentType(req) as ReportType;
+        if (!REPORT_TYPES.includes(type) || !Buffer.isBuffer(req.body)) {
+          return void res.status(415).json({ error: 'Choose a PDF, or a photo or screenshot of the report (JPEG or PNG).' });
+        }
+        file = req.body as Buffer;
+        if (!file.length) return void res.status(400).json({ error: 'That file is empty.' });
       }
-      const file = req.body as Buffer;
-      if (!file.length) return void res.status(400).json({ error: 'That file is empty.' });
       if (!looksLike(type, file)) return void res.status(400).json({ error: "That file doesn't look like a PDF or an image. Try exporting it again." });
 
       const [platform, rc] = await Promise.all([platformSettings(db), requestContext(scope, hosted)]);
       const limit = Number(platform.mcfly_daily_limit);
-      if (!(limit > 0)) return void res.status(403).json({ error: 'Reading reports uses Ask McFly, which is turned off right now. You can still type results in.' });
       const day = usageDay();
-      const used = await claimQuestion(db, scope.userId, day, limit);
+      const used = await claimFor(db, scope.userId, day, source, limit);
       if (used === null) {
-        return void res.status(429).json({ error: `Reading a report counts as an Ask McFly question, and you've used all ${limit} for today. Try again tomorrow, or type the results in.` });
+        return void res.status(429).json({
+          error:
+            source === 'own'
+              ? `You've used your own Claude key ${OWN_DAILY_LIMIT} times today, the most it takes in a day. Try again tomorrow, or type the results in.`
+              : `Reading a report counts as an Ask McFly question, and you've used all ${limit} for today. Try again tomorrow, or type the results in.`,
+        });
       }
 
       let inputTokens = 0;
@@ -535,33 +693,46 @@ export function labsRouter(db: Db, { hosted, client = defaultClient }: { hosted:
               : typeof p.note === 'string' && p.note.trim()
                 ? p.note.trim().slice(0, 300)
                 : null;
-        const out: LabExtract = { rows, note, usedToday: used, limit };
+        await noteOwnUse(db, scope.userId, 'anthropic', source);
+        // A kept report remembers that its results were read (shown on its row), once any were.
+        if (documentId !== null && rows.length) {
+          await db.query('UPDATE lab_documents SET read_at = $3 WHERE user_id = $1 AND id = $2', [scope.userId, documentId, Date.now()]);
+          await bumpDataVersion(db, scope.userId);
+        }
+        const out: LabExtract = { rows, note, usedToday: used, limit: source === 'own' ? OWN_DAILY_LIMIT : limit };
         res.json(out);
       } catch (err) {
         // The kind of failure only: never the file, the reply or the results (a JSON error's text can quote them).
         console.error('labs extract:', err instanceof Anthropic.APIError ? `API ${err.status}` : err instanceof ExtractError ? err.message : err instanceof Error ? err.name : 'error');
         // A report that wasn't read doesn't count against the limit.
-        await db.query('UPDATE mcfly_usage SET questions = GREATEST(questions - 1, 0) WHERE user_id = $1 AND day = $2', [scope.userId, day]).catch(() => {});
+        await refundFor(db, scope.userId, day, source).catch(() => {});
+        // On the person's own key, a refused key or an empty account is theirs to fix, and Profile says so.
+        const ai = anthropicError(err);
+        await noteOwnUse(db, scope.userId, 'anthropic', source, ai);
+        const kind = ai instanceof AiError ? ai.kind : null;
         const message =
           err instanceof ExtractError && err.message === 'too_long'
             ? 'That report has too many results to read at once. Try a photo of one page at a time.'
             : err instanceof ExtractError && err.message === 'refusal'
               ? "Claude couldn't read that file. Try a clearer photo, or type the results in."
-              : err instanceof Anthropic.RateLimitError || err instanceof Anthropic.InternalServerError
-                ? 'Claude is busy right now. Try again in a minute.'
-                : "Couldn't read that report right now. Try again, or type the results in.";
+              : source === 'own' && kind === 'auth'
+                ? "Your Claude key isn't working. Check it in your Profile, or type the results in."
+                : source === 'own' && kind === 'quota'
+                  ? 'Your Claude account is out of credit. You can still type the results in.'
+                  : kind === 'rate' || kind === 'server'
+                    ? 'Claude is busy right now. Try again in a minute.'
+                    : "Couldn't read that report right now. Try again, or type the results in.";
         res.status(502).json({ error: message });
       } finally {
-        await db
-          .query('UPDATE mcfly_usage SET input_tokens = input_tokens + $3, output_tokens = output_tokens + $4 WHERE user_id = $1 AND day = $2', [scope.userId, day, inputTokens, outputTokens])
-          .catch(() => {});
+        // In the shared columns (the admin's cost view), or the person's own.
+        await addTokens(db, scope.userId, day, source, inputTokens, outputTokens).catch(() => {});
       }
     },
   );
 
   router.use((err: Error & { status?: number; type?: string }, _req: Request, res: Response, _next: NextFunction) => {
     if (err instanceof LabInputError) return void res.status(400).json({ error: err.message });
-    if (err.status === 413) return void res.status(413).json({ error: `That file is over ${MAX_REPORT_BYTES / 1024 / 1024} MB, the most that can be read. Try a photo or screenshot of the results pages instead.` });
+    if (err.status === 413) return void res.status(413).json({ error: `That file is over ${MAX_REPORT_BYTES / 1024 / 1024} MB, the most there's room for. Try a photo or screenshot of the results pages instead.` });
     if (err.status && err.status >= 400 && err.status < 500) return void res.status(err.status).json({ error: 'Bad request' });
     // The kind of failure only: a database error's text can quote the values it was given.
     console.error('labs:', err.name);

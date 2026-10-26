@@ -1,8 +1,10 @@
 // A metric's detail sheet, opened from a card's arrow: the metric over a day, week, month or year (GET /api/metric),
-// the window's average, three figures, and one plain sentence the server builds from them. A modal dialog: the page
-// behind it can't be reached or scrolled while it's open, Escape or a click outside closes it, and focus goes back to
-// the button that opened it. The card's own page is one link away ("Open Vitals"). Opened on a window with nothing in
-// it, it moves to its longest range and says so, since the card may show an older reading.
+// the window's average, three figures, and one plain sentence the server builds from them, then "What this means" (a
+// plain explainer and a source to read on). A modal dialog in the shared Sheet look (a pale panel over a light,
+// blurred veil): the page behind it can't be reached or scrolled while it's open, Escape or a click outside closes it,
+// and focus goes back to the button that opened it. The card's own page is one link away ("Open Vitals"). Opened on a
+// window with nothing in it, it moves to its longest range and says so, since the card may show an older reading; a
+// metric never measured at all says "No measurement yet" instead, with no ranges to try.
 import { type MouseEvent, type ReactNode, useCallback, useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -22,15 +24,17 @@ import {
 } from '../../shared/metrics.ts';
 import type { DayMetric } from '../../shared/types.ts';
 import { BarChart, ChartCard, TrendChart } from '../charts/Charts.tsx';
+import { stepDigits } from '../charts/core.tsx';
 import { DayChart } from '../charts/Day.tsx';
 import { cumulative, drawThrough, hourSpan } from '../charts/day.ts';
-import { compact, fmt, fmtDate, hoursMinutes, useApi } from '../lib.ts';
+import { compact, fmt, fmtDate, hoursMinutes, href, useApi } from '../lib.ts';
 import { Icon } from './Icon.tsx';
+import '../styles/home.css';
 
 export type SheetOptions = {
   /** The day the card shows (the sheet's window ends on it); null or absent is today. */
   date?: string | null;
-  /** Where it was opened, for the breadcrumb: "Home", "Body". */
+  /** The line above the metric's name, in capitals: "Your signals", "Your body". */
   section: string;
   /** The card's own page, for "Open …" (the address its arrow used to go to). */
   to: string;
@@ -82,10 +86,11 @@ function formatter(sheet: { key: MetricKey; unit: string; digits: number }) {
 const tickFormatter = (sheet: { key: MetricKey; digits: number }) => {
   if (METRIC_INFO[sheet.key].duration) return (v: number) => `${fmt(v)}h`;
   if (sheet.key === 'steps' || sheet.key === 'active_energy') return compact;
-  return (v: number) => fmt(v, sheet.digits && Math.abs(v) < 100 ? 1 : 0);
+  // At least the decimals the tick step needs, so 0.25 steps don't round to repeated or wrong labels.
+  return (v: number, step?: number) => fmt(v, Math.max(sheet.digits && Math.abs(v) < 100 ? 1 : 0, stepDigits(step)));
 };
 
-const SOURCE: Record<string, string> = { apple: 'Apple Health', whoop: 'WHOOP', demo: 'Demo data' };
+const SOURCE: Record<string, string> = { apple: 'Apple Health', whoop: 'WHOOP', fitbit: 'Fitbit', manual: 'Added by you', demo: 'Demo data' };
 
 /** What one day's value is, where it isn't simply the day's reading. */
 const DAY_NOTE: Partial<Record<MetricKey, string>> = {
@@ -94,11 +99,15 @@ const DAY_NOTE: Partial<Record<MetricKey, string>> = {
   body_fat: "each day is that day's last reading",
   lean_mass: "each day is that day's last reading",
   sleep_hours: 'each night counts toward the morning it ends',
+  sleep_performance: 'each night counts toward the morning it ends',
+  sleep_efficiency: 'each night counts toward the morning it ends',
 };
 
 function sourceLine(s: SheetData) {
-  const names = s.sources.map((x) => SOURCE[x] ?? x);
-  const from = names.length ? `From ${names.join(' and ')}` : '';
+  // Devices are "From …"; entries the person typed in are said apart: "From Apple Health, and added by you".
+  const names = s.sources.filter((x) => x !== 'manual').map((x) => SOURCE[x] ?? x);
+  const devices = names.length ? `From ${names.join(' and ')}` : '';
+  const from = s.sources.includes('manual') ? (devices ? `${devices}, and added by you` : SOURCE.manual) : devices;
   const method = s.key === 'hrv' ? (s.metric === 'hrv_sdnn' ? 'SDNN, from Apple Watch' : 'RMSSD, measured during sleep') : '';
   const span =
     s.from === s.to
@@ -115,15 +124,20 @@ export function pageName(to: string) {
   return tab ? `${tab[0].toUpperCase()}${tab.slice(1)} on ${page}` : page;
 }
 
+const OWN_ENTRY = 'Add an entry on Body, or connect a smart scale through Apple Health.';
 const EMPTY: Partial<Record<MetricKey, string>> = {
   glucose: 'Glucose appears when a CGM or meter writes to Apple Health.',
-  weight: 'Weight appears when a scale or the Health app records it.',
-  body_fat: 'Body fat appears when a smart scale writes it to Apple Health.',
-  lean_mass: 'Lean body mass appears when a smart scale writes it to Apple Health.',
+  weight: OWN_ENTRY,
+  body_fat: OWN_ENTRY,
+  lean_mass: OWN_ENTRY,
   recovery: 'Recovery comes from WHOOP.',
   strain: 'Day strain comes from WHOOP.',
   vo2max: 'Cardio fitness comes from Apple Watch, after outdoor walks and runs.',
+  sleep_performance: 'Sleep performance comes from WHOOP.',
+  sleep_efficiency: 'Sleep efficiency comes from WHOOP or Fitbit, or from Apple Watch nights that record time in bed.',
 };
+/** Metrics a person can type in themselves (Body): a never-measured one says how, under the general line. */
+const OWN_ENTRIES = new Set<MetricKey>(['weight', 'body_fat', 'lean_mass']);
 
 // ---------- the sheet ----------
 
@@ -223,30 +237,39 @@ function MetricSheet({ metric, date, section, to, range: initial, opener, onClos
     downOnBackdrop.current = false;
   };
 
-  const ranges = sheet?.ranges ?? info.ranges.filter((r) => r !== 'day' || info.ranges.length === 1);
+  const ranges = sheet?.ranges ?? [];
   // Said only while the range shown bears it out: a reading synced into the first window since the move drops it.
   const note = widened && !picked && shown?.range === range && stillEmpty(widened, shown) ? widenedNote(widened, range) : null;
+  // Never measured at all (an older server doesn't say, and counts as measured). Until the first answer it isn't known,
+  // so the ranges wait for it rather than showing and then going.
+  const never = sheet?.everMeasured === false;
+  const measured = !!sheet && !never;
 
   return (
-    <div className="msheet-backdrop" onMouseDown={onBackdropDown} onClick={onBackdropClick}>
+    <div className="sheet-veil" onMouseDown={onBackdropDown} onClick={onBackdropClick}>
       {/* tabIndex -1: a click on the sheet's text or chart keeps focus in the dialog rather than dropping it to the page. */}
-      <div ref={panel} className="msheet" role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={shown?.narrative ? textId : undefined} tabIndex={-1}>
-        <header className="msheet-head">
-          <div className="msheet-crumbs">
-            <span>{section}</span>
-            <span aria-hidden="true">/</span>
+      <div
+        ref={panel}
+        className="sheet msheet-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={never ? textId : shown?.narrative ? textId : undefined}
+        tabIndex={-1}
+      >
+        <header className="sheet-head">
+          <div>
+            <p className="eyebrow">{section}</p>
             <h2 id={titleId} ref={title} tabIndex={-1}>
               {info.label}
             </h2>
           </div>
-          <button type="button" className="icon-btn msheet-close" onClick={onClose} aria-label="Close">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true" className="icon">
-              <path d="M6 6l12 12M18 6 6 18" />
-            </svg>
+          <button type="button" className="sheet-close" onClick={onClose} aria-label="Close">
+            <Icon name="x" size={16} strokeWidth={1.8} />
           </button>
         </header>
 
-        {ranges.length > 1 && (
+        {measured && ranges.length > 1 && (
           <div className="filters msheet-ranges" role="group" aria-label="Range">
             {ranges.map((r) => (
               <button
@@ -266,15 +289,27 @@ function MetricSheet({ metric, date, section, to, range: initial, opener, onClos
         )}
 
         <div className={`msheet-body${loading ? ' is-refreshing' : ''}`}>
-          {!shown ? (
+          {never ? (
+            <div className="msheet-empty" id={textId}>
+              <p className="msheet-empty-title">No measurement yet.</p>
+              <p>Connect a source or import measured data to see your trend.</p>
+              {OWN_ENTRIES.has(metric) && <p className="msheet-empty-hint">{OWN_ENTRY}</p>}
+              <a className="pill" href={href('integrations')} onClick={onClose}>
+                Manage connections
+                <Icon name="arrow-up-right" size={14} />
+              </a>
+            </div>
+          ) : !shown ? (
             <p className="msheet-message">{error ? `Couldn't load this: ${error.message}` : 'Loading…'}</p>
           ) : (
             <SheetBody sheet={shown} textId={textId} note={note} />
           )}
         </div>
 
-        {/* Not a link to the page it was opened on: that's where closing the sheet goes. */}
-        {pageName(to) !== pageName(location.hash) && (
+        <About metric={metric} />
+
+        {/* Only once there's something there, and not a link to the page it was opened on: that's where closing goes. */}
+        {measured && pageName(to) !== pageName(location.hash) && (
           <a className="msheet-open" href={to} onClick={onClose}>
             Open {pageName(to)}
             <Icon name="chevron-right" size={16} />
@@ -282,6 +317,25 @@ function MetricSheet({ metric, date, section, to, range: initial, opener, onClos
         )}
       </div>
     </div>
+  );
+}
+
+/** "What this means": the metric in one plain sentence, what to keep in mind about it, and a reputable page to read on. */
+function About({ metric }: { metric: MetricKey }) {
+  const { label, about } = METRIC_INFO[metric];
+  const headId = useId();
+  return (
+    <section className="msheet-about" aria-labelledby={headId}>
+      <p className="eyebrow">Understand your {label}</p>
+      <h3 id={headId}>What this means</h3>
+      <p className="msheet-about-what">{about.what}</p>
+      <p className="msheet-about-caveat">{about.caveat}</p>
+      <a className="msheet-about-source" href={about.source.href} target="_blank" rel="noopener noreferrer">
+        {about.source.label}
+        <Icon name="arrow-up-right" size={12} />
+        <span className="sr-only"> (opens in a new tab)</span>
+      </a>
+    </section>
   );
 }
 

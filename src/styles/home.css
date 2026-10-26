@@ -1,0 +1,483 @@
+/* Home, Vitals and the metric sheet in the new look (Home.tsx, components/home/*, Detail.tsx's Vitals, MetricSheet.tsx).
+   Loads after styles.css. Every rule is scoped to .home, .vitals-page or the sheet's own classes, so Sleep and Body's
+   cards (the same .cards, .metric-* and .vital-* classes) keep their own look. */
+
+/* The food track's tints: morning, midday and later. A tint always means something was logged then. */
+:root {
+  --home-meal-empty: rgba(28, 37, 32, 0.07);
+  --home-meal-morning: #b6d4a4;
+  --home-meal-midday: #b3c0ee;
+  --home-meal-evening: #f0c391;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --home-meal-empty: rgba(255, 255, 255, 0.08);
+    --home-meal-morning: #5f8a52;
+    --home-meal-midday: #5c69a6;
+    --home-meal-evening: #a8763f;
+  }
+}
+/* Forced dark (data-theme='dark' on <html>): the same as the block above. Change both together. */
+:root[data-theme='dark'] {
+  --home-meal-empty: rgba(255, 255, 255, 0.08);
+  --home-meal-morning: #5f8a52;
+  --home-meal-midday: #5c69a6;
+  --home-meal-evening: #a8763f;
+}
+
+/* ---------- Home: the figure's column, then the cards ---------- */
+.home {
+  grid-template-columns: minmax(300px, 1fr) minmax(0, 2fr);
+  gap: 18px 28px;
+}
+.home.is-stats {
+  grid-template-columns: minmax(0, 1fr);
+}
+.home .home-left {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.home-figure {
+  position: sticky;
+  top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.home .figure-digital {
+  margin-top: 0;
+}
+.home-portrait-note {
+  max-width: 360px;
+  padding: 0 4px;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.home-portrait-note a {
+  color: var(--accent-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+/* "A clearer picture. / A healthier you." at the bottom of the column, and on to Vitals. */
+.home-tagline {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+  margin-top: auto;
+  padding: 8px 4px 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+.home-measurements {
+  display: inline-flex;
+  align-items: center;
+  gap: 18px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.home-measurements:hover {
+  color: var(--ink);
+}
+/* Just the statistics: no figure, so the line sits small under the cards. */
+.home-tagline.is-compact {
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 4px;
+  padding-top: 0;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.home .home-right {
+  gap: 14px;
+}
+/* A card with a reading grows to fit its chart; an empty one keeps the design's proportions. */
+.home .vital-home:not(.is-empty) {
+  aspect-ratio: auto;
+  min-height: 236px;
+}
+.home .vital-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.home .vital-chart .range-scale {
+  margin-top: 2px;
+}
+.vital-status-line {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0 6px;
+}
+.vital-status-line .callout-level {
+  margin-right: 0;
+}
+.home .vital-card .zone-label,
+.vitals-page .vital-card .zone-label {
+  font-size: 12px;
+}
+/* Recovery's rings sit to the right of its value, clear of the ↗. */
+.home .vital-card .rings {
+  top: 52px;
+  width: 84px;
+  height: 84px;
+}
+
+/* The lower pair: Today's nutrition and Your health journal, as tall as a signal card. */
+.home .home-lower {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.home-lower > .card {
+  min-height: 236px;
+}
+.home-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.home-card-head h2 {
+  font-size: 13px;
+  font-weight: 500;
+}
+.home-orb-btn {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  margin: -6px -6px -6px 0;
+  border-radius: 50%;
+}
+.home-orb-btn:hover {
+  background: var(--chip);
+}
+.home-orb-btn:focus-visible {
+  border-radius: 50%;
+}
+
+.home-nutrition {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.home-meal-track {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 10px;
+}
+.home-meal-seg {
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: var(--home-meal-empty);
+}
+.home-meal-seg[data-part='morning'] {
+  background: var(--home-meal-morning);
+}
+.home-meal-seg[data-part='midday'] {
+  background: var(--home-meal-midday);
+}
+.home-meal-seg[data-part='evening'] {
+  background: var(--home-meal-evening);
+}
+.home-meal-ticks {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10.5px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.home-card-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  max-width: 260px;
+  margin: auto;
+  padding: 10px 0;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+.home-card-empty-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.home-nutrition-day {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: auto;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.home-nutrition-count {
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+.home-nutrition-latest {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The journal card: its words on the left, the art bleeding off the right edge. */
+.home-journal {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow: hidden;
+}
+.home-journal-art {
+  position: absolute;
+  top: 50%;
+  right: -2%;
+  height: 112%;
+  width: auto;
+  max-width: 52%;
+  object-fit: contain;
+  transform: translateY(-50%);
+  pointer-events: none;
+  /* Fades into the card on the text side and at the bottom, so it reads as part of the card rather than a picture on it. */
+  -webkit-mask-image: linear-gradient(to right, transparent 0%, #000 28%), linear-gradient(to top, transparent 0%, #000 22%);
+  -webkit-mask-composite: source-in;
+  mask-image: linear-gradient(to right, transparent 0%, #000 28%), linear-gradient(to top, transparent 0%, #000 22%);
+  mask-composite: intersect;
+}
+.home-journal-text {
+  position: relative;
+  max-width: 60%;
+}
+.home-journal-eyebrow {
+  font-size: 13px;
+  font-weight: 500;
+}
+.home-journal h2 {
+  max-width: 13ch;
+  margin-top: 16px;
+  font-size: 22px;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+.home-journal-sub {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.home-journal-latest {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.home-journal-line {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.home-journal-btn {
+  position: relative;
+  align-self: flex-start;
+  margin-top: auto;
+}
+@media (prefers-color-scheme: dark) {
+  /* The stand-in art is drawn for a light card: a little dimmer on a dark one. */
+  :root:not([data-theme='light']) .home-journal-art {
+    filter: brightness(0.8);
+    opacity: 0.75;
+  }
+}
+/* Forced dark (data-theme='dark' on <html>): the same as the block above. Change both together. */
+/* The stand-in art is drawn for a light card: a little dimmer on a dark one. */
+:root[data-theme='dark'] .home-journal-art {
+  filter: brightness(0.8);
+  opacity: 0.75;
+}
+
+/* The optional widgets keep their look; the week so far reads as a paragraph card. */
+.home-week .week-summary {
+  max-width: none;
+}
+
+/* Narrower screens: the figure goes above the cards, beside its line. */
+@media (max-width: 1280px) {
+  .home {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .home .home-left {
+    display: grid;
+    grid-template-columns: minmax(0, 420px) minmax(0, 1fr);
+    align-items: end;
+    gap: 14px 28px;
+  }
+  .home .home-figure {
+    position: static;
+    max-width: 420px;
+  }
+  .home .home-tagline {
+    margin-top: 0;
+    padding-bottom: 12px;
+  }
+}
+@media (max-width: 1080px) {
+  .home .home-lower {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 820px) {
+  .home .home-left {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+  }
+  .home .home-figure {
+    width: 100%;
+  }
+  .home .home-tagline {
+    justify-self: stretch;
+    padding-bottom: 0;
+  }
+}
+@media (max-width: 560px) {
+  .home-journal-text {
+    max-width: 66%;
+  }
+  .home-journal-art {
+    max-width: 46%;
+  }
+}
+
+/* ---------- Vitals: five signal cards in a plain grid, then the trends ---------- */
+/* A plain grid, so a short last row stays short (two cards, the third column empty), as designed. */
+.vitals-signals {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.vitals-trends {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 18px;
+}
+.vitals-trends-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+}
+.vitals-trends-head h2 {
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+.vitals-trends-head .page-head-tools {
+  margin-left: auto;
+}
+@media (max-width: 1080px) {
+  .vitals-signals {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 560px) {
+  .vitals-signals {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ---------- the metric sheet (MetricSheet.tsx), in the Sheet look ---------- */
+.msheet-panel {
+  gap: 18px;
+}
+.msheet-panel .msheet-ranges {
+  align-self: flex-start;
+  margin-top: -6px;
+}
+.msheet-panel .msheet-tiles li,
+.msheet-panel .msheet-status {
+  background: var(--chip);
+}
+.msheet-panel .msheet-insight {
+  background: var(--chip);
+  border-color: var(--card-edge);
+}
+.msheet-panel .msheet-insight .insight-icon {
+  background: var(--surface);
+}
+/* "No measurement yet.": never measured, so no ranges, source or chart. */
+.msheet-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 34px 8px 28px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.msheet-empty-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+.msheet-empty-hint {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.msheet-empty .pill {
+  margin-top: 16px;
+}
+/* "What this means", under a hairline. */
+.msheet-about {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 22px;
+  border-top: 1px solid var(--border);
+}
+.msheet-about h3 {
+  margin: 4px 0 4px;
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+.msheet-about-what {
+  font-size: 14px;
+  color: var(--ink-2);
+}
+.msheet-about-caveat {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.msheet-about-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  align-self: flex-start;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--accent-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.msheet-about-source:hover {
+  color: var(--ink);
+}
+.msheet-panel .msheet-open {
+  margin-top: -6px;
+}

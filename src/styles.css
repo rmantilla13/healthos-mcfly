@@ -1,20 +1,24 @@
 /* ---------- tokens ---------- */
 :root {
   color-scheme: light;
-  --font: system-ui, -apple-system, 'SF Pro Text', 'Segoe UI', sans-serif;
+  /* DM Sans, self-hosted (main.tsx); the system face until it loads. */
+  --font: 'DM Sans Variable', 'DM Sans', system-ui, -apple-system, 'SF Pro Text', 'Segoe UI', sans-serif;
 
-  --page: #f3f3f1;
-  --page-glow: #fcfcfb;
-  --sidebar: rgba(252, 252, 251, 0.75);
+  /* A warm off-white page, an opaque sidebar a shade lighter, white glassy cards. */
+  --page: #f4f1ee;
+  --page-glow: #fbfaf7;
+  --sidebar: #f7f6f2;
+  --sidebar-edge: #ecebe6;
   --surface: #ffffff;
-  --surface-2: #f6f6f4;
-  --surface-hover: #efefec;
-  --border: rgba(11, 11, 11, 0.07);
-  --shadow: 0 1px 2px rgba(20, 20, 18, 0.03), 0 10px 30px -12px rgba(20, 20, 18, 0.08);
+  --surface-2: #f5f4f0;
+  --surface-hover: #efeee9;
+  --border: rgba(36, 49, 42, 0.07);
+  --shadow: 0 1px 2px rgba(36, 49, 42, 0.04), 0 16px 38px -18px rgba(36, 49, 42, 0.16);
 
-  --ink: #0b0b0b;
-  --ink-2: #52514e;
-  --ink-3: #898781;
+  /* Green-black ink, and two muted steps of it. */
+  --ink: #24312a;
+  --ink-2: #5f6661;
+  --ink-3: #8a8f8a;
   --grid: #ecebe6;
   --axis: #d6d5ce;
 
@@ -40,11 +44,69 @@
   --serious: #ec835a;
   --critical: #d03b3b;
 
-  --grad-green: radial-gradient(120% 90% at 0% 0%, #d4f0cb 0%, #e9f6e3 45%, #f9fcf7 100%);
-  --grad-peach: radial-gradient(120% 100% at 100% 0%, #ffd6b8 0%, #ffe6dc 45%, #fdf0f2 100%);
-  --grad-pink: radial-gradient(130% 100% at 50% 0%, #fde0e6 0%, #fdedf0 50%, #fefafb 100%);
+  /* Cards: a white surface with a soft diagonal glass sheen, and for the metric cards a colour wash strongest near
+     the bottom (.metric-green … .metric-blush). Each wash is the whole background, sheen included. */
+  --sheen: linear-gradient(118deg, #ffffff 0%, #fafbf9 26%, #eff2ef 44%, #fbfbfa 60%, #ffffff 76%, #f6f7f5 100%);
+  --grad-green: radial-gradient(80% 72% at 30% 100%, rgba(209, 233, 194, 0.95) 0%, rgba(220, 237, 206, 0.5) 50%, rgba(220, 237, 206, 0) 86%), var(--sheen);
+  --grad-peach: radial-gradient(80% 75% at 78% 100%, rgba(252, 222, 190, 0.95) 0%, rgba(253, 240, 226, 0.55) 50%, rgba(253, 240, 226, 0) 86%), var(--sheen);
+  --grad-pink: radial-gradient(80% 75% at 75% 100%, rgba(242, 212, 224, 0.95) 0%, rgba(244, 220, 230, 0.5) 50%, rgba(244, 220, 230, 0) 86%), var(--sheen);
+  --grad-lavender: radial-gradient(85% 75% at 40% 100%, rgba(222, 214, 243, 0.95) 0%, rgba(229, 223, 245, 0.5) 50%, rgba(229, 223, 245, 0) 86%), var(--sheen);
+  --grad-mint: radial-gradient(80% 75% at 80% 100%, rgba(208, 238, 232, 0.95) 0%, rgba(230, 244, 242, 0.5) 50%, rgba(230, 244, 242, 0) 86%), var(--sheen);
+  --grad-slate: radial-gradient(90% 80% at 70% 100%, rgba(221, 229, 237, 0.95) 0%, rgba(232, 237, 242, 0.5) 50%, rgba(232, 237, 242, 0) 86%), var(--sheen);
+  --grad-cream: radial-gradient(90% 80% at 40% 100%, rgba(248, 239, 216, 0.95) 0%, rgba(250, 245, 230, 0.55) 50%, rgba(250, 245, 230, 0) 86%), var(--sheen);
+  --grad-blush: radial-gradient(90% 85% at 85% 70%, rgba(250, 219, 205, 0.9) 0%, rgba(251, 233, 224, 0.5) 50%, rgba(251, 233, 224, 0) 86%), var(--sheen);
+  /* Dialogs (Sheet.tsx): pale mint into white. */
+  --grad-sheet: linear-gradient(165deg, #eef5ec 0%, #f6faf4 38%, #ffffff 100%);
   --chip: rgba(255, 255, 255, 0.7);
-  --chip-green: #c9ecbf;
+  --chip-green: #dbeacf;
+
+  /* The accent: a dark forest green for primary buttons, a pale sage for the avatar, sage text, and the focus ring. */
+  --accent: #2f4a3d;
+  --accent-grad: linear-gradient(180deg, #3b5346 0%, #294237 100%);
+  --accent-grad-hover: linear-gradient(180deg, #46604f 0%, #2f4b3e 100%);
+  --accent-ink: #ffffff;
+  --accent-text: #3d5a49;
+  --accent-soft: #e6efe3;
+  --accent-soft-ink: #74846c;
+  --focus: #7e9d86;
+  /* The sidebar's current page: a white-to-pale-green pill with a sage dot. */
+  --nav-active: linear-gradient(90deg, #ffffff 0%, #eef6ea 70%, #e6f2e2 100%);
+  --nav-dot: #85947d;
+  /* Badges (.badge-*): a sage, a peach, a quiet grey and a warning. */
+  --badge-sage-bg: #edf4e2;
+  --badge-sage-ink: #6f7f63;
+  --badge-peach-bg: #fff4ea;
+  --badge-peach-ink: #94705c;
+  --badge-muted-bg: #f1f0ec;
+  --badge-muted-ink: #7c817c;
+  --badge-bad-bg: #fde8e4;
+  --badge-bad-ink: #9a3b2c;
+  /* A chosen option (radio cards, chips): a sage edge over a faint green wash. */
+  --choice-border: #9ab09f;
+  --choice-wash: linear-gradient(160deg, #f4f9f2 0%, #ffffff 70%);
+  /* Menus and popovers, and the light blurred veil behind a dialog. */
+  --menu-bg: linear-gradient(170deg, #fcfdfb 0%, #f1f6ec 100%);
+  --menu-border: rgba(255, 255, 255, 0.9);
+  --veil: rgba(244, 241, 238, 0.5);
+  --card-edge: rgba(255, 255, 255, 0.9);
+  --shadow-card: 0 1px 2px rgba(36, 49, 42, 0.04), 0 16px 38px -18px rgba(36, 49, 42, 0.16);
+  --shadow-pill: 0 1px 2px rgba(36, 49, 42, 0.05), 0 6px 16px -8px rgba(36, 49, 42, 0.16);
+  --shadow-pop: 0 2px 6px rgba(36, 49, 42, 0.06), 0 26px 60px -18px rgba(36, 49, 42, 0.26);
+  --r-card: 22px;
+  --r-sheet: 24px;
+  --r-menu: 18px;
+  --r-nav: 12px;
+  --r-tile: 10px;
+  --r-field: 12px;
+  --r-pill: 999px;
+  /* The figure's callouts: a gold dot in a thin gold ring, warm grey leader lines. */
+  --callout-dot: #d6a24a;
+  --callout-ring: rgba(214, 162, 74, 0.55);
+  --callout-line: #cfc6bc;
+  /* McFly's orb (Orb.tsx). */
+  --orb-core: #7b0d10;
+  --orb-mid: #b81916;
+  --orb-rim: #f16940;
 
   --figure-glow: #ffffff;
   --figure-1: #f1ece7;
@@ -54,7 +116,7 @@
   --figure-shadow: rgba(120, 100, 80, 0.18);
   --figure-highlight: #ffffff;
 
-  --tooltip: #0b0b0b;
+  --tooltip: #24312a;
   --tooltip-ink: #f4f4f2;
 
   --goal-track: #d8f0d0;
@@ -94,23 +156,24 @@
   --bar-green: #a8dea0;
   --bar-green-accent: #2f9e44;
   --bar-orange: #f7c1a4;
-  --grad-blue: radial-gradient(120% 90% at 100% 0%, #dde5fb 0%, #ecf0fc 45%, #fafbfe 100%);
+  --grad-blue: radial-gradient(80% 75% at 80% 100%, rgba(214, 228, 250, 0.95) 0%, rgba(233, 241, 252, 0.55) 50%, rgba(233, 241, 252, 0) 86%), var(--sheen);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
     color-scheme: dark;
-    --page: #0d0d0d;
-    --page-glow: #161615;
-    --sidebar: rgba(20, 20, 19, 0.8);
-    --surface: #1a1a19;
-    --surface-2: #222221;
-    --surface-hover: #262625;
-    --border: rgba(255, 255, 255, 0.08);
-    --shadow: none;
-    --ink: #f0efec;
-    --ink-2: #c3c2b7;
-    --ink-3: #898781;
+    --page: #0e100e;
+    --page-glow: #161916;
+    --sidebar: #121412;
+    --sidebar-edge: #222622;
+    --surface: #1a1c1a;
+    --surface-2: #212421;
+    --surface-hover: #272a27;
+    --border: rgba(255, 255, 255, 0.07);
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 16px 38px -18px rgba(0, 0, 0, 0.6);
+    --ink: #eef0ec;
+    --ink-2: #bcc1ba;
+    --ink-3: #8c918c;
     --grid: #2c2c2a;
     --axis: #383835;
     --series-1: #3987e5;
@@ -125,11 +188,48 @@
     --stage-rem: #2a78d6;
     --stage-awake: #184f95;
     --good-text: #0ca30c;
-    --grad-green: radial-gradient(120% 90% at 0% 0%, #1f3a1c 0%, #1b261a 50%, #1a1a19 100%);
-    --grad-peach: radial-gradient(120% 100% at 100% 0%, #4a2a1a 0%, #2f201d 50%, #1d1a1b 100%);
-    --grad-pink: radial-gradient(130% 100% at 50% 0%, #3d2028 0%, #2a1d21 50%, #1c1a1b 100%);
+    --sheen: linear-gradient(118deg, #1c1f1c 0%, #1e211e 30%, #232723 46%, #1d201d 62%, #1b1d1b 80%, #1e201e 100%);
+    --grad-green: radial-gradient(80% 72% at 30% 100%, rgba(74, 112, 64, 0.55) 0%, rgba(60, 92, 54, 0.25) 50%, rgba(60, 92, 54, 0) 86%), var(--sheen);
+    --grad-peach: radial-gradient(80% 75% at 78% 100%, rgba(122, 78, 44, 0.55) 0%, rgba(100, 64, 38, 0.25) 50%, rgba(100, 64, 38, 0) 86%), var(--sheen);
+    --grad-pink: radial-gradient(80% 75% at 75% 100%, rgba(112, 52, 76, 0.55) 0%, rgba(92, 44, 64, 0.25) 50%, rgba(92, 44, 64, 0) 86%), var(--sheen);
+    --grad-lavender: radial-gradient(85% 75% at 40% 100%, rgba(82, 66, 120, 0.55) 0%, rgba(68, 56, 100, 0.25) 50%, rgba(68, 56, 100, 0) 86%), var(--sheen);
+    --grad-mint: radial-gradient(80% 75% at 80% 100%, rgba(44, 102, 92, 0.55) 0%, rgba(38, 86, 78, 0.25) 50%, rgba(38, 86, 78, 0) 86%), var(--sheen);
+    --grad-slate: radial-gradient(90% 80% at 70% 100%, rgba(64, 76, 90, 0.55) 0%, rgba(54, 64, 76, 0.25) 50%, rgba(54, 64, 76, 0) 86%), var(--sheen);
+    --grad-cream: radial-gradient(90% 80% at 40% 100%, rgba(104, 92, 56, 0.5) 0%, rgba(88, 78, 48, 0.22) 50%, rgba(88, 78, 48, 0) 86%), var(--sheen);
+    --grad-blush: radial-gradient(90% 85% at 85% 70%, rgba(118, 66, 52, 0.5) 0%, rgba(98, 56, 44, 0.22) 50%, rgba(98, 56, 44, 0) 86%), var(--sheen);
+    --grad-sheet: linear-gradient(165deg, #1c241e 0%, #1b1f1c 40%, #1a1c1a 100%);
     --chip: rgba(255, 255, 255, 0.08);
     --chip-green: #24461f;
+    --accent: #4d6b5a;
+    --accent-grad: linear-gradient(180deg, #4f6e5c 0%, #3a5647 100%);
+    --accent-grad-hover: linear-gradient(180deg, #5a7a67 0%, #436251 100%);
+    --accent-ink: #ffffff;
+    --accent-text: #a9c9b2;
+    --accent-soft: #263529;
+    --accent-soft-ink: #a7bb9f;
+    --focus: #8fb39a;
+    --nav-active: linear-gradient(90deg, #1d211d 0%, #213027 100%);
+    --nav-dot: #8fa894;
+    --badge-sage-bg: #243126;
+    --badge-sage-ink: #a9c19b;
+    --badge-peach-bg: #3a2b20;
+    --badge-peach-ink: #e2b394;
+    --badge-muted-bg: #262925;
+    --badge-muted-ink: #9a9f99;
+    --badge-bad-bg: #3a1d19;
+    --badge-bad-ink: #f2a597;
+    --choice-border: #6f8f78;
+    --choice-wash: linear-gradient(160deg, #1f2a22 0%, #1a1c1a 70%);
+    --menu-bg: linear-gradient(170deg, #1f221f 0%, #1c241e 100%);
+    --menu-border: rgba(255, 255, 255, 0.06);
+    --veil: rgba(8, 10, 8, 0.55);
+    --card-edge: rgba(255, 255, 255, 0.05);
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35), 0 16px 38px -18px rgba(0, 0, 0, 0.6);
+    --shadow-pill: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 16px -8px rgba(0, 0, 0, 0.5);
+    --shadow-pop: 0 0 0 1px rgba(255, 255, 255, 0.04), 0 26px 60px -18px rgba(0, 0, 0, 0.8);
+    --callout-dot: #d8a955;
+    --callout-ring: rgba(216, 169, 85, 0.5);
+    --callout-line: #4d4a44;
     --figure-glow: #222220;
     --figure-1: #4a4540;
     --figure-2: #34302c;
@@ -171,9 +271,124 @@
     --bar-green: #2a5e2c;
     --bar-green-accent: #5cc665;
     --bar-orange: #6e3a22;
-    --grad-blue: radial-gradient(120% 90% at 100% 0%, #1f2747 0%, #1c1f2b 50%, #1a1a19 100%);
+    --grad-blue: radial-gradient(80% 75% at 80% 100%, rgba(52, 72, 120, 0.6) 0%, rgba(44, 60, 100, 0.25) 50%, rgba(44, 60, 100, 0) 86%), var(--sheen);
   }
 }
+/* Forced dark (data-theme='dark' on <html>): the same as the block above. Change both together. */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --page: #0e100e;
+  --page-glow: #161916;
+  --sidebar: #121412;
+  --sidebar-edge: #222622;
+  --surface: #1a1c1a;
+  --surface-2: #212421;
+  --surface-hover: #272a27;
+  --border: rgba(255, 255, 255, 0.07);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 16px 38px -18px rgba(0, 0, 0, 0.6);
+  --ink: #eef0ec;
+  --ink-2: #bcc1ba;
+  --ink-3: #8c918c;
+  --grid: #2c2c2a;
+  --axis: #383835;
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --bar: #256abf;
+  --bar-accent: #6da7ec;
+  --bar-neutral: #3a3a37;
+  --bar-neutral-accent: #e8e7e2;
+  --stage-deep: #9ec5f4;
+  --stage-light: #5598e7;
+  --stage-rem: #2a78d6;
+  --stage-awake: #184f95;
+  --good-text: #0ca30c;
+  --sheen: linear-gradient(118deg, #1c1f1c 0%, #1e211e 30%, #232723 46%, #1d201d 62%, #1b1d1b 80%, #1e201e 100%);
+  --grad-green: radial-gradient(80% 72% at 30% 100%, rgba(74, 112, 64, 0.55) 0%, rgba(60, 92, 54, 0.25) 50%, rgba(60, 92, 54, 0) 86%), var(--sheen);
+  --grad-peach: radial-gradient(80% 75% at 78% 100%, rgba(122, 78, 44, 0.55) 0%, rgba(100, 64, 38, 0.25) 50%, rgba(100, 64, 38, 0) 86%), var(--sheen);
+  --grad-pink: radial-gradient(80% 75% at 75% 100%, rgba(112, 52, 76, 0.55) 0%, rgba(92, 44, 64, 0.25) 50%, rgba(92, 44, 64, 0) 86%), var(--sheen);
+  --grad-lavender: radial-gradient(85% 75% at 40% 100%, rgba(82, 66, 120, 0.55) 0%, rgba(68, 56, 100, 0.25) 50%, rgba(68, 56, 100, 0) 86%), var(--sheen);
+  --grad-mint: radial-gradient(80% 75% at 80% 100%, rgba(44, 102, 92, 0.55) 0%, rgba(38, 86, 78, 0.25) 50%, rgba(38, 86, 78, 0) 86%), var(--sheen);
+  --grad-slate: radial-gradient(90% 80% at 70% 100%, rgba(64, 76, 90, 0.55) 0%, rgba(54, 64, 76, 0.25) 50%, rgba(54, 64, 76, 0) 86%), var(--sheen);
+  --grad-cream: radial-gradient(90% 80% at 40% 100%, rgba(104, 92, 56, 0.5) 0%, rgba(88, 78, 48, 0.22) 50%, rgba(88, 78, 48, 0) 86%), var(--sheen);
+  --grad-blush: radial-gradient(90% 85% at 85% 70%, rgba(118, 66, 52, 0.5) 0%, rgba(98, 56, 44, 0.22) 50%, rgba(98, 56, 44, 0) 86%), var(--sheen);
+  --grad-sheet: linear-gradient(165deg, #1c241e 0%, #1b1f1c 40%, #1a1c1a 100%);
+  --chip: rgba(255, 255, 255, 0.08);
+  --chip-green: #24461f;
+  --accent: #4d6b5a;
+  --accent-grad: linear-gradient(180deg, #4f6e5c 0%, #3a5647 100%);
+  --accent-grad-hover: linear-gradient(180deg, #5a7a67 0%, #436251 100%);
+  --accent-ink: #ffffff;
+  --accent-text: #a9c9b2;
+  --accent-soft: #263529;
+  --accent-soft-ink: #a7bb9f;
+  --focus: #8fb39a;
+  --nav-active: linear-gradient(90deg, #1d211d 0%, #213027 100%);
+  --nav-dot: #8fa894;
+  --badge-sage-bg: #243126;
+  --badge-sage-ink: #a9c19b;
+  --badge-peach-bg: #3a2b20;
+  --badge-peach-ink: #e2b394;
+  --badge-muted-bg: #262925;
+  --badge-muted-ink: #9a9f99;
+  --badge-bad-bg: #3a1d19;
+  --badge-bad-ink: #f2a597;
+  --choice-border: #6f8f78;
+  --choice-wash: linear-gradient(160deg, #1f2a22 0%, #1a1c1a 70%);
+  --menu-bg: linear-gradient(170deg, #1f221f 0%, #1c241e 100%);
+  --menu-border: rgba(255, 255, 255, 0.06);
+  --veil: rgba(8, 10, 8, 0.55);
+  --card-edge: rgba(255, 255, 255, 0.05);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35), 0 16px 38px -18px rgba(0, 0, 0, 0.6);
+  --shadow-pill: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 16px -8px rgba(0, 0, 0, 0.5);
+  --shadow-pop: 0 0 0 1px rgba(255, 255, 255, 0.04), 0 26px 60px -18px rgba(0, 0, 0, 0.8);
+  --callout-dot: #d8a955;
+  --callout-ring: rgba(216, 169, 85, 0.5);
+  --callout-line: #4d4a44;
+  --figure-glow: #222220;
+  --figure-1: #4a4540;
+  --figure-2: #34302c;
+  --figure-3: #2a2724;
+  --figure-shade: #23201d;
+  --figure-shadow: rgba(0, 0, 0, 0.5);
+  --figure-highlight: #6f665e;
+  --tooltip: #f0efec;
+  --tooltip-ink: #0b0b0b;
+  --goal-track: #1f3a1c;
+  --gauge-track: #5a2a38;
+  --gauge-fill: #e8668c;
+  --ring-on-card: #1a1a19;
+  --halo: rgba(255, 255, 255, 0.06);
+  --halo-ring: rgba(255, 255, 255, 0.35);
+  --banner-good-bg: #15301a;
+  --banner-bad-bg: #3a1919;
+  --banner-bad-ink: #f3a4a4;
+  --tone-green-bg: #1d3a1b;
+  --tone-green-ink: #8fdc85;
+  --tone-peach-bg: #432617;
+  --tone-peach-ink: #f4a97f;
+  --tone-blue-bg: #1f2747;
+  --tone-blue-ink: #a7b4f3;
+  --tone-yellow-bg: #3d3112;
+  --tone-yellow-ink: #f0c95a;
+  --tone-pink-bg: #3f1d28;
+  --tone-pink-ink: #f19ab2;
+  --fertile-medium: #2f3b72;
+  --fertile-high: #4a5ec4;
+  --fertile-peak: #a6b3f7;
+  --fertile-peak-ink: #0d0d0d;
+  --cycle-luteal: #6a4230;
+  --hyp-awake: #c45a6c;
+  --hyp-inbed: #33332f;
+  --score-from: #46518c;
+  --score-mid: #7b58c8;
+  --score-to: #2fa457;
+  --bar-green: #2a5e2c;
+  --bar-green-accent: #5cc665;
+  --bar-orange: #6e3a22;
+  --grad-blue: radial-gradient(80% 75% at 80% 100%, rgba(52, 72, 120, 0.6) 0%, rgba(44, 60, 100, 0.25) 50%, rgba(44, 60, 100, 0) 86%), var(--sheen);
+}
+
 
 /* ---------- base ---------- */
 * {
@@ -231,7 +446,7 @@ code {
   flex: none;
 }
 :focus-visible {
-  outline: 2px solid var(--series-1);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
   border-radius: 6px;
 }
@@ -239,108 +454,123 @@ svg:focus-visible {
   outline-offset: 4px;
 }
 
-/* ---------- layout ---------- */
+/* ---------- layout ----------
+   The shell (src/components/shell): the sidebar, then main as a column of the header, the page and the footer, all
+   inside one .main-inner so they line up whatever page is open. Phones (≤820px) swap the sidebar for a top bar and a
+   tab bar at the bottom. */
 .app {
   display: grid;
-  grid-template-columns: 232px minmax(0, 1fr);
+  grid-template-columns: var(--sidebar-w, 200px) minmax(0, 1fr);
   min-height: 100vh;
   background: radial-gradient(60% 70% at 26% 40%, var(--page-glow) 0%, transparent 70%), var(--page);
 }
 .sidebar {
   position: sticky;
   top: 0;
+  z-index: 30;
   height: 100vh;
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  padding: 22px 14px 16px;
+  gap: 22px;
+  padding: 26px 12px 16px;
   background: var(--sidebar);
-  border-right: 1px solid var(--border);
-  backdrop-filter: blur(12px);
+  border-right: 1px solid var(--sidebar-edge);
 }
 .brand {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 2px 8px 10px;
-  font-size: 17px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  padding: 2px 8px 6px;
+  font-size: 21px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--ink);
 }
 nav {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 .nav-item {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 9px 12px;
-  border-radius: 10px;
+  gap: 11px;
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: var(--r-nav);
   color: var(--ink-2);
-  font-weight: 500;
-  transition: background 0.15s;
+  font-size: 14px;
+  font-weight: 400;
+  white-space: nowrap;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+.nav-item .icon {
+  color: var(--ink-3);
 }
 .nav-item:hover {
   background: var(--surface-hover);
-}
-.nav-item.is-active {
-  background: var(--surface-hover);
   color: var(--ink);
 }
-.nav-section {
-  margin: 18px 12px 6px;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--ink-3);
-}
-.source-card {
-  margin-top: auto;
-  display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: center;
-  gap: 4px 8px;
-  padding: 12px 12px;
-  border-radius: 14px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-}
-.source-card > .icon {
-  grid-row: 1 / span 2;
-  grid-column: 2;
-  color: var(--ink-3);
-}
-.source-title {
-  font-weight: 600;
-  font-size: 13px;
-}
-.source-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
+/* The current page: a pill, white into pale green, with a small sage dot at its right. */
+.nav-item.is-active {
+  background: var(--nav-active);
+  color: var(--ink);
   font-weight: 500;
+  box-shadow: var(--shadow-pill);
 }
-.source-row small {
+.nav-item.is-active .icon {
+  color: var(--ink-2);
+}
+.nav-item.is-active::after {
+  content: '';
+  width: 4px;
+  height: 4px;
   margin-left: auto;
-  color: var(--ink-3);
-  font-weight: 400;
-}
-.source-row i {
-  width: 7px;
-  height: 7px;
   border-radius: 50%;
-  background: var(--axis);
-}
-.source-row i.on {
-  background: var(--good);
+  background: var(--nav-dot);
 }
 .main {
   min-width: 0;
+  min-height: 100vh;
   overflow-x: clip;
-  padding: 28px 32px 40px;
+  display: flex;
+  flex-direction: column;
+  padding: 30px var(--gutter, 40px) 22px;
+}
+.main-inner {
+  flex: 1;
+  width: 100%;
+  max-width: 1600px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.main-page {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+/* A page takes the full width of the shell's column (.main-inner caps it), so it lines up with the header and the
+   footer on every page; Ask McFly keeps its narrower reading width. */
+.main-page > * {
+  width: 100%;
+}
+.main-page > .page,
+.main-page > .home {
+  max-width: none;
+  margin: 0;
+}
+.main-page > .mcfly {
+  max-width: 820px;
+}
+/* Ask McFly is one screen tall: the shell's column may shrink so the conversation scrolls inside it, not the page. */
+.app:has(.mcfly) .main-inner,
+.app:has(.mcfly) .main-page {
+  min-height: 0;
 }
 .page-message {
   padding: 60px;
@@ -352,17 +582,18 @@ nav {
 }
 
 /* ---------- cards ---------- */
+/* A white card with a diagonal glass sheen, a soft wide shadow and a white (not dark) edge. */
 .card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  box-shadow: var(--shadow);
-  padding: 18px 18px 16px;
+  background: var(--sheen);
+  border: 1px solid var(--card-edge);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow-card);
+  padding: 20px 20px 18px;
   min-width: 0;
 }
 .card h2 {
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 500;
 }
 .card-title-row {
   display: flex;
@@ -391,22 +622,11 @@ nav {
   z-index: 1;
   padding: 2px 4px 0;
 }
-.greeting-hello {
-  font-size: 26px;
-  font-weight: 300;
-  color: var(--ink-2);
-  letter-spacing: -0.01em;
-}
 .greeting h1 {
   font-size: 52px;
   line-height: 1.02;
   font-weight: 600;
   letter-spacing: -0.035em;
-}
-.greeting-sub {
-  margin-top: 8px;
-  font-size: 15px;
-  color: var(--ink-2);
 }
 .figure {
   position: relative;
@@ -515,6 +735,12 @@ nav {
     filter: url(#photo-tone-dark);
   }
 }
+/* Forced dark (data-theme='dark' on <html>): the same as the block above. Change both together. */
+:root[data-theme='dark'] .figure-photo,
+:root[data-theme='dark'] .avatar img {
+  filter: url(#photo-tone-dark);
+}
+
 .figure-photo-wrap .figure-svg {
   pointer-events: none;
 }
@@ -529,17 +755,6 @@ nav {
 .figure-photo-wrap .callout-halo,
 .figure-photo-wrap .callout-dot {
   vector-effect: non-scaling-stroke;
-}
-.pill-photo {
-  cursor: pointer;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--ink);
-  flex: none;
-}
-.pill-photo:hover {
-  background: var(--surface-hover);
 }
 .avatar img {
   width: 100%;
@@ -562,17 +777,6 @@ nav {
 .photo-drop {
   flex: 1;
   min-height: 150px;
-}
-.figure-caption {
-  margin-top: -56px;
-  padding: 0 4px;
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 12px;
-  font-size: 13px;
-  color: var(--ink-3);
-  position: relative;
 }
 .week-summary {
   max-width: 360px;
@@ -605,13 +809,31 @@ nav {
   gap: 14px;
   min-height: 44px;
 }
+/* A white pill with a soft shadow and no border: Refresh, Edit widgets, Manage sources, the demo note. */
 .pill {
-  padding: 6px 12px;
-  border-radius: 999px;
-  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: var(--r-pill);
+  font-size: 13px;
   font-weight: 500;
-  border: 1px solid var(--border);
+  color: var(--ink-2);
+  border: 0;
   background: var(--surface);
+  box-shadow: var(--shadow-pill);
+  white-space: nowrap;
+}
+a.pill:hover,
+button.pill:hover:not(:disabled) {
+  color: var(--ink);
+}
+button.pill {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
 }
 .pill-demo {
   margin-right: auto;
@@ -632,9 +854,11 @@ nav {
   place-items: center;
   width: 30px;
   height: 30px;
+  padding: 0;
   border-radius: 50%;
-  border: 1px solid var(--border);
+  border: 0;
   background: var(--surface);
+  box-shadow: var(--shadow-pill);
   cursor: pointer;
   color: var(--ink-2);
 }
@@ -645,16 +869,26 @@ nav {
   opacity: 0.35;
   cursor: default;
 }
+/* Your photo, or your initial on pale sage, in a thin white ring. */
 .avatar {
   display: grid;
   place-items: center;
-  width: 42px;
-  height: 42px;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
   border-radius: 50%;
-  font-weight: 600;
-  color: #fff;
-  background: radial-gradient(circle at 30% 25%, #a58a73, #4c3b2f);
-  box-shadow: 0 0 0 3px var(--surface), 0 0 0 4px var(--border);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--accent-soft-ink);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 2px var(--surface), var(--shadow-pill);
+  overflow: hidden;
+}
+button.avatar {
+  cursor: pointer;
 }
 
 .cards {
@@ -670,6 +904,7 @@ nav {
   min-height: 214px;
   overflow: hidden;
 }
+/* Metric card tones: the sheen with a colour wash (tokens --grad-*). */
 .metric-green {
   background: var(--grad-green);
 }
@@ -678,6 +913,21 @@ nav {
 }
 .metric-pink {
   background: var(--grad-pink);
+}
+.metric-lavender {
+  background: var(--grad-lavender);
+}
+.metric-mint {
+  background: var(--grad-mint);
+}
+.metric-slate {
+  background: var(--grad-slate);
+}
+.metric-cream {
+  background: var(--grad-cream);
+}
+.metric-blush {
+  background: var(--grad-blush);
 }
 .metric-head {
   display: flex;
@@ -1190,23 +1440,6 @@ nav {
   max-width: 1300px;
   margin: 0 auto;
 }
-.page-head {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
-  margin-bottom: 6px;
-}
-.page-head h1 {
-  font-size: 34px;
-  font-weight: 600;
-  letter-spacing: -0.03em;
-}
-.page-head p {
-  color: var(--ink-2);
-  margin-top: 4px;
-}
 .filters,
 .seg {
   display: inline-flex;
@@ -1361,37 +1594,6 @@ td {
   flex-direction: column;
   gap: 14px;
 }
-.integration-head {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-.integration-head > div:first-of-type {
-  flex: 1;
-}
-.integration-head .muted {
-  margin-top: 2px;
-  font-size: 13px;
-}
-.integration-logo {
-  display: grid;
-  place-items: center;
-  width: 42px;
-  height: 42px;
-  border-radius: 12px;
-  font-weight: 800;
-  font-size: 18px;
-}
-.logo-apple {
-  background: linear-gradient(160deg, #ff6b81, #ff2d55);
-  color: #fff;
-}
-.logo-whoop {
-  background: #0b0b0b;
-  color: #fff;
-  box-shadow: inset 0 0 0 1px var(--border);
-  letter-spacing: -0.04em;
-}
 .steps {
   margin: 0;
   padding-left: 20px;
@@ -1443,20 +1645,32 @@ td {
   font-weight: 500;
   color: var(--ink);
 }
+/* Buttons: a white pill with a soft shadow; .btn-primary the dark green one; .btn-quiet just its words. */
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 8px 14px;
-  border-radius: 10px;
-  border: 1px solid var(--border);
+  gap: 7px;
+  min-height: 36px;
+  padding: 0 16px;
+  border-radius: var(--r-pill);
+  border: 0;
   background: var(--surface);
+  box-shadow: var(--shadow-pill);
+  color: var(--ink-2);
+  font-size: 13px;
   font-weight: 500;
+  white-space: nowrap;
   cursor: pointer;
+  transition:
+    color 0.15s,
+    background 0.15s,
+    box-shadow 0.15s;
 }
 .btn:hover:not(:disabled) {
-  background: var(--surface-hover);
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(36, 49, 42, 0.06), 0 8px 20px -8px rgba(36, 49, 42, 0.22);
 }
 .btn:disabled {
   opacity: 0.5;
@@ -1464,17 +1678,21 @@ td {
 }
 .btn-primary {
   align-self: flex-start;
-  background: var(--ink);
-  color: var(--surface);
-  border-color: var(--ink);
+  background: var(--accent-grad);
+  color: var(--accent-ink);
 }
 .btn-primary:hover:not(:disabled) {
-  background: var(--ink-2);
+  background: var(--accent-grad-hover);
+  color: var(--accent-ink);
 }
-.btn-quiet {
-  border-color: transparent;
+.btn-quiet,
+.btn-quiet:hover:not(:disabled) {
   background: transparent;
+  box-shadow: none;
   color: var(--ink-3);
+}
+.btn-quiet:hover:not(:disabled) {
+  color: var(--ink);
 }
 .btn-row {
   display: flex;
@@ -1556,12 +1774,6 @@ td {
     margin-top: 0;
     grid-row: span 2;
   }
-  .figure-caption {
-    margin-top: 0;
-  }
-  .topbar {
-    order: -1;
-  }
 }
 @media (max-width: 1080px) {
   .cards {
@@ -1573,39 +1785,19 @@ td {
   }
 }
 @media (max-width: 820px) {
+  /* Phones: no sidebar. The shell's top bar and tab bar (styles under "shell") take its place. */
   .app {
     grid-template-columns: minmax(0, 1fr);
-    /* The top bar keeps its own height; a page shorter than the screen leaves its spare room below, rather than
-       stretching the bar and pushing the page down. */
     grid-template-rows: auto 1fr;
     align-content: start;
   }
   .sidebar {
-    position: sticky;
-    z-index: 20;
-    height: auto;
-    flex-direction: row;
-    align-items: center;
-    padding: 10px 16px;
-    border-right: 0;
-    border-bottom: 1px solid var(--border);
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-  .brand span,
-  .nav-item span,
-  .nav-section,
-  .source-card {
     display: none;
   }
-  .brand {
-    padding: 0;
-  }
-  nav {
-    flex-direction: row;
-  }
   .main {
-    padding: 20px 16px 32px;
+    min-height: 0;
+    /* Room at the bottom for the tab bar. */
+    padding: 16px 16px calc(84px + env(safe-area-inset-bottom));
   }
   .home-left {
     grid-template-columns: minmax(0, 1fr);
@@ -1637,19 +1829,6 @@ td {
   padding: 24px 16px;
   background: radial-gradient(60% 60% at 50% 35%, var(--page-glow) 0%, var(--page) 70%);
 }
-.login-card {
-  width: min(100%, 360px);
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 28px;
-}
-.login-brand {
-  padding: 0 0 4px;
-}
-.login-brand span {
-  display: inline; /* the narrow-sidebar rule hides .brand text; the sign-in card keeps it */
-}
 .login label {
   display: flex;
   flex-direction: column;
@@ -1669,35 +1848,12 @@ td {
   padding: 10px 14px;
 }
 
-.login-title {
-  font-size: 18px;
-  margin: 0 0 4px;
-}
 .login small,
 .settings small {
   font-weight: 400;
   font-size: 12px;
 }
 
-.sync-now {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 4px;
-  text-align: right;
-}
-.sync-now .btn-primary {
-  align-self: flex-end;
-}
-@media (max-width: 820px) {
-  .sync-now {
-    align-items: flex-start;
-    text-align: left;
-  }
-  .sync-now .btn-primary {
-    align-self: flex-start;
-  }
-}
 .photo-confirm {
   display: flex;
   flex-direction: column;
@@ -1834,14 +1990,21 @@ td {
    colour from data-level: the status colours, green within the person's usual, amber beyond it, red well beyond. */
 :root {
   --vital-pulse: #e0567c;
-  --level-none: #cfccc4;
+  /* A dot with no level yet (no reading, or no baseline): the figure's gold. */
+  --level-none: var(--callout-dot);
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
     --vital-pulse: #f27798;
-    --level-none: #77746d;
+    --level-none: var(--callout-dot);
   }
 }
+/* Forced dark (data-theme='dark' on <html>): the same as the block above. Change both together. */
+:root[data-theme='dark'] {
+  --vital-pulse: #f27798;
+  --level-none: var(--callout-dot);
+}
+
 .callout-mark[data-level='normal'],
 .callout-level[data-level='normal'] {
   --level: var(--good);
@@ -2906,7 +3069,6 @@ td {
   font-weight: 500;
   letter-spacing: -0.02em;
 }
-.nutrition-day,
 .nutrition-logged {
   display: flex;
   flex-direction: column;
@@ -2917,9 +3079,6 @@ td {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-}
-.nutrition-day .chip {
-  background: var(--surface-2);
 }
 .logged-strip {
   display: flex;
@@ -3153,16 +3312,6 @@ td {
 }
 .nutrition-turn-on .choice-list {
   max-width: 560px;
-}
-.turn-on-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-.turn-on-row p {
-  margin: 0;
 }
 .average-day {
   display: flex;
@@ -3448,9 +3597,6 @@ td {
 }
 
 /* ---------- family board ---------- */
-.family-greeting h1 {
-  font-size: 40px;
-}
 .family-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr));
@@ -3603,9 +3749,9 @@ a.family-tile:hover {
   height: 72px;
   font-size: 26px;
 }
-.family-person-head h1 {
+.family-person-head h2 {
   font-size: 28px;
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: -0.02em;
 }
 .family-empty {
@@ -3630,9 +3776,6 @@ a.family-tile:hover {
   color: inherit;
 }
 @media (max-width: 560px) {
-  .family-greeting h1 {
-    font-size: 30px;
-  }
   .family-grid {
     grid-template-columns: minmax(0, 1fr);
     gap: 10px;
@@ -3670,11 +3813,6 @@ html {
 /* Narrower screens: the date or range picker always goes on its own row under the title, whichever a tab has,
    so the tabs sit at the same height on every tab rather than moving with how wide the picker is. */
 @media (max-width: 1080px) {
-  .page-head {
-    flex-direction: column;
-    align-items: stretch;
-    flex-wrap: nowrap;
-  }
   .page-head-tools {
     justify-content: flex-start;
   }
@@ -3747,20 +3885,6 @@ nav.tabs {
   margin-top: 10px;
 }
 
-/* one night, with the figure beside it on wide screens (as on Home) */
-.night-layout {
-  display: grid;
-  gap: 16px;
-}
-.night-main {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  min-width: 0;
-}
-.page-hero {
-  display: none;
-}
 
 /* score bar */
 .score-pill {
@@ -4115,24 +4239,6 @@ nav.tabs {
   padding: 8px 0;
 }
 
-@media (min-width: 1400px) {
-  .night-layout.has-hero {
-    grid-template-columns: minmax(300px, 0.8fr) minmax(0, 2fr);
-    align-items: start;
-  }
-  .has-hero .page-hero {
-    display: block;
-    position: sticky;
-    top: 16px;
-  }
-  .has-hero .night-cards {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  /* The figure already shows resting heart rate. */
-  .has-hero .rhr-card {
-    display: none;
-  }
-}
 @media (max-width: 1360px) {
   .cards-4 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -4188,12 +4294,6 @@ nav.tabs {
 .all-hidden a {
   color: var(--ink);
   font-weight: 600;
-}
-/* On the wide Sleep layout the figure stands in for resting heart rate; a row left with only that card goes. */
-@media (min-width: 1400px) {
-  .has-hero .night-cards:has(> .rhr-card:only-child) {
-    display: none;
-  }
 }
 .settings-cards {
   max-width: 560px;
@@ -4401,12 +4501,6 @@ nav.tabs {
     --cols: var(--cols-small, var(--cols-mid, 2));
   }
 }
-@media (min-width: 1400px) {
-  /* Beside the figure, without the resting heart rate card it already shows. */
-  .has-hero .night-cards.fill-row {
-    --cols: var(--cols-hero, 2);
-  }
-}
 @media (max-width: 560px) {
   .cards.fill-row {
     --cols: 1;
@@ -4602,16 +4696,24 @@ nav.tabs {
   --msheet-backdrop: rgba(20, 20, 18, 0.34);
   --msheet-shadow: 0 24px 60px -18px rgba(20, 20, 18, 0.32);
   --msheet-status-bg: var(--surface-2);
-  --grad-glucose: radial-gradient(120% 90% at 100% 0%, #d6f1e6 0%, #e9f7f1 45%, #f9fcfb 100%);
+  --grad-glucose: var(--grad-mint);
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
     --msheet-backdrop: rgba(0, 0, 0, 0.62);
     --msheet-shadow: 0 24px 60px -18px rgba(0, 0, 0, 0.8);
     --msheet-status-bg: var(--surface-hover);
-    --grad-glucose: radial-gradient(120% 90% at 100% 0%, #173a2e 0%, #1a2623 50%, #1a1a19 100%);
+    --grad-glucose: var(--grad-mint);
   }
 }
+/* Forced dark (data-theme='dark' on <html>): the same as the block above. Change both together. */
+:root[data-theme='dark'] {
+  --msheet-backdrop: rgba(0, 0, 0, 0.62);
+  --msheet-shadow: 0 24px 60px -18px rgba(0, 0, 0, 0.8);
+  --msheet-status-bg: var(--surface-hover);
+  --grad-glucose: var(--grad-mint);
+}
+
 
 /* A card's arrow when it opens a sheet: a button that looks like the link it replaced. */
 button.metric-sheet-btn {
@@ -4621,66 +4723,6 @@ button.metric-sheet-btn {
   cursor: pointer;
 }
 
-.msheet-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 100;
-  display: grid;
-  place-items: center;
-  padding: 24px 16px;
-  background: var(--msheet-backdrop);
-  overscroll-behavior: contain;
-}
-.msheet {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  width: min(720px, 100%);
-  max-height: calc(100dvh - 48px);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 18px 20px 20px;
-  background: var(--surface);
-  color: var(--ink);
-  border: 1px solid var(--border);
-  border-radius: 24px;
-  box-shadow: var(--msheet-shadow);
-}
-/* The panel takes focus only from a click on its text (tabIndex -1), never from the keyboard: no ring for that. */
-.msheet:focus {
-  outline: none;
-}
-.msheet-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-.msheet-crumbs {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 6px;
-  min-width: 0;
-  font-size: 13px;
-  color: var(--ink-3);
-}
-.msheet-crumbs h2 {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--ink);
-}
-.msheet-crumbs h2:focus {
-  outline: none;
-}
-.msheet-crumbs h2:focus-visible {
-  outline: 2px solid var(--series-1);
-  outline-offset: 2px;
-}
-.msheet-close {
-  flex: none;
-}
 .msheet-ranges {
   align-self: flex-start;
 }
@@ -4813,18 +4855,6 @@ button.metric-sheet-btn {
 
 /* Phones: the sheet takes the whole screen. */
 @media (max-width: 560px) {
-  .msheet-backdrop {
-    padding: 0;
-    place-items: stretch;
-  }
-  .msheet {
-    width: 100%;
-    height: 100%;
-    max-height: none;
-    border-radius: 0;
-    border: 0;
-    padding: max(16px, env(safe-area-inset-top)) 16px max(20px, env(safe-area-inset-bottom));
-  }
   .msheet-tiles {
     gap: 6px;
   }
@@ -4833,14 +4863,6 @@ button.metric-sheet-btn {
   }
   .msheet-tiles b {
     font-size: 15px;
-  }
-}
-@media (prefers-reduced-motion: no-preference) {
-  .msheet-backdrop {
-    animation: msheet-fade 0.16s ease-out;
-  }
-  .msheet {
-    animation: msheet-rise 0.2s ease-out;
   }
 }
 @keyframes msheet-fade {
@@ -4865,52 +4887,6 @@ button.metric-sheet-btn {
   margin-top: -2px;
 }
 
-/* Body composition: the main reading, then the others as rows that open their own sheets. */
-.composition-rows {
-  list-style: none;
-  margin: 2px 0 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-}
-.composition-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto 14px;
-  align-items: center;
-  gap: 8px;
-  padding: 6px;
-  margin: 0 -6px;
-  width: calc(100% + 12px);
-  border: 0;
-  border-radius: 10px;
-  background: transparent;
-  text-align: left;
-  cursor: pointer;
-  color: var(--ink);
-}
-.composition-row:hover {
-  background: var(--chip);
-}
-.composition-label {
-  font-size: 13px;
-  color: var(--ink-2);
-}
-.composition-value {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  font-variant-numeric: tabular-nums;
-}
-.composition-value b {
-  font-weight: 600;
-}
-.composition-value small {
-  font-size: 11px;
-  color: var(--ink-3);
-}
-.composition-row .icon {
-  color: var(--ink-3);
-}
 
 /* ---------- Latest workout and ⌘K search (components/body/WorkoutCard.tsx, components/Search.tsx) ---------- */
 
@@ -4925,6 +4901,12 @@ button.metric-sheet-btn {
     --palette-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04), 0 28px 64px -16px rgba(0, 0, 0, 0.8);
   }
 }
+/* Forced dark (data-theme='dark' on <html>): the same as the block above. Change both together. */
+:root[data-theme='dark'] {
+  --palette-backdrop: rgba(0, 0, 0, 0.6);
+  --palette-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04), 0 28px 64px -16px rgba(0, 0, 0, 0.8);
+}
+
 
 /* the latest-workout card */
 .workout-card {
@@ -5050,15 +5032,7 @@ button.metric-sheet-btn {
   padding-top: 4px;
 }
 
-/* the Search button, among the sidebar's items */
-.search-button {
-  width: 100%;
-  border: 0;
-  background: transparent;
-  text-align: left;
-  cursor: pointer;
-}
-.search-button kbd,
+/* the ⌘K palette's key hints */
 .palette kbd {
   font: inherit;
   font-size: 11px;
@@ -5068,18 +5042,6 @@ button.metric-sheet-btn {
   border-radius: 5px;
   background: var(--surface-2);
   color: var(--ink-3);
-}
-.search-button kbd {
-  margin-left: auto;
-}
-@media (max-width: 820px) {
-  .search-button {
-    width: auto;
-    flex: none;
-  }
-  .search-button kbd {
-    display: none;
-  }
 }
 
 /* the ⌘K palette: a dialog over a dimmed page, a full-width sheet from the top on a phone */
@@ -5284,6 +5246,18 @@ html:has(.palette[open]) {
     --lab-none-bg: #262625;
   }
 }
+/* Forced dark (data-theme='dark' on <html>): the same as the block above. Change both together. */
+:root[data-theme='dark'] {
+  --lab-band: #2a5426;
+  --lab-dot: #f0efec;
+  --lab-out: #f08a5d;
+  --lab-within-bg: #1d3a1b;
+  --lab-within-ink: #8fdc85;
+  --lab-out-bg: #432617;
+  --lab-out-ink: #f4a97f;
+  --lab-none-bg: #262625;
+}
+
 
 /* The bar: a track, the range shaded, the result as a dot (hollow when printed with < or >). */
 .lab-bar {
@@ -5409,13 +5383,11 @@ html:has(.palette[open]) {
   position: absolute;
 }
 .labs-notice .note-good:focus,
-.labs-form h2:focus,
-.labs-import h2:focus {
+.labs-form h2:focus {
   outline: none;
 }
 .labs-notice .note-good:focus-visible,
-.labs-form h2:focus-visible,
-.labs-import h2:focus-visible {
+.labs-form h2:focus-visible {
   outline: 2px solid var(--series-1);
   outline-offset: 2px;
 }
@@ -5426,23 +5398,6 @@ html:has(.palette[open]) {
   margin-bottom: 14px;
 }
 .labs-demo {
-  background: var(--tone-blue-bg);
-  color: var(--tone-blue-ink);
-}
-.labs-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 10px;
-  max-width: 680px;
-  line-height: 1.5;
-}
-.labs-empty-icon {
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
   background: var(--tone-blue-bg);
   color: var(--tone-blue-ink);
 }
@@ -5560,14 +5515,12 @@ html:has(.palette[open]) {
 }
 
 /* Adding results and checking what was read */
-.labs-form,
-.labs-import {
+.labs-form {
   display: flex;
   flex-direction: column;
   gap: 14px;
 }
-.labs-form .card-title-row,
-.labs-import .card-title-row {
+.labs-form .card-title-row {
   margin-bottom: 0;
 }
 .labs-fieldset {
@@ -5635,15 +5588,6 @@ html:has(.palette[open]) {
   margin-top: 20px;
   padding: 8px 10px;
 }
-.labs-import-notes {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: 0;
-  padding-left: 18px;
-  color: var(--ink-2);
-  line-height: 1.45;
-}
 .labs-review-intro {
   display: flex;
   flex-direction: column;
@@ -5654,9 +5598,6 @@ html:has(.palette[open]) {
   gap: 6px;
   align-items: flex-start;
   color: var(--tone-yellow-ink);
-}
-.labs-progress:empty {
-  display: none;
 }
 
 /* The Body overview's card */
@@ -5808,5 +5749,942 @@ html:has(.palette[open]) {
 @media (prefers-reduced-motion: reduce) {
   .labs-marker svg {
     transition: none;
+  }
+}
+
+/* ---------- shell (src/components/shell) and shared pieces ----------
+   The sidebar's brand and chip, the account menu, the header with its top bar, the footer, the Ask McFly pill, the
+   phone's top bar and tab bar, and the pieces any page uses: PageIntro, Sheet, VitalCard, Orb, .badge, .eyebrow. */
+.logo {
+  color: var(--ink);
+  flex: none;
+}
+/* Rounded controls keep their own shape when focused (the base rule gives plain links a 6px corner). */
+.btn:focus-visible,
+.pill:focus-visible,
+.icon-btn:focus-visible,
+.avatar:focus-visible,
+.day-btn:focus-visible,
+.ask-pill:focus-visible {
+  border-radius: var(--r-pill);
+}
+.nav-item:focus-visible,
+.menu-item:focus-visible,
+.user-chip:focus-visible,
+.tab:focus-visible {
+  border-radius: var(--r-nav);
+}
+
+/* A small capitalised line over a heading ("YOUR WORKSPACE", "UNDERSTAND YOUR BLOOD OXYGEN"). */
+.eyebrow {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* Badges: a short state in a small pill ("Signed in", "0 results", "Ready to connect"). */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1.5;
+  white-space: nowrap;
+  background: var(--badge-muted-bg);
+  color: var(--badge-muted-ink);
+}
+.badge-sage {
+  background: var(--badge-sage-bg);
+  color: var(--badge-sage-ink);
+}
+.badge-peach {
+  background: var(--badge-peach-bg);
+  color: var(--badge-peach-ink);
+}
+.badge-muted {
+  background: var(--badge-muted-bg);
+  color: var(--badge-muted-ink);
+}
+.badge-bad {
+  background: var(--badge-bad-bg);
+  color: var(--badge-bad-ink);
+}
+
+/* Range pickers and tabs: quiet segmented pills, the chosen one white. */
+.filters,
+.seg {
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.filters button,
+.seg button {
+  border-radius: var(--r-pill);
+}
+.filters button.on,
+.seg button.on {
+  box-shadow: var(--shadow-pill);
+}
+.tabs a.on {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-pill);
+}
+.card-choices input,
+.settings input[type='checkbox'],
+.settings input[type='radio'] {
+  accent-color: var(--accent);
+}
+.card-choices label small {
+  flex: none;
+  margin-left: auto;
+  font-size: 11px;
+}
+
+/* the sidebar's foot: your chip */
+.sidebar-foot {
+  margin-top: auto;
+}
+.sidebar-foot .menu-anchor {
+  display: flex;
+}
+.user-chip {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow-pill);
+  font: inherit;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.user-chip .avatar {
+  width: 28px;
+  height: 28px;
+  font-size: 11px;
+  box-shadow: none;
+}
+.user-chip-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+}
+.user-chip-text b {
+  font-size: 13px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.user-chip-text small {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.user-chip > .icon {
+  color: var(--ink-3);
+}
+
+/* menus (Menu.tsx): a pale green popover; a sheet from the bottom on a phone */
+.menu-anchor {
+  position: relative;
+  display: inline-flex;
+}
+.menu {
+  position: absolute;
+  z-index: 60;
+  width: 232px;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 8px 8px;
+  border-radius: var(--r-menu);
+  background: var(--menu-bg);
+  border: 1px solid var(--menu-border);
+  box-shadow: var(--shadow-pop);
+}
+.menu-down > .menu {
+  top: calc(100% + 10px);
+  right: 0;
+}
+.menu-up > .menu {
+  bottom: calc(100% + 10px);
+  left: 0;
+}
+.menu-eyebrow {
+  padding: 2px 12px 8px;
+  font-size: 10px;
+}
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--r-nav);
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.menu-item .icon {
+  color: var(--accent-text);
+}
+.menu-item:hover,
+.menu-item:focus-visible {
+  background: var(--chip);
+}
+.menu-item:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+.menu-item[aria-current='page'] {
+  font-weight: 500;
+}
+.menu-item-quiet,
+.menu-item-quiet .icon {
+  color: var(--ink-3);
+}
+.menu-sep {
+  height: 1px;
+  margin: 6px 10px;
+  background: var(--border);
+}
+.menu-scrim {
+  display: none;
+}
+
+/* the header: the page's title (or Home's greeting) and the top bar */
+.shell-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px 24px;
+  margin-bottom: 26px;
+}
+.shell-title {
+  min-width: 0;
+}
+.shell-title h1 {
+  font-size: 40px;
+  line-height: 1.08;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+.shell-header.is-home .shell-title h1 {
+  font-size: 42px;
+}
+.shell-hello {
+  font-size: 14px;
+  color: var(--ink-2);
+  margin-bottom: 2px;
+}
+.shell-sub {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px 12px;
+  min-height: 44px;
+  padding-top: 2px;
+}
+.pill-demo {
+  margin-right: 0;
+}
+.topbar-date {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 4px;
+  font-size: 12px;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+.topbar-days {
+  display: inline-flex;
+  gap: 2px;
+}
+.day-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+.day-btn:hover:not(:disabled) {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-pill);
+}
+.day-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.topbar-search {
+  width: 34px;
+  height: 34px;
+}
+.refresh-btn:disabled {
+  cursor: progress;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .refresh-btn.is-running .icon {
+    animation: refresh-spin 1s linear infinite;
+  }
+}
+@keyframes refresh-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* a page's intro row (PageIntro.tsx) */
+.page-intro {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 4px;
+}
+.page-intro-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+}
+.page-intro-text {
+  min-width: 0;
+}
+.page-intro-text h2 {
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+}
+.page-intro-text p {
+  margin-top: 4px;
+  max-width: 760px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.page-intro-text h2 + p {
+  margin-top: 6px;
+}
+.page-intro-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-left: auto;
+}
+.page-intro-actions .btn-primary {
+  align-self: auto;
+}
+.page-intro-slot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+.page-intro-slot nav.tabs {
+  margin-top: 0;
+}
+.page-intro-slot .tabs-center {
+  justify-content: flex-start;
+}
+.page-intro-slot .page-head-tools {
+  margin-left: auto;
+}
+/* Labs: the open form's button keeps a bar under its label, not only a change of colour. */
+.labs .page-intro-actions .btn[aria-pressed='true'] {
+  box-shadow: var(--shadow-pill), inset 0 -2px 0 currentColor;
+}
+.page-loading {
+  font-size: 12px;
+  color: var(--accent-text);
+}
+
+/* the footer (AppFooter.tsx): at the bottom of the screen on a short page */
+.app-foot {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-top: auto;
+  padding-top: 40px;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.main-page + .app-foot {
+  margin-top: 0;
+}
+
+/* McFly's orb (Orb.tsx): a dark red core into an orange-red rim, softly blurred at the edge */
+.orb {
+  display: inline-block;
+  flex: none;
+  width: var(--orb-size, 24px);
+  height: var(--orb-size, 24px);
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 46%, var(--orb-core) 0%, var(--orb-core) 16%, var(--orb-mid) 46%, #d93a22 66%, var(--orb-rim) 82%, rgba(241, 105, 64, 0) 100%);
+  box-shadow: 0 0 calc(var(--orb-size, 24px) * 0.32) calc(var(--orb-size, 24px) * 0.02) rgba(241, 105, 64, 0.42);
+  filter: blur(calc(var(--orb-size, 24px) * 0.015));
+}
+@media (prefers-reduced-motion: no-preference) {
+  .orb.is-busy {
+    animation: orb-pulse 1.6s ease-in-out infinite;
+  }
+}
+@keyframes orb-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 calc(var(--orb-size, 24px) * 0.32) calc(var(--orb-size, 24px) * 0.02) rgba(241, 105, 64, 0.42);
+  }
+  50% {
+    transform: scale(1.08);
+    box-shadow: 0 0 calc(var(--orb-size, 24px) * 0.55) calc(var(--orb-size, 24px) * 0.06) rgba(241, 105, 64, 0.55);
+  }
+}
+
+/* "Ask McFly", floating at the bottom right of Home */
+.ask-pill {
+  position: fixed;
+  right: 28px;
+  bottom: 20px;
+  z-index: 35;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 7px 16px 7px 10px;
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  box-shadow: var(--shadow-pop);
+  color: var(--ink);
+}
+.ask-pill-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+.ask-pill-text b {
+  font-size: 13px;
+  font-weight: 500;
+}
+.ask-pill-text small {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.ask-pill > .icon {
+  margin-left: 10px;
+  color: var(--ink-3);
+}
+.ask-pill:hover > .icon {
+  color: var(--ink);
+}
+
+/* dialogs (Sheet.tsx): a pale mint panel over a light blurred veil; the whole screen on a phone */
+.sheet-veil {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+  background: var(--veil);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  overscroll-behavior: contain;
+}
+.sheet {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: min(650px, 100%);
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 30px 32px 28px;
+  background: var(--grad-sheet);
+  border: 1px solid var(--card-edge);
+  border-radius: var(--r-sheet);
+  box-shadow: var(--shadow-pop);
+  color: var(--ink);
+}
+.sheet-sm {
+  width: min(480px, 100%);
+}
+.sheet-lg {
+  width: min(860px, 100%);
+}
+.sheet:focus {
+  outline: none;
+}
+.sheet-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.sheet-head h2 {
+  margin-top: 6px;
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+.sheet-head .eyebrow + h2 {
+  margin-top: 8px;
+}
+.sheet-head h2:focus {
+  outline: none;
+}
+.sheet-head h2:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.sheet-close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  margin: -10px -12px 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: var(--shadow-pill);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.sheet-close:hover {
+  color: var(--ink);
+}
+.sheet-close:focus-visible {
+  border-radius: 50%;
+}
+.sheet-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+.sheet-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-top: 4px;
+}
+.sheet-foot .btn-primary {
+  align-self: auto;
+}
+.sheet .card-choices {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 0;
+}
+@media (max-width: 560px) {
+  .sheet-veil {
+    padding: 0;
+    place-items: stretch;
+  }
+  .sheet {
+    width: 100%;
+    height: 100%;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+    padding: max(18px, env(safe-area-inset-top)) 18px max(20px, env(safe-area-inset-bottom));
+  }
+  .sheet-close {
+    margin: -4px -4px 0 0;
+  }
+  .sheet .card-choices {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .sheet-veil {
+    animation: palette-fade 0.16s ease-out;
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .sheet-veil {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+/* signal cards (VitalCard.tsx): a tall Home card and a short one for Vitals and Sleep */
+.vital-card {
+  gap: 0;
+  min-height: 0;
+  /* A grid doesn't stretch an item that has an aspect ratio; this does, and the ratio then sets the height. */
+  width: 100%;
+}
+.vital-home {
+  aspect-ratio: 1.55;
+  min-height: 210px;
+}
+.vital-compact {
+  aspect-ratio: 3.6;
+  min-height: 176px;
+}
+.vital-value {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+  line-height: 1;
+}
+.vital-value b {
+  font-size: 38px;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+}
+.vital-value small {
+  padding-bottom: 3px;
+  font-size: 11px;
+  color: var(--ink-2);
+}
+/* No reading: a short bold bar, its unit small at its lower right. */
+.vital-value .vital-dash {
+  display: inline-block;
+  width: 22px;
+  height: 3px;
+  margin: 14px 0 2px;
+  border-radius: 2px;
+  background: var(--ink);
+}
+.vital-value .vital-dash + small {
+  padding-bottom: 0;
+  transform: translateY(6px);
+}
+.vital-note {
+  margin-top: 12px;
+  font-size: 11.5px;
+  color: var(--ink-2);
+}
+.vital-home .vital-note {
+  margin-top: 28px;
+}
+.vital-note + .vital-note {
+  margin-top: 10px;
+}
+.vital-status {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.vital-chart {
+  margin-top: auto;
+  padding-top: 12px;
+}
+.vital-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 12px;
+  font-size: 11.5px;
+  color: var(--ink-2);
+}
+.vital-chart + .vital-foot {
+  margin-top: 0;
+}
+.vital-connect {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--ink-2);
+}
+.vital-connect:hover {
+  color: var(--ink);
+}
+
+/* the digital human (Figure.tsx, DigitalFigure) and the callouts' new look */
+.figure-digital {
+  max-width: 640px;
+}
+.figure-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.figure-digital .callout {
+  min-width: 0;
+  white-space: nowrap;
+  /* A soft halo in the page colour, so a label over an arm stays readable. */
+  text-shadow:
+    0 0 3px var(--page),
+    0 0 10px var(--page);
+}
+@media (prefers-color-scheme: dark) {
+  /* The porcelain figure, a little dimmer on a dark page. */
+  :root:not([data-theme='light']) .figure-art {
+    filter: brightness(0.84);
+  }
+}
+/* Forced dark (data-theme='dark' on <html>): the same as the block above. Change both together. */
+/* The porcelain figure, a little dimmer on a dark page. */
+:root[data-theme='dark'] .figure-art {
+  filter: brightness(0.84);
+}
+
+.callout-label {
+  font-size: 11px;
+  color: var(--ink-2);
+}
+.callout-value {
+  font-size: 18px;
+}
+.callout-value span {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--ink-2);
+}
+.callout-dash {
+  font-weight: 700;
+}
+.callout-status {
+  font-size: 11px;
+}
+.callout-line {
+  stroke: var(--callout-line);
+  opacity: 1;
+}
+.callout-halo {
+  fill: var(--callout-ring);
+  fill-opacity: 0.18;
+  stroke: var(--callout-ring);
+  stroke-width: 1;
+}
+.callout-dot {
+  stroke: var(--surface);
+  stroke-width: 1.5;
+}
+.home.is-stats {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* the phone's top bar and tab bar (MobileNav.tsx): only at 820px and below */
+.mobile-bar,
+.tab-bar {
+  display: none;
+}
+
+/* full-screen pages: onboarding (Onboarding.tsx) */
+.fullscreen {
+  min-height: 100vh;
+  background: radial-gradient(60% 60% at 50% 30%, var(--page-glow) 0%, transparent 70%), var(--page);
+}
+.onboarding {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  padding: 28px 24px 32px;
+}
+.login {
+  align-content: center;
+}
+.profile-page > .muted.small:first-child,
+.page > .page-intro + .muted.small {
+  margin-top: -6px;
+}
+
+/* ---------- shell on a phone (≤820px): the top bar, the tab bar, menus as sheets ---------- */
+@media (max-width: 820px) {
+  .mobile-bar {
+    position: sticky;
+    top: 0;
+    z-index: 45;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    background: var(--sidebar);
+    border-bottom: 1px solid var(--sidebar-edge);
+  }
+  .mobile-brand {
+    display: inline-flex;
+    color: var(--ink);
+  }
+  .mobile-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 17px;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+  }
+  .tab-bar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 40;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 2px;
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+    background: var(--sidebar);
+    border-top: 1px solid var(--sidebar-edge);
+  }
+  .tab-bar .menu-anchor {
+    display: flex;
+  }
+  .tab {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    min-width: 0;
+    min-height: 50px;
+    padding: 4px 2px;
+    border: 0;
+    border-radius: var(--r-nav);
+    background: transparent;
+    font: inherit;
+    font-size: 11px;
+    color: var(--ink-3);
+    cursor: pointer;
+  }
+  .tab span {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .tab.is-active {
+    color: var(--ink);
+    background: var(--nav-active);
+    box-shadow: var(--shadow-pill);
+  }
+  /* Menus come up from the bottom, over a light veil. */
+  .menu-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 59;
+    background: var(--veil);
+  }
+  .menu,
+  .menu-down > .menu,
+  .menu-up > .menu {
+    position: fixed;
+    top: auto;
+    left: 8px;
+    right: 8px;
+    bottom: calc(8px + env(safe-area-inset-bottom));
+    width: auto;
+    max-height: calc(100dvh - 80px);
+    overflow-y: auto;
+    padding: 14px 8px 10px;
+    border-radius: 22px;
+  }
+  .tab-bar .menu {
+    bottom: calc(72px + env(safe-area-inset-bottom));
+  }
+  .menu-item {
+    min-height: 46px;
+    font-size: 15px;
+  }
+  /* The header: Home's greeting stays; other pages' titles are in the top bar. The top bar's search and avatar are
+     in the phone bar too, so they hide here. */
+  .shell-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+  .shell-header:not(.is-home) .shell-title {
+    display: none;
+  }
+  .shell-header.is-home .shell-title h1 {
+    font-size: 34px;
+  }
+  .topbar {
+    justify-content: flex-start;
+    min-height: 0;
+    gap: 8px 10px;
+  }
+  .topbar-search,
+  .topbar-avatar {
+    display: none;
+  }
+  .topbar-date {
+    margin-right: auto;
+  }
+  .ask-pill {
+    right: 16px;
+    bottom: calc(74px + env(safe-area-inset-bottom));
+    min-height: 44px;
+  }
+  .ask-pill > .icon {
+    display: none;
+  }
+  /* Ask McFly's composer stays above the tab bar. */
+  .app:has(.mcfly) .main {
+    padding-bottom: calc(84px + env(safe-area-inset-bottom));
+  }
+  /* Home's last line scrolls clear of the Ask McFly pill, which floats 74px up and is 44px tall. */
+  .app:has(.ask-pill) .main {
+    padding-bottom: calc(130px + env(safe-area-inset-bottom));
+  }
+  .app-foot {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding-top: 28px;
+  }
+  .page-intro-actions {
+    margin-left: 0;
+    justify-content: flex-start;
+  }
+}
+@media (max-width: 420px) {
+  .topbar-widgets span {
+    display: none;
   }
 }

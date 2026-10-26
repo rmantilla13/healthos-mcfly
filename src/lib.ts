@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
-import type { Page, Units } from '../shared/types.ts';
+import { cardShown } from '../shared/cards.ts';
+import type { Page, Settings, Units } from '../shared/types.ts';
 
 // ---------- API ----------
 
@@ -37,6 +38,13 @@ export function uploadFile(file: File, onProgress: (sent: number, total: number)
     xhr.onerror = () => reject(new Error('Upload failed'));
     xhr.send(file);
   });
+}
+
+/** Sign out on this device: what was loaded for this person is forgotten, and the page starts again at sign-in. */
+export async function signOut() {
+  await sendJson('POST', '/auth/logout').catch(() => {});
+  clearLoadedData();
+  window.location.reload();
 }
 
 /** Tell every view to refetch (after an import, sync or settings change). */
@@ -166,7 +174,8 @@ export function useApi<T>(path: string | null) {
 
 // ---------- routing ----------
 
-const PAGES: Page[] = ['home', 'family', 'vitals', 'sleep', 'activity', 'body', 'nutrition', 'labs', 'cycle', 'mcfly', 'integrations', 'settings', 'admin'];
+// 'settings' and 'activity' stay as addresses (bookmarks, the iPhone app's links): App.tsx opens Profile and Body for them.
+const PAGES: Page[] = ['home', 'family', 'vitals', 'sleep', 'activity', 'body', 'nutrition', 'journal', 'labs', 'cycle', 'mcfly', 'integrations', 'profile', 'settings', 'welcome', 'admin'];
 
 function readRoute() {
   const [p, q] = location.hash.replace(/^#\/?/, '').split('?');
@@ -213,15 +222,22 @@ export async function copyText(text: string) {
 export const UnitsContext = createContext<Units>('metric');
 export const useUnits = () => useContext(UnitsContext);
 
-/** The cards this person hid (Settings → Cards; shared/cards.ts); null until their settings have loaded. */
-export const HiddenCardsContext = createContext<string[] | null>([]);
-/** Whether a card shows: every one does, except those the person hid. None until the settings are known, so a hidden card never flashes up. */
+/** The cards this person hid, and the optional ones they turned on (shared/cards.ts). */
+export type CardLists = { hidden: string[]; shown: string[] };
+/** The person's card lists (Home → Edit widgets, or Profile → Cards); null until their settings have loaded. */
+export const CardListsContext = createContext<CardLists | null>({ hidden: [], shown: [] });
+/**
+ * Whether a card shows: an optional one once turned on, any other unless hidden (cardShown). None until the settings
+ * are known, so a hidden card never flashes up.
+ */
 export function useCardShown() {
-  const hidden = useContext(HiddenCardsContext);
-  return useCallback((id: string) => hidden !== null && !hidden.includes(id), [hidden]);
+  const lists = useContext(CardListsContext);
+  return useCallback((id: string) => lists !== null && cardShown(id, lists.hidden, lists.shown), [lists]);
 }
+/** Both lists from the settings (shownCards is missing from older servers). */
+export const cardListsOf = (s: Pick<Settings, 'hiddenCards' | 'shownCards'>): CardLists => ({ hidden: s.hiddenCards ?? [], shown: s.shownCards ?? [] });
 /** The person's settings have loaded, so a card that isn't shown was hidden on purpose. */
-export const useCardsKnown = () => useContext(HiddenCardsContext) !== null;
+export const useCardsKnown = () => useContext(CardListsContext) !== null;
 
 export function fmt(value: number, digits = 0) {
   return value.toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits });

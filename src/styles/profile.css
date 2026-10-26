@@ -1,0 +1,309 @@
+/* ---------- Profile (src/pages/Profile.tsx) ---------- */
+/* Cards of rows (a title and a muted line or two, a quiet pill on the right, hairlines between), two cards that open
+   in place, and the settings that open in sheets. */
+:root {
+  /* The age-group comparison's bar: the group's outer quarters, its middle half, and the quarter you're in. */
+  --peer-track: #ecebe6;
+  --peer-band: #cbe0c0;
+  --peer-you: #3d5a49;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --peer-track: #2c2c2a;
+    --peer-band: #34503f;
+    --peer-you: #b5d1bb;
+  }
+}
+/* Forced dark (data-theme='dark'): the same values as the block above. Change both together. */
+:root[data-theme='dark'] {
+  --peer-track: #2c2c2a;
+  --peer-band: #34503f;
+  --peer-you: #b5d1bb;
+}
+
+.page.profile-page {
+  gap: 18px;
+}
+.card.profile-card {
+  padding: 22px 24px 6px;
+}
+.card.profile-card > h2 {
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  margin-bottom: 4px;
+}
+.profile-list {
+  display: flex;
+  flex-direction: column;
+}
+.profile-row {
+  padding: 16px 0;
+  border-bottom: 1px solid var(--border);
+}
+.profile-card .profile-row:last-child {
+  border-bottom-color: transparent;
+}
+.profile-row-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+.profile-row-text {
+  min-width: 0;
+}
+.profile-row-text h3 {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+  margin-bottom: 5px;
+}
+.profile-row-text p {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--ink-3);
+}
+.profile-row-text p + p {
+  margin-top: 2px;
+}
+.profile-row-action {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.profile-row-action .btn {
+  min-height: 32px;
+  padding: 0 15px;
+  font-size: 12.5px;
+}
+.profile-row-action .btn-quiet {
+  padding: 0 8px;
+}
+.profile-row-text .profile-ok,
+.profile-ok {
+  color: var(--accent-text);
+}
+.profile-row-text .profile-bad,
+.profile-bad {
+  color: var(--critical);
+}
+.settings.profile-form.profile-password {
+  margin-top: 16px;
+  max-width: 420px;
+}
+.profile-form .saved {
+  margin-top: -6px;
+}
+
+/* ---------- cards that open in place ---------- */
+.card.profile-collapse {
+  padding: 0;
+}
+.card .profile-collapse-head {
+  font-size: inherit;
+  font-weight: inherit;
+}
+.profile-collapse-head button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 64px;
+  padding: 18px 24px;
+  border: 0;
+  border-radius: var(--r-card);
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.profile-collapse-head button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+.profile-collapse-head .icon {
+  flex: none;
+  color: var(--accent-text);
+}
+/* Title and meta: one line on a wide screen, the meta under the title on a phone. */
+.profile-collapse-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 16px;
+}
+.profile-collapse-title {
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--accent-text);
+}
+.profile-collapse-meta {
+  font-size: 12px;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+.profile-collapse-meta:empty {
+  display: none;
+}
+.profile-collapse-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 2px 24px 22px 53px;
+  font-size: 13px;
+}
+.profile-collapse-body[hidden] {
+  display: none;
+}
+
+/* The age-group comparison. */
+.profile-peer-window,
+.profile-fine {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.profile-peer-note {
+  color: var(--ink-2);
+  line-height: 1.55;
+}
+.profile-peer-note a {
+  color: var(--accent-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.profile-peer-demo {
+  align-self: flex-start;
+  padding: 5px 10px;
+  border-radius: var(--r-pill);
+  background: var(--badge-peach-bg);
+  color: var(--badge-peach-ink);
+  font-size: 12px;
+}
+.profile-peers {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.profile-peer {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: var(--r-tile);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+.profile-peer h3 {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+  margin-bottom: 4px;
+}
+.profile-peer p {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--ink-3);
+}
+.profile-peer .profile-peer-figure {
+  font-size: 13.5px;
+  color: var(--accent-text);
+  font-weight: 500;
+}
+/* Four equal quarters, as quartiles make them: the outer two the track, the middle two the group's middle half, and
+   yours lit whole, since the answer says which quarter and not where in it. */
+.profile-peer-bar {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 3px;
+  height: 6px;
+  margin: auto 0 4px;
+}
+.profile-peer-q {
+  border-radius: var(--r-pill);
+  background: var(--peer-track);
+}
+.profile-peer-q:nth-child(2),
+.profile-peer-q:nth-child(3) {
+  background: var(--peer-band);
+}
+.profile-peer-q.is-you {
+  background: var(--peer-you);
+}
+
+/* Use a photo as is, under the portrait studio. */
+.settings.profile-photo {
+  max-width: none;
+}
+.profile-collapse-body > * + .profile-photo {
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.profile-photo h3 {
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+/* ---------- the settings sheets ---------- */
+/* The settings parts other pages own (Family, Cycle, Nutrition) are cards on their own; in a sheet they lie flat. */
+.profile-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.profile-sheet > .card {
+  max-width: none;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+.profile-sheet > .card + .card {
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+.profile-sheet .card h2 {
+  font-size: 15px;
+}
+.settings-cards.profile-cards {
+  max-width: none;
+}
+.settings.profile-form {
+  max-width: none;
+}
+
+@media (max-width: 560px) {
+  .card.profile-card {
+    padding: 18px 18px 4px;
+  }
+  .profile-row-main {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .profile-row-action {
+    flex-wrap: wrap;
+  }
+  .profile-collapse-head button {
+    padding: 16px 18px;
+  }
+  .profile-collapse-text {
+    flex-direction: column;
+  }
+  .profile-collapse-body {
+    padding: 2px 18px 18px;
+  }
+  .profile-peers {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

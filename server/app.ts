@@ -7,9 +7,17 @@ import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { waitUntil } from '@vercel/functions';
 import express, { type NextFunction, type Request, type Response } from 'express';
-import { cleanHiddenCards, readHiddenCards, storedHiddenCards, withCardShown } from '../shared/cards.ts';
+import { cleanHiddenCards, cleanShownCards, readHiddenCards, readShownCards, storedHiddenCards, withCardToggled } from '../shared/cards.ts';
+import { PEER_MIN_AGE } from '../shared/peers.ts';
 import type { ImportJob, NutritionTargets, Settings, Status } from '../shared/types.ts';
 import { adminRouter } from './admin.ts';
+import { aiRouter } from './ai/routes.ts';
+import { bodyRouter } from './body.ts';
+import { exportRouter } from './export.ts';
+import { fitbitRouter } from './fitbit.ts';
+import { journalRouter } from './journal.ts';
+import { peersRouter } from './peers.ts';
+import { portraitsRouter } from './portraits.ts';
 import { DAY_METRICS, dayView } from './day.ts';
 import { importAppleHealth } from './apple/import.ts';
 import { ingestRouter } from './apple/ingest.ts';
@@ -27,7 +35,7 @@ import { patterns, sleepTiming } from './insights.ts';
 import { sleepNight } from './sleepnight.ts';
 import { type McflyClient, defaultClient, mcflyRouter } from './mcfly.ts';
 import { PHOTO_ASSETS, parsePhotoUpload, photoAsset, photoMeta, processPhoto, removePhoto, storePhotoAssets } from './photo.ts';
-import { NUMBERS, TARGET_RANGE, readSettings, requestContext, summary, trends, workouts } from './query.ts';
+import { FIGURES, GENDERS, NUMBERS, ONBOARDING_STEPS, PERSPECTIVES, TARGET_RANGE, readSettings, requestContext, summary, trends, workouts } from './query.ts';
 import * as whoop from './whoop.ts';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -44,9 +52,11 @@ export type AppOptions = {
   mcflyClient?: () => McflyClient | null;
   /** The food databases' fetch (tests pass a fake, so no test calls USDA or Open Food Facts). */
   foodFetch?: FetchFn;
+  /** fetch for OpenAI, Gemini and people's own Claude keys (tests pass a fake, so no test calls a provider). */
+  aiFetch?: FetchFn;
 };
 
-export function createApp({ db, hosted, ingestToken, mcflyClient = defaultClient, foodFetch }: AppOptions) {
+export function createApp({ db, hosted, ingestToken, mcflyClient = defaultClient, foodFetch, aiFetch }: AppOptions) {
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', hosted);
@@ -57,8 +67,9 @@ export function createApp({ db, hosted, ingestToken, mcflyClient = defaultClient
       const host = (req.headers.host ?? '').replace(/:\d+$/, '');
       if (!['localhost', '127.0.0.1', '[::1]'].includes(host)) return void res.status(403).send('Forbidden host');
     }
-    // Writes need a custom header, which a form or link on another website can't send.
-    if (!['GET', 'HEAD'].includes(req.method) && req.path.startsWith('/api/') && req.headers['x-healthos'] !== '1') {
+    // Writes need a custom header, which a form or link on another website can't send. Express routes /API/... to the
+    // api router too (its paths ignore case), so the check does as well.
+    if (!['GET', 'HEAD'].includes(req.method) && /^\/api(\/|$)/i.test(req.path) && req.headers['x-healthos'] !== '1') {
       return void res.status(403).json({ error: 'Missing X-HealthOS header' });
     }
     next();
@@ -94,9 +105,13 @@ export function createApp({ db, hosted, ingestToken, mcflyClient = defaultClient
     res.json({ ok: true });
   });
 
-  // A food photo is the same: shrunk on the device, but over the general limit. It goes to Anthropic for McFly's
-  // estimate and is never stored or logged (server/estimate.ts).
-  api.post('/nutrition/estimate', requireSession(db), express.json({ limit: '4400kb' }), estimateHandler(db, hosted, mcflyClient), nutritionErrors);
+  // A food photo is the same: shrunk on the device, but over the general limit. It goes to the person's AI provider
+  // for McFly's estimate and is never stored or logged (server/estimate.ts).
+  api.post('/nutrition/estimate', requireSession(db), express.json({ limit: '4400kb' }), estimateHandler(db, hosted, mcflyClient, aiFetch), nutritionErrors);
+
+  // A portrait reference photo and a Fitbit export chunk are a few MB each: these routers parse their own bodies.
+  api.use('/portraits', requireSession(db), portraitsRouter(db, hosted, aiFetch));
+  api.use('/fitbit', requireSession(db), fitbitRouter(db, hosted));
 
   api.use(express.json());
   api.get('/auth/me', auth.me);
@@ -112,12 +127,17 @@ export function createApp({ db, hosted, ingestToken, mcflyClient = defaultClient
 
   api.post('/auth/password', auth.changePassword);
   api.use('/admin', adminRouter(db));
-  api.use('/mcfly', mcflyRouter(db, { hosted, client: mcflyClient }));
+  api.use('/mcfly', mcflyRouter(db, { hosted, client: mcflyClient, aiFetch }));
   api.use('/cycle', cycleRouter(db, hosted));
   api.use('/nutrition', nutritionRouter(db, hosted, { fetchFn: foodFetch, client: mcflyClient }));
-  api.use('/labs', labsRouter(db, { hosted, client: mcflyClient }));
+  api.use('/labs', labsRouter(db, { hosted, client: mcflyClient, aiFetch }));
   api.use('/metric', metricRouter(db, hosted));
   api.use('/family', familyRouter(db, hosted));
+  api.use('/journal', journalRouter(db, hosted));
+  api.use('/body', bodyRouter(db, hosted));
+  api.use('/peers', peersRouter(db, hosted));
+  api.use('/ai', aiRouter(db, { hosted, client: mcflyClient, aiFetch }));
+  api.use('/me/export', exportRouter(db, hosted));
 
   const asOf = (req: Request) => (typeof req.query.date === 'string' && DATE.test(req.query.date) ? req.query.date : undefined);
   const days = (req: Request) => Math.min(Math.max(Number(req.query.days) || 30, 1), 3650);
@@ -172,7 +192,7 @@ export function createApp({ db, hosted, ingestToken, mcflyClient = defaultClient
   async function status(res: Response): Promise<Status> {
     const scope = scopeOf(res);
     const user = currentUser(res);
-    const [settings, last, lastSync, photo, connected, sync, whoopLast, tokenRows] = await Promise.all([
+    const [settings, last, lastSync, photo, connected, sync, whoopLast, tokenRows, fitbitLast] = await Promise.all([
       readSettings(scope, hosted),
       getUserSetting(db, scope.userId, 'apple_last_import'),
       getUserSetting(db, scope.userId, 'apple_last_sync'),
@@ -181,6 +201,7 @@ export function createApp({ db, hosted, ingestToken, mcflyClient = defaultClient
       whoop.syncState(scope),
       getUserSetting(db, scope.userId, 'whoop_last_sync'),
       db.query<{ has: boolean }>('SELECT ingest_token_hash IS NOT NULL AS has FROM users WHERE id = $1', [scope.userId]),
+      getUserSetting(db, scope.userId, 'fitbit_last_import'),
     ]);
     const { demo } = await requestContext(scope, hosted);
     return {
@@ -203,6 +224,7 @@ export function createApp({ db, hosted, ingestToken, mcflyClient = defaultClient
         lastSync: whoopLast ?? null,
         lastError: sync.lastError ?? null,
       },
+      fitbit: { lastImport: fitbitLast ? JSON.parse(fitbitLast) : null },
     };
   }
 
@@ -215,6 +237,56 @@ export function createApp({ db, hosted, ingestToken, mcflyClient = defaultClient
     res.json(await status(res));
   });
 
+  /**
+   * The onboarding and Profile → "Your profile & perspective" fields, as the user_settings to write (null deletes),
+   * or the reason they're refused. Gender never changes `sex`, which is for health calculations only. Peer
+   * comparisons need an age of 18 or over; an age under 18 turns them off.
+   */
+  async function aboutYou(b: Record<string, unknown>, userId: string): Promise<[string, string | null][] | string> {
+    const out: [string, string | null][] = [];
+    if (b.perspective !== undefined) {
+      const p = PERSPECTIVES.find((x) => x === b.perspective);
+      if (!p) return 'Choose your portrait, a digital human or just the statistics.';
+      out.push(['perspective', p]);
+    }
+    if (b.gender !== undefined) {
+      const g = b.gender === null ? null : GENDERS.find((x) => x === b.gender);
+      if (g === undefined) return 'Choose how you describe yourself, or Prefer not to say.';
+      out.push(['gender', g]);
+    }
+    if (b.figure !== undefined) {
+      const f = b.figure === null ? null : FIGURES.find((x) => x === b.figure);
+      if (f === undefined) return 'Choose the woman or the man figure.';
+      out.push(['figure', f]);
+    }
+    const now = await readSettings({ db, userId }, hosted);
+    let age = now.age ?? null;
+    if (b.age !== undefined) {
+      if (b.age === null) age = null;
+      else if (typeof b.age === 'number' && Number.isInteger(b.age) && b.age >= 1 && b.age <= 120) age = b.age;
+      else return 'Enter your age in whole years.';
+      const { today } = await requestContext({ db, userId }, hosted);
+      out.push(['age', age === null ? null : JSON.stringify({ age, asOf: today })]);
+    }
+    const adult = age !== null && age >= PEER_MIN_AGE;
+    if (b.peerComparison === true) {
+      if (!adult) return age === null ? 'Add your age to take part in peer comparisons.' : 'Peer comparisons are for people aged 18 and over.';
+      if (!now.peerComparison) out.push(['peer_comparison', 'on'], ['peer_comparison_since', String(Date.now())]);
+    } else if (b.peerComparison === false || (b.age !== undefined && !adult)) {
+      out.push(['peer_comparison', null], ['peer_comparison_since', null]);
+    }
+    // Onboarding moves through its steps only for an account that has a step to be on; null finishes it.
+    if (b.onboarding !== undefined) {
+      if (b.onboarding === null) out.push(['onboarding', null]);
+      else {
+        const step = ONBOARDING_STEPS.find((x) => x === b.onboarding);
+        if (!step) return 'Unknown onboarding step.';
+        if (now.onboarding != null) out.push(['onboarding', String(step)]);
+      }
+    }
+    return out;
+  }
+
   api.put('/settings', async (req, res) => {
     const { userId } = scopeOf(res);
     const body = req.body as Partial<Settings>;
@@ -223,16 +295,21 @@ export function createApp({ db, hosted, ingestToken, mcflyClient = defaultClient
     if (body.nutrition === true && !numbers && !(await readSettings({ db, userId }, hosted)).nutritionNumbers) {
       return void res.status(400).json({ error: 'Choose what to show before turning nutrition on.' });
     }
-    // Checked before anything is written, so a bad list doesn't leave the rest half saved. Either the whole list
-    // (Show all) or one card's change, applied to the stored list as it is now.
+    // Checked before anything is written, so a bad list doesn't leave the rest half saved. Either a whole list (Show
+    // all; the optional cards turned on) or one card's change, applied to the stored lists as they are now.
     const change = (req.body as { cardShown?: unknown }).cardShown;
-    const hidden =
-      body.hiddenCards !== undefined
-        ? cleanHiddenCards(body.hiddenCards)
-        : change !== undefined
-          ? withCardShown(readHiddenCards(await getUserSetting(db, userId, 'hidden_cards')), change)
-          : undefined;
-    if (hidden === null) return void res.status(400).json({ error: 'Unknown card, or not a list of cards.' });
+    let hidden: string[] | null | undefined = body.hiddenCards !== undefined ? cleanHiddenCards(body.hiddenCards) : undefined;
+    let shown: string[] | null | undefined = body.shownCards !== undefined ? cleanShownCards(body.shownCards) : undefined;
+    if (change !== undefined) {
+      const [h, sc] = await Promise.all([getUserSetting(db, userId, 'hidden_cards'), getUserSetting(db, userId, 'shown_cards')]);
+      const next = withCardToggled({ hidden: readHiddenCards(h), shown: readShownCards(sc) }, change);
+      hidden = next?.hidden ?? null;
+      shown = next?.shown ?? null;
+    }
+    if (hidden === null || shown === null) return void res.status(400).json({ error: 'Unknown card, or not a list of cards.' });
+    // About you (onboarding and Profile), checked before anything is written too.
+    const about = await aboutYou(req.body as Record<string, unknown>, userId);
+    if (typeof about === 'string') return void res.status(400).json({ error: about });
     if (typeof body.name === 'string') {
       const name = body.name.trim().slice(0, 40);
       await setUserSetting(db, userId, 'name', name || null);
@@ -253,6 +330,8 @@ export function createApp({ db, hosted, ingestToken, mcflyClient = defaultClient
     if (typeof body.familySharing === 'boolean') await setUserSetting(db, userId, 'family_sharing', body.familySharing ? null : 'off');
     if (body.familyNoticeSeen === true) await setUserSetting(db, userId, 'family_notice_seen', '2');
     if (hidden) await setUserSetting(db, userId, 'hidden_cards', storedHiddenCards(hidden));
+    if (shown) await setUserSetting(db, userId, 'shown_cards', storedHiddenCards(shown));
+    for (const [key, value] of about) await setUserSetting(db, userId, key, value);
     if (body.cycleTracking === false || body.familySharing === false) await setUserSetting(db, userId, 'family_cycle_phase', null);
     else if (typeof body.shareCyclePhase === 'boolean') {
       const now = await readSettings({ db, userId }, hosted);

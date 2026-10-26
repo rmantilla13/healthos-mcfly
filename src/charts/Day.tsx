@@ -1,7 +1,7 @@
 // One day, hour by hour: the Day view on the detail pages.
 import { useCallback } from 'react';
 import type { DaySeries } from '../../shared/types.ts';
-import { M, YAxis } from './Charts.tsx';
+import { M, type TickFormat, YAxis } from './Charts.tsx';
 import { Tooltip, TooltipRow, niceTicks, smoothPath, useScrub, useWidth } from './core.tsx';
 import { HOURS, cumulative, extent, hourLabel, hourSpan, lastReading } from './day.ts';
 
@@ -42,7 +42,7 @@ export function DayChart({
   series: DaySeries;
   through: number | null;
   format: (v: number) => string;
-  tickFormat?: (v: number) => string;
+  tickFormat?: TickFormat;
   color?: string;
   height?: number;
   goal?: { value: number; label: string };

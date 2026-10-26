@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { addDays, todayLocal } from '../server/dates.ts';
 import { OWNER_ID, setUserSetting, upsertDaily, upsertEvents } from '../server/db.ts';
+import { metricSheet } from '../server/metricsheet.ts';
 import { deepPeak, latency, sleepNight } from '../server/sleepnight.ts';
 import { insertMany, openStore } from '../server/store.ts';
 
@@ -209,4 +210,95 @@ test("a WHOOP nap alone doesn't blank the Watch's night; an unstaged Watch night
   assert.equal(unstaged.source, 'whoop');
   assert.equal(unstaged.stages?.deep, 1.5);
   assert.deepEqual(unstaged.segments, []);
+});
+
+test("performance and efficiency apart: WHOOP's own two numbers, a Fitbit night's efficiency, the Watch's worked out", async (t) => {
+  const db = await openStore();
+  t.after(() => db.close());
+  const scope = { db, userId: OWNER_ID };
+  await setUserSetting(db, OWNER_ID, 'timezone', 'UTC');
+  await setUserSetting(db, OWNER_ID, 'demo', 'off');
+  assert.equal((await sleepNight(scope, false, today)).lastNight, null, 'no night ever');
+
+  // WHOOP: 7.1 of 7.9 hours would work out at 90%, but WHOOP says 92%, and that's the one shown.
+  await upsertDaily(db, OWNER_ID, [
+    { date: back(4), metric: 'sleep_hours', source: 'whoop', value: 7.1 },
+    { date: back(4), metric: 'sleep_in_bed', source: 'whoop', value: 7.9 },
+    { date: back(4), metric: 'sleep_deep', source: 'whoop', value: 1.5 },
+    { date: back(4), metric: 'sleep_performance', source: 'whoop', value: 84.4 },
+    { date: back(4), metric: 'sleep_efficiency', source: 'whoop', value: 91.6 },
+  ]);
+  const whoop = await sleepNight(scope, false, back(4));
+  assert.equal(whoop.source, 'whoop');
+  assert.deepEqual([whoop.performance, whoop.efficiency], [84, 92]);
+  assert.deepEqual(whoop.score, { kind: 'performance', value: 84 }, 'the old single score is unchanged');
+  assert.equal(whoop.lastNight, back(4));
+
+  // A Fitbit export's night is Fitbit's, not Apple's, with its own efficiency and no performance.
+  await upsertDaily(db, OWNER_ID, [
+    { date: back(2), metric: 'sleep_hours', source: 'fitbit', value: 6.5 },
+    { date: back(2), metric: 'sleep_in_bed', source: 'fitbit', value: 7.2 },
+    { date: back(2), metric: 'sleep_deep', source: 'fitbit', value: 1.1 },
+    { date: back(2), metric: 'sleep_efficiency', source: 'fitbit', value: 93 },
+  ]);
+  const fitbit = await sleepNight(scope, false, back(2));
+  assert.equal(fitbit.source, 'fitbit');
+  assert.deepEqual([fitbit.performance, fitbit.efficiency], [null, 93]);
+
+  // An Apple Watch night: no performance, and efficiency from its own time asleep and in bed.
+  await upsertDaily(db, OWNER_ID, [
+    { date: back(1), metric: 'sleep_hours', source: 'apple', value: 7.4 },
+    { date: back(1), metric: 'sleep_in_bed', source: 'apple', value: 8.43 },
+  ]);
+  const apple = await sleepNight(scope, false, back(1));
+  assert.deepEqual([apple.source, apple.performance, apple.efficiency], ['apple', null, 88]);
+
+  // A night with nothing still knows there were nights before it.
+  const none = await sleepNight(scope, false, today);
+  assert.deepEqual([none.asleepHours, none.performance, none.efficiency, none.lastNight], [null, null, null, back(1)]);
+});
+
+test('a night both devices recorded has the efficiency its sheet shows, and so does its score', async (t) => {
+  const db = await openStore();
+  t.after(() => db.close());
+  const scope = { db, userId: OWNER_ID };
+  await setUserSetting(db, OWNER_ID, 'timezone', 'UTC');
+  await setUserSetting(db, OWNER_ID, 'demo', 'off');
+  const sheetValue = async (date: string) => (await metricSheet(scope, false, 'sleep_efficiency', 'week', date)).points.find((p) => p.date === date)?.value;
+
+  // The Watch's staged night (7.2 of 7.8 hours) and WHOOP's (7.0 hours, 91%) agree, so the total is their average and
+  // the night is the Watch's. Apple sends no efficiency; WHOOP's own is the night's, on the card as in the sheet.
+  await upsertDaily(db, OWNER_ID, [
+    { date: today, metric: 'sleep_hours', source: 'apple', value: 7.2 },
+    { date: today, metric: 'sleep_in_bed', source: 'apple', value: 7.8 },
+    { date: today, metric: 'sleep_deep', source: 'apple', value: 1.1 },
+    { date: today, metric: 'sleep_hours', source: 'whoop', value: 7 },
+    { date: today, metric: 'sleep_in_bed', source: 'whoop', value: 7.7 },
+    { date: today, metric: 'sleep_efficiency', source: 'whoop', value: 91 },
+  ]);
+  await insertMany(db, 'sleep_stages', ['user_id', 'date', 'source', 'start', 'end', 'stage'], [
+    [OWNER_ID, today, 'apple', at(back(1), '23:00'), at(today, '02:00'), 'light'],
+    [OWNER_ID, today, 'apple', at(today, '02:00'), at(today, '03:06'), 'deep'],
+    [OWNER_ID, today, 'apple', at(today, '03:06'), at(today, '06:48'), 'light'],
+  ]);
+  const both = await sleepNight(scope, false, today);
+  assert.equal(both.source, 'apple');
+  assert.equal(both.efficiency, 91);
+  assert.equal(Math.round((await sheetValue(today))!), both.efficiency);
+  assert.deepEqual(both.score, { kind: 'efficiency', value: 91 });
+  // Worked out on a copy: the night's other figures are still the Watch's own.
+  assert.deepEqual([both.inBedHours, both.stages?.deep], [7.8, 1.1]);
+
+  // The Watch with no time awake (so no efficiency of its own) and a Fitbit export's 89% the same night: Fitbit's.
+  await upsertDaily(db, OWNER_ID, [
+    { date: back(1), metric: 'sleep_hours', source: 'apple', value: 7 },
+    { date: back(1), metric: 'sleep_in_bed', source: 'apple', value: 7 },
+    { date: back(1), metric: 'sleep_hours', source: 'fitbit', value: 6.8 },
+    { date: back(1), metric: 'sleep_in_bed', source: 'fitbit', value: 7.6 },
+    { date: back(1), metric: 'sleep_efficiency', source: 'fitbit', value: 89 },
+  ]);
+  const fitbit = await sleepNight(scope, false, back(1));
+  assert.equal(fitbit.efficiency, 89);
+  assert.equal(Math.round((await sheetValue(back(1)))!), fitbit.efficiency);
+  assert.deepEqual(fitbit.score, { kind: 'efficiency', value: 89 });
 });

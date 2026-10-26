@@ -1,15 +1,18 @@
 // The Sleep page: one night (Overview), the stages over a range, trends, and coaching from the person's own
 // nights. Every figure is from one device for that night; nothing here is a score we made up.
+import '../styles/sleep.css';
 import type { ReactNode } from 'react';
-import type { Insight, Pattern, Patterns, PhotoMeta, SleepNightDetail, SleepSegment, SleepTiming, Summary, Trends } from '../../shared/types.ts';
+import { type MetricKey, isMetricKey } from '../../shared/metrics.ts';
+import type { Insight, Pattern, Patterns, PhotoMeta, SleepNightDetail, SleepSegment, SleepTiming, Status, Summary, Trends } from '../../shared/types.ts';
 import { ChartCard, Legend, StackedBars } from '../charts/Charts.tsx';
 import { MiniBars, MiniLine } from '../charts/Mini.tsx';
 import { Change, Hypnogram, NightBars, STAGE_COLOR, ScoreBar, StageBar, StageTimeline } from '../charts/Neka.tsx';
 import { AllHiddenNote, CardRow, useAllHidden } from '../components/CardRow.tsx';
-import { Figure } from '../components/Figure.tsx';
 import { Icon, type IconName } from '../components/Icon.tsx';
-import { clock, daysBetween, fmt, fmtDate, hoursMinutes, useApi, useCardShown } from '../lib.ts';
-import { DAY, DayNav, PageHead, STAGES, Tabs, Trend, avg, useRange, weekLabel, weekly } from './Detail.tsx';
+import { VitalCard, type VitalTone } from '../components/VitalCard.tsx';
+import { clock, daysBetween, fmt, fmtDate, hoursMinutes, href, useApi } from '../lib.ts';
+import { DAY, DayNav, IntroTools, STAGES, Tabs, Trend, avg, useRange, weekLabel, weekly } from './Detail.tsx';
+import { ManageSources, PageIntro } from '../components/PageIntro.tsx';
 import { CardHead, INSIGHT_TONE } from './Home.tsx';
 
 const TABS = [
@@ -19,51 +22,70 @@ const TABS = [
   { id: 'coaching', label: 'Coaching' },
 ];
 const tabHref = (id: string) => (id === 'overview' ? '#/sleep' : `#/sleep?tab=${id}`);
+// The intro on every tab (the page's title, Sleep, is in the shell's header).
+const TITLE = 'Your night, in perspective.';
 const SUB = 'Understand and improve your rest. Each night counts on the day you wake up.';
+/** Before the first night from any source. */
+const SUB_NONE = 'Connect a wearable to see your sleep.';
 
-export function Sleep({ params, photo, date, setDate }: { params: URLSearchParams; photo: PhotoMeta | null; date: string | null; setDate: (d: string | null) => void }) {
+/** `photo` is still passed by the shell; Sleep no longer shows the figure (Home and Body do). */
+export function Sleep({ params, date, setDate }: { params: URLSearchParams; photo?: PhotoMeta | null; date: string | null; setDate: (d: string | null) => void }) {
   const tab = TABS.some((t) => t.id === params.get('tab')) ? params.get('tab')! : 'overview';
   const tabs = <Tabs tabs={TABS} current={tab} hrefOf={tabHref} label="Sleep" center />;
   if (tab === 'stages') return <StagesTab tabs={tabs} />;
   if (tab === 'trends') return <TrendsTab tabs={tabs} />;
   if (tab === 'coaching') return <CoachingTab tabs={tabs} />;
-  return <Overview tabs={tabs} photo={photo} date={date} setDate={setDate} />;
+  return <Overview tabs={tabs} date={date} setDate={setDate} />;
 }
 
 // ---------- Overview: one night ----------
 
-function Overview({ tabs, photo, date, setDate }: { tabs: ReactNode; photo: PhotoMeta | null; date: string | null; setDate: (d: string | null) => void }) {
+const SOURCE_NAME = { apple: 'Apple Health', whoop: 'WHOOP', fitbit: 'Fitbit' } as const;
+
+/** Some source that can record a night is set up: WHOOP, the iPhone app or an export, a Fitbit export, or the demo. */
+const hasSleepSource = (st: Status | undefined) => !!st && (st.demo || st.whoop.connected || !!st.apple.lastSync || !!st.apple.lastImport || !!st.fitbit?.lastImport);
+
+function Overview({ tabs, date, setDate }: { tabs: ReactNode; date: string | null; setDate: (d: string | null) => void }) {
   const q = date ? `?date=${date}` : '';
   const { data: night, error, loading } = useApi<SleepNightDetail>(`/sleep/night${q}`);
   const { data: s } = useApi<Summary>(`/summary${q}`);
   const { data: t } = useApi<Trends>(`/trends?metrics=resting_hr&days=14${date ? `&date=${date}` : ''}`);
   const { data: p } = useApi<Patterns>('/patterns');
-  const shown = useCardShown();
+  // Already loaded by the shell: which sources are set up.
+  const { data: status } = useApi<Status>('/status');
   const allHidden = useAllHidden('sleep');
 
   if (error && !night) return <div className="page-message">Couldn't load your sleep: {error.message}</div>;
   if (!night) return <div className="page-message">Loading…</div>;
   const nightLabel = (d: string) => (d === night.today ? 'Last night' : `Night to ${fmtDate(d, { weekday: 'short', month: 'short', day: 'numeric' })}`);
+  // lastNight is missing from older servers: then there's no way to tell, and the page is the full one.
+  const noNights = night.lastNight === null;
+  // Nothing set up and no night ever: just the three cards, as they'll look once a wearable is connected.
+  const bare = noNights && !hasSleepSource(status);
+  const ctx: NightCtx = {
+    night,
+    bare,
+    label: nightLabel(night.date),
+    demo: !!status?.demo,
+    whoop: !!status && (status.demo || status.whoop.connected || status.whoop.lastSync !== null),
+  };
 
   return (
     <div className={`page page-wide ${loading ? 'is-refreshing' : ''}`}>
-      <PageHead title="Sleep" sub={SUB} tabs={tabs} tools={<DayNav today={night.today} date={date} setDate={setDate} label={nightLabel} />} />
-      <div className={s ? 'night-layout has-hero' : 'night-layout'}>
-        {s && (
-          <div className="page-hero">
-            <Figure vitals={s.vitals} asOf={s.date} photo={photo} />
-          </div>
-        )}
-        <div className="night-main">
-          <CardRow
-            className="cards night-cards"
-            fill={{ wide: 3, mid: 2, hero: { without: 'sleep.rhr' } }}
-            cards={[
-              ['sleep.score', <ScoreCard night={night} />],
-              ['sleep.total', <TotalSleepCard night={night} s={s} />],
-              ['sleep.rhr', <RestingHrCard s={s} points={t?.resting_hr ?? []} />],
-            ]}
-          />
+      <PageIntro title={TITLE} sub={noNights ? SUB_NONE : SUB} actions={<ManageSources />}>
+        {bare ? null : <IntroTools tabs={tabs} tools={<DayNav today={night.today} date={date} setDate={setDate} label={nightLabel} />} />}
+      </PageIntro>
+      <CardRow
+        className="cards sleep-cards"
+        fill={{ wide: 3, mid: 3 }}
+        cards={[
+          ['sleep.total', <TotalSleepCard c={ctx} s={s} />],
+          ['sleep.score', <PerformanceCard c={ctx} />],
+          ['sleep.efficiency', <EfficiencyCard c={ctx} />],
+        ]}
+      />
+      {!bare && (
+        <>
           <CardRow
             className="split split-stages"
             pair
@@ -72,10 +94,17 @@ function Overview({ tabs, photo, date, setDate }: { tabs: ReactNode; photo: Phot
               ['sleep.insights', <InsightsCard night={night} home={s?.insights ?? []} patterns={p?.patterns ?? []} />],
             ]}
           />
-          {shown('sleep.timeline') && <TimelineCard night={night} />}
-          {allHidden && <AllHiddenNote />}
-        </div>
-      </div>
+          <CardRow
+            className="split sleep-lower"
+            pair
+            cards={[
+              ['sleep.timeline', <TimelineCard night={night} />],
+              ['sleep.rhr', <RestingHrCard s={s} points={t?.resting_hr ?? []} />],
+            ]}
+          />
+        </>
+      )}
+      {allHidden && <AllHiddenNote />}
     </div>
   );
 }
@@ -84,64 +113,158 @@ function NoData({ text }: { text: string }) {
   return <p className="metric-empty">{text}</p>;
 }
 
+/** What the three cards need to know about the night and the person's sources. */
+type NightCtx = {
+  night: SleepNightDetail;
+  /** No source and no night ever: the cards' empty state as designed. */
+  bare: boolean;
+  /** "Last night", "Night to Tue, Oct 20". */
+  label: string;
+  demo: boolean;
+  /** WHOOP is connected, was, or the demo stands in for it: the only source of sleep performance. */
+  whoop: boolean;
+};
+
 const band = (v: number) => (v >= 85 ? 'Good' : v >= 70 ? 'Fair' : 'Low');
 
-function ScoreCard({ night }: { night: SleepNightDetail }) {
-  const sc = night.score;
-  if (!sc)
-    return (
-      <article className="card metric">
-        <CardHead title="Sleep score" to={tabHref('trends')} />
-        <NoData text="No score for this night. WHOOP nights have its sleep performance; Apple Watch nights get an efficiency when time in bed was recorded." />
-      </article>
-    );
-  const title = sc.kind === 'performance' ? 'Sleep performance' : 'Sleep efficiency';
-  const b = band(sc.value);
+/**
+ * The detail sheet for a metric the sheet knows: sleep_performance and sleep_efficiency get their sheets from
+ * shared/metrics.ts (the Home build adds them). Until a key is there, its card's ↗ opens the Trends tab instead.
+ */
+const sheetFor = (key: string): MetricKey | undefined => (isMetricKey(key) ? key : undefined);
+
+/**
+ * A card without a reading, for the cases the shared empty card (VitalCard) doesn't cover: a source that doesn't
+ * measure this, or a night with nothing recorded. The same look and parts as VitalCard's own empty state.
+ */
+function NoReading({ title, tone, unit, notes, footLeft, footRight }: { title: string; tone: VitalTone; unit: string; notes: string[]; footLeft: ReactNode; footRight?: ReactNode }) {
   return (
-    <article className="card metric">
-      <CardHead title={title} to={tabHref('trends')} />
-      <div className="metric-value">
-        {sc.value}
-        <small>%</small>
+    <article className={`card metric vital-card vital-compact metric-${tone} is-empty`}>
+      <div className="metric-head">
+        <span>{title}</span>
+        <a href={tabHref('trends')} className="metric-link" aria-label={`Open ${title} trends`}>
+          <Icon name="arrow-up-right" size={16} />
+        </a>
       </div>
-      <span className={`score-pill score-${b.toLowerCase()}`}>{b}</span>
-      <ScoreBar value={sc.value} label={`${title} ${sc.value}%, ${b.toLowerCase()}`} />
-      <div className="metric-foot">
-        <span>{sc.kind === 'performance' ? 'WHOOP: the sleep you got against the sleep you needed' : 'Time asleep as a share of time in bed'}</span>
+      <div className="vital-value">
+        <b className="vital-dash" role="img" aria-label="No reading" />
+        <small>{unit}</small>
+      </div>
+      {notes.map((n) => (
+        <p key={n} className="vital-note">
+          {n}
+        </p>
+      ))}
+      <div className="vital-foot">
+        <span>{footLeft}</span>
+        {footRight}
       </div>
     </article>
   );
 }
 
-function TotalSleepCard({ night, s }: { night: SleepNightDetail; s: Summary | undefined }) {
+const NO_NIGHT = 'No sleep recorded for this night.';
+
+function TotalSleepCard({ c, s }: { c: NightCtx; s: Summary | undefined }) {
+  const { night } = c;
   const h = night.asleepHours;
+  if (h === null) {
+    if (c.bare) return <VitalCard title="Sleep" tone="lavender" unit="hours" value={null} metric="sleep_hours" sheetPage={tabHref('trends')} section="Sleep" variant="compact" />;
+    return <NoReading title="Sleep" tone="lavender" unit="hours" notes={[NO_NIGHT]} footLeft={c.label} />;
+  }
+  const change = s?.sleep.change != null ? s.sleep.change * 100 : null;
+  const source = c.demo ? 'Demo data' : night.source ? SOURCE_NAME[night.source] : null;
   return (
-    <article className="card metric">
-      <div className="metric-head">
-        <span>Total sleep</span>
-        <Change pct={s?.sleep.change != null ? s.sleep.change * 100 : null} better="up" title="This week's average night against last week's" />
-      </div>
-      {h !== null ? (
-        <>
-          <div className="metric-value">
-            {fmt(h, 1)}
-            <small>hours</small>
-          </div>
-          {night.segments.length > 1 ? (
-            <NightBars segments={night.segments} />
-          ) : s && s.sleep.series.length > 1 ? (
-            <>
-              <MiniBars points={s.sleep.series} format={hoursMinutes} label="Time asleep, last 14 nights" height={58} />
-              <div className="metric-foot">
-                <span>Last 14 nights</span>
-              </div>
-            </>
-          ) : null}
-        </>
-      ) : (
-        <NoData text="No sleep recorded for this night." />
-      )}
-    </article>
+    <VitalCard
+      title="Sleep"
+      tone="lavender"
+      unit="hours"
+      value={fmt(h, 1)}
+      metric="sleep_hours"
+      sheetPage={tabHref('trends')}
+      date={night.date}
+      section="Sleep"
+      variant="compact"
+      status={change !== null && Math.round(Math.abs(change)) >= 1 ? <Change pct={change} better="up" title="This week's average night against last week's" /> : undefined}
+      footLeft={c.label}
+      footRight={source}
+    >
+      {night.segments.length > 1 ? (
+        <NightBars segments={night.segments} height={48} />
+      ) : s && s.sleep.series.length > 1 ? (
+        <MiniBars points={s.sleep.series} format={hoursMinutes} label="Time asleep, last 14 nights" height={44} />
+      ) : null}
+    </VitalCard>
+  );
+}
+
+/** A score card: the value, Good, Fair or Low, and the bar. */
+function Score({ title, tone, value, metric, c, foot }: { title: string; tone: VitalTone; value: number; metric: string; c: NightCtx; foot: string }) {
+  const b = band(value);
+  const sheet = sheetFor(metric);
+  return (
+    <VitalCard
+      title={title}
+      tone={tone}
+      unit="%"
+      value={String(value)}
+      metric={sheet}
+      href={sheet ? undefined : tabHref('trends')}
+      sheetPage={tabHref('trends')}
+      date={c.night.date}
+      section="Sleep"
+      variant="compact"
+      status={<span className={`score-pill score-${b.toLowerCase()}`}>{b}</span>}
+      footLeft={foot}
+    >
+      <ScoreBar value={value} label={`${title} ${value}%, ${b.toLowerCase()}`} />
+    </VitalCard>
+  );
+}
+
+function PerformanceCard({ c }: { c: NightCtx }) {
+  const v = c.night.performance ?? null;
+  const title = 'Sleep performance';
+  if (v !== null) return <Score title={title} tone="green" value={v} metric="sleep_performance" c={c} foot="WHOOP: the sleep you got against the sleep you needed" />;
+  if (c.bare) {
+    const sheet = sheetFor('sleep_performance');
+    return <VitalCard title={title} tone="green" unit="%" value={null} metric={sheet} href={sheet ? undefined : tabHref('trends')} section="Sleep" variant="compact" />;
+  }
+  // Only WHOOP scores a night this way: say so, rather than wait for a reading that won't come.
+  if (!c.whoop)
+    return (
+      <NoReading
+        title={title}
+        tone="green"
+        unit="%"
+        notes={['No reading yet', 'Sleep performance comes from WHOOP']}
+        footLeft="WHOOP only"
+        footRight={
+          <a href={href('integrations')} className="vital-connect">
+            Connect
+          </a>
+        }
+      />
+    );
+  return <NoReading title={title} tone="green" unit="%" notes={c.night.asleepHours === null ? [NO_NIGHT] : ['No WHOOP sleep for this night']} footLeft={c.label} />;
+}
+
+function EfficiencyCard({ c }: { c: NightCtx }) {
+  const v = c.night.efficiency ?? null;
+  const title = 'Sleep efficiency';
+  if (v !== null) return <Score title={title} tone="blue" value={v} metric="sleep_efficiency" c={c} foot="Time asleep as a share of time in bed" />;
+  if (c.bare) {
+    const sheet = sheetFor('sleep_efficiency');
+    return <VitalCard title={title} tone="blue" unit="%" value={null} metric={sheet} href={sheet ? undefined : tabHref('trends')} section="Sleep" variant="compact" />;
+  }
+  return (
+    <NoReading
+      title={title}
+      tone="blue"
+      unit="%"
+      notes={c.night.asleepHours === null ? [NO_NIGHT] : ['No reading for this night', 'It needs time asleep and time in bed from one device']}
+      footLeft={c.label}
+    />
   );
 }
 
@@ -219,13 +342,15 @@ function StagesCard({ night }: { night: SleepNightDetail }) {
           ))}
         </div>
       ) : (
-        <NoData text="No stages for this night. Apple Watch and WHOOP both record them." />
+        <NoData text="No stages for this night. Apple Watch, WHOOP and Fitbit all record them." />
       )}
       {st && total > 0 && !staged && (
         <p className="card-note">
           {night.source === 'whoop'
             ? "WHOOP shares each stage's total, not when in the night it happened."
-            : daysBetween(night.date, night.today) <= RESENT_DAYS
+            : night.source === 'fitbit'
+              ? "The Fitbit export has this night's stage totals, not when in the night each happened."
+              : daysBetween(night.date, night.today) <= RESENT_DAYS
               ? 'The stages through the night arrive once the healthOS iPhone app is updated and syncs.'
               : "The stages through the night aren't available for this night."}
         </p>
@@ -345,7 +470,9 @@ function StagesTab({ tabs }: { tabs: ReactNode }) {
 
   return (
     <div className={`page page-wide ${loading ? 'is-refreshing' : ''}`}>
-      <PageHead title="Sleep" sub={SUB} tabs={tabs} days={days} setDays={setDays} />
+      <PageIntro title={TITLE} sub={SUB} actions={<ManageSources />}>
+        <IntroTools tabs={tabs} days={days} setDays={setDays} />
+      </PageIntro>
       <div className="grid-1">
         <ChartCard
           title={days > 90 ? 'Sleep stages, weekly average' : 'Sleep stages'}
@@ -395,14 +522,14 @@ function TrendsTab({ tabs }: { tabs: ReactNode }) {
   const h = (v: number) => `${fmt(v)}h`;
   return (
     <div className={`page page-wide ${loading ? 'is-refreshing' : ''}`}>
-      <PageHead title="Sleep" sub={SUB} tabs={tabs} days={days} setDays={setDays} />
+      <PageIntro title={TITLE} sub={SUB} actions={<ManageSources />}>
+        <IntroTools tabs={tabs} days={days} setDays={setDays} />
+      </PageIntro>
       <div className="grid-2">
         <Trend title="Time asleep" points={t.sleep_hours ?? []} format={hoursMinutes} tickFormat={h} />
-        {has('sleep_performance') ? (
-          <Trend title="Sleep performance" points={t.sleep_performance} format={(v) => `${fmt(v)}%`} unitNote="WHOOP: sleep vs sleep needed" color="var(--series-3)" />
-        ) : (
-          has('sleep_efficiency') && <Trend title="Sleep efficiency" points={t.sleep_efficiency} format={(v) => `${fmt(v)}%`} unitNote="WHOOP: time asleep ÷ time in bed" color="var(--series-3)" />
-        )}
+        {has('sleep_performance') && <Trend title="Sleep performance" points={t.sleep_performance} format={(v) => `${fmt(v)}%`} unitNote="WHOOP: sleep vs sleep needed" color="var(--series-3)" />}
+        {/* WHOOP's and a Fitbit export's own figures; an Apple Watch night's is worked out on the Overview only. */}
+        {has('sleep_efficiency') && <Trend title="Sleep efficiency" points={t.sleep_efficiency} format={(v) => `${fmt(v)}%`} unitNote="Time asleep ÷ time in bed" color="var(--series-3)" />}
         {has('sleep_in_bed') && <Trend title="Time in bed" points={t.sleep_in_bed} format={hoursMinutes} tickFormat={h} />}
         {has('sleep_consistency') && <Trend title="Sleep consistency" points={t.sleep_consistency} format={(v) => `${fmt(v)}%`} unitNote="WHOOP" color="var(--series-3)" />}
         {has('sleep_deep') && <Trend title="Deep sleep" points={t.sleep_deep} format={hoursMinutes} tickFormat={h} color="var(--stage-deep)" />}
@@ -428,7 +555,9 @@ function CoachingTab({ tabs }: { tabs: ReactNode }) {
   const sleepPatterns = (p?.patterns ?? []).filter((x) => x.page === 'sleep');
   return (
     <div className={`page page-wide ${loading ? 'is-refreshing' : ''}`}>
-      <PageHead title="Sleep" sub={SUB} tabs={tabs} />
+      <PageIntro title={TITLE} sub={SUB} actions={<ManageSources />}>
+        <IntroTools tabs={tabs} />
+      </PageIntro>
       {!st ? (
         <div className="page-message">Loading…</div>
       ) : st.nights < 7 ? (

@@ -1,5 +1,9 @@
-import { type CSSProperties, type Ref, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { PhotoMeta, Summary, Vital } from '../../shared/types.ts';
+// The figure beside your vitals, in the perspective you chose (Settings.perspective): your own photo ('portrait'), a
+// digital human ('digital', a woman or a man), or none at all ('stats'). Each callout points at its place on the body
+// (forehead or wrist, throat, shoulder, chest) with the latest reading, animated by it.
+import '../styles/figure.css';
+import { type CSSProperties, type Ref, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { FigureVariant, Perspective, PhotoMeta, Settings, Summary, Vital } from '../../shared/types.ts';
 import { useWidth } from '../charts/core.tsx';
 import { fmt, fmtDate, temp, useUnits } from '../lib.ts';
 import { PhotoReveal } from './PhotoReveal.tsx';
@@ -16,9 +20,14 @@ const BODY =
   'M300,44 C338,44 363,72 363,116 C363,154 350,190 330,210 L332,260 C350,270 384,276 406,288 C430,301 442,326 446,364 ' +
   'L456,640 L144,640 L154,364 C158,326 170,301 194,288 C216,276 250,270 268,260 L270,210 C250,190 237,154 237,116 C237,72 262,44 300,44 Z';
 
-type Callout = { key: keyof Summary['vitals']; dot: [number, number]; anchor: [number, number]; side: 'left' | 'right' };
+/** A callout: temperature, breathing, heart or blood oxygen. */
+export type CalloutKey = keyof Summary['vitals'];
+type Callout = { key: CalloutKey; dot: [number, number]; anchor: [number, number]; side: 'left' | 'right' };
 
-const SILHOUETTE: Record<'forehead' | 'wrist', Callout[]> = {
+/** Home's set (as designed: blood oxygen and heart on the left, breathing on the right); Sleep keeps temperature. */
+export const DEFAULT_CALLOUTS: CalloutKey[] = ['temp', 'breathing', 'heart'];
+
+const SILHOUETTE: Record<'forehead' | 'wrist' | 'shoulder', Callout[]> = {
   forehead: [
     { key: 'temp', dot: [258, 128], anchor: [214, 112], side: 'left' },
     { key: 'breathing', dot: [300, 246], anchor: [214, 230], side: 'left' },
@@ -30,6 +39,12 @@ const SILHOUETTE: Record<'forehead' | 'wrist', Callout[]> = {
     { key: 'breathing', dot: [300, 246], anchor: [214, 140], side: 'left' },
     { key: 'temp', dot: [168, 456], anchor: [214, 230], side: 'left' },
     { key: 'heart', dot: [332, 372], anchor: [404, 226], side: 'right' },
+  ],
+  // With blood oxygen (Home): its dot on the shoulder and heart's label both on the left, breathing on the right.
+  shoulder: [
+    { key: 'spo2', dot: [258, 290], anchor: [214, 190], side: 'left' },
+    { key: 'heart', dot: [332, 372], anchor: [214, 300], side: 'left' },
+    { key: 'breathing', dot: [300, 246], anchor: [404, 190], side: 'right' },
   ],
 };
 
@@ -56,13 +71,19 @@ function statusText(v: Vital) {
   return up ? 'Above usual' : 'Below usual';
 }
 
-function display(key: Callout['key'], v: Vital, units: ReturnType<typeof useUnits>) {
-  if (!v.latest) return { value: '—', unit: '' };
-  if (key === 'heart') return { value: fmt(v.latest.value), unit: 'bpm' };
-  if (key === 'breathing') return { value: fmt(v.latest.value, 1), unit: 'rpm' };
-  const t = temp(v.latest.value, units);
-  return { value: fmt(t.value, 1), unit: t.unit };
+/** The value and its unit; with no reading a dash, still with its unit ("— %"). */
+function display(key: CalloutKey, v: Vital, units: ReturnType<typeof useUnits>) {
+  const n = v.latest?.value;
+  if (key === 'heart') return { value: n === undefined ? null : fmt(n), unit: 'bpm' };
+  if (key === 'breathing') return { value: n === undefined ? null : fmt(n, 1), unit: '/min' };
+  if (key === 'spo2') return { value: n === undefined ? null : fmt(n, Number.isInteger(n) ? 0 : 1), unit: '%' };
+  const t = temp(n ?? 0, units);
+  return { value: n === undefined ? null : fmt(t.value, 1), unit: t.unit };
 }
+
+/** Servers before the blood oxygen callout send no spo2: shown as no reading. */
+const NO_SPO2: Vital = { label: 'Blood oxygen', latest: null, status: null, level: null };
+const vitalOf = (vitals: Summary['vitals'], k: CalloutKey): Vital => (k === 'spo2' ? (vitals.spo2 ?? NO_SPO2) : vitals[k]);
 
 /**
  * While Home's timeline is scrubbed, the heart callout shows that hour's average heart rate instead of the resting
@@ -79,7 +100,7 @@ function CalloutLabel({
   innerRef,
   scrub,
 }: {
-  k: Callout['key'];
+  k: CalloutKey;
   v: Vital;
   asOf: string;
   side: 'left' | 'right';
@@ -102,16 +123,26 @@ function CalloutLabel({
   const stale = v.latest && v.latest.date !== asOf;
   const level = levelOf(v, asOf);
   return (
-    <div className={`callout callout-${side}`} style={style} ref={innerRef}>
+    <div className={`callout callout-${side}${d.value === null ? ' is-empty' : ''}`} style={style} ref={innerRef}>
       <div className="callout-label">{k === 'heart' ? 'Heart' : v.label}</div>
       <div className="callout-value">
-        {d.value} <span>{d.unit}</span>
+        {d.value === null ? (
+          <b className="callout-dash" role="img" aria-label="No reading">
+            —
+          </b>
+        ) : (
+          d.value
+        )}{' '}
+        <span>{d.unit}</span>
       </div>
-      <div className="callout-status" title="From your latest night, compared with your own previous 30 days">
-        {level !== 'none' && <i className="callout-level" data-level={level} aria-hidden="true" />}
-        {statusText(v)}
-        {stale && v.latest ? ` · ${fmtDate(v.latest.date)}` : ''}
-      </div>
+      {/* Nothing to compare without a reading, so no status line then. */}
+      {v.latest && (
+        <div className="callout-status" title="From your latest night, compared with your own previous 30 days">
+          {level !== 'none' && <i className="callout-level" data-level={level} aria-hidden="true" />}
+          {statusText(v)}
+          {stale ? ` · ${fmtDate(v.latest.date)}` : ''}
+        </div>
+      )}
     </div>
   );
 }
@@ -161,11 +192,36 @@ function CalloutMark({ k, v, asOf, cx, cy, halo, dot, scrub }: { k: Key; v: Vita
   );
 }
 
-export function Figure({ vitals, asOf, photo, heartScrub }: { vitals: Summary['vitals']; asOf: string; photo: PhotoMeta | null; heartScrub?: HeartScrub | null }) {
-  return photo ? <PhotoFigure vitals={vitals} asOf={asOf} photo={photo} scrub={heartScrub} /> : <Silhouette vitals={vitals} asOf={asOf} scrub={heartScrub} />;
+/** The digital human to show: the one chosen, else the one that follows gender (woman or man), else the man. */
+export const figureVariant = (s: Pick<Settings, 'figure' | 'gender'> | undefined): FigureVariant => s?.figure ?? (s?.gender === 'woman' ? 'woman' : 'man');
+
+/**
+ * The figure for a perspective: 'portrait' is your photo (the digital human until you add one), 'digital' the woman
+ * or man figure, 'stats' nothing at all (the page lays out without it). `callouts` picks which vitals point at it.
+ */
+export function Figure({
+  vitals,
+  asOf,
+  photo,
+  heartScrub,
+  perspective = 'portrait',
+  figure = 'man',
+  callouts = DEFAULT_CALLOUTS,
+}: {
+  vitals: Summary['vitals'];
+  asOf: string;
+  photo: PhotoMeta | null;
+  heartScrub?: HeartScrub | null;
+  perspective?: Perspective;
+  figure?: FigureVariant;
+  callouts?: CalloutKey[];
+}) {
+  if (perspective === 'stats') return null;
+  if (perspective === 'portrait' && photo) return <PhotoFigure vitals={vitals} asOf={asOf} photo={photo} scrub={heartScrub} callouts={callouts} />;
+  return <DigitalFigure key={figure} vitals={vitals} asOf={asOf} variant={figure} scrub={heartScrub} callouts={callouts} />;
 }
 
-type Key = Callout['key'];
+type Key = CalloutKey;
 type Side = 'left' | 'right';
 type Placed = { key: Key; side: Side; x: number; y: number; w: number; h: number };
 type Slot = { key: Key; side: Side; overFade: boolean };
@@ -180,17 +236,37 @@ const FADED_FROM = 0.8;
  * Vision found one, with its label on the wrist's side; on each side labels run top to bottom by their dots, so
  * leader lines never cross.
  */
-function photoLayout(photo: PhotoMeta, wristTemp: boolean) {
+function photoLayout(photo: PhotoMeta, wristTemp: boolean, callouts: CalloutKey[]) {
   const wrist = wristTemp ? (photo.dots as PhotoDots).wrist : undefined;
-  const dots: Record<Key, [number, number]> = { temp: wrist ?? photo.dots.temp, breathing: photo.dots.breathing, heart: photo.dots.heart };
-  const slots: Slot[] = [
+  const dots: Record<Key, [number, number]> = { temp: wrist ?? photo.dots.temp, breathing: photo.dots.breathing, heart: photo.dots.heart, spo2: spo2Dot(photo) };
+  // With blood oxygen (Home's set), its label and heart's go on the left and breathing's on the right, as designed.
+  const withSpo2 = callouts.includes('spo2');
+  const all: Slot[] = [
     // Below the shoulders the arms fill the width, so a wrist label may sit over the faded bottom instead.
     { key: 'temp', side: wrist && wrist[0] >= 0.5 ? 'right' : 'left', overFade: !!wrist },
-    { key: 'breathing', side: 'left', overFade: false },
-    { key: 'heart', side: 'right', overFade: false },
+    { key: 'breathing', side: withSpo2 ? 'right' : 'left', overFade: false },
+    { key: 'heart', side: withSpo2 ? 'left' : 'right', overFade: false },
+    { key: 'spo2', side: 'left', overFade: false },
   ];
+  const slots = all.filter((x) => callouts.includes(x.key));
   slots.sort((a, b) => dots[a.key][1] - dots[b.key][1]);
   return { dots, slots };
+}
+
+/**
+ * Blood oxygen's dot on a photo: on the shoulder line (just under shoulderY), on the side opposite the heart dot.
+ * Photos carry no such point (Vision and MediaPipe give forehead, throat, chest and wrist), so it's derived: the chest
+ * dot mirrored across the throat, then a third of the way on toward the outline's edge on that row.
+ */
+function spo2Dot(photo: PhotoMeta): [number, number] {
+  const [bx] = photo.dots.breathing;
+  const [hx] = photo.dots.heart;
+  const y = Math.min(1, photo.shoulderY + 0.03);
+  const mirrored = 2 * bx - hx;
+  const row = photo.outline?.[Math.min(99, Math.max(0, Math.floor(y * 100)))];
+  const toLeft = mirrored <= bx;
+  const edge = row && row[0] <= row[1] ? (toLeft ? row[0] : row[1]) : mirrored + (toLeft ? -0.15 : 0.15);
+  return [mirrored + (edge - mirrored) * 0.35, y];
 }
 
 /**
@@ -267,14 +343,15 @@ function placeLabels(
  * The user's own cut-out photo with the same fade. Callouts are pinned to points Vision found
  * (forehead or wrist, throat, chest); labels go in the page space beside the silhouette, measured from its outline.
  */
-function PhotoFigure({ vitals, asOf, photo, scrub }: { vitals: Summary['vitals']; asOf: string; photo: PhotoMeta; scrub?: HeartScrub | null }) {
+function PhotoFigure({ vitals, asOf, photo, scrub, callouts }: { vitals: Summary['vitals']; asOf: string; photo: PhotoMeta; scrub?: HeartScrub | null; callouts: CalloutKey[] }) {
   const ratio = photo.height / photo.width;
   const [wrapRef, width] = useWidth<HTMLDivElement>();
   const height = width * ratio;
   const labelEls = useRef<Partial<Record<Key, HTMLDivElement | null>>>({});
-  const [sizes, setSizes] = useState<Record<Key, [number, number]>>({ temp: [110, 64], breathing: [100, 64], heart: [100, 64] });
+  const [sizes, setSizes] = useState<Record<Key, [number, number]>>({ temp: [110, 64], breathing: [100, 64], heart: [100, 64], spo2: [110, 64] });
   const wristTemp = atWrist(vitals.temp);
-  const { dots, slots } = useMemo(() => photoLayout(photo, wristTemp), [photo, wristTemp]);
+  const set = callouts.join(',');
+  const { dots, slots } = useMemo(() => photoLayout(photo, wristTemp, set.split(',') as CalloutKey[]), [photo, wristTemp, set]);
 
   // Labels are measured after each render (their text and the font size change with data and screen width).
   useLayoutEffect(() => {
@@ -313,7 +390,7 @@ function PhotoFigure({ vitals, asOf, photo, scrub }: { vitals: Summary['vitals']
           return (
             <g key={l.key}>
               <line x1={dx * 1000} y1={dy * 1000 * ratio} x2={ex * 1000} y2={ey * 1000 * ratio} className="callout-line" />
-              <CalloutMark k={l.key} v={vitals[l.key]} asOf={asOf} cx={dx * 1000} cy={dy * 1000 * ratio} halo={13 * px} dot={5 * px} scrub={scrub} />
+              <CalloutMark k={l.key} v={vitalOf(vitals, l.key)} asOf={asOf} cx={dx * 1000} cy={dy * 1000 * ratio} halo={13 * px} dot={5 * px} scrub={scrub} />
             </g>
           );
         })}
@@ -324,7 +401,7 @@ function PhotoFigure({ vitals, asOf, photo, scrub }: { vitals: Summary['vitals']
           <CalloutLabel
             key={key}
             k={key}
-            v={vitals[key]}
+            v={vitalOf(vitals, key)}
             asOf={asOf}
             side={side}
             scrub={scrub}
@@ -345,9 +422,10 @@ function PhotoFigure({ vitals, asOf, photo, scrub }: { vitals: Summary['vitals']
 
 /**
  * Black-and-white grade for the profile photo: fully desaturated, with blacks lifted to the UI's warm ink
- * in the light theme (kept deep in the dark theme) so the photo sits softly on the page.
+ * in the light theme (kept deep in the dark theme) so the photo sits softly on the page. The shell renders it
+ * once too, for the avatar on every page.
  */
-function PhotoToneFilters() {
+export function PhotoToneFilters() {
   return (
     <svg width="0" height="0" className="svg-defs" aria-hidden="true" focusable="false">
       <filter id="photo-tone-light" colorInterpolationFilters="sRGB">
@@ -370,8 +448,9 @@ function PhotoToneFilters() {
   );
 }
 
-function Silhouette({ vitals, asOf, scrub }: { vitals: Summary['vitals']; asOf: string; scrub?: HeartScrub | null }) {
-  const callouts = SILHOUETTE[atWrist(vitals.temp) ? 'wrist' : 'forehead'];
+function Silhouette({ vitals, asOf, scrub, keys = DEFAULT_CALLOUTS }: { vitals: Summary['vitals']; asOf: string; scrub?: HeartScrub | null; keys?: CalloutKey[] }) {
+  const layout = keys.includes('spo2') ? 'shoulder' : atWrist(vitals.temp) ? 'wrist' : 'forehead';
+  const callouts = SILHOUETTE[layout].filter((c) => keys.includes(c.key));
   return (
     <div className="figure" style={{ aspectRatio: `${VB.w} / ${VB.h}` }}>
       <svg viewBox={`${VB.x} ${VB.y} ${VB.w} ${VB.h}`} className="figure-svg" aria-hidden="true">
@@ -417,7 +496,7 @@ function Silhouette({ vitals, asOf, scrub }: { vitals: Summary['vitals']; asOf: 
         {callouts.map((c) => (
           <g key={c.key}>
             <line x1={c.dot[0]} y1={c.dot[1]} x2={c.anchor[0] + (c.side === 'left' ? 6 : -6)} y2={c.anchor[1] + 26} className="callout-line" />
-            <CalloutMark k={c.key} v={vitals[c.key]} asOf={asOf} cx={c.dot[0]} cy={c.dot[1]} halo={15} dot={5} scrub={scrub} />
+            <CalloutMark k={c.key} v={vitalOf(vitals, c.key)} asOf={asOf} cx={c.dot[0]} cy={c.dot[1]} halo={15} dot={5} scrub={scrub} />
           </g>
         ))}
       </svg>
@@ -425,7 +504,7 @@ function Silhouette({ vitals, asOf, scrub }: { vitals: Summary['vitals']; asOf: 
         <CalloutLabel
           key={c.key}
           k={c.key}
-          v={vitals[c.key]}
+          v={vitalOf(vitals, c.key)}
           asOf={asOf}
           side={c.side}
           scrub={scrub}
@@ -435,6 +514,143 @@ function Silhouette({ vitals, asOf, scrub }: { vitals: Summary['vitals']; asOf: 
           }}
         />
       ))}
+    </div>
+  );
+}
+
+// ---------- the digital human ----------
+
+type Point = [number, number];
+/** One callout on an artwork, as fractions of its width and height: the dot, where its label's top-left goes, and where
+ * the leader line from the dot ends beside the label. */
+type ArtCallout = { dot: Point; label: Point; line: Point; side: 'left' | 'right' };
+type Art = { src: string; width: number; height: number; callouts: Record<CalloutKey | 'wrist', ArtCallout> };
+
+/**
+ * Every digital-human artwork and where its callouts go. New art needs only its entry here: the file in
+ * public/figures/ and these fractions. Temperature has two places (forehead, or the wrist for a watch or band's
+ * reading); the wrist one takes blood oxygen's label spot, as no page shows both.
+ */
+const MAN: Art = {
+  src: '/figures/digital-man.webp',
+  width: 640,
+  height: 600,
+  callouts: {
+    spo2: { dot: [0.397, 0.2095], label: [0.016, 0.163], line: [0.094, 0.18], side: 'left' },
+    breathing: { dot: [0.495, 0.17], label: [0.92, 0.15], line: [0.909, 0.165], side: 'right' },
+    heart: { dot: [0.534, 0.2505], label: [0.016, 0.28], line: [0.07, 0.297], side: 'left' },
+    temp: { dot: [0.494, 0.075], label: [0.6, 0.0], line: [0.592, 0.035], side: 'right' },
+    wrist: { dot: [0.0625, 0.233], label: [0.016, 0.135], line: [0.06, 0.2], side: 'left' },
+  },
+};
+const ART: Record<FigureVariant, Art> = {
+  man: MAN,
+  // Until the woman's render arrives it uses the man's places; the file itself falls back to the man's (DigitalFigure).
+  woman: { ...MAN, src: '/figures/digital-woman.webp' },
+};
+
+/** Whether the woman's file loaded, once anything asked: null until then. Kept while the page is open, so later labels don't flicker. */
+let womanLoads: boolean | null = null;
+
+/**
+ * The digital human actually drawn for `variant`: the woman only once her file loads, as DigitalFigure falls back to the
+ * man without it. Every label that names the figure uses this, so none says "woman" over the man's artwork, and
+ * dropping her file into public/figures/ makes them all say so.
+ */
+export function useDrawnVariant(variant: FigureVariant): FigureVariant {
+  const [woman, setWoman] = useState(womanLoads);
+  useEffect(() => {
+    if (variant !== 'woman') return;
+    // Another label's probe may have finished since this one rendered.
+    if (womanLoads !== null) return setWoman(womanLoads);
+    let alive = true;
+    const img = new Image();
+    const done = (ok: boolean) => {
+      womanLoads = ok;
+      if (alive) setWoman(ok);
+    };
+    img.onload = () => done(true);
+    img.onerror = () => done(false);
+    img.src = ART.woman.src;
+    return () => {
+      alive = false;
+    };
+  }, [variant]);
+  return variant === 'woman' && woman ? 'woman' : 'man';
+}
+
+/**
+ * The digital human: the artwork for `variant`, falling back to the man's when that file is missing, and to the drawn
+ * silhouette when neither loads, so a new file dropped into public/figures/ just works.
+ */
+function DigitalFigure({ vitals, asOf, variant, scrub, callouts }: { vitals: Summary['vitals']; asOf: string; variant: FigureVariant; scrub?: HeartScrub | null; callouts: CalloutKey[] }) {
+  const [shown, setShown] = useState<FigureVariant | null>(variant);
+  const [wrapRef, width] = useWidth<HTMLDivElement>();
+  const labelEls = useRef<Partial<Record<Key, HTMLDivElement | null>>>({});
+  // How far each label moved from its place in the table: down, below the label above it on the same side (a reading
+  // adds a status line, and a small figure has less room), and left, to stay inside the figure. In pixels.
+  const [nudge, setNudge] = useState<Partial<Record<Key, [number, number]>>>({});
+  const art = ART[shown ?? 'man'];
+  const ratio = art.height / art.width;
+  const height = width * ratio;
+  const wrist = atWrist(vitals.temp);
+  const spot = (k: CalloutKey) => art.callouts[k === 'temp' && wrist ? 'wrist' : k];
+
+  useLayoutEffect(() => {
+    if (!width) return;
+    const next: Partial<Record<Key, [number, number]>> = {};
+    for (const side of ['left', 'right'] as const) {
+      let bottom = -Infinity;
+      for (const k of callouts.filter((c) => spot(c).side === side).sort((a, b) => spot(a).label[1] - spot(b).label[1])) {
+        const el = labelEls.current[k];
+        if (!el) continue;
+        const top = spot(k).label[1] * height;
+        const dy = Math.max(0, bottom + 6 - top);
+        const dx = Math.min(0, width - (spot(k).label[0] * width + el.offsetWidth));
+        next[k] = [dx, dy];
+        bottom = top + dy + el.offsetHeight;
+      }
+    }
+    const same = callouts.every((k) => (nudge[k]?.[0] ?? 0) === (next[k]?.[0] ?? 0) && (nudge[k]?.[1] ?? 0) === (next[k]?.[1] ?? 0));
+    if (!same) setNudge(next);
+  });
+
+  if (!shown) return <Silhouette vitals={vitals} asOf={asOf} scrub={scrub} keys={callouts} />;
+  // Dots keep the same on-screen size whatever the figure's width (the viewBox scales with it).
+  const px = width > 0 ? 1000 / width : 1;
+  return (
+    <div className="figure figure-digital" ref={wrapRef} style={{ aspectRatio: `${art.width} / ${art.height}` }}>
+      <img className="figure-art" src={art.src} alt="" onError={() => setShown(shown === 'man' ? null : 'man')} />
+      <svg className="figure-svg" viewBox={`0 0 1000 ${1000 * ratio}`} preserveAspectRatio="none" aria-hidden="true">
+        {callouts.map((k) => {
+          const c = spot(k);
+          const [dx, dy] = nudge[k] ?? [0, 0];
+          return (
+            <g key={k}>
+              <line x1={c.dot[0] * 1000} y1={c.dot[1] * 1000 * ratio} x2={c.line[0] * 1000 + dx * px} y2={c.line[1] * 1000 * ratio + dy * px} className="callout-line" />
+              <CalloutMark k={k} v={vitalOf(vitals, k)} asOf={asOf} cx={c.dot[0] * 1000} cy={c.dot[1] * 1000 * ratio} halo={9 * px} dot={3.5 * px} scrub={scrub} />
+            </g>
+          );
+        })}
+      </svg>
+      {callouts.map((k) => {
+        const c = spot(k);
+        const [dx, dy] = nudge[k] ?? [0, 0];
+        return (
+          <CalloutLabel
+            key={k}
+            k={k}
+            v={vitalOf(vitals, k)}
+            asOf={asOf}
+            side={c.side}
+            scrub={scrub}
+            innerRef={(el) => {
+              labelEls.current[k] = el;
+            }}
+            style={{ left: `calc(${c.label[0] * 100}% + ${dx}px)`, top: `calc(${c.label[1] * 100}% + ${dy}px)` }}
+          />
+        );
+      })}
     </div>
   );
 }

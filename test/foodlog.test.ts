@@ -279,7 +279,7 @@ test('setup: an owner and an invited member', async () => {
 test('while Nutrition is off nothing can be logged, looked up or estimated, and nothing is called', async () => {
   const log = await logOf(owner);
   assert.equal(log.enabled, false);
-  assert.deepEqual(log.can, { estimate: true, usda: true });
+  assert.deepEqual(log.can, { estimate: true, usda: true, estimateProvider: 'anthropic', estimateSource: 'shared', voice: Boolean(process.env.OPENAI_API_KEY) });
   for (const [p, body] of [
     ['/api/nutrition/log', { method: 'quick', values: { energy_kcal: 300 } }],
     ['/api/nutrition/foods/search', { query: 'greek yogurt' }],

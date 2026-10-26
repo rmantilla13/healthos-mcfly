@@ -1,0 +1,231 @@
+[
+ {
+  "logId": 90000000003,
+  "dateOfSleep": "2026-11-01",
+  "startTime": "2026-10-31T23:00:00.000",
+  "endTime": "2026-11-01T07:00:00.000",
+  "duration": 32400000,
+  "minutesToFallAsleep": 0,
+  "minutesAsleep": 500,
+  "minutesAwake": 40,
+  "minutesAfterWakeup": 0,
+  "timeInBed": 540,
+  "efficiency": 92,
+  "type": "stages",
+  "infoCode": 0,
+  "logType": "auto_detected",
+  "levels": {
+   "summary": {
+    "deep": {
+     "count": 2,
+     "minutes": 90,
+     "thirtyDayAvgMinutes": 80
+    },
+    "light": {
+     "count": 9,
+     "minutes": 300,
+     "thirtyDayAvgMinutes": 280
+    },
+    "rem": {
+     "count": 4,
+     "minutes": 110,
+     "thirtyDayAvgMinutes": 100
+    },
+    "wake": {
+     "count": 10,
+     "minutes": 40,
+     "thirtyDayAvgMinutes": 45
+    }
+   },
+   "data": [
+    {
+     "dateTime": "2026-10-31T23:00:00.000",
+     "level": "light",
+     "seconds": 3600
+    }
+   ],
+   "shortData": []
+  },
+  "mainSleep": true
+ },
+ {
+  "logId": 90000000002,
+  "dateOfSleep": "2026-09-16",
+  "startTime": "2026-09-15T23:00:00.000",
+  "endTime": "2026-09-16T06:00:00.000",
+  "duration": 25200000,
+  "minutesToFallAsleep": 0,
+  "minutesAsleep": 400,
+  "minutesAwake": 20,
+  "minutesAfterWakeup": 0,
+  "timeInBed": 420,
+  "efficiency": 95,
+  "type": "classic",
+  "infoCode": 0,
+  "logType": "auto_detected",
+  "levels": {
+   "summary": {
+    "asleep": {
+     "count": 0,
+     "minutes": 400
+    },
+    "restless": {
+     "count": 4,
+     "minutes": 15
+    },
+    "awake": {
+     "count": 1,
+     "minutes": 5
+    }
+   },
+   "data": [
+    {
+     "dateTime": "2026-09-15T23:00:00.000",
+     "level": "asleep",
+     "seconds": 3600
+    },
+    {
+     "dateTime": "2026-09-16T00:00:00.000",
+     "level": "restless",
+     "seconds": 900
+    },
+    {
+     "dateTime": "2026-09-16T00:15:00.000",
+     "level": "asleep",
+     "seconds": 20100
+    },
+    {
+     "dateTime": "2026-09-16T05:50:00.000",
+     "level": "awake",
+     "seconds": 600
+    }
+   ]
+  },
+  "mainSleep": true
+ },
+ {
+  "logId": 90000000004,
+  "dateOfSleep": "2026-09-14",
+  "startTime": "2026-09-14T14:00:00.000",
+  "endTime": "2026-09-14T14:30:00.000",
+  "duration": 1800000,
+  "minutesToFallAsleep": 0,
+  "minutesAsleep": 28,
+  "minutesAwake": 2,
+  "minutesAfterWakeup": 0,
+  "timeInBed": 30,
+  "efficiency": 93,
+  "type": "classic",
+  "infoCode": 0,
+  "logType": "auto_detected",
+  "levels": {
+   "summary": {
+    "asleep": {
+     "count": 0,
+     "minutes": 28
+    },
+    "restless": {
+     "count": 1,
+     "minutes": 2
+    },
+    "awake": {
+     "count": 0,
+     "minutes": 0
+    }
+   },
+   "data": [
+    {
+     "dateTime": "2026-09-14T14:00:00.000",
+     "level": "asleep",
+     "seconds": 1680
+    },
+    {
+     "dateTime": "2026-09-14T14:28:00.000",
+     "level": "restless",
+     "seconds": 120
+    }
+   ]
+  },
+  "mainSleep": false
+ },
+ {
+  "logId": 90000000001,
+  "dateOfSleep": "2026-09-14",
+  "startTime": "2026-09-13T22:30:00.000",
+  "endTime": "2026-09-14T06:30:00.000",
+  "duration": 28800000,
+  "minutesToFallAsleep": 10,
+  "minutesAsleep": 430,
+  "minutesAwake": 50,
+  "minutesAfterWakeup": 0,
+  "timeInBed": 480,
+  "efficiency": 90,
+  "type": "stages",
+  "infoCode": 0,
+  "logType": "auto_detected",
+  "levels": {
+   "summary": {
+    "deep": {
+     "count": 3,
+     "minutes": 80,
+     "thirtyDayAvgMinutes": 75
+    },
+    "light": {
+     "count": 12,
+     "minutes": 250,
+     "thirtyDayAvgMinutes": 240
+    },
+    "rem": {
+     "count": 5,
+     "minutes": 100,
+     "thirtyDayAvgMinutes": 95
+    },
+    "wake": {
+     "count": 14,
+     "minutes": 50,
+     "thirtyDayAvgMinutes": 55
+    }
+   },
+   "data": [
+    {
+     "dateTime": "2026-09-13T22:30:00.000",
+     "level": "wake",
+     "seconds": 600
+    },
+    {
+     "dateTime": "2026-09-13T22:40:00.000",
+     "level": "light",
+     "seconds": 3600
+    },
+    {
+     "dateTime": "2026-09-13T23:40:00.000",
+     "level": "deep",
+     "seconds": 4800
+    },
+    {
+     "dateTime": "2026-09-14T01:00:00.000",
+     "level": "rem",
+     "seconds": 6000
+    },
+    {
+     "dateTime": "2026-09-14T02:40:00.000",
+     "level": "light",
+     "seconds": 11400
+    },
+    {
+     "dateTime": "2026-09-14T05:50:00.000",
+     "level": "wake",
+     "seconds": 2400
+    }
+   ],
+   "shortData": [
+    {
+     "dateTime": "2026-09-14T03:10:00.000",
+     "level": "wake",
+     "seconds": 60
+    }
+   ]
+  },
+  "mainSleep": true
+ }
+]

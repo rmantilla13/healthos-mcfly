@@ -9,8 +9,8 @@
 // - Nothing here logs values, and no URL carries a date or an amount.
 import express, { type NextFunction, type Request, type Response } from 'express';
 import type { Nutrient, NutritionData, NutritionDay, NutritionDayIn, NutritionNumbers } from '../shared/types.ts';
+import { aiStatus } from './ai/resolve.ts';
 import { HttpError, currentUser } from './auth.ts';
-import { estimateAvailable } from './estimate.ts';
 import { addDays } from './dates.ts';
 import { type Db, type Queryable, type Scope, bumpDataVersion } from './db.ts';
 import { foodPatterns } from './insights.ts';
@@ -227,7 +227,7 @@ export function nutritionErrors(err: Error & { status?: number; type?: string },
 export type NutritionDeps = {
   /** Food database calls (tests pass a fake). */
   fetchFn?: FetchFn;
-  /** Claude, for McFly's food estimates (tests pass a fake). */
+  /** The shared Claude key, for McFly's food estimates when a person has no key of their own (tests pass a fake). */
   client: () => McflyClient | null;
 };
 
@@ -240,7 +240,13 @@ export function nutritionRouter(db: Db, hosted: boolean, { fetchFn = fetch, clie
     res.json(await nutritionView(scopeOf(res), hosted, { days, insights: req.query.insights === '1' }));
   });
 
-  router.use('/log', foodLogRouter(db, hosted, { estimateAvailable: () => estimateAvailable(db, client) }));
+  router.use(
+    '/log',
+    foodLogRouter(db, hosted, {
+      ai: (userId) => aiStatus(db, userId, client),
+      countedApp: async (scope, date, preferred) => (await pickedBetween(scope, preferred, date, date))[0]?.app ?? null,
+    }),
+  );
   router.use(
     '/foods',
     foodsRouter(db, { fetchFn, shownValues, numbersOf: async (res) => (await loggingContext(db, hosted, res)).numbers }),

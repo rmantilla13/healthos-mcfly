@@ -1,10 +1,14 @@
-import { type ReactNode, useState } from 'react';
-import type { DayData, DaySeries, Point, Trends, Workout } from '../../shared/types.ts';
-import { BarChart, ChartCard, Legend, TrendChart, type StackSeries } from '../charts/Charts.tsx';
+import { type ReactNode, useId, useState } from 'react';
+import type { DayData, DaySeries, Point, Status, Summary, Trends, Workout } from '../../shared/types.ts';
+import { BarChart, ChartCard, Legend, type StackSeries, type TickFormat, TrendChart } from '../charts/Charts.tsx';
 import { DayChart } from '../charts/Day.tsx';
+import { stepDigits } from '../charts/core.tsx';
 import { cumulative, drawThrough, extent, hourLabel, hourSpan, lastReading } from '../charts/day.ts';
+import { HrvCard, RecoveryCard, RespRateCard, RestingHrCard, Spo2Card, signalCount } from '../components/home/Signals.tsx';
 import { Icon } from '../components/Icon.tsx';
+import { ManageSources, PageIntro } from '../components/PageIntro.tsx';
 import { compact, distance, duration, fmt, fmtDate, mass, relativeDay, shiftDate, temp, useApi, useUnits } from '../lib.ts';
+import '../styles/home.css';
 
 export const RANGES = [
   { days: 7, label: '7 days' },
@@ -38,45 +42,43 @@ function sessionStorageGet(key: string) {
   }
 }
 
-/** The page's title, its tools (a date or a range), and the page's tabs under it when it has them. */
-export function PageHead({
-  title,
-  sub,
+/** The range picker (7 days to a year, and Day once hourly data exists). */
+export function RangeFilters({ days, setDays, ranges = RANGES }: { days?: number; setDays: (d: number) => void; ranges?: { days: number; label: string }[] }) {
+  return (
+    <div className="filters" role="group" aria-label="Date range">
+      {ranges.map((r) => (
+        <button key={r.days} className={days === r.days ? 'on' : ''} aria-pressed={days === r.days} onClick={() => setDays(r.days)}>
+          {r.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * What goes in a PageIntro's slot on the health pages: the page's tabs, and its tools (a day picker, a range) on the
+ * right, in a row that keeps its height whichever a tab has (.page-head-tools' min-height).
+ */
+export function IntroTools({
+  tabs,
+  tools,
   days,
   setDays,
   ranges = RANGES,
-  tools,
-  tabs,
 }: {
-  title: string;
-  sub: string;
+  tabs?: ReactNode;
+  tools?: ReactNode;
   days?: number;
   setDays?: (d: number) => void;
   ranges?: { days: number; label: string }[];
-  tools?: ReactNode;
-  tabs?: ReactNode;
 }) {
   return (
     <>
-      <header className="page-head">
-        <div>
-          <h1>{title}</h1>
-          <p>{sub}</p>
-        </div>
-        <div className="page-head-tools">
-          {tools}
-          {setDays && (
-            <div className="filters" role="group" aria-label="Date range">
-              {ranges.map((r) => (
-                <button key={r.days} className={days === r.days ? 'on' : ''} aria-pressed={days === r.days} onClick={() => setDays(r.days)}>
-                  {r.label}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </header>
       {tabs}
+      <div className="page-head-tools">
+        {tools}
+        {setDays && <RangeFilters days={days} setDays={setDays} ranges={ranges} />}
+      </div>
     </>
   );
 }
@@ -142,7 +144,7 @@ function DayCard({
   series: DaySeries;
   data: DayData;
   format: (v: number) => string;
-  tickFormat?: (v: number) => string;
+  tickFormat?: TickFormat;
   color: string;
   goal?: { value: number; label: string };
 }) {
@@ -232,7 +234,7 @@ export function Trend({
   title: string;
   points: Point[];
   format: (v: number) => string;
-  tickFormat?: (v: number) => string;
+  tickFormat?: TickFormat;
   unitNote?: string;
   color?: string;
   zero?: boolean;
@@ -263,51 +265,97 @@ export function Trend({
 
 // ---------- Vitals ----------
 
+/** Axis labels with as many decimals as the chart's tick step needs (stepDigits); `least` is the fewest shown. */
+const stepTicks =
+  (least = 0): TickFormat =>
+  (v, step) =>
+    fmt(v, Math.max(least, stepDigits(step)));
+
+/**
+ * Who measures HRV as RMSSD, for its trend's note: WHOOP, and Fitbit when its export had it (status.fitbit). WHOOP's
+ * alone when neither is known yet, as before.
+ */
+function rmssdNote(status: Status | undefined) {
+  const by = [status?.whoop.connected && 'WHOOP', status?.fitbit?.lastImport?.metrics.includes('hrv_rmssd') && 'Fitbit'].filter(Boolean);
+  return `${by.length ? by.join(' or ') : 'WHOOP'}, during sleep`;
+}
+
+/**
+ * Your five signals as cards (from the summary Home already loaded), then their trends: a range, or a day of heart rate
+ * by the hour, once there's anything to chart. With nothing at all yet, only the cards, in the design's empty state.
+ */
 export function Vitals() {
   const [range, setRange] = useRange();
   const days = range === DAY ? 30 : range;
   const day = useDay(range, 'heart_rate');
   const units = useUnits();
+  const trendsId = useId();
+  const { data: s, error: summaryError } = useApi<Summary>('/summary');
+  const { data: status } = useApi<Status>('/status');
+  // Anything ever sent, not only the five signals' latest: their lookbacks can miss older data a year's trend shows.
+  // Without the summary (it failed), the trends still show what they have.
+  const charted = s ? !!s.latestDataDate : !!summaryError;
   const { data, loading } = useApi<Trends>(
-    day.mode === 'range' ? `/trends?metrics=resting_hr,hrv_rmssd,hrv_sdnn,spo2,resp_rate,wrist_temp,skin_temp,body_temp,recovery&days=${days}` : null,
+    charted && day.mode === 'range' ? `/trends?metrics=resting_hr,hrv_rmssd,hrv_sdnn,spo2,resp_rate,wrist_temp,skin_temp,body_temp,recovery&days=${days}` : null,
   );
   const t = data ?? {};
   const has = (m: string) => (t[m]?.length ?? 0) > 0;
   const tf = (c: number) => `${fmt(temp(c, units).value, 1)} ${temp(c, units).unit}`;
   const d = day.mode === 'day' ? day.data : undefined;
+  const n = s ? signalCount(s) : null;
 
   return (
-    <div className={`page page-wide ${loading || (day.mode !== 'range' && day.loading) ? 'is-refreshing' : ''}`}>
-      <PageHead
-        title="Vitals"
-        sub="Overnight readings from WHOOP and Apple Watch."
-        days={day.mode === 'range' ? days : DAY}
-        setDays={setRange}
-        ranges={day.available ? [DAY_RANGE, ...RANGES] : RANGES}
-        tools={d && <DayNav today={d.today} date={day.date} setDate={day.setDate} />}
+    <div className={`page page-wide vitals-page ${loading || (charted && day.mode !== 'range' && day.loading) ? 'is-refreshing' : ''}`}>
+      <PageIntro
+        title="A closer look at your signals."
+        sub={n === null ? 'Overnight readings from your connected sources.' : `${n} available measurement${n === 1 ? '' : 's'} from your connected sources.`}
+        actions={<ManageSources />}
       />
-      {d && (
-        <div className="grid-1">
-          {d.metrics.heart_rate && (
-            <DayCard title="Heart rate" kind="hourly" series={d.metrics.heart_rate} data={d} format={(v) => `${fmt(v)} bpm`} tickFormat={(v) => fmt(v)} color="var(--series-2)" />
-          )}
-          <p className="day-footnote">Recovery, HRV, blood oxygen, breathing and temperature are measured once a night. Pick a range to see them.</p>
+      {!s && summaryError && <p className="page-message">Couldn't load your latest readings: {summaryError.message}</p>}
+      {s && (
+        <div className="vitals-signals">
+          <RestingHrCard s={s} variant="compact" />
+          <Spo2Card s={s} variant="compact" />
+          <HrvCard s={s} variant="compact" />
+          <RecoveryCard s={s} variant="compact" />
+          <RespRateCard s={s} variant="compact" />
         </div>
       )}
-      {day.mode === 'range' && (
-        <div className="grid-2">
-          {has('recovery') && <Trend title="Recovery" points={t.recovery} format={(v) => `${fmt(v)}%`} color="var(--series-3)" />}
-          <Trend title="Resting heart rate" points={t.resting_hr ?? []} format={(v) => `${fmt(v)} bpm`} tickFormat={(v) => fmt(v)} color="var(--series-2)" />
-          {(has('hrv_rmssd') || !has('hrv_sdnn')) && (
-            <Trend title="HRV (RMSSD)" points={t.hrv_rmssd ?? []} format={(v) => `${fmt(v)} ms`} tickFormat={(v) => fmt(v)} unitNote="WHOOP, during sleep" />
+      {charted && (
+        <section className="vitals-trends" aria-labelledby={trendsId}>
+          <div className="vitals-trends-head">
+            <h2 id={trendsId}>Your trends</h2>
+            <IntroTools
+              days={day.mode === 'range' ? days : DAY}
+              setDays={setRange}
+              ranges={day.available ? [DAY_RANGE, ...RANGES] : RANGES}
+              tools={d && <DayNav today={d.today} date={day.date} setDate={day.setDate} />}
+            />
+          </div>
+          {d && (
+            <div className="grid-1">
+              {d.metrics.heart_rate && (
+                <DayCard title="Heart rate" kind="hourly" series={d.metrics.heart_rate} data={d} format={(v) => `${fmt(v)} bpm`} tickFormat={(v) => fmt(v)} color="var(--series-2)" />
+              )}
+              <p className="day-footnote">Recovery, HRV, blood oxygen, breathing and temperature are measured once a night. Pick a range to see them.</p>
+            </div>
           )}
-          {has('hrv_sdnn') && <Trend title="HRV (SDNN)" points={t.hrv_sdnn} format={(v) => `${fmt(v)} ms`} tickFormat={(v) => fmt(v)} unitNote="Apple Watch" />}
-          <Trend title="Blood oxygen" points={t.spo2 ?? []} format={(v) => `${fmt(v, 1)}%`} tickFormat={(v) => fmt(v)} color="var(--series-2)" />
-          <Trend title="Respiratory rate" points={t.resp_rate ?? []} format={(v) => `${fmt(v, 1)} rpm`} tickFormat={(v) => fmt(v, 1)} />
-          {has('body_temp') && <Trend title="Body temperature" points={t.body_temp} format={tf} tickFormat={(v) => fmt(temp(v, units).value, 1)} />}
-          {has('wrist_temp') && <Trend title="Wrist temperature" points={t.wrist_temp} format={tf} tickFormat={(v) => fmt(temp(v, units).value, 1)} unitNote="Apple Watch, during sleep" />}
-          {has('skin_temp') && <Trend title="Skin temperature" points={t.skin_temp} format={tf} tickFormat={(v) => fmt(temp(v, units).value, 1)} unitNote="WHOOP" />}
-        </div>
+          {day.mode === 'range' && (
+            <div className="grid-2">
+              {has('recovery') && <Trend title="Recovery" points={t.recovery} format={(v) => `${fmt(v)}%`} color="var(--series-3)" />}
+              <Trend title="Resting heart rate" points={t.resting_hr ?? []} format={(v) => `${fmt(v)} bpm`} tickFormat={stepTicks()} color="var(--series-2)" />
+              {(has('hrv_rmssd') || !has('hrv_sdnn')) && (
+                <Trend title="HRV (RMSSD)" points={t.hrv_rmssd ?? []} format={(v) => `${fmt(v)} ms`} tickFormat={stepTicks()} unitNote={rmssdNote(status)} />
+              )}
+              {has('hrv_sdnn') && <Trend title="HRV (SDNN)" points={t.hrv_sdnn} format={(v) => `${fmt(v)} ms`} tickFormat={stepTicks()} unitNote="Apple Watch" />}
+              <Trend title="Blood oxygen" points={t.spo2 ?? []} format={(v) => `${fmt(v, 1)}%`} tickFormat={stepTicks()} color="var(--series-2)" />
+              <Trend title="Respiratory rate" points={t.resp_rate ?? []} format={(v) => `${fmt(v, 1)} rpm`} tickFormat={stepTicks(1)} />
+              {has('body_temp') && <Trend title="Body temperature" points={t.body_temp} format={tf} tickFormat={(v) => fmt(temp(v, units).value, 1)} />}
+              {has('wrist_temp') && <Trend title="Wrist temperature" points={t.wrist_temp} format={tf} tickFormat={(v) => fmt(temp(v, units).value, 1)} unitNote="Apple Watch, during sleep" />}
+              {has('skin_temp') && <Trend title="Skin temperature" points={t.skin_temp} format={tf} tickFormat={(v) => fmt(temp(v, units).value, 1)} unitNote="WHOOP" />}
+            </div>
+          )}
+        </section>
       )}
     </div>
   );
@@ -325,7 +373,7 @@ export const STAGES: StackSeries[] = [
 // ---------- Activity ----------
 
 /** Steps, energy, strain and workouts. The Body page shows it as its Activity tab, under its own title and tabs. */
-export function Activity({ stepGoal, title = 'Activity', sub = 'Movement from your iPhone and Apple Watch, strain from WHOOP.', tabs }: { stepGoal: number; title?: string; sub?: string; tabs?: ReactNode }) {
+export function Activity({ stepGoal, title, sub = 'Movement from your iPhone and Apple Watch, strain from WHOOP.', tabs }: { stepGoal: number; title?: string; sub?: string; tabs?: ReactNode }) {
   const [range, setRange] = useRange();
   const days = range === DAY ? 30 : range;
   const day = useDay(range, 'steps,active_energy');
@@ -340,15 +388,15 @@ export function Activity({ stepGoal, title = 'Activity', sub = 'Movement from yo
 
   return (
     <div className={`page page-wide ${loading || (day.mode !== 'range' && day.loading) ? 'is-refreshing' : ''}`}>
-      <PageHead
-        title={title}
-        sub={sub}
-        tabs={tabs}
-        days={inRange ? days : DAY}
-        setDays={setRange}
-        ranges={day.available ? [DAY_RANGE, ...RANGES] : RANGES}
-        tools={d && <DayNav today={d.today} date={day.date} setDate={day.setDate} />}
-      />
+      <PageIntro title={title} sub={sub}>
+        <IntroTools
+          tabs={tabs}
+          days={inRange ? days : DAY}
+          setDays={setRange}
+          ranges={day.available ? [DAY_RANGE, ...RANGES] : RANGES}
+          tools={d && <DayNav today={d.today} date={day.date} setDate={day.setDate} />}
+        />
+      </PageIntro>
       {d && (
         <div className="grid-2">
           {d.metrics.steps && (
@@ -447,7 +495,7 @@ export function Activity({ stepGoal, title = 'Activity', sub = 'Movement from yo
 // ---------- Body ----------
 
 /** Weight and composition: the Body page's Metabolism tab. */
-export function Metabolism({ tabs }: { tabs?: ReactNode }) {
+export function Metabolism({ tabs, title, sub = 'Weight and composition from Apple Health; cardio fitness from Apple Watch.' }: { tabs?: ReactNode; title?: string; sub?: string }) {
   const [range, setDays] = useRange();
   const days = range === DAY ? 30 : range;
   const units = useUnits();
@@ -457,12 +505,14 @@ export function Metabolism({ tabs }: { tabs?: ReactNode }) {
 
   return (
     <div className={`page page-wide ${loading ? 'is-refreshing' : ''}`}>
-      <PageHead title="Body" sub="Weight and composition from Apple Health; cardio fitness from Apple Watch." days={days} setDays={setDays} tabs={tabs} />
+      <PageIntro title={title} sub={sub}>
+        <IntroTools tabs={tabs} days={days} setDays={setDays} />
+      </PageIntro>
       <div className="grid-2">
-        <Trend title="Weight" points={t.weight ?? []} format={mf} tickFormat={(v) => fmt(mass(v, units).value)} />
-        <Trend title="Body fat" points={t.body_fat ?? []} format={(v) => `${fmt(v, 1)}%`} tickFormat={(v) => fmt(v)} color="var(--series-2)" />
+        <Trend title="Weight" points={t.weight ?? []} format={mf} tickFormat={(v, step) => fmt(mass(v, units).value, stepDigits(step))} />
+        <Trend title="Body fat" points={t.body_fat ?? []} format={(v) => `${fmt(v, 1)}%`} tickFormat={stepTicks()} color="var(--series-2)" />
         <Trend title="Cardio fitness (VO₂ max)" points={t.vo2max ?? []} format={(v) => fmt(v, 1)} unitNote="mL/kg·min" color="var(--series-3)" />
-        {(t.lean_mass?.length ?? 0) > 0 && <Trend title="Lean body mass" points={t.lean_mass} format={mf} tickFormat={(v) => fmt(mass(v, units).value)} />}
+        {(t.lean_mass?.length ?? 0) > 0 && <Trend title="Lean body mass" points={t.lean_mass} format={mf} tickFormat={(v, step) => fmt(mass(v, units).value, stepDigits(step))} />}
       </div>
     </div>
   );

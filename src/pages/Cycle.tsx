@@ -24,6 +24,7 @@ import type {
 } from '../../shared/types.ts';
 import { Tooltip, niceTicks, useScrub, useWidth } from '../charts/core.tsx';
 import { Icon } from '../components/Icon.tsx';
+import { PageIntro } from '../components/PageIntro.tsx';
 import { daysBetween, fmt, fmtDate, href, notifyDataChanged, sendJson, shiftDate, temp, useApi, useUnits } from '../lib.ts';
 
 const FLOW_LABEL: Record<Flow, string> = {
@@ -134,15 +135,10 @@ export function Cycle({ status }: { status: Status }) {
   if (!status.settings.cycleTracking || data?.enabled === false) {
     return (
       <div className="page">
-        <header className="page-head">
-          <div>
-            <h1>Cycle</h1>
-            <p>Cycle tracking is off.</p>
-          </div>
-        </header>
+        <PageIntro sub="Cycle tracking is off." />
         <section className="card">
           <p className="muted">
-            Turn on cycle tracking in <a href={href('settings')}>Settings</a> to log periods and see estimates of your next one.
+            Turn on cycle tracking in <a href={href('profile')}>your Profile</a> to log periods and see estimates of your next one.
           </p>
         </section>
       </div>
@@ -153,15 +149,15 @@ export function Cycle({ status }: { status: Status }) {
 
   return (
     <div className="page cycle-page">
-      <header className="page-head">
-        <div>
-          <h1>Cycle</h1>
-          <p>From Apple Health, your Watch or WHOOP's nightly temperature, and what you log here. Only you can see it, unless you share your phase with family.</p>
-        </div>
-        <button className="btn btn-primary" onClick={() => setSelected(data.today)}>
-          Log today
-        </button>
-      </header>
+      <PageIntro
+        sub="From Apple Health, your Watch or WHOOP's nightly temperature, and what you log here. Only you can see it, unless you share your phase with family."
+        actions={
+          <button className="btn btn-primary" onClick={() => setSelected(data.today)}>
+            <Icon name="plus" size={15} />
+            Log today
+          </button>
+        }
+      />
       <div className="cycle-hero">
         <TodayCard data={data} />
         <FertilityCard data={data} />

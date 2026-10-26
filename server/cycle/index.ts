@@ -106,7 +106,7 @@ export function cycleRouter(db: Db, hosted: boolean) {
   router.post('/day', async (req, res) => {
     const scope = scopeOf(res);
     const { today, settings } = await requestContext(scope, hosted);
-    if (!settings.cycleTracking) return void res.status(403).json({ error: 'Turn on cycle tracking in Settings first.' });
+    if (!settings.cycleTracking) return void res.status(403).json({ error: 'Turn on cycle tracking in your Profile first.' });
     let day: CycleDay;
     try {
       day = parseCycleDay(req.body, 'body', failInput);

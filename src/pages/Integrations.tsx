@@ -1,11 +1,15 @@
-import { useEffect, useRef, useState } from 'react';
+// Integrations: where readings come from. Three sources side by side (stacked on a phone): WHOOP (connected through
+// WHOOP's sign-in), a Fitbit / Google Health export read in this browser (FitbitImport.tsx), and Apple Health (the
+// iPhone app, or an export on the Mac). Then a note on what a reading is and, locally, the demo data. Your own settings
+// are on Profile (src/pages/Profile.tsx).
+import '../styles/integrations.css';
+import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import type { Settings, Status, SyncResult } from '../../shared/types.ts';
 import { Icon } from '../components/Icon.tsx';
-import { CardChoices, useCardEditor } from '../components/CardChoices.tsx';
+import { PageIntro } from '../components/PageIntro.tsx';
+import { Sheet } from '../components/Sheet.tsx';
 import { copyText, fmt, fmtDate, notifyDataChanged, sendJson, uploadFile } from '../lib.ts';
-import { CycleSettings } from './Cycle.tsx';
-import { NutritionSettings } from './Nutrition.tsx';
-import { FamilySettings } from './Family.tsx';
+import { FitbitImport } from './FitbitImport.tsx';
 
 function ago(iso: string) {
   const mins = Math.round((Date.now() - Date.parse(iso)) / 60_000);
@@ -15,29 +19,395 @@ function ago(iso: string) {
   return fmtDate(iso.slice(0, 10), { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+/** "Oct 23" for an import's moment, in this device's own calendar. */
+const shortDay = (iso: string) => new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+
+/** "Mar 2021 – Oct 2026" for the span of an import. */
+const span = (first: string | null, last: string | null) =>
+  first && last ? `${fmtDate(first, { month: 'short', year: 'numeric' })} – ${fmtDate(last, { month: 'short', year: 'numeric' })}` : '';
+
 const mb = (b: number) => `${fmt(b / 1_048_576, b > 100 * 1_048_576 ? 0 : 1)} MB`;
+
+type Tone = 'sage' | 'peach' | 'muted' | 'bad';
+const Chip = ({ tone, children }: { tone: Tone; children: ReactNode }) => <span className={`badge badge-${tone} source-chip`}>{children}</span>;
+
+/** One source: its letter tile, name and state, what it brings, then its actions and a footnote along the bottom. */
+function SourceCard({ tile, title, chip, children, actions, foot }: { tile: string; title: string; chip: ReactNode; children: ReactNode; actions?: ReactNode; foot?: ReactNode }) {
+  const id = useId();
+  return (
+    <section className="card source-card" aria-labelledby={id}>
+      <span className="source-tile" aria-hidden="true">
+        {tile}
+      </span>
+      <div className="source-title">
+        <h2 id={id}>{title}</h2>
+        {chip}
+      </div>
+      <div className="source-body">{children}</div>
+      {(actions || foot) && (
+        <div className="source-end">
+          {actions && <div className="btn-row">{actions}</div>}
+          {foot}
+        </div>
+      )}
+    </section>
+  );
+}
 
 export function Integrations({ status, params, refresh, signedIn }: { status: Status; params: URLSearchParams; refresh: () => void; signedIn: boolean }) {
   const isAdmin = status.user.role === 'admin';
   const whoopParam = params.get('whoop');
+  return (
+    <div className="page integrations">
+      <PageIntro title="Bring your health together." sub="Your account. Your measurements. Your choice." />
+
+      {whoopParam === 'connected' && (
+        <div className="banner banner-good" role="status">
+          <Icon name="check" size={16} /> WHOOP connected. Your last year is syncing now.
+        </div>
+      )}
+      {whoopParam === 'error' && (
+        <div className="banner banner-bad" role="alert">
+          <Icon name="alert" size={16} />{' '}
+          {/* The reason can be WHOOP's own technical wording, so only admins see it. */}
+          {isAdmin || !status.hosted ? `WHOOP connection failed: ${params.get('message')}` : "WHOOP didn't connect. Try connecting again."}
+        </div>
+      )}
+      {whoopParam === 'not-configured' && (
+        <div className="banner banner-bad" role="alert">
+          <Icon name="alert" size={16} />{' '}
+          {!status.hosted
+            ? 'Add your WHOOP client ID and secret to .env first (the steps are on the WHOOP card).'
+            : isAdmin
+              ? "WHOOP isn't set up yet. Add WHOOP_CLIENT_ID and WHOOP_CLIENT_SECRET to the Vercel project, then redeploy."
+              : "WHOOP isn't available here yet."}
+        </div>
+      )}
+
+      <div className="sources-grid">
+        <WhoopCard status={status} refresh={refresh} />
+        <FitbitCard status={status} refresh={refresh} />
+        <AppleCard status={status} refresh={refresh} signedIn={signedIn} />
+      </div>
+
+      <section className="card sources-note" aria-labelledby="sources-note">
+        <h2 id="sources-note">Measured. Always clear.</h2>
+        <p>
+          Every reading keeps its source and date. Disconnecting stops access; previously imported measurements stay in your records. Nutrition logs do not measure glucose,
+          inflammation or water retention.
+        </p>
+      </section>
+
+      {/* Demo rows are seeded only in a local database, for the owner. */}
+      {!status.hosted && status.user.id === 'owner' && <DemoCard status={status} refresh={refresh} />}
+    </div>
+  );
+}
+
+// ---------- WHOOP ----------
+
+function WhoopCard({ status, refresh }: { status: Status; refresh: () => void }) {
+  const isAdmin = status.user.role === 'admin';
+  const w = status.whoop;
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function act(path: string, body?: unknown) {
+    setError(null);
+    setBusy(true);
+    try {
+      await sendJson<SyncResult>('POST', path, body);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+      refresh();
+    }
+  }
+
+  const chip = w.lastError ? (
+    <Chip tone="bad">Needs attention</Chip>
+  ) : w.connected ? (
+    w.syncing ? (
+      <Chip tone="muted">Syncing…</Chip>
+    ) : (
+      <Chip tone="sage">Connected</Chip>
+    )
+  ) : w.configured ? (
+    <Chip tone="peach">Ready to connect</Chip>
+  ) : status.hosted && !isAdmin ? (
+    <Chip tone="muted">Not available yet</Chip>
+  ) : (
+    <Chip tone="peach">Needs a developer app</Chip>
+  );
+
+  const actions = w.connected ? (
+    <>
+      <button className="btn" disabled={w.syncing || busy} onClick={() => act('/sync')}>
+        <Icon name="refresh" size={15} /> {w.syncing ? 'Syncing…' : 'Sync now'}
+      </button>
+      <button className="btn" disabled={w.syncing || busy} onClick={() => act('/whoop/sync', { full: true })}>
+        Re-sync full year
+      </button>
+      <button className="btn btn-quiet" disabled={busy} onClick={() => act('/whoop/disconnect')}>
+        Disconnect
+      </button>
+    </>
+  ) : w.configured ? (
+    <a className="btn" href="/api/whoop/connect">
+      Connect WHOOP
+    </a>
+  ) : undefined;
+
+  return (
+    <SourceCard tile="W" title="WHOOP" chip={chip} actions={actions}>
+      <p>
+        Recovery, sleep, resting heart rate, HRV, blood oxygen and respiratory rate. Includes skin temperature, sleep stages, efficiency and consistency. Imports your last year
+        right away, then the rest of your history.
+      </p>
+      {w.connected && (
+        <p className="source-state" aria-live="polite">
+          {w.syncing ? 'Syncing now…' : w.lastSync ? `Synced ${ago(w.lastSync)}` : 'Not synced yet'}
+          {` · syncs every hour${status.hosted ? '' : ' while healthOS is running'}`}
+        </p>
+      )}
+      {w.configured && !w.connected && <p className="source-state">You'll sign in on WHOOP's site and come straight back.</p>}
+      {!w.configured && status.hosted && (
+        <p className="source-state">
+          {isAdmin ? 'Add WHOOP_CLIENT_ID and WHOOP_CLIENT_SECRET to the Vercel project, then redeploy.' : "WHOOP isn't turned on here yet. Ask the admin if you'd like to use it."}
+        </p>
+      )}
+      {!w.configured && !status.hosted && (
+        <details className="source-more">
+          <summary>
+            Set up a WHOOP developer app <Icon name="chevron-down" size={14} />
+          </summary>
+          <ol className="steps">
+            <li>
+              Sign in at{' '}
+              <a href="https://developer.whoop.com" target="_blank" rel="noreferrer">
+                developer.whoop.com
+              </a>{' '}
+              with your WHOOP account and create an app.
+            </li>
+            <li>
+              Add this redirect URL to the app:
+              <CopyField value={w.redirectUri} />
+            </li>
+            <li>Select every read scope (recovery, cycles, sleep, workout, profile, body measurement).</li>
+            <li>
+              Copy <code>.env.example</code> to <code>.env</code>, paste the client ID and secret, then restart <code>npm run dev</code>.
+            </li>
+          </ol>
+        </details>
+      )}
+      {w.lastError && (
+        <p className="note-bad">
+          <Icon name="alert" size={15} /> Last sync failed: {w.lastError}
+        </p>
+      )}
+      {error && (
+        <p className="note-bad" role="alert">
+          <Icon name="alert" size={15} /> {error}
+        </p>
+      )}
+    </SourceCard>
+  );
+}
+
+// ---------- Fitbit / Google Health ----------
+
+function FitbitCard({ status, refresh }: { status: Status; refresh: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // Missing from servers older than the Fitbit import; there's nothing imported then.
+  const last = status.fitbit?.lastImport ?? null;
+
+  async function remove() {
+    if (!confirm('Remove all imported Fitbit data from healthOS? Your Fitbit account and the export file are not affected.')) return;
+    setError(null);
+    try {
+      await sendJson('POST', '/fitbit/clear');
+      notifyDataChanged();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+    refresh();
+  }
+
+  return (
+    <SourceCard
+      tile="G"
+      title="Fitbit / Google Health"
+      chip={<Chip tone="sage">{last ? `Imported ${shortDay(last.importedAt)}` : 'File import available'}</Chip>}
+      actions={
+        <>
+          <button className="btn" onClick={() => setOpen(true)} aria-haspopup="dialog">
+            {last ? 'Import again' : 'Import Fitbit data'}
+          </button>
+          {last && (
+            <button className="btn btn-quiet" onClick={remove}>
+              Remove Fitbit data
+            </button>
+          )}
+        </>
+      }
+      foot={<p className="source-foot">Automatic sync needs an approved Google Health app.</p>}
+    >
+      <p>Import recorded heart rate, sleep, HRV, weight and body-fat measurements from your data export.</p>
+      {last && (
+        <p className="source-state">
+          {fmt(last.days)} {last.days === 1 ? 'day' : 'days'}
+          {last.firstDate && ` · ${span(last.firstDate, last.lastDate)}`}
+        </p>
+      )}
+      {error && (
+        <p className="note-bad" role="alert">
+          <Icon name="alert" size={15} /> {error}
+        </p>
+      )}
+      {open && <FitbitImport status={status} refresh={refresh} onClose={() => setOpen(false)} />}
+    </SourceCard>
+  );
+}
+
+// ---------- Apple Health ----------
+
+function AppleCard({ status, refresh, signedIn }: { status: Status; refresh: () => void; signedIn: boolean }) {
+  const isAdmin = status.user.role === 'admin';
+  const a = status.apple;
+  const [importing, setImporting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const busy = a.job.state === 'uploading' || a.job.state === 'parsing';
+  const wasBusy = useRef(false);
+  // Poll while an export import runs here (sheet open or not), and tell the dashboard when it finishes. (A WHOOP sync
+  // is watched by the dashboard itself, on every page.)
+  useEffect(() => {
+    if (wasBusy.current && !busy) notifyDataChanged();
+    wasBusy.current = busy;
+    if (!busy) return;
+    const t = setInterval(refresh, 1000);
+    return () => clearInterval(t);
+  }, [busy, refresh]);
+  // The iPhone app is the automatic way in: once it has a token, or has sent anything, that's how this account syncs.
+  const phone = a.iphoneToken || a.lastSync !== null;
+  const stale = status.hosted && phone && (!a.lastSync || Date.now() - Date.parse(a.lastSync.syncedAt) > 86_400_000);
+
+  async function remove() {
+    if (!confirm('Remove all imported Apple Health data from healthOS? Your iPhone is not affected.')) return;
+    setError(null);
+    try {
+      await sendJson('POST', '/apple/clear');
+      notifyDataChanged();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+    refresh();
+  }
+
+  const chip = phone ? (
+    <Chip tone="sage">Syncing from iPhone</Chip>
+  ) : busy ? (
+    <Chip tone="muted">Importing…</Chip>
+  ) : a.lastImport ? (
+    <Chip tone="sage">Imported {shortDay(a.lastImport.importedAt)}</Chip>
+  ) : status.hosted ? (
+    // Hosted, the export import runs on the Mac only: the iPhone app is how Apple Health gets here.
+    <Chip tone="peach">Ready to connect</Chip>
+  ) : (
+    <Chip tone="sage">File import available</Chip>
+  );
+
+  return (
+    <SourceCard
+      tile="⌘"
+      title="Apple Watch / Health"
+      chip={chip}
+      actions={
+        (!status.hosted || (a.lastImport && !busy)) && (
+          <>
+            {!status.hosted && (
+              <button className="btn" onClick={() => setImporting(true)} aria-haspopup="dialog">
+                Import Apple Health
+              </button>
+            )}
+            {a.lastImport && !busy && (
+              <button className="btn btn-quiet" onClick={remove}>
+                Remove Apple Health data
+              </button>
+            )}
+          </>
+        )
+      }
+      foot={
+        <>
+          {!phone && <p className="source-foot">Automatic sync needs an iPhone companion app.</p>}
+          {a.lastSync && <p className="source-foot">Synced from iPhone {ago(a.lastSync.syncedAt)}</p>}
+          {signedIn && (
+            <details className="source-more">
+              <summary>
+                Set up the iPhone app <Icon name="chevron-down" size={14} />
+              </summary>
+              <IphoneToken status={status} refresh={refresh} />
+            </details>
+          )}
+        </>
+      }
+    >
+      {status.hosted ? (
+        <>
+          <p>Heart rate, HRV, oxygen, breathing and scale measurements arrive from your iPhone through the healthOS iPhone app, which syncs on its own.</p>
+          <p className="source-state">
+            Importing an export file works from healthOS on your Mac.
+            {isAdmin && (
+              <>
+                {' '}
+                To import a full export.zip into your own account, run healthOS on your Mac against this database (<code>vercel env pull .env.local</code>, then{' '}
+                <code>npm run import:apple -- ~/Downloads/export.zip</code>).
+              </>
+            )}
+          </p>
+        </>
+      ) : (
+        <p>Import heart rate, HRV, oxygen, breathing and scale measurements from your iPhone Health export.</p>
+      )}
+      {a.lastImport && (
+        <p className="source-state">
+          Imported {ago(a.lastImport.importedAt)} · {fmt(a.lastImport.records)} records{a.lastImport.firstDate && ` · ${span(a.lastImport.firstDate, a.lastImport.lastDate)}`}
+        </p>
+      )}
+      {busy && !importing && (
+        <p className="source-state" aria-live="polite">
+          {a.job.state === 'uploading' ? 'Uploading your export…' : `Reading records… ${fmt(a.job.state === 'parsing' ? a.job.records : 0)}`}
+        </p>
+      )}
+      {stale && <p className="source-state">Open the healthOS app on your iPhone to send Apple Health.</p>}
+      {error && (
+        <p className="note-bad" role="alert">
+          <Icon name="alert" size={15} /> {error}
+        </p>
+      )}
+      {importing && <AppleImport status={status} refresh={refresh} onClose={() => setImporting(false)} />}
+    </SourceCard>
+  );
+}
+
+/** The local export import (POST /api/apple/upload, read on this Mac), in a sheet: the steps, a drop zone and its progress. */
+function AppleImport({ status, refresh, onClose }: { status: Status; refresh: () => void; onClose: () => void }) {
   const job = status.apple.job;
   const busy = job.state === 'uploading' || job.state === 'parsing';
   const [uploadPct, setUploadPct] = useState<number | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [drag, setDrag] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
-  const wasBusy = useRef(false);
 
-  // Poll while an Apple Health import runs here, and tell the dashboard when it finishes. (A WHOOP sync is
-  // watched by the dashboard itself, on every page.)
+  // While the file uploads, refresh until the server's job shows it (the card polls from there on).
+  const uploading = uploadPct !== null;
   useEffect(() => {
-    const running = busy || uploadPct !== null;
-    if (wasBusy.current && !running) notifyDataChanged();
-    wasBusy.current = running;
-    if (!running) return;
+    if (!uploading || busy) return;
     const t = setInterval(refresh, 1000);
     return () => clearInterval(t);
-  }, [busy, uploadPct, refresh]);
+  }, [uploading, busy, refresh]);
 
   async function upload(file: File) {
     setUploadError(null);
@@ -56,12 +426,7 @@ export function Integrations({ status, params, refresh, signedIn }: { status: St
     }
   }
 
-  async function whoopAction(path: string, body?: unknown) {
-    await sendJson('POST', path, body);
-    refresh();
-  }
-
-  const appleProgress =
+  const progress =
     uploadPct !== null
       ? { label: `Uploading… ${Math.round(uploadPct * 100)}%`, pct: uploadPct }
       : job.state === 'parsing'
@@ -69,267 +434,76 @@ export function Integrations({ status, params, refresh, signedIn }: { status: St
         : null;
 
   return (
-    <div className="page">
-      <header className="page-head">
-        <div>
-          <h1>Integrations</h1>
-          <p>{status.hosted ? 'Your data is stored privately in your own healthOS account.' : 'Everything stays on this Mac, in a local database under data/.'}</p>
-        </div>
-        <SyncNow status={status} refresh={refresh} />
-      </header>
-
-      {whoopParam === 'connected' && (
-        <div className="banner banner-good">
-          <Icon name="check" size={16} /> WHOOP connected. Your last year is syncing now.
-        </div>
-      )}
-      {whoopParam === 'error' && (
-        <div className="banner banner-bad">
-          <Icon name="alert" size={16} />{' '}
-          {/* The reason can be WHOOP's own technical wording, so only admins see it. */}
-          {isAdmin || !status.hosted ? `WHOOP connection failed: ${params.get('message')}` : "WHOOP didn't connect. Try connecting again."}
-        </div>
-      )}
-      {whoopParam === 'not-configured' && (
-        <div className="banner banner-bad">
-          <Icon name="alert" size={16} />{' '}
-          {!status.hosted
-            ? 'Add your WHOOP client ID and secret to .env first (steps below).'
-            : isAdmin
-              ? "WHOOP isn't set up yet. Add WHOOP_CLIENT_ID and WHOOP_CLIENT_SECRET to the Vercel project, then redeploy."
-              : "WHOOP isn't available here yet."}
-        </div>
-      )}
-
-      <div className="grid-2">
-        <section className="card integration">
-          <div className="integration-head">
-            <span className="integration-logo logo-apple">
-              <Icon name="heart" size={20} />
-            </span>
-            <div>
-              <h2>Apple Health</h2>
-              <p className="muted">
-                {status.apple.lastSync && `Synced from iPhone ${ago(status.apple.lastSync.syncedAt)}${status.apple.lastImport ? ' · ' : ''}`}
-                {status.apple.lastImport
-                  ? `Imported ${ago(status.apple.lastImport.importedAt)} · ${fmt(status.apple.lastImport.records)} records · ${fmtDate(status.apple.lastImport.firstDate ?? '', { month: 'short', year: 'numeric' })} – ${fmtDate(status.apple.lastImport.lastDate ?? '', { month: 'short', day: 'numeric', year: 'numeric' })}`
-                  : !status.apple.lastSync && 'Not imported yet'}
-              </p>
-            </div>
-          </div>
-          {status.hosted ? (
-            <p className="muted">
-              Apple Health arrives here from the healthOS iPhone app, which syncs on its own. Create an app token below and add it in the app.
-              {isAdmin && (
-                <>
-                  {' '}
-                  To import a full export.zip into your own account, run healthOS on your Mac against this database (<code>vercel env pull .env.local</code>, then{' '}
-                  <code>npm run import:apple -- ~/Downloads/export.zip</code>).
-                </>
-              )}
-            </p>
-          ) : (
-            <>
-              <ol className="steps">
-                <li>
-                  On your iPhone, open <b>Health</b>, tap your profile picture, then <b>Export All Health Data</b>.
-                </li>
-                <li>
-                  AirDrop or save the <b>export.zip</b> to this Mac.
-                </li>
-                <li>Drop it below. A new import replaces the previous one.</li>
-              </ol>
-              <div
-                className={`dropzone ${drag ? 'is-drag' : ''} ${busy || uploadPct !== null ? 'is-busy' : ''}`}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setDrag(true);
-                }}
-                onDragLeave={() => setDrag(false)}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  setDrag(false);
-                  const f = e.dataTransfer.files[0];
-                  if (f && !busy) upload(f);
-                }}
-              >
-                {appleProgress ? (
-                  <div className="progress">
-                    <div className="progress-label">{appleProgress.label}</div>
-                    <div className="goal-track">
-                      <div className="goal-fill" style={{ width: `${Math.round(appleProgress.pct * 100)}%` }} />
-                    </div>
-                    {job.state === 'parsing' && job.totalBytes > 0 && (
-                      <div className="muted small">
-                        {mb(job.bytesRead)} of {mb(job.totalBytes)}
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <>
-                    <Icon name="upload" size={22} />
-                    <span>Drop export.zip here</span>
-                    <button className="btn" onClick={() => fileInput.current?.click()}>
-                      Choose file
-                    </button>
-                  </>
-                )}
-                <input ref={fileInput} type="file" accept=".zip,.xml" hidden onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
-              </div>
-              {job.state === 'done' && uploadPct === null && (
-                <p className="note-good">
-                  <Icon name="check" size={15} /> Imported {fmt(job.records)} records across {fmt(job.days)} days.
-                </p>
-              )}
-              {(uploadError || job.state === 'error') && (
-                <p className="note-bad">
-                  <Icon name="alert" size={15} /> {uploadError ?? (job.state === 'error' ? job.error : '')}
-                </p>
-              )}
-              <p className="muted small">
-                Very large exports (several GB) are quicker from the terminal: <code>npm run import:apple -- ~/Downloads/export.zip</code>
-              </p>
-            </>
-          )}
-          {status.apple.lastImport && !busy && (
-            <button
-              className="btn btn-quiet"
-              onClick={async () => {
-                if (!confirm('Remove all imported Apple Health data from healthOS? Your iPhone is not affected.')) return;
-                await sendJson('POST', '/apple/clear');
-                refresh();
-                notifyDataChanged();
-              }}
-            >
-              Remove Apple Health data
-            </button>
-          )}
-        </section>
-
-        <section className="card integration">
-          <div className="integration-head">
-            <span className="integration-logo logo-whoop">W</span>
-            <div>
-              <h2>WHOOP</h2>
-              <p className="muted">
-                {status.whoop.connected
-                  ? status.whoop.syncing
-                    ? 'Syncing…'
-                    : status.whoop.lastSync
-                      ? `Connected · synced ${ago(status.whoop.lastSync)}`
-                      : 'Connected'
-                  : status.whoop.configured
-                    ? 'Ready to connect'
-                    : status.hosted && !isAdmin
-                      ? 'Not available yet'
-                      : 'Needs a developer app'}
-              </p>
-            </div>
-          </div>
-
-          {!status.whoop.configured && status.hosted && (
-            <p className="muted">
-              {isAdmin ? 'Add WHOOP_CLIENT_ID and WHOOP_CLIENT_SECRET to the Vercel project, then redeploy.' : "WHOOP isn't turned on here yet. Ask the admin if you'd like to use it."}
-            </p>
-          )}
-          {!status.whoop.configured && !status.hosted && (
-            <ol className="steps">
-              <li>
-                Sign in at{' '}
-                <a href="https://developer.whoop.com" target="_blank" rel="noreferrer">
-                  developer.whoop.com
-                </a>{' '}
-                with your WHOOP account and create an app.
-              </li>
-              <li>
-                Add this redirect URL to the app:
-                <CopyField value={status.whoop.redirectUri} />
-              </li>
-              <li>Select every read scope (recovery, cycles, sleep, workout, profile, body measurement).</li>
-              <li>
-                Copy <code>.env.example</code> to <code>.env</code>, paste the client ID and secret, then restart <code>npm run dev</code>.
-              </li>
-            </ol>
-          )}
-
-          {status.whoop.configured && !status.whoop.connected && (
-            <>
-              <p className="muted">You'll sign in on WHOOP's site and come straight back. The app reads recovery, sleep, strain, workouts and your profile.</p>
-              <a className="btn btn-primary" href="/api/whoop/connect">
-                Connect WHOOP
-              </a>
-            </>
-          )}
-
-          {status.whoop.connected && (
-            <>
-              <p className="muted">
-                Syncs every hour{status.hosted ? '' : ' while the app is running'}. Each sync rechecks the last few days, since WHOOP rescores recent nights.
-              </p>
-              <div className="btn-row">
-                <button className="btn" disabled={status.whoop.syncing} onClick={() => whoopAction('/whoop/sync', { full: true })}>
-                  Re-sync full year
-                </button>
-                <button className="btn btn-quiet" onClick={() => whoopAction('/whoop/disconnect')}>
-                  Disconnect
-                </button>
-              </div>
-            </>
-          )}
-          {status.whoop.lastError && (
-            <p className="note-bad">
-              <Icon name="alert" size={15} /> Last sync failed: {status.whoop.lastError}
-            </p>
-          )}
-        </section>
-      </div>
-
-      {signedIn && <IphoneToken status={status} refresh={refresh} />}
-      {/* Demo rows are seeded only in a local database, for the owner. */}
-      {!status.hosted && status.user.id === 'owner' && <DemoCard status={status} refresh={refresh} />}
-    </div>
-  );
-}
-
-/**
- * The one sync control: WHOOP syncs on the server (also every hour, and when the dashboard opens with
- * stale data); Apple Health comes from the iPhone app on its own, so here it's a status line.
- */
-function SyncNow({ status, refresh }: { status: Status; refresh: () => void }) {
-  const [error, setError] = useState<string | null>(null);
-  const w = status.whoop;
-  const apple = status.apple.lastSync?.syncedAt ?? status.apple.lastImport?.importedAt ?? null;
-  const appleStale = status.hosted && (!apple || Date.now() - Date.parse(apple) > 86_400_000);
-  return (
-    <div className="sync-now">
-      {w.connected && (
-        <button
-          className="btn btn-primary"
-          disabled={w.syncing}
-          onClick={async () => {
-            setError(null);
-            try {
-              await sendJson<SyncResult>('POST', '/sync');
-            } catch (e) {
-              setError((e as Error).message);
-            }
-            refresh();
-          }}
-        >
-          <Icon name="refresh" size={15} /> {w.syncing ? 'Syncing…' : 'Sync now'}
+    <Sheet
+      eyebrow="Apple Watch / Health"
+      title="Import Apple Health"
+      onClose={onClose}
+      footer={
+        <button className="btn btn-primary" onClick={onClose}>
+          {busy || uploadPct !== null ? 'Keep importing in the background' : 'Done'}
         </button>
-      )}
-      <p className="muted small">
-        Apple Health {apple ? `synced ${ago(apple)}` : 'not synced yet'}
-        {w.connected ? ` · WHOOP ${w.syncing ? 'syncing…' : w.lastSync ? `synced ${ago(w.lastSync)}` : 'not synced yet'}` : ''}
-      </p>
-      {appleStale && <p className="muted small">Open the healthOS app on your iPhone to send Apple Health.</p>}
-      {error && (
-        <p className="note-bad">
-          <Icon name="alert" size={15} /> {error}
+      }
+    >
+      <ol className="steps">
+        <li>
+          On your iPhone, open <b>Health</b>, tap your profile picture, then <b>Export All Health Data</b>.
+        </li>
+        <li>
+          AirDrop or save the <b>export.zip</b> to this Mac.
+        </li>
+        <li>Drop it below. A new import replaces the previous one.</li>
+      </ol>
+      <div
+        className={`dropzone ${drag ? 'is-drag' : ''} ${busy || uploadPct !== null ? 'is-busy' : ''}`}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDrag(true);
+        }}
+        onDragLeave={() => setDrag(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDrag(false);
+          const f = e.dataTransfer.files[0];
+          if (f && !busy) upload(f);
+        }}
+      >
+        {progress ? (
+          <div className="progress" role="status">
+            <div className="progress-label">{progress.label}</div>
+            <div className="goal-track">
+              <div className="goal-fill" style={{ width: `${Math.round(progress.pct * 100)}%` }} />
+            </div>
+            {job.state === 'parsing' && job.totalBytes > 0 && (
+              <div className="muted small">
+                {mb(job.bytesRead)} of {mb(job.totalBytes)}
+              </div>
+            )}
+          </div>
+        ) : (
+          <>
+            <Icon name="upload" size={22} />
+            <span>Drop export.zip here</span>
+            <button className="btn" onClick={() => fileInput.current?.click()} disabled={busy}>
+              Choose file
+            </button>
+          </>
+        )}
+        <input ref={fileInput} type="file" accept=".zip,.xml" hidden onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
+      </div>
+      {job.state === 'done' && uploadPct === null && (
+        <p className="note-good" role="status">
+          <Icon name="check" size={15} /> Imported {fmt(job.records)} records across {fmt(job.days)} days.
         </p>
       )}
-    </div>
+      {(uploadError || job.state === 'error') && (
+        <p className="note-bad" role="alert">
+          <Icon name="alert" size={15} /> {uploadError ?? (job.state === 'error' ? job.error : '')}
+        </p>
+      )}
+      <p className="muted small">
+        Very large exports (several GB) are quicker from the terminal: <code>npm run import:apple -- ~/Downloads/export.zip</code>
+      </p>
+    </Sheet>
   );
 }
 
@@ -363,19 +537,11 @@ function IphoneToken({ status, refresh }: { status: Status; refresh: () => void 
   }
 
   return (
-    <section className="card integration">
-      <div className="integration-head">
-        <span className="integration-logo logo-whoop">
-          <Icon name="link" size={18} />
-        </span>
-        <div>
-          <h2>iPhone app</h2>
-          <p className="muted">{has ? 'Token set. The app can send your Apple Health data here.' : 'No token yet.'}</p>
-        </div>
-      </div>
+    <div className="iphone-token">
+      <p>{has ? 'Token set. The app can send your Apple Health data here.' : 'No token yet.'}</p>
       {token ? (
         <>
-          <p className="muted">In the healthOS iPhone app, open Settings and paste these. The token is shown only now.</p>
+          <p>In the healthOS iPhone app, open Settings and paste these. The token is shown only now.</p>
           <div className="settings-row">
             <span>Server</span>
             <CopyField value={location.origin} label="Copy server address" />
@@ -386,7 +552,7 @@ function IphoneToken({ status, refresh }: { status: Status; refresh: () => void 
           </div>
         </>
       ) : (
-        <p className="muted">The token lets the app write to your account only. It can't read anything back or sign in to the dashboard.</p>
+        <p>The token lets the app write to your account only. It can't read anything back or sign in to the dashboard.</p>
       )}
       <div className="btn-row">
         <button className="btn btn-primary" onClick={create}>
@@ -399,11 +565,11 @@ function IphoneToken({ status, refresh }: { status: Status; refresh: () => void 
         )}
       </div>
       {error && (
-        <p className="note-bad">
+        <p className="note-bad" role="alert">
           <Icon name="alert" size={15} /> {error}
         </p>
       )}
-    </section>
+    </div>
   );
 }
 
@@ -439,354 +605,21 @@ function DemoCard({ status, refresh }: { status: Status; refresh: () => void }) 
     notifyDataChanged();
   };
   return (
-    <section className="card integration">
-      <div className="integration-head">
-        <div>
-          <h2>Demo data</h2>
-          <p className="muted">
-            {status.demo ? 'Showing synthetic data. ' : 'Showing your data. '}
-            On automatic, the demo turns off once Apple Health or WHOOP data arrives.
-          </p>
-        </div>
-        <div className="filters" role="group" aria-label="Demo data">
-          {(['auto', 'on', 'off'] as const).map((m) => (
-            <button key={m} className={mode === m ? 'on' : ''} aria-pressed={mode === m} onClick={() => set(m)}>
-              {m === 'auto' ? 'Automatic' : m === 'on' ? 'Always' : 'Off'}
-            </button>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-type Processed = { cutout: Blob; avatar: Blob; meta: unknown; cutoutUrl: string; avatarUrl: string };
-
-const base64 = (blob: Blob) =>
-  new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '');
-    reader.onerror = () => reject(new Error("Couldn't read the processed photo."));
-    reader.readAsDataURL(blob);
-  });
-
-function PhotoSettings({ status, refresh }: { status: Status; refresh: () => void }) {
-  const [busy, setBusy] = useState(false);
-  const [step, setStep] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [drag, setDrag] = useState(false);
-  const [preview, setPreview] = useState<Processed | null>(null);
-  const input = useRef<HTMLInputElement>(null);
-  const photo = status.photo;
-
-  useEffect(
-    () => () => {
-      if (preview) {
-        URL.revokeObjectURL(preview.cutoutUrl);
-        URL.revokeObjectURL(preview.avatarUrl);
-      }
-    },
-    [preview],
-  );
-
-  /** On the Mac: the server cuts the photo out with Apple Vision. */
-  async function uploadToMac(file: File) {
-    const res = await fetch('/api/profile/photo', { method: 'POST', headers: { 'X-HealthOS': '1', 'Content-Type': 'application/octet-stream' }, body: file });
-    if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? 'Processing failed');
-    refresh();
-    notifyDataChanged();
-  }
-
-  /** Hosted: cut out and measured right here in the browser; nothing is uploaded until you save. */
-  async function processHere(file: File) {
-    const { processPhoto } = await import('../photo/process.ts');
-    const done = await processPhoto(file, setStep);
-    setPreview({ ...done, cutoutUrl: URL.createObjectURL(done.cutout), avatarUrl: URL.createObjectURL(done.avatar) });
-  }
-
-  async function choose(file: File) {
-    setError(null);
-    if (!file.type.startsWith('image/') && !/\.(heic|heif)$/i.test(file.name)) return setError('Choose an image file (JPEG or PNG).');
-    setBusy(true);
-    try {
-      await (status.hosted ? processHere(file) : uploadToMac(file));
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-      setStep(null);
-    }
-  }
-
-  async function save() {
-    if (!preview) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await fetch('/api/profile/photo/upload', {
-        method: 'POST',
-        headers: { 'X-HealthOS': '1', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cutout: await base64(preview.cutout), avatar: await base64(preview.avatar), meta: preview.meta }),
-      });
-      if (res.status === 413) throw new Error('That photo came out too large to save. Try a smaller or tighter photo.');
-      if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? "Couldn't save the photo.");
-      setPreview(null);
-      refresh();
-      notifyDataChanged();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <section className="card settings">
+    <section className="card demo-card" aria-labelledby="demo-card">
       <div>
-        <h2>Profile photo</h2>
-        <p className="muted small">
-          {status.hosted
-            ? 'Used for the figure on Home and your avatar. It\'s cut out on this device; only the cut-out, avatar and the points for your vitals are saved.'
-            : "Used for the figure on Home and your avatar. It's cut out and analyzed on this Mac with Apple's Vision framework, then saved to your healthOS database."}
+        <h2 id="demo-card">Demo data</h2>
+        <p>
+          {status.demo ? 'Showing synthetic data. ' : 'Showing your data. '}
+          On automatic, the demo turns off once your own readings arrive.
         </p>
       </div>
-      {preview ? (
-        <div className="photo-row">
-          <img className="photo-preview" src={preview.cutoutUrl} alt="Your new cut-out" />
-          <div className="photo-confirm">
-            <img className="photo-avatar-preview" src={preview.avatarUrl} alt="Your new avatar" />
-            <p className="muted small">Here's how it came out. Save it to use it on Home and as your avatar.</p>
-            <div className="btn-row">
-              <button className="btn btn-primary" disabled={busy} onClick={save}>
-                {busy ? 'Saving…' : 'Save photo'}
-              </button>
-              <button className="btn btn-quiet" disabled={busy} onClick={() => setPreview(null)}>
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div className="photo-row">
-          {photo && <img className="photo-preview" src={`/api/profile/cutout.png?v=${photo.version}`} alt="Your cut-out photo" />}
-          <div
-            className={`dropzone photo-drop ${drag ? 'is-drag' : ''}`}
-            onDragOver={(e) => {
-              e.preventDefault();
-              setDrag(true);
-            }}
-            onDragLeave={() => setDrag(false)}
-            onDrop={(e) => {
-              e.preventDefault();
-              setDrag(false);
-              const f = e.dataTransfer.files[0];
-              if (f && !busy) choose(f);
-            }}
-          >
-            {busy ? (
-              <span className="progress-label">
-                {status.hosted ? (step ?? 'Working…') : 'Cutting out and measuring… (the first run compiles the tool, about 15s)'}
-              </span>
-            ) : (
-              <>
-                <Icon name="upload" size={22} />
-                <span>{photo ? 'Drop a new photo to replace it' : 'Drop a photo of yourself here'}</span>
-                <button className="btn" onClick={() => input.current?.click()}>
-                  {photo ? 'Choose a new photo' : 'Upload a photo'}
-                </button>
-              </>
-            )}
-            <input
-              ref={input}
-              type="file"
-              accept="image/*,.heic,.heif"
-              hidden
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                e.target.value = '';
-                if (f) choose(f);
-              }}
-            />
-          </div>
-        </div>
-      )}
-      {error && (
-        <p className="note-bad">
-          <Icon name="alert" size={15} /> {error}
-        </p>
-      )}
-      {photo && !busy && !preview && (
-        <button
-          className="btn btn-quiet"
-          onClick={async () => {
-            await sendJson('POST', '/profile/photo/clear');
-            refresh();
-            notifyDataChanged();
-          }}
-        >
-          Remove photo
-        </button>
-      )}
-    </section>
-  );
-}
-
-export function SettingsPage({ status, refresh, signedIn }: { status: Status; refresh: () => void; signedIn: boolean }) {
-  const [name, setName] = useState(status.settings.name);
-  const [goal, setGoal] = useState(String(status.settings.stepGoal));
-  const [saved, setSaved] = useState(false);
-
-  async function save(patch: Partial<Settings>) {
-    await sendJson('PUT', '/settings', patch);
-    refresh();
-    notifyDataChanged();
-    setSaved(true);
-    setTimeout(() => setSaved(false), 1500);
-  }
-
-  return (
-    <div className="page">
-      <header className="page-head">
-        <div>
-          <h1>Settings</h1>
-          <p>{status.hosted ? 'Saved to your healthOS account.' : 'Stored locally with your data.'}</p>
-        </div>
-        {signedIn && (
-          <button
-            className="btn"
-            onClick={async () => {
-              await sendJson('POST', '/auth/logout');
-              window.location.reload();
-            }}
-          >
-            Sign out
+      <div className="filters" role="group" aria-label="Demo data">
+        {(['auto', 'on', 'off'] as const).map((m) => (
+          <button key={m} className={mode === m ? 'on' : ''} aria-pressed={mode === m} onClick={() => set(m)}>
+            {m === 'auto' ? 'Automatic' : m === 'on' ? 'Always' : 'Off'}
           </button>
-        )}
-      </header>
-      <section className="card settings">
-        <label>
-          <span>Name</span>
-          <input value={name} onChange={(e) => setName(e.target.value)} onBlur={() => name !== status.settings.name && save({ name })} />
-        </label>
-        <label>
-          <span>Daily step goal</span>
-          <input
-            inputMode="numeric"
-            value={goal}
-            onChange={(e) => setGoal(e.target.value.replace(/\D/g, ''))}
-            onBlur={() => Number(goal) !== status.settings.stepGoal && save({ stepGoal: Number(goal) })}
-          />
-        </label>
-        <div className="settings-row">
-          <span>Units</span>
-          <div className="filters" role="group" aria-label="Units">
-            {(['metric', 'imperial'] as const).map((u) => (
-              <button key={u} className={status.settings.units === u ? 'on' : ''} aria-pressed={status.settings.units === u} onClick={() => save({ units: u })}>
-                {u === 'metric' ? 'Metric (kg, °C, km)' : 'Imperial (lb, °F, mi)'}
-              </button>
-            ))}
-          </div>
-        </div>
-        <p className={`muted small saved ${saved ? 'is-on' : ''}`}>
-          <Icon name="check" size={14} /> Saved
-        </p>
-      </section>
-      <CardSettings status={status} refresh={refresh} />
-      {signedIn && <FamilySettings status={status} refresh={refresh} />}
-      <CycleSettings status={status} refresh={refresh} family={signedIn && status.settings.familySharing} />
-      <NutritionSettings status={status} refresh={refresh} />
-      {signedIn && <AccountSettings status={status} />}
-      <PhotoSettings status={status} refresh={refresh} />
-    </div>
-  );
-}
-
-/** Which cards show on Home, Sleep, Body and Nutrition. Only the layout: nothing is deleted, and an unticked card comes back as it was. */
-function CardSettings({ status, refresh }: { status: Status; refresh: () => void }) {
-  const cards = useCardEditor(status.settings.hiddenCards ?? [], async (body) => {
-    const next = await sendJson<Status>('PUT', '/settings', body);
-    refresh();
-    return next.settings.hiddenCards;
-  });
-  return (
-    <section className="card settings-cards">
-      <div className="card-title-row">
-        <h2>Cards</h2>
-        {cards.hidden.length > 0 && (
-          <button className="btn btn-quiet" onClick={cards.showAll}>
-            Show all
-          </button>
-        )}
+        ))}
       </div>
-      <p className="muted small">
-        Choose the cards you see on Home, Sleep{status.settings.nutrition ? ', Body and Nutrition' : ' and Body'}. Hiding one only changes the page; your data stays.
-      </p>
-      <CardChoices hidden={cards.hidden} onToggle={cards.toggle} idPrefix="me" nutrition={status.settings.nutrition} />
-      {cards.error && <p className="note-bad small">{cards.error}</p>}
-    </section>
-  );
-}
-
-function AccountSettings({ status }: { status: Status }) {
-  const [current, setCurrent] = useState('');
-  const [next, setNext] = useState('');
-  const [confirmNext, setConfirmNext] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
-  const valid = current.length > 0 && next.length >= 10 && next === confirmNext;
-
-  async function change(e: React.FormEvent) {
-    e.preventDefault();
-    if (!valid) return;
-    setBusy(true);
-    setResult(null);
-    try {
-      await sendJson('POST', '/auth/password', { current, next });
-      setCurrent('');
-      setNext('');
-      setConfirmNext('');
-      setResult({ ok: true, text: 'Password changed. Other devices are signed out.' });
-    } catch (err) {
-      setResult({ ok: false, text: (err as Error).message });
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <section className="card settings">
-      <h2>Account</h2>
-      <div className="settings-row">
-        <span>Email</span>
-        <span className="muted">
-          {status.user.email}
-          {status.user.role === 'admin' && ' · admin'}
-        </span>
-      </div>
-      <form className="settings" onSubmit={change}>
-        <label>
-          <span>Current password</span>
-          <input type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />
-        </label>
-        <label>
-          <span>New password</span>
-          <input type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} />
-          <small className={next && next.length < 10 ? 'note-bad' : 'muted'}>At least 10 characters.</small>
-        </label>
-        <label>
-          <span>Confirm new password</span>
-          <input type="password" autoComplete="new-password" value={confirmNext} onChange={(e) => setConfirmNext(e.target.value)} />
-          {confirmNext && confirmNext !== next && <small className="note-bad">The passwords don't match.</small>}
-        </label>
-        <button className="btn btn-primary" type="submit" disabled={busy || !valid}>
-          {busy ? 'Changing…' : 'Change password'}
-        </button>
-        {result && (
-          <p className={result.ok ? 'note-good' : 'note-bad'} role="status">
-            <Icon name={result.ok ? 'check' : 'alert'} size={15} /> {result.text}
-          </p>
-        )}
-      </form>
     </section>
   );
 }

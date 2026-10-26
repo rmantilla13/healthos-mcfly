@@ -927,3 +927,31 @@ export function draftGroups(rows: LabDraft[]): { collected: string; lab: string;
   }
   return out;
 }
+
+// ---------- lab documents ----------
+
+/** An original lab report kept in the person's account (server/labs.ts, lab_documents): metadata only. */
+export type LabDocument = {
+  id: string;
+  name: string;
+  mime: 'application/pdf' | 'image/jpeg' | 'image/png' | 'image/webp';
+  size: number;
+  uploadedAt: number;
+  /** When the results were read from it (POST /api/labs/extract?document=), if ever. */
+  readAt: number | null;
+};
+
+/** GET /api/labs/documents: newest first. */
+export type LabDocuments = { documents: LabDocument[] };
+
+export const MAX_LAB_DOCUMENTS = 200;
+
+/** POST /api/labs/documents: the report as kept. A copy already kept (the same bytes) is refused with 409. */
+export type LabDocumentSaved = { document: LabDocument };
+
+/**
+ * GET /api/labs/reader: what reading a report with Claude would use right now, so the page says so before anything
+ * is sent. 'own' is the person's own Claude key (counted apart, up to `limit` a day); 'shared' is one of their Ask
+ * McFly questions. null when reading isn't available: 'none' isn't set up on this server, 'off' was turned off by the admin.
+ */
+export type LabReader = { source: 'own' | 'shared' | null; reason: 'none' | 'off' | null; limit: number; usedToday: number };
