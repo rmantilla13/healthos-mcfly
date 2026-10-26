@@ -55,13 +55,24 @@ struct APIClient {
 
     static func current() -> APIClient? { Config.serverURL().map { APIClient(base: $0) } }
 
-    static let session: URLSession = {
+    /// The one session every request goes out on: ephemeral, keeping no cookies of its own.
+    private(set) static var session = makeSession()
+
+    private static func makeSession(protocols: [AnyClass] = []) -> URLSession {
         let config = URLSessionConfiguration.ephemeral
         config.httpCookieStorage = nil
         config.httpShouldSetCookies = false
         config.timeoutIntervalForRequest = 30
+        if !protocols.isEmpty { config.protocolClasses = protocols + (config.protocolClasses ?? []) }
         return URLSession(configuration: config)
-    }()
+    }
+
+    /// Tests only: every request asks these URLProtocol classes first (a stub answering in the server's place), on a
+    /// session otherwise the same, until it's called again with none. The app never calls it.
+    ///
+    ///     APIClient.answering(with: [StubProtocol.self])
+    ///     defer { APIClient.answering(with: []) }
+    static func answering(with protocols: [AnyClass]) { session = makeSession(protocols: protocols) }
 
     private struct ErrorBody: Decodable {
         let error: String?

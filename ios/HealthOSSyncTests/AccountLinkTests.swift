@@ -185,8 +185,8 @@ final class AccountLinkTests: XCTestCase {
     }
 
     /// Dashboard.resetPassword: POST /auth/reset, then a sign-in's bookkeeping for the email the server names. A
-    /// refused link starts nothing. (APIClient.resetPassword's own check, that a session cookie came back, needs a
-    /// network stub the shared URLSession can't take, so it isn't here.)
+    /// refused link starts nothing. (APIClient.resetPassword's own check, that a session cookie came back, is
+    /// testANewPasswordWithoutASessionSaysSo.)
     func testASetPasswordSignsInAsTheServerSaysAndARefusedOneStartsNothing() async throws {
         let saved = UserDefaults.standard.string(forKey: "serverURL")
         defer {
@@ -228,6 +228,33 @@ final class AccountLinkTests: XCTestCase {
         XCTAssertEqual(store.lastEmail, "alex@example.test", "the server couldn't say who: the email kept stays, never \"\"")
     }
 
+    /// APIClient.resetPassword: a new password whose answer brings no session cookie says so, instead of leaving the
+    /// phone signed out without a word; with one, the session is kept for that server. A stub answers in the server's
+    /// place, through the session every request uses (`APIClient.answering(with:)`).
+    func testANewPasswordWithoutASessionSaysSo() async throws {
+        let base = try XCTUnwrap(URL(string: "http://reset.example.test"))
+        APIClient.answering(with: [ResetStubProtocol.self])
+        defer {
+            APIClient.answering(with: [])
+            SessionStore.clear()
+            ResetStubProtocol.setCookie = nil
+            ResetStubProtocol.asked = []
+        }
+        SessionStore.clear()
+        do {
+            try await APIClient(base: base).resetPassword(token: resetToken, password: "made-up-pw-1")
+            XCTFail("no session came back")
+        } catch {
+            XCTAssertEqual(error.localizedDescription, "Your password is set, but the server sent no session. Sign in.")
+        }
+        XCTAssertEqual(ResetStubProtocol.asked, ["POST /api/auth/reset"], "through the app's own request")
+        XCTAssertNil(SessionStore.cookie(for: base))
+
+        ResetStubProtocol.setCookie = "\(SessionStore.name)=made-up-session; Path=/; HttpOnly"
+        try await APIClient(base: base).resetPassword(token: resetToken, password: "made-up-pw-1")
+        XCTAssertEqual(SessionStore.cookie(for: base), "made-up-session")
+    }
+
     // MARK: Words against Login.tsx
 
     func testTheWayInSaysWhatTheWebSays() throws {
@@ -247,4 +274,25 @@ final class AccountLinkTests: XCTestCase {
         // The iPhone's own lines aren't the web's, and don't pretend to be.
         for own in [SignInWords.haveResetLink, SignInWords.resetLinkTitle, SignInWords.resetLinkLede] { XCTAssertFalse(folded.contains(own), own) }
     }
+}
+
+/// Answers every request as a server answering POST /api/auth/reset does: 200, with a session cookie or without.
+private final class ResetStubProtocol: URLProtocol {
+    static var setCookie: String?
+    static var asked: [String] = []
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        Self.asked.append("\(request.httpMethod ?? "") \(request.url?.path ?? "")")
+        var headers = ["Content-Type": "application/json"]
+        if let cookie = Self.setCookie { headers["Set-Cookie"] = cookie }
+        guard let url = request.url, let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: headers) else { return }
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(#"{"ok":true}"#.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
 }
