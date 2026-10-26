@@ -137,7 +137,6 @@ struct PortraitStudioContent: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityIdentifier("portraits.studio")
     }
 
     /// The title and its line, with the add pill under them (the web's phone layout).
@@ -295,7 +294,6 @@ private struct PortraitTile: View {
         .background(Palette.surface)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(chosen ? Palette.choiceBorder : Palette.border))
-        .accessibilityIdentifier("portraits.tile.\(p.id)")
     }
 
     @ViewBuilder

@@ -22,7 +22,6 @@ struct PeersSection: View {
             Collapsible(PeerWords.title, meta: PeerWords.meta, systemImage: "chart.bar") {
                 PeerBody(editLink: dashboard.status?.settings?.perspective != nil) { missingOn = server }
             }
-            .accessibilityIdentifier("peers.section")
         }
     }
 
@@ -169,7 +168,6 @@ struct PeerRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Palette.surface, in: RoundedRectangle(cornerRadius: Radius.tile, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: Radius.tile, style: .continuous).strokeBorder(Palette.border))
-        .accessibilityIdentifier("peers.row.\(m.id)")
     }
 
     private func line(_ text: String) -> some View {

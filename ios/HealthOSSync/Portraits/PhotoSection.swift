@@ -110,7 +110,6 @@ private struct PhotoAsIs: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityIdentifier("photo.asIs")
         .onChange(of: item) { _, picked in
             guard let picked else { return }
             Task { await process(picked) }

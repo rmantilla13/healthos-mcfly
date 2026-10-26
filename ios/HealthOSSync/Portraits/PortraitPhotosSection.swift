@@ -37,7 +37,6 @@ private struct PortraitPhotosCard: View {
                     .overlay(alignment: .top) { Hairline() }
             }
         }
-        .accessibilityIdentifier("portraits.section")
         // Read on showing Profile (for the count) and after every load; a new profile photo or none means the portrait
         // in use may have changed.
         .task(id: "\(dashboard.generation)|\(dashboard.status?.photo?.versionKey ?? "none")") {
