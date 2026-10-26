@@ -278,6 +278,25 @@ final class ShellTests: XCTestCase {
         XCTAssertFalse(d.signOutOffered)
     }
 
+    /// Each of the menu's items opens what the web's does: Profile and Integrations under More, Privacy & data as the
+    /// server's page in the app. The shell runs it once the menu has gone, so a page asked for while it closes isn't lost.
+    func testTheAccountMenusItemsOpenTheirPages() {
+        let saved = UserDefaults.standard.string(forKey: "serverURL")
+        defer {
+            if let saved { UserDefaults.standard.set(saved, forKey: "serverURL") } else { UserDefaults.standard.removeObject(forKey: "serverURL") }
+        }
+        Config.serverText = "health.example.test"
+        let d = Dashboard()
+        d.accountMenuOpen = true
+        AccountMenuItem.profile.run(d)
+        XCTAssertEqual(d.tab, .more)
+        XCTAssertEqual(d.paths[.more], [.profile])
+        AccountMenuItem.integrations.run(d)
+        XCTAssertEqual(d.paths[.more], [.integrations])
+        AccountMenuItem.privacy.run(d)
+        XCTAssertEqual(d.webPage?.url.absoluteString, "https://health.example.test/privacy.html")
+    }
+
     /// Privacy & data and, until it's built here, Admin are the server's web pages, shown in the app.
     func testWebPagesAreTheServers() {
         let saved = UserDefaults.standard.string(forKey: "serverURL")

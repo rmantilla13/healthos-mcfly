@@ -4,14 +4,19 @@ import SwiftUI
 /// words as written, not letter by letter.
 struct Eyebrow: View {
     let text: String
+    /// 11 as the web's .eyebrow; a menu's is 10 (.menu-eyebrow).
+    var size: CGFloat = 11
 
-    init(_ text: String) { self.text = text }
+    init(_ text: String, size: CGFloat = 11) {
+        self.text = text
+        self.size = size
+    }
 
     var body: some View {
         Text(text)
             .textCase(.uppercase)
-            .font(.app(size: 11, weight: .medium, relativeTo: .caption2))
-            .tracking(11 * 0.12)
+            .font(.app(size: size, weight: .medium, relativeTo: .caption2))
+            .tracking(size * 0.12)
             .foregroundStyle(Palette.ink3)
     }
 }

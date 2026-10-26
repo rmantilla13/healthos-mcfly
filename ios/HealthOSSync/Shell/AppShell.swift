@@ -6,6 +6,8 @@ import SwiftUI
 struct AppShell: View {
     @Environment(Dashboard.self) private var dashboard
     @State private var chatOpen = false
+    /// The account menu's choice, done once the menu has gone.
+    @State private var chosen: AccountMenuItem?
 
     var body: some View {
         @Bindable var dashboard = dashboard
@@ -20,6 +22,15 @@ struct AppShell: View {
             McFlySheet(chat: dashboard.mcfly).font(.app(.body))
         }
         .sheet(item: $dashboard.webPage) { SafariView(url: $0.url).ignoresSafeArea() }
+        .sheet(isPresented: $dashboard.accountMenuOpen, onDismiss: {
+            chosen?.run(dashboard)
+            chosen = nil
+        }) {
+            AccountMenuSheet { item in
+                chosen = item
+                dashboard.accountMenuOpen = false
+            }
+        }
         // Whether the server has McFly on and how many questions are left, and what this person's AI requests use
         // (Availability): after every load, while signed in.
         .task(id: "\(dashboard.generation)|\(dashboard.phase == .ready)") {

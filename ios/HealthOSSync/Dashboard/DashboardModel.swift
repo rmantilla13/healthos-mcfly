@@ -69,6 +69,8 @@ final class Dashboard {
     var requestCount = 0
     /// A page of the server's website showing over the app, until it's closed.
     var webPage: WebPage?
+    /// The account menu ("Your workspace") is up, from any page's avatar (Shell/AccountMenu.swift).
+    var accountMenuOpen = false
     /// Ask McFly's conversation, for the Home pill's sheet and the page under More alike. In memory only, and gone with
     /// a sign-out, another person's sign-in or another server.
     let mcfly: McFlyChat

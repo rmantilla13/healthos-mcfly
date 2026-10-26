@@ -7,6 +7,7 @@ struct RowIcon: View {
     let systemName: String
     /// The column's width at the default text size.
     var width: CGFloat = RowIcon.column
+    var color: Color = Palette.accentText
     @ScaledMetric(relativeTo: .body) private var scale: CGFloat = 1
 
     /// More's column, at the default text size.
@@ -16,7 +17,7 @@ struct RowIcon: View {
         Image(systemName: systemName)
             .font(.body)
             .dynamicTypeSize(...DynamicTypeSize.xxLarge)
-            .foregroundStyle(Palette.accentText)
+            .foregroundStyle(color)
             .frame(width: Self.width(width * scale, base: width))
             .accessibilityHidden(true)
     }
