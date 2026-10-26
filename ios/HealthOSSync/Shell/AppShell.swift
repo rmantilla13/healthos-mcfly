@@ -39,7 +39,7 @@ struct AppShell: View {
         // Family or Cycle went away (another server, tracking off) while open under More.
         .onChange(of: dashboard.featurePages) { _, _ in dashboard.dropMissingPages() }
         // Under the welcome, nothing of the app is read out or found.
-        .accessibilityHidden(dashboard.onboarding != nil)
+        .accessibilityHidden(dashboard.onboarding != nil || dashboard.welcomeHeld)
         // The welcome, over everything, in place of the app as the web shows it instead of the dashboard (App.tsx): a
         // new account's until it's done, or its steps again from Profile. It goes with a sign-out or a 401. Not a
         // full-screen cover: that slid up over Home at launch, and slid its words down over Home when done. Up at
@@ -52,6 +52,9 @@ struct AppShell: View {
                         .contentShape(Rectangle())
                         .id(mode)
                         .transition(.asymmetric(insertion: mode == .edit ? .opacity : .identity, removal: .opacity))
+                } else if dashboard.welcomeHeld {
+                    // At launch, until the server says who's signed in: the welcome's page, not Home's frame first.
+                    Palette.page.ignoresSafeArea().contentShape(Rectangle()).transition(.identity)
                 }
             }
             .animation(.easeOut(duration: 0.25), value: dashboard.onboarding)
