@@ -40,22 +40,55 @@ struct AccentPillStyle: ButtonStyle {
 }
 
 /// The web's quiet pill (.btn and .pill): ink words on a white pill with a soft shadow. Refresh, Manage sources, a
-/// Profile row's Change, a sheet's Cancel.
+/// Profile row's Change, a sheet's Cancel. One line, as the web's. At the accessibility text sizes, where one line
+/// would cut its words off, they wrap instead, centred in a box with the pill's rounded corners, as tall as they are.
 struct QuietPillStyle: ButtonStyle {
     var size: PillSize = .regular
-    @Environment(\.isEnabled) private var isEnabled
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(size.font)
-            .foregroundStyle(configuration.isPressed ? Palette.ink : Palette.ink2)
-            .lineLimit(1)
-            .padding(.horizontal, size.padding)
-            .frame(minHeight: size.height)
-            .background(Palette.surface, in: Capsule())
-            .tokenShadow(.pill, in: Capsule())
-            .contentShape(Capsule())
+        QuietPillBody(configuration: configuration, size: size)
+    }
+}
+
+private struct QuietPillBody: View {
+    let configuration: ButtonStyleConfiguration
+    let size: PillSize
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    var body: some View {
+        if typeSize.isAccessibilitySize {
+            let shape = RoundedRectangle(cornerRadius: size.height / 2, style: .continuous)
+            pressable(configuration.label
+                .font(size.font)
+                .foregroundStyle(ink)
+                .multilineTextAlignment(.center)
+                .lineLimit(nil)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, size.padding)
+                .padding(.vertical, 8)
+                .frame(minHeight: size.height)
+                .background(Palette.surface, in: shape)
+                .tokenShadow(.pill, in: shape)
+                .contentShape(shape))
+        } else {
+            pressable(configuration.label
+                .font(size.font)
+                .foregroundStyle(ink)
+                .lineLimit(1)
+                .padding(.horizontal, size.padding)
+                .frame(minHeight: size.height)
+                .background(Palette.surface, in: Capsule())
+                .tokenShadow(.pill, in: Capsule())
+                .contentShape(Capsule()))
+        }
+    }
+
+    private var ink: Color { configuration.isPressed ? Palette.ink : Palette.ink2 }
+
+    private func pressable(_ pill: some View) -> some View {
+        pill
             .opacity(isEnabled ? 1 : 0.5)
             .scaleEffect(configuration.isPressed && !reduceMotion ? 0.98 : 1)
             .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: configuration.isPressed)

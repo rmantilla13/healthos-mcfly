@@ -55,6 +55,27 @@ final class ComponentsTests: XCTestCase {
         XCTAssertLessThan(core[1], 40, "\(core)")
     }
 
+    /// The quiet pill is the web's one-line pill up to the largest standard size, words cut short when there's no room as
+    /// on the web; at the accessibility sizes its words wrap instead, so none is cut off.
+    func testTheQuietPillsWordsWrapOnlyAtTheAccessibilitySizes() {
+        func size(_ title: String, _ type: DynamicTypeSize, width: CGFloat, _ pill: PillSize = .regular) -> CGSize {
+            UIHostingController(rootView: Button(title) {}.buttonStyle(.quietPill(size: pill)).environment(\.dynamicTypeSize, type))
+                .sizeThatFits(in: CGSize(width: width, height: 3000))
+        }
+        let long = "Connect your own key to keep asking"
+        for type in [DynamicTypeSize.large, .xxxLarge] {
+            XCTAssertEqual(size(long, type, width: 400).height, 44, accuracy: 0.5, "\(type): the pill's own height")
+            XCTAssertEqual(size(long, type, width: 160).height, 44, accuracy: 0.5, "\(type): one line however narrow, as the web's")
+            XCTAssertEqual(size("Change", type, width: 400, .compact).height, 34, accuracy: 0.5)
+        }
+        for pill in [PillSize.regular, .compact] {
+            let oneLine = size("OK", .accessibility5, width: 300, pill)
+            let wrapped = size(long, .accessibility5, width: 300, pill)
+            XCTAssertGreaterThan(wrapped.height, oneLine.height * 2.5, "\(pill): every word shown, on several lines")
+            XCTAssertLessThanOrEqual(wrapped.width, 300)
+        }
+    }
+
     func testASheetHasAFooterOnlyWhenGivenOne() {
         XCTAssertFalse(SheetScaffold(title: "Edit widgets") { Text("Body") }.hasFooter)
         XCTAssertTrue(SheetScaffold(title: "Edit widgets") { Text("Body") } footer: { Button("Done") {} }.hasFooter)
