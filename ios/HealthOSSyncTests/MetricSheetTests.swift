@@ -769,27 +769,54 @@ final class MetricSheetTests: XCTestCase {
         return host.sizeThatFits(in: CGSize(width: width ?? sheetWidth, height: .greatestFiniteMagnitude))
     }
 
+    /// SwiftUI only builds its accessibility elements while the simulator's accessibility automation is on, and that is a
+    /// setting of the simulator, left on or off by whatever drove its UI last. So a test that reads them turns it on for
+    /// itself, through the simulator's own libAccessibility, and puts back what it found when it's done.
+    private func withAccessibilityAutomation(_ body: () async throws -> Void) async throws {
+        let root = ProcessInfo.processInfo.environment["IPHONE_SIMULATOR_ROOT"] ?? ""
+        guard let lib = dlopen(root + "/usr/lib/libAccessibility.dylib", RTLD_LOCAL) ?? dlopen("/usr/lib/libAccessibility.dylib", RTLD_LOCAL),
+              let get = dlsym(lib, "_AXSAutomationEnabled"), let set = dlsym(lib, "_AXSSetAutomationEnabled") else {
+            XCTFail("the simulator's libAccessibility can't be loaded, so what VoiceOver reaches can't be read")
+            return
+        }
+        let enabled = unsafeBitCast(get, to: (@convention(c) () -> Int32).self)
+        let setEnabled = unsafeBitCast(set, to: (@convention(c) (Int32) -> Void).self)
+        let before = enabled()
+        setEnabled(1)
+        defer { setEnabled(before) }
+        try await body()
+    }
+
     /// Shows a view in a window, as on screen, and hands back its accessibility elements (what VoiceOver reaches), in order.
     private func onScreen(_ view: some View, run: ([NSObject]) async throws -> Void) async throws {
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        let host = UIHostingController(rootView: view)
-        let window = UIWindow(windowScene: scene)
-        window.frame = CGRect(x: 0, y: 0, width: 402, height: 874)
-        window.rootViewController = host
-        window.makeKeyAndVisible()
-        defer { window.isHidden = true }
-        try await Task.sleep(for: .milliseconds(400))
-        func walk(_ o: NSObject, into out: inout [NSObject]) {
-            if o.isAccessibilityElement { out.append(o) }
-            let n = o.accessibilityElementCount()
-            if n != NSNotFound, n > 0 {
-                for i in 0..<n { if let e = o.accessibilityElement(at: i) as? NSObject { walk(e, into: &out) } }
+        try await withAccessibilityAutomation {
+            let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+            let host = UIHostingController(rootView: view)
+            let window = UIWindow(windowScene: scene)
+            window.frame = CGRect(x: 0, y: 0, width: 402, height: 874)
+            window.rootViewController = host
+            window.makeKeyAndVisible()
+            defer { window.isHidden = true }
+            func walk(_ o: NSObject, into out: inout [NSObject]) {
+                if o.isAccessibilityElement { out.append(o) }
+                let n = o.accessibilityElementCount()
+                if n != NSNotFound, n > 0 {
+                    for i in 0..<n { if let e = o.accessibilityElement(at: i) as? NSObject { walk(e, into: &out) } }
+                }
+                for sub in (o as? UIView)?.subviews ?? [] { walk(sub, into: &out) }
             }
-            for sub in (o as? UIView)?.subviews ?? [] { walk(sub, into: &out) }
+            // Wait for the elements to be built and to settle (the same number twice running), up to three seconds,
+            // rather than for a fixed time.
+            var elements: [NSObject] = [], last = -1
+            for _ in 0..<60 {
+                try await Task.sleep(for: .milliseconds(50))
+                elements = []
+                walk(host.view, into: &elements)
+                if !elements.isEmpty, elements.count == last { break }
+                last = elements.count
+            }
+            try await run(elements)
         }
-        var elements: [NSObject] = []
-        walk(host.view, into: &elements)
-        try await run(elements)
     }
 
     /// The Day's table from a sheet's hours, as the sheet draws it.
