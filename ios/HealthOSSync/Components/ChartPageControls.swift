@@ -19,46 +19,48 @@ struct ChartRange: Hashable, Identifiable {
     static let withDay = [day] + standard
 }
 
-/// The range picker (RangeFilters): the ranges in a soft well, the chosen one raised on white. It doesn't wrap: at the
-/// largest text sizes it scrolls sideways rather than break a label. Bind it to `dashboard.rangeDays` so the range
-/// follows the person from page to page, as the web's does in a session.
+/// The range picker (RangeFilters): the ranges in a soft well, the chosen one raised on white. One row where they fit;
+/// at the largest text sizes they wrap onto more rows inside the well, never breaking a label or hiding one off the
+/// edge. Bind it to `dashboard.rangeDays` so the range follows the person from page to page, as the web's does in a
+/// session.
 struct RangeFilters: View {
     @Binding var days: Int
     var ranges: [ChartRange] = ChartRange.standard
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
-            row
-            ScrollView(.horizontal, showsIndicators: false) { row }
+            well(HStack(spacing: 0) { chips }).fixedSize()
+            well(WrapLayout(spacing: 0, lineSpacing: 0) { chips }).fixedSize(horizontal: false, vertical: true)
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Date range")
     }
 
-    private var row: some View {
-        HStack(spacing: 0) {
-            ForEach(ranges) { range in
-                let on = range.days == days
-                Button(range.label) { days = range.days }
-                    .buttonStyle(.plain)
-                    .font(.app(size: 13, weight: .medium, relativeTo: .footnote))
-                    .foregroundStyle(on ? Palette.ink : Palette.ink2)
-                    .lineLimit(1)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background {
-                        if on {
-                            RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Palette.surface)
-                                .shadow(color: .black.opacity(0.08), radius: 1, y: 1)
-                        }
+    private var chips: some View {
+        ForEach(ranges) { range in
+            let on = range.days == days
+            Button(range.label) { days = range.days }
+                .buttonStyle(.plain)
+                .font(.app(size: 13, weight: .medium, relativeTo: .footnote))
+                .foregroundStyle(on ? Palette.ink : Palette.ink2)
+                .lineLimit(1)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background {
+                    if on {
+                        RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Palette.surface)
+                            .shadow(color: .black.opacity(0.08), radius: 1, y: 1)
                     }
-                    .accessibilityAddTraits(on ? .isSelected : [])
-            }
+                }
+                .accessibilityAddTraits(on ? .isSelected : [])
         }
-        .padding(3)
-        .background(Palette.surface2, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Palette.border))
-        .fixedSize()
+    }
+
+    private func well(_ chips: some View) -> some View {
+        chips
+            .padding(3)
+            .background(Palette.surface2, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Palette.border))
     }
 }
 

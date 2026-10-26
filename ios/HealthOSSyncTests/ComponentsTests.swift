@@ -164,6 +164,20 @@ final class ComponentsTests: XCTestCase {
         XCTAssertGreaterThan(side(.accessibility5), 16 * 2.5, "about as much bigger as the words beside it")
     }
 
+    /// The range chips keep one row where they fit; at AX5 they wrap inside the well, so "90 days" isn't cut off at
+    /// the edge, and the well stays inside the page.
+    func testTheRangeChipsWrapRatherThanRunOffTheEdge() {
+        func size(_ type: DynamicTypeSize, width: CGFloat) -> CGSize {
+            UIHostingController(rootView: RangeFilters(days: .constant(30), ranges: ChartRange.standard.filter { $0.days <= 90 })
+                .environment(\.dynamicTypeSize, type)).sizeThatFits(in: CGSize(width: width, height: 3000))
+        }
+        let row = size(.large, width: 358)
+        XCTAssertLessThan(row.width, 358, "one row, as wide as its chips")
+        let wrapped = size(.accessibility5, width: 358)
+        XCTAssertLessThanOrEqual(wrapped.width, 358.5)
+        XCTAssertGreaterThan(wrapped.height, row.height * 3, "on more than one row")
+    }
+
     /// The radio card's mark as the web's radio draws: empty, a grey ring on a grey disc in dark mode (not the card's
     /// own surface); chosen, an accent ring, a white band and an accent dot, in light and dark.
     func testTheRadioMarkIsTheWebsInLightAndDark() throws {
