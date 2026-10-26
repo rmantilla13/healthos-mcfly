@@ -186,6 +186,120 @@ final class McFlyTests: XCTestCase {
         XCTAssertNil(chat.status)
     }
 
+    // MARK: Against a server (AIStubServer: made-up answers on 127.0.0.1)
+
+    /// Points the app at `server` for one test, putting the address back after.
+    private func use(_ server: AIStubServer) {
+        let saved = UserDefaults.standard.string(forKey: "serverURL")
+        addTeardownBlock {
+            server.stop()
+            if let saved { UserDefaults.standard.set(saved, forKey: "serverURL") } else { UserDefaults.standard.removeObject(forKey: "serverURL") }
+        }
+        Config.serverText = server.url.absoluteString
+    }
+
+    /// Waits for `condition`, failing the test if it doesn't come within `seconds`.
+    private func expect(_ message: String = "", within seconds: Double = 5, file: StaticString = #filePath, line: UInt = #line,
+                        _ condition: () -> Bool) async {
+        let held = await AIStubServer.wait(seconds, until: condition)
+        XCTAssertTrue(held, message, file: file, line: line)
+    }
+
+    private let sharedStatus = #"{"configured":true,"limit":30,"usedToday":30,"provider":"anthropic","source":"shared","limited":true}"#
+
+    private func signedIn() -> Dashboard {
+        let d = Dashboard()
+        d.phase = .ready
+        d.mcfly.status = McFlyStatus(configured: true, limit: 30, usedToday: 2, provider: "anthropic", source: "shared", limited: true)
+        var answer = McFlyMessage(role: .assistant, content: "")
+        answer.apply(.text("About 7 hours."))
+        answer.finishAnswer()
+        d.mcfly.messages = [McFlyMessage(role: .user, content: "How did I sleep?"), answer]
+        return d
+    }
+
+    func testA401FromTheChatBringsUpSignInAndForgetsTheConversation() async throws {
+        let server = try await AIStubServer.start(["POST /api/mcfly/chat": .json(401, #"{"error":"Sign in required"}"#)])
+        use(server)
+        let d = signedIn()
+        d.mcfly.attach(to: d)
+        d.mcfly.send("And my resting heart rate?")
+        await expect("a 401 from the chat brings up sign-in at once, as the web's healthos:signin") { d.phase == .signIn }
+        XCTAssertFalse(d.mcfly.streaming)
+        XCTAssertTrue(d.mcfly.messages.isEmpty, "nothing of the conversation stays, never “Sign in to see your dashboard.” under it")
+        XCTAssertNil(d.mcfly.status)
+        XCTAssertEqual(server.requests("POST /api/mcfly/chat").count, 1)
+        let sent = try JSONDecoder().decode([String: [[String: String]]].self, from: try XCTUnwrap(server.requests("POST /api/mcfly/chat").first).body)
+        XCTAssertEqual(sent, ["messages": [["role": "user", "content": "How did I sleep?"], ["role": "assistant", "content": "About 7 hours."],
+                                           ["role": "user", "content": "And my resting heart rate?"]]], "the history and the new question, as the web sends them")
+        XCTAssertEqual(server.requests("POST /api/mcfly/chat").first?.headers["x-healthos"], "1")
+
+        // With no dashboard attached (a conversation on its own), a 401 still leaves nothing of it.
+        let chat = McFlyChat()
+        chat.messages = [McFlyMessage(role: .user, content: "Steps?")]
+        chat.send("And sleep?")
+        await expect { !chat.streaming }
+        XCTAssertTrue(chat.messages.isEmpty)
+    }
+
+    func testA401FromTheStatusBringsUpSignIn() async throws {
+        let server = try await AIStubServer.start(["GET /api/mcfly": .json(401, #"{"error":"Sign in required"}"#)])
+        use(server)
+        let d = signedIn()
+        d.mcfly.attach(to: d)
+        await d.mcfly.refreshStatus()
+        XCTAssertEqual(d.phase, .signIn, "as the web's useApi('/mcfly') does on a 401")
+        XCTAssertTrue(d.mcfly.messages.isEmpty)
+        XCTAssertNil(d.mcfly.status)
+
+        // Only a dashboard's own conversation goes to its sign-in.
+        let other = McFlyChat()
+        other.attach(to: signedIn())
+        XCTAssertNil(other.onSignInRequired)
+    }
+
+    func testAskComesBackAsSoonAsTheAnswerIsInNotWhenTheStatusIs() async throws {
+        let server = try await AIStubServer.start([
+            "POST /api/mcfly/chat": .events([("tool", #"{"label":"Looking at your sleep"}"#), ("text", #"{"text":"You slept well."}"#), ("done", "{}")]),
+            "GET /api/mcfly": .json(200, sharedStatus, delay: 2.5),
+        ])
+        use(server)
+        let chat = McFlyChat()
+        chat.send("How did I sleep?")
+        // The status read takes 2.5 seconds here; Ask, New chat and the suggestions don't wait for it.
+        await expect("Stop stays up only while the answer streams", within: 1.5) { !chat.streaming }
+        XCTAssertEqual(chat.messages.last?.content, "You slept well.")
+        XCTAssertEqual(chat.messages.last?.steps, ["Looking at your sleep"])
+        XCTAssertFalse(chat.messages.last?.pending ?? true)
+        XCTAssertNil(chat.status, "the status read is still on its way")
+        // And it's read: the questions left today follow the answer.
+        await expect(within: 5) { chat.status != nil }
+        XCTAssertEqual(chat.status?.questionsLeft, 0)
+    }
+
+    func testAfterStopTheQuestionsLeftAreReadAgain() async throws {
+        // One question left; McFly starts answering, then Stop. The server counted it (words were written).
+        let server = try await AIStubServer.start([
+            "POST /api/mcfly/chat": .events([("text", #"{"text":"Your sleep was"}"#)], holdOpen: true),
+            "GET /api/mcfly": .json(200, sharedStatus),
+        ])
+        use(server)
+        let chat = McFlyChat()
+        chat.status = McFlyStatus(configured: true, limit: 30, usedToday: 29, provider: "anthropic", source: "shared", limited: true)
+        XCTAssertEqual(McFlyWords.composerLine(chat.status), "1 question left today")
+        chat.send("How did I sleep?")
+        await expect("the answer is streaming") { chat.messages.last?.content == "Your sleep was" }
+        XCTAssertTrue(chat.streaming)
+        XCTAssertTrue(server.requests("GET /api/mcfly").isEmpty)
+        chat.stop()
+        await expect { !chat.streaming }
+        XCTAssertNil(chat.messages.last?.error, "what arrived stands as the answer")
+        await expect("read again after Stop, as the web's reload() after an abort") { chat.status?.usedToday == 30 }
+        XCTAssertEqual(server.requests("GET /api/mcfly").count, 1)
+        XCTAssertEqual(McFlyWords.composerLine(chat.status), "0 questions left today")
+        XCTAssertEqual(McFlyWords.placeholder(chat.status), "You've reached today's question limit.")
+    }
+
     func testReturnSendsAndPastedLinesStay() {
         XCTAssertTrue(McFlyScreen.returnPressed(old: "How did I sleep?", new: "How did I sleep?\n"))
         XCTAssertTrue(McFlyScreen.returnPressed(old: "How did I sleep?", new: "How did\n I sleep?"), "Return anywhere sends")

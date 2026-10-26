@@ -70,6 +70,7 @@ final class AIKeysModel {
             status = s
             note = AINote(ok: true, text: done)
             dashboard.availability.heard(ai: s)
+            dashboard.mcfly.attach(to: dashboard)
             Task {
                 await dashboard.mcfly.refreshStatus()
                 await dashboard.refreshIfChanged(includeStatus: false)

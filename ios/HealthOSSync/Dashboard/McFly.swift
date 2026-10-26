@@ -357,12 +357,23 @@ final class McFlyChat {
     /// The answer streaming now, for Stop.
     private var task: Task<Void, Never>?
     private var stopping = false
+    /// What a 401 from Ask McFly does: the dashboard this conversation belongs to goes to its sign-in screen, as the
+    /// web dispatches healthos:signin, and that forgets the conversation with everything else of the person. Set by
+    /// `attach(to:)`; a sign-out keeps it.
+    @ObservationIgnored private(set) var onSignInRequired: (@MainActor () -> Void)?
     #if targetEnvironment(simulator)
     /// A made-up status for scripted runs in the Simulator (McFlyLaunchHook), which the server's doesn't replace.
     var preview: McFlyStatus?
     #endif
 
-    /// Reads McFly's status. A read that fails (offline) keeps what was known.
+    /// Ties a 401 here to `dashboard`'s sign-in screen. Only its own conversation (`dashboard.mcfly`); the dashboard is
+    /// held weakly, since it holds this. The page, Home's pill and the key sheets call it before they read or ask.
+    func attach(to dashboard: Dashboard) {
+        guard dashboard.mcfly === self else { return }
+        onSignInRequired = { [weak dashboard] in dashboard?.phase = .signIn }
+    }
+
+    /// Reads McFly's status. A read that fails (offline) keeps what was known; a 401 brings up the sign-in screen.
     func refreshStatus() async {
         #if targetEnvironment(simulator)
         if let preview {
@@ -371,11 +382,27 @@ final class McFlyChat {
         }
         #endif
         let thread = thread
-        guard let client = APIClient.current(), let status = try? await client.mcflyStatus() else { return }
+        guard let client = APIClient.current() else { return }
+        let status: McFlyStatus
+        do {
+            status = try await client.mcflyStatus()
+        } catch APIError.signInRequired {
+            if thread == self.thread { sessionEnded() }
+            return
+        } catch {
+            return
+        }
         #if targetEnvironment(simulator)
         if let preview { return self.status = preview }
         #endif
         if thread == self.thread { self.status = status }
+    }
+
+    /// The server says nobody's signed in (a session ended elsewhere, or ran out): the sign-in screen comes, and
+    /// nothing of the conversation stays, even with no dashboard attached.
+    private func sessionEnded() {
+        onSignInRequired?()
+        forget()
     }
 
     /// Signed out, someone else signed in, or another server: the conversation and the status go, an answer on its way
@@ -451,13 +478,29 @@ final class McFlyChat {
             }
             guard thread == self.thread else { return }
             if stopping || Task.isCancelled { messages[index].stop() }
+        } catch APIError.signInRequired {
+            // The session ended elsewhere: the sign-in screen, at once, with this conversation gone (never "Sign in
+            // to see your dashboard." under the question while it all stays on screen).
+            guard thread == self.thread else { return }
+            sessionEnded()
+            return
         } catch {
             guard thread == self.thread else { return }
             if stopping || Task.isCancelled || APIClient.isCancellation(error) { messages[index].stop() }
             else { messages[index].fail(error.localizedDescription) }
         }
         messages[index].finishAnswer()
-        await refreshStatus()
+        // The answer is in: Ask, New chat and the suggestions come back now, not once the status read below returns
+        // (the web's setBusy(false) before its reload()).
+        streaming = false
+        stopping = false
+        task = nil
+        // The questions left today, read again in a task of its own: a stopped answer's task is cancelled, and a read
+        // in it would fail at once, keeping the count from before (the server counts a question once words were written).
+        Task { [weak self] in
+            guard let self, thread == self.thread else { return }
+            await self.refreshStatus()
+        }
     }
 }
 
@@ -510,6 +553,8 @@ struct AskMcFlyEntry: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
                 .padding(.bottom, 10)
+                // Signed in: a 401 from McFly's status, which the shell reads after every load, brings up sign-in.
+                .onAppear { dashboard.mcfly.attach(to: dashboard) }
             }
         }
         #if targetEnvironment(simulator)

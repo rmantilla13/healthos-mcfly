@@ -71,6 +71,7 @@ struct McFlyScreen: View {
             ChatbotSheet { chatbot = false }
         }
         .task {
+            chat.attach(to: dashboard)
             await chat.refreshStatus()
             await dashboard.loadAI()
         }
@@ -278,11 +279,14 @@ struct McFlyScreen: View {
         ask(q)
     }
 
+    /// A typed question or a suggestion: the box empties either way, as the web's ask() does.
     private func ask(_ q: String) {
         guard !chat.streaming, left != 0 else { return }
+        draft = ""
         // On a phone, the keyboard steps aside while the answer comes in.
         focused = false
         follow.sent()
+        chat.attach(to: dashboard)
         chat.send(q)
     }
 }
