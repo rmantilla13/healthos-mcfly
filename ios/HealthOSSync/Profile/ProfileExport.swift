@@ -50,7 +50,9 @@ enum ProfileExport {
         } catch Failure.stopped {
             throw Problem(message: ProfileWords.exportStopped)
         }
-        defer { try? FileManager.default.removeItem(at: file) }
+        // Whatever isn't handed on goes: a refusal's body, a file that couldn't be named.
+        var kept: URL?
+        defer { if kept == nil { discard(file) } }
         guard let http = response as? HTTPURLResponse else { throw Problem(message: ProfileWords.exportUnreachable) }
         guard (200..<300).contains(http.statusCode) else {
             // A refusal's body is a line of JSON.
@@ -63,17 +65,31 @@ enum ProfileExport {
         // A new session cookie, if one came, is kept as for any answer.
         _ = try? client.checked(Data(), response, path: path)
         let name = fileName(contentDisposition: http.value(forHTTPHeaderField: "Content-Disposition"), today: today)
-        let dir = folder.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        // Named in its own folder: the one it was written into, or a new one.
+        let parent = file.deletingLastPathComponent()
+        let dir = isInFolder(parent) ? parent : folder.appendingPathComponent(UUID().uuidString, isDirectory: true)
         do {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.protectionKey: FileProtectionType.complete])
             let target = dir.appendingPathComponent(name)
             try FileManager.default.moveItem(at: file, to: target)
             try FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: target.path)
+            kept = target
             return target
         } catch {
             removeAll()
             throw Problem(message: ProfileWords.exportFailed)
         }
+    }
+
+    /// A download not handed on: the file, and the folder it was written into when that's one of the export's own.
+    private static func discard(_ file: URL) {
+        try? FileManager.default.removeItem(at: file)
+        let parent = file.deletingLastPathComponent()
+        if isInFolder(parent) { try? FileManager.default.removeItem(at: parent) }
+    }
+
+    private static func isInFolder(_ dir: URL) -> Bool {
+        dir.standardizedFileURL.deletingLastPathComponent().path == folder.standardizedFileURL.path
     }
 
     /// The error for a refused export: signed out, an older server, or the server's words (the web's fallback when
@@ -115,28 +131,89 @@ enum ProfileExport {
         try? FileManager.default.removeItem(at: folder)
     }
 
-    /// The download as the app makes it: straight to a file, so tens of MB never sit in memory. A failure says
-    /// whether the answer had begun (`stopped`) or never came (`unreachable`).
+    /// The download as the app makes it: written straight into a file of its own in `folder` as it arrives (complete
+    /// file protection), so tens of MB never sit in memory, and nothing of it is left anywhere else. A system download
+    /// task would keep a broken download's part in the app's temporary files to resume it later: this keeps none.
+    /// A failure says whether the answer had begun (`stopped`) or never came (`unreachable`), and deletes the part.
     static func live(_ request: URLRequest) async throws -> (URL, URLResponse) {
-        let watch = TaskWatch()
+        let dir = folder.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let file = dir.appendingPathComponent("download.part")
         do {
-            return try await APIClient.session.download(for: request, delegate: watch)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.protectionKey: FileProtectionType.complete])
+            guard FileManager.default.createFile(atPath: file.path, contents: nil, attributes: [.protectionKey: FileProtectionType.complete]) else {
+                throw CocoaError(.fileWriteUnknown)
+            }
         } catch {
-            if APIClient.isCancellation(error) { throw CancellationError() }
-            throw watch.answered ? Failure.stopped : Failure.unreachable
+            try? FileManager.default.removeItem(at: dir)
+            throw Failure.unreachable
+        }
+        let writer = try StreamWriter(file: file)
+        let task = APIClient.session.dataTask(with: request)
+        task.delegate = writer
+        do {
+            let response = try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { continuation in
+                    writer.start(task, continuation)
+                }
+            } onCancel: {
+                task.cancel()
+            }
+            return (file, response)
+        } catch {
+            try? FileManager.default.removeItem(at: dir)
+            if Task.isCancelled || APIClient.isCancellation(error) { throw CancellationError() }
+            throw writer.answered ? Failure.stopped : Failure.unreachable
         }
     }
 
-    /// Holds the task the download made, to ask afterwards whether its answer had begun.
-    private final class TaskWatch: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    /// Writes one download's body into its file as it comes, and says how it ended.
+    private final class StreamWriter: NSObject, URLSessionDataDelegate, @unchecked Sendable {
         private let lock = NSLock()
-        private var task: URLSessionTask?
+        private let handle: FileHandle
+        private var continuation: CheckedContinuation<URLResponse, Error>?
+        private var response: URLResponse?
+        private var failed: Error?
 
-        func urlSession(_ session: URLSession, didCreateTask task: URLSessionTask) {
-            lock.withLock { self.task = task }
+        init(file: URL) throws { handle = try FileHandle(forWritingTo: file) }
+
+        func start(_ task: URLSessionDataTask, _ continuation: CheckedContinuation<URLResponse, Error>) {
+            lock.withLock { self.continuation = continuation }
+            task.resume()
         }
 
-        var answered: Bool { lock.withLock { task?.response != nil } }
+        /// The answer's head came: whatever happens next broke off a download that had begun.
+        var answered: Bool { lock.withLock { response != nil } }
+
+        func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
+                        completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+            lock.withLock { self.response = response }
+            completionHandler(.allow)
+        }
+
+        func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+            do {
+                try handle.write(contentsOf: data)
+            } catch {
+                // The phone is full, or the file went: no use reading on.
+                lock.withLock { failed = error }
+                dataTask.cancel()
+            }
+        }
+
+        func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+            try? handle.close()
+            let (continuation, response, failed) = lock.withLock { () -> (CheckedContinuation<URLResponse, Error>?, URLResponse?, Error?) in
+                defer { self.continuation = nil }
+                return (self.continuation, self.response, self.failed)
+            }
+            if let error = failed ?? error {
+                continuation?.resume(throwing: error)
+            } else if let response {
+                continuation?.resume(returning: response)
+            } else {
+                continuation?.resume(throwing: URLError(.badServerResponse))
+            }
+        }
     }
 
     /// Hands the file to the share sheet (Save to Files, AirDrop, …), over whatever is showing. `done` runs once it

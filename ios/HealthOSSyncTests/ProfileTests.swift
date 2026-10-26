@@ -288,6 +288,16 @@ final class ProfileTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: ProfileExport.folder.path), "nothing kept from a refusal")
     }
 
+    func testARefusalsBodyIsNotKept() async throws {
+        var body: URL?
+        _ = await problem { _ in
+            let a = try self.answer(429, #"{"error":"Your export was just prepared. Try again in a minute."}"#)
+            body = a.0
+            return a
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: try XCTUnwrap(body).path))
+    }
+
     func testAnOlderServerHasNoExport() async throws {
         let missing = await problem { _ in try self.answer(404, #"{"error":"Not found"}"#) } as? ProfileExport.Problem
         XCTAssertEqual(missing?.routeMissing, true)
