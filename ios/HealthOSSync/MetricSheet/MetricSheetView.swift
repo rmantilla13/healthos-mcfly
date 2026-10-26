@@ -9,7 +9,9 @@ import SwiftUI
 /// reading; a metric never measured at all says "No measurement yet" instead, with no ranges to try. A server without
 /// the sheet (an older Mac or LAN server) gets the same sheet built on the phone from its trends (MetricSheetFallback).
 ///
-/// What it loads lives only here, in memory, and goes with the sheet: a sign-out closes it.
+/// What it loads is kept in memory only: the sheet's own answers go with the sheet, and a sign-out closes it. Built on
+/// the phone, its reads of GET /api/trends and GET /api/day go through the Dashboard's in-memory caches, which every
+/// page shares and a sign-out clears.
 struct MetricSheetView: View {
     let request: MetricRequest
     @Environment(Dashboard.self) private var dashboard

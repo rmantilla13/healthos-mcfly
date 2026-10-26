@@ -3,8 +3,9 @@ import Observation
 
 /// What one open sheet has loaded and which range it shows (the web sheet's useApi and its two effects): the last
 /// answer of any range stays up while another range loads, unless it's empty; an answer that's current for the range
-/// on screen may move the range (SheetRanges); a server without the sheet hands over to the phone for good. Memory only,
-/// and it goes with the sheet.
+/// on screen may move the range (SheetRanges); a server without the sheet hands over to the phone for good. Its answers
+/// are kept in memory only and go with the sheet (built on the phone, the reads behind them also sit in the Dashboard's
+/// shared caches: MetricSheetFallback).
 @MainActor
 @Observable
 final class MetricSheetModel {

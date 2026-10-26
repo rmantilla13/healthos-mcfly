@@ -19,7 +19,8 @@ extension APIClient {
 /// A sheet built on the phone for a server without one for this metric: the window's values from GET /api/trends (the
 /// readings TrendsLoader shows), or the day's hours from GET /api/day, with the figures the server would put beside them.
 /// The server's own parts (where the latest reading sits, its sentence, which devices sent what) need the server, so
-/// they're left out rather than guessed.
+/// they're left out rather than guessed. It reads through the Dashboard (`trends`, `day(date:)`), so what it reads also
+/// sits in the Dashboard's in-memory caches that every page shares: kept past the sheet, cleared on sign-out.
 enum MetricSheetFallback {
     /// The metric route is there but doesn't know this metric: a server from before it had a sheet.
     static func unknownMetric(_ error: APIError) -> Bool {
