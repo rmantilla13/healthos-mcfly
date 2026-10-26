@@ -164,7 +164,7 @@ struct AINotHere: View {
 }
 
 /// A field's label above it (.ai-field span).
-private struct FieldLabel: View {
+private struct AIFieldLabel: View {
     let text: String
     var optional = false
 
@@ -197,7 +197,7 @@ struct AIKeyField: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            FieldLabel(text: "Your \(provider.label) API key")
+            AIFieldLabel(text: "Your \(provider.label) API key")
             SecureField("", text: $key, prompt: Text("Paste your key").foregroundStyle(Palette.ink3))
                 .textContentType(nil)
                 .textInputAutocapitalization(.never)
@@ -219,7 +219,7 @@ struct AIModelField: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            FieldLabel(text: "Model", optional: true)
+            AIFieldLabel(text: "Model", optional: true)
             TextField("", text: $model, prompt: Text("The default model").foregroundStyle(Palette.ink3))
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
