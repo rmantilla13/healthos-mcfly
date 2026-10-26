@@ -237,103 +237,134 @@ final class TimelineScrubTests: XCTestCase {
     }
 }
 
-/// The review fixes for scrubbing Today's path: the portrait's readings laid out by their measured heights, the
-/// portrait's heart following the marker, a failed GET /api/day never read as "no readings", and no marker
-/// animation under Reduce Motion. (VoiceOver's activation isn't covered here: SwiftUI builds no accessibility tree
-/// in a unit test unless accessibility is running.)
+/// The review fixes for scrubbing Today's timeline and the web's photo figure: labels placed by their measured sizes
+/// beside the silhouette (Figure.tsx placeLabels), the figure's heart following the marker, a failed GET /api/day never
+/// read as "no readings", and no marker animation under Reduce Motion. (VoiceOver's activation isn't covered here:
+/// SwiftUI builds no accessibility tree in a unit test unless accessibility is running.)
 final class ScrubVitalsFixTests: XCTestCase {
     private typealias S = TimelineScrub
     private let today = "2026-10-19"
     private let past = "2026-10-18"
 
-    // MARK: Portrait layout
+    // MARK: The photo's labels (Figure.tsx photoLayout, spo2Dot, placeLabels)
 
-    /// A 375pt phone's content width, with the silhouette (no photo).
-    private let layout = PortraitLayout(width: 343, figureHeight: 340, aspect: 0.62)
-    private let dots = PortraitLayout.silhouetteDots
+    /// A cut-out 3:4, the face high in the middle, the shoulders at 36%, and an outline: the head narrow above the
+    /// shoulders, the body below them, with room for a label on either side.
+    private func photo(outline: Bool = true, shoulderY: Double? = 0.36) throws -> PhotoMeta {
+        let rows = (0..<100).map { i -> [Double] in
+            let y = (Double(i) + 0.5) / 100
+            if y < 0.06 { return [1, 0] }
+            if y < 0.34 { return [0.38, 0.62] }
+            return [0.3, 0.7]
+        }
+        var json: [String: Any] = ["version": 1, "width": 900, "height": 1200, "face": [0.38, 0.06, 0.24, 0.24],
+                                   "dots": ["temp": [0.5, 0.1], "breathing": [0.5, 0.3], "heart": [0.56, 0.45]]]
+        if let shoulderY { json["shoulderY"] = shoulderY }
+        if outline { json["outline"] = rows }
+        return try JSONDecoder().decode(PhotoMeta.self, from: JSONSerialization.data(withJSONObject: json))
+    }
 
-    private func heights(_ h: CGFloat) -> [VitalKey: CGFloat] { [.temp: h, .breathing: h, .heart: h] }
+    func testBloodOxygensDotIsTheHeartMirroredOnTheShoulderLine() throws {
+        // mirrored = 2 × 0.5 − 0.56 = 0.44, on the row at 0.39, whose left edge is 0.3: a third of the way on.
+        let dot = try XCTUnwrap(PhotoLabels.spo2Dot(try photo()))
+        XCTAssertEqual(dot.y, 0.39, accuracy: 1e-9)
+        XCTAssertEqual(dot.x, 0.44 + (0.3 - 0.44) * 0.35, accuracy: 1e-9)
+        // Without an outline: 0.15 past the mirrored point.
+        let bare = try XCTUnwrap(PhotoLabels.spo2Dot(try photo(outline: false)))
+        XCTAssertEqual(bare.x, 0.44 + (0.29 - 0.44) * 0.35, accuracy: 1e-9)
+        // Older servers send no shoulder line: about the face's bottom (0.06 + 0.24 × 1.1), as the cut-out tool puts it.
+        XCTAssertEqual(PhotoLabels.shoulderY(try photo(shoulderY: nil)), 0.324, accuracy: 1e-9)
+    }
 
-    /// Every pair of readings on one side is at least `gap` apart, top to bottom.
-    private func assertSpaced(_ placed: [VitalKey: PortraitLayout.Placed], file: StaticString = #filePath, line: UInt = #line) {
+    func testHomesLabelsGoBloodOxygenAndHeartLeftBreathingRightTopToBottom() throws {
+        let dots = try XCTUnwrap(PhotoLabels.dots(try photo()))
+        let slots = PhotoLabels.slots(dots, callouts: CalloutKey.home)
+        XCTAssertEqual(slots.map(\.key), [.breathing, .spo2, .heart], "by their dots, top to bottom")
+        XCTAssertEqual(slots.map(\.left), [false, true, true])
+        // Elsewhere (temperature, breathing, heart): breathing on the left, heart on the right.
+        let standard = PhotoLabels.slots(dots, callouts: CalloutKey.standard)
+        XCTAssertEqual(standard.map(\.key), [.temp, .breathing, .heart])
+        XCTAssertEqual(standard.map(\.left), [true, true, false])
+    }
+
+    /// No label covers the silhouette's outline on its rows, or another label on its side; all stay in the figure.
+    private func assertPlaced(_ placed: [PhotoLabels.Placed], photo: PhotoMeta, width: Double, height: Double, file: StaticString = #filePath, line: UInt = #line) {
+        let outline = PhotoLabels.outline(photo)
+        for p in placed {
+            XCTAssertGreaterThanOrEqual(p.y, 0, file: file, line: line)
+            XCTAssertLessThanOrEqual(p.y + p.h, 1 + 1e-9, file: file, line: line)
+            let left = p.left ? p.x - p.w : p.x, right = p.left ? p.x : p.x + p.w
+            XCTAssertGreaterThanOrEqual(left, -1e-9, "\(p.key) inside the figure", file: file, line: line)
+            XCTAssertLessThanOrEqual(right, 1 + 1e-9, "\(p.key) inside the figure", file: file, line: line)
+            let rows = Array(outline[Int((p.y * 100).rounded(.down))..<min(100, Int(((p.y + p.h) * 100).rounded(.up)))])
+            if p.left {
+                XCTAssertLessThanOrEqual(right, (rows.map { $0[0] }.min() ?? 1) - 12 / width + 1e-9, "\(p.key) clear of the body", file: file, line: line)
+            } else {
+                XCTAssertGreaterThanOrEqual(left, (rows.map { $0[1] }.max() ?? 0) + 12 / width - 1e-9, "\(p.key) clear of the body", file: file, line: line)
+            }
+        }
         for left in [true, false] {
-            let side = placed.values.filter { $0.left == left }.map(\.frame).sorted { $0.minY < $1.minY }
+            let side = placed.filter { $0.left == left }
             for (a, b) in zip(side, side.dropFirst()) {
-                XCTAssertGreaterThanOrEqual(b.minY - a.maxY, PortraitLayout.gap - 0.001, "readings \(a) and \(b) overlap", file: file, line: line)
-            }
-            for f in side { XCTAssertGreaterThanOrEqual(f.minY, 0, file: file, line: line) }
-        }
-    }
-
-    /// No reading or shape touches another, and the area is tall enough for all of them.
-    private func assertClear(_ plan: PortraitLayout.Plan, file: StaticString = #filePath, line: UInt = #line) {
-        let boxes = plan.labels.values.map(\.frame) + plan.shapes.values.map { $0 }
-        for (i, a) in boxes.enumerated() {
-            XCTAssertLessThanOrEqual(a.maxY, plan.height, "\(a) is below the portrait's area", file: file, line: line)
-            for b in boxes[(i + 1)...] {
-                XCTAssertFalse(a.intersects(b), "\(a) and \(b) overlap", file: file, line: line)
+                XCTAssertGreaterThanOrEqual(b.y - (a.y + a.h), 10 / height - 1e-9, "\(a.key) and \(b.key) apart", file: file, line: line)
             }
         }
     }
 
-    func testWrappedReadingsOnTheSilhouetteSitBelowEachOtherNotAFixedDistanceApart() {
-        // On the silhouette every dot is right of the face's centre, so all three readings share the right side, and
-        // breathing (y≈147) and heart (y≈194) are under 50pt apart. Labels with wrapped status words are about 60pt
-        // tall at the default size, 72pt at xLarge and 80pt at xxLarge: the old fixed 58pt between centres overlapped.
-        for h: CGFloat in [47, 60, 72, 80] {
-            let placed = layout.labels(for: dots, faceCenterX: 0.5, heights: heights(h))
-            XCTAssertEqual(placed.count, 3)
-            XCTAssertTrue(placed.values.allSatisfy { !$0.left })
-            assertSpaced(placed)
+    func testEachLabelSitsBesideTheSilhouetteNearItsDotAndBelowTheOneAbove() throws {
+        let photo = try photo()
+        let dots = try XCTUnwrap(PhotoLabels.dots(photo))
+        let slots = PhotoLabels.slots(dots, callouts: CalloutKey.home)
+        let (w, h) = (343.0, 343.0 * 4 / 3)
+        let sizes: [CalloutKey: CGSize] = [.spo2: CGSize(width: 70, height: 50), .breathing: CGSize(width: 64, height: 50), .heart: CGSize(width: 64, height: 50)]
+        let placed = PhotoLabels.place(photo: photo, dots: dots, slots: slots, sizes: sizes, width: w, height: h)
+        XCTAssertEqual(placed.map(\.key), [.breathing, .spo2, .heart])
+        assertPlaced(placed, photo: photo, width: w, height: h)
+        // Breathing's dot (y 0.3) has room beside the neck: centred on it, to within the 0.5% steps.
+        let breathing = try XCTUnwrap(placed.first { $0.key == .breathing })
+        XCTAssertEqual(breathing.y + breathing.h / 2, 0.3, accuracy: 0.003)
+        // The leader line meets each label beside its value line, 6pt toward the body.
+        let end = PhotoLabels.lineEnd(breathing, width: w, height: h)
+        XCTAssertEqual(end.x, breathing.x * w - 6, accuracy: 1e-9)
+        XCTAssertEqual(end.y, breathing.y * h + 30, accuracy: 1e-9)
+    }
+
+    func testLargeTextLabelsStillNeverLeaveTheFigure() throws {
+        let photo = try photo()
+        let dots = try XCTUnwrap(PhotoLabels.dots(photo))
+        let slots = PhotoLabels.slots(dots, callouts: CalloutKey.home)
+        let (w, h) = (343.0, 343.0 * 4 / 3)
+        // xxLarge: labels about 120 × 80, too wide for the room beside the body: then the roomiest spot, kept inside the
+        // figure (Figure.tsx: "Nowhere free").
+        let big: [CalloutKey: CGSize] = [.spo2: CGSize(width: 120, height: 80), .breathing: CGSize(width: 120, height: 80), .heart: CGSize(width: 120, height: 80)]
+        let placed = PhotoLabels.place(photo: photo, dots: dots, slots: slots, sizes: big, width: w, height: h)
+        XCTAssertEqual(placed.count, 3)
+        for p in placed {
+            let left = p.left ? p.x - p.w : p.x, right = p.left ? p.x : p.x + p.w
+            XCTAssertGreaterThanOrEqual(left, -1e-9)
+            XCTAssertLessThanOrEqual(right, 1 + 1e-9)
         }
-        // Mixed: one wrapped status between two single-line ones.
-        assertSpaced(layout.labels(for: dots, faceCenterX: 0.5, heights: [.temp: 47, .breathing: 60, .heart: 47]))
-        // Before they're measured, the estimate keeps them apart too.
-        assertSpaced(layout.labels(for: dots, faceCenterX: 0.5, heights: [:]))
+        // Before they're measured, the web's starting sizes.
+        let unmeasured = PhotoLabels.place(photo: photo, dots: dots, slots: slots, sizes: [:], width: w, height: h)
+        XCTAssertEqual(unmeasured.first { $0.key == .spo2 }?.w ?? 0, 110 / w, accuracy: 1e-9)
     }
 
-    func testAReadingIsCentredOnItsDotWhenThereIsRoomAndNeverStartsAboveTheTop() {
-        let placed = layout.labels(for: dots, faceCenterX: 0.5, heights: heights(47))
-        let temp = placed[.temp]!, breathing = placed[.breathing]!
-        XCTAssertEqual(temp.frame.midY, temp.dot.y, accuracy: 0.001)
-        XCTAssertEqual(breathing.frame.midY, breathing.dot.y, accuracy: 0.001)
-        XCTAssertEqual(breathing.anchor.y, breathing.frame.midY, accuracy: 0.001, "the leader line meets the reading's middle")
-        // A tall reading by a dot near the top is moved down rather than cut off above the portrait.
-        let tall = layout.labels(for: dots, faceCenterX: 0.5, heights: heights(110))
-        XCTAssertEqual(tall[.temp]!.frame.minY, 0, accuracy: 0.001)
-        assertSpaced(tall)
+    func testOlderMetadataWithoutAnOutlineTreatsTheFaceAsTheObstacle() throws {
+        let photo = try photo(outline: false)
+        let rows = PhotoLabels.outline(photo)
+        XCTAssertEqual(rows.count, 100)
+        XCTAssertEqual(rows[1], [1, 0], "above the face: empty")
+        XCTAssertEqual(rows[20][0], 0.38 - 0.024, accuracy: 1e-9)
+        XCTAssertEqual(rows[20][1], 0.38 + 0.264, accuracy: 1e-9)
+        XCTAssertEqual(rows[40], [0, 1], "below the shoulders: all body")
+        let dots = try XCTUnwrap(PhotoLabels.dots(photo))
+        let placed = PhotoLabels.place(photo: photo, dots: dots, slots: PhotoLabels.slots(dots, callouts: CalloutKey.home), sizes: [:], width: 343, height: 457)
+        XCTAssertEqual(placed.count, 3)
     }
 
-    func testPhotoDotsOnBothSidesAreSpacedPerSide() {
-        let photoDots: [VitalKey: CGPoint] = [.temp: CGPoint(x: 0.4, y: 0.12), .breathing: CGPoint(x: 0.45, y: 0.2), .heart: CGPoint(x: 0.62, y: 0.5)]
-        let placed = layout.labels(for: photoDots, faceCenterX: 0.5, heights: heights(80))
-        XCTAssertTrue(placed[.temp]!.left)
-        XCTAssertTrue(placed[.breathing]!.left)
-        XCTAssertFalse(placed[.heart]!.left)
-        assertSpaced(placed)
-    }
-
-    func testAtTheDefaultSizeTheShapesStayWhereTheyWere() {
-        let plan = layout.plan(dots: dots, faceCenterX: 0.5, labelHeights: heights(47), shapeHeights: [:])
-        let f = layout.figure
-        XCTAssertEqual(plan.shapes[.slept]!.midY, f.minY + f.height * 0.74, accuracy: 0.001)
-        XCTAssertEqual(plan.shapes[.steps]!.midY, f.minY + f.height * 0.86, accuracy: 0.001)
-        XCTAssertEqual(plan.shapes[.hrv]!.midY, f.maxY + 34, accuracy: 0.001)
-        XCTAssertEqual(plan.height, f.maxY + 72, accuracy: 0.001)
-        assertClear(plan)
-    }
-
-    func testLargeTextPushesTheShapesBelowTheReadingsAndTheAreaGrowsToHoldThem() {
-        // xxLarge: wrapped readings about 80pt tall and taller shapes. The heart reading reaches the Steps shape's place.
-        let big = layout.plan(dots: dots, faceCenterX: 0.5, labelHeights: heights(80), shapeHeights: [.slept: 74, .steps: 82, .hrv: 74])
-        assertClear(big)
-        XCTAssertGreaterThan(big.shapes[.steps]!.minY, big.labels[.heart]!.frame.maxY)
-        // A photo with the heart low on the right, right where the Steps shape sits.
-        let low: [VitalKey: CGPoint] = [.temp: CGPoint(x: 0.55, y: 0.1), .breathing: CGPoint(x: 0.4, y: 0.45), .heart: CGPoint(x: 0.7, y: 0.84)]
-        let photo = PortraitLayout(width: 343, figureHeight: 340, aspect: 0.7)
-        for h: CGFloat in [47, 60, 80] {
-            assertClear(photo.plan(dots: low, faceCenterX: 0.5, labelHeights: heights(h), shapeHeights: [:]))
-        }
+    func testAPhotoWithoutDotsHasNoCalloutsToPlace() throws {
+        let bare = try JSONDecoder().decode(PhotoMeta.self, from: Data(#"{"version":1,"width":900,"height":1200}"#.utf8))
+        XCTAssertNil(PhotoLabels.dots(bare), "the digital human stands in")
     }
 
     // MARK: The portrait's heart while scrubbing
@@ -373,29 +404,36 @@ final class ScrubVitalsFixTests: XCTestCase {
         XCTAssertNil(scrubbed(7 * 60, DayData(date: today, today: today, asOf: 14, metrics: ["steps": DaySeries(hours: hours([7: 1]), typical: hours([:]))])))
     }
 
-    func testTheScrubbedHeartCalloutSaysTheHourWithNoLevel() {
-        let resting = Vital(label: "Resting HR", latest: Latest(date: today, value: 62, source: "apple"), status: "normal", level: "normal")
-        let plain = OrganicPortrait.heartReading(resting, asOf: today, scrub: nil)
+    private func heartVitals() throws -> Summary.Vitals {
+        try JSONDecoder().decode(Summary.Vitals.self, from: Data(#"{"heart":{"label":"Resting heart","latest":{"date":"2026-10-19","value":62,"source":"apple"},"status":"normal","level":"normal"}}"#.utf8))
+    }
+
+    func testTheScrubbedHeartCalloutSaysTheHourWithNoLevel() throws {
+        let vitals = try heartVitals()
+        let plain = CalloutText.of(.heart, vitals: vitals, asOf: today)
         XCTAssertEqual(plain.level, .normal)
-        XCTAssertEqual(plain.value, "62 bpm")
+        XCTAssertEqual(plain.value, "62")
+        XCTAssertEqual(plain.unit, "bpm")
         XCTAssertEqual(plain.status, "Normal")
-        XCTAssertEqual(plain.a11y, "Resting heart rate 62 bpm, Normal")
+        XCTAssertEqual(plain.spoken, "Heart, 62 beats per minute, Normal")
         XCTAssertFalse(plain.scrubbed)
 
-        let hour = OrganicPortrait.heartReading(resting, asOf: today, scrub: scrubbed(7 * 60 + 20, dayOf(today, asOf: 14)))
+        let hour = CalloutText.of(.heart, vitals: vitals, asOf: today, scrub: scrubbed(7 * 60 + 20, dayOf(today, asOf: 14)))
         XCTAssertEqual(hour.level, .neutral, "levels are for resting rates")
-        XCTAssertEqual(hour.value, "131 bpm")
+        XCTAssertNil(hour.statusLevel)
+        XCTAssertEqual(hour.value, "131")
         XCTAssertEqual(hour.status, "Avg 07:00–08:00")
-        XCTAssertEqual(hour.a11y, "Heart rate 131 bpm, average from 07:00 to 08:00")
+        XCTAssertEqual(hour.spoken, "Heart, 131 beats per minute, average from 07:00 to 08:00")
         XCTAssertTrue(hour.scrubbed)
 
-        let none = OrganicPortrait.heartReading(resting, asOf: today, scrub: scrubbed(8 * 60 + 5, dayOf(today, asOf: 14)))
+        let none = CalloutText.of(.heart, vitals: vitals, asOf: today, scrub: scrubbed(8 * 60 + 5, dayOf(today, asOf: 14)))
         XCTAssertNil(none.value)
         XCTAssertEqual(none.level, .neutral)
-        XCTAssertEqual(none.a11y, "Heart rate, no reading then")
+        XCTAssertEqual(none.spoken, "Heart, no reading then")
+        XCTAssertNil(none.rate, "an hour with no reading has nothing to beat at")
 
-        let partial = OrganicPortrait.heartReading(resting, asOf: today, scrub: scrubbed(14 * 60 + 40, dayOf(today, asOf: 14)))
-        XCTAssertEqual(partial.a11y, "Heart rate 74 bpm, average since 14:00")
+        let partial = CalloutText.of(.heart, vitals: vitals, asOf: today, scrub: scrubbed(14 * 60 + 40, dayOf(today, asOf: 14)))
+        XCTAssertEqual(partial.spoken, "Heart, 74 beats per minute, average since 14:00")
     }
 
     // MARK: Sharing the marker through Today
@@ -466,22 +504,21 @@ final class ScrubVitalsFixTests: XCTestCase {
         XCTAssertEqual(scrub.heart(on: today)?.label, "Avg 07:00–08:00")
     }
 
-    @MainActor func testTheHeartBeatsAtTheScrubbedHoursRateAndStaysStillUnderReduceMotion() {
-        let resting = Vital(label: "Resting HR", latest: Latest(date: today, value: 62, source: "apple"), status: "normal", level: "normal")
+    func testTheHeartBeatsAtTheScrubbedHoursRate() throws {
+        let vitals = try heartVitals()
         let day = dayOf(today, asOf: 14)
-        XCTAssertEqual(OrganicPortrait.beatRate(resting: resting, scrub: nil), 62)
-        XCTAssertEqual(OrganicPortrait.beatRate(resting: nil, scrub: nil), 60)
-        XCTAssertEqual(OrganicPortrait.beatRate(resting: resting, scrub: scrubbed(440, day)), 131.4)
-        XCTAssertNil(OrganicPortrait.beatRate(resting: resting, scrub: scrubbed(8 * 60 + 5, day)), "an hour with no reading has nothing to beat at")
-
-        // A beat peaks 9% into its period: every 60/131.4 s at the scrubbed hour, not every 60/62 s.
-        func peak(_ bpm: Double) -> Double { 60 / bpm * 0.09 }
-        XCTAssertEqual(OrganicPortrait.pulse(.heart, t: peak(131.4), bpm: 131.4, rpm: 15, reduceMotion: false), 1, accuracy: 1e-9)
-        XCTAssertEqual(OrganicPortrait.pulse(.heart, t: peak(62), bpm: 131.4, rpm: 15, reduceMotion: false), 0)
-        XCTAssertEqual(OrganicPortrait.pulse(.heart, t: peak(131.4), bpm: nil, rpm: 15, reduceMotion: false), 0)
-        for key in VitalKey.allCases {
-            XCTAssertEqual(OrganicPortrait.pulse(key, t: peak(131.4), bpm: 131.4, rpm: 15, reduceMotion: true), 0, "\(key)")
-        }
+        XCTAssertEqual(CalloutText.of(.heart, vitals: vitals, asOf: today).rate, 62)
+        XCTAssertNil(CalloutText.of(.heart, vitals: nil, asOf: today).rate, "no reading: still")
+        XCTAssertEqual(CalloutText.of(.heart, vitals: vitals, asOf: today, scrub: scrubbed(440, day)).rate, 131.4)
+        // The clamps (Figure.tsx liveVars) only catch impossible data, so a bad row can't freeze or strobe a dot.
+        XCTAssertEqual(CalloutText.beats(400), 220)
+        XCTAssertEqual(CalloutText.beats(5), 30)
+        XCTAssertNil(CalloutText.beats(0))
+        XCTAssertEqual(CalloutText.breaths(80), 40)
+        XCTAssertEqual(CalloutText.breaths(1), 4)
+        // Each beat's phase runs over 60/bpm seconds, and peaks 10% in (vital-beat).
+        XCTAssertEqual(CalloutMotion.phase(60 / 131.4 * 0.1, period: 60 / 131.4), 0.1, accuracy: 1e-9)
+        XCTAssertEqual(CalloutMotion.beat(0.1), 1.42, accuracy: 1e-9)
     }
 
     // MARK: Loading the day's hours

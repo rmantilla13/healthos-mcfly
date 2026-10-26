@@ -66,7 +66,7 @@ private struct TodayContent: View {
                     FlagBanner(flag: flag, note: showNote ? Self.cycleNote : nil)
                 }
                 if dashboard.showsFamilyNotice { FamilyNotice() }
-                OrganicPortrait(summary: summary, photo: dashboard.status?.photo, units: dashboard.units, stepGoal: dashboard.stepGoal, scrubbed: scrub)
+                HomeFigure(summary: summary, scrub: summary.timeline?.date == summary.date ? scrub.heart(on: summary.date) : nil)
                 if let timeline = summary.timeline, !hidden.contains("home.timeline") { TodayPath(timeline: timeline, scrubbed: scrub) }
                 if let cycle, let phase { CycleCard(cycle: cycle, phase: phase) }
                 if let day, !day.metrics.isEmpty { DayCard(data: day, date: isToday ? nil : summary.date) }
