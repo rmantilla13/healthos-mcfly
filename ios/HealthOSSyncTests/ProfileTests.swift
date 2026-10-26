@@ -27,7 +27,7 @@ final class ProfileTests: XCTestCase {
             "Your profile & perspective", "Edit preferences", "Peer comparisons enabled.", "Peer comparisons off.",
             "Change your image, age or participation anytime.", "Just the statistics", "Your portrait", "no age given",
             ProfileWords.chatbot(byok: false), ProfileWords.chatbot(byok: true), "Manage chatbot AI", "Ask McFly uses your own",
-            ProfileWords.account(signedIn: false, email: nil, role: nil), "' · admin'", "Signed in", "Change password",
+            try XCTUnwrap(ProfileWords.account(mode: "open", email: nil, role: nil)), "' · admin'", "Signed in", "Change password",
             ProfileWords.openAI(byok: false), ProfileWords.openAI(byok: true), ProfileWords.openAIConnected(last4: ""), "Manage AI key", "Connect AI key",
             "Connected sources", "Manage sources", "Manage what comes into your health profile.",
             "Export your data", "Download JSON", "Preparing…", ProfileWords.exportLine, ProfileWords.exportUnreachable, ProfileWords.exportFailed,
@@ -117,9 +117,15 @@ final class ProfileTests: XCTestCase {
     }
 
     func testAccountAndAILines() throws {
-        XCTAssertEqual(ProfileWords.account(signedIn: true, email: "ada@example.test", role: "admin"), "ada@example.test · admin")
-        XCTAssertEqual(ProfileWords.account(signedIn: true, email: "ada@example.test", role: "member"), "ada@example.test")
-        XCTAssertEqual(ProfileWords.account(signedIn: false, email: "", role: "admin"), "This Mac, no sign-in")
+        XCTAssertEqual(ProfileWords.account(mode: "required", email: "ada@example.test", role: "admin"), "ada@example.test · admin")
+        XCTAssertEqual(ProfileWords.account(mode: "required", email: "ada@example.test", role: "member"), "ada@example.test")
+        XCTAssertEqual(ProfileWords.account(mode: "open", email: "", role: "admin"), "This Mac, no sign-in")
+        XCTAssertEqual(ProfileWords.account(mode: "open", email: "ada@example.test", role: nil), "This Mac, no sign-in", "a server without sign-in")
+        // Offline at launch the sign-in mode isn't known: never "no sign-in" for an account that signs in. The email
+        // kept from the last status, or nothing.
+        XCTAssertEqual(ProfileWords.account(mode: nil, email: "ada@example.test", role: "admin"), "ada@example.test · admin")
+        XCTAssertNil(ProfileWords.account(mode: nil, email: nil, role: nil))
+        XCTAssertNil(ProfileWords.account(mode: nil, email: "", role: nil))
         // Unknown says nothing of the server: the ordinary line, never "not set up".
         XCTAssertEqual(ProfileWords.chatbot(byok: nil), ProfileWords.chatbot(byok: true))
         XCTAssertTrue(ProfileWords.chatbot(byok: false).hasSuffix("but storing your own AI keys isn't set up on this server."))

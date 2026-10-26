@@ -46,10 +46,13 @@ enum ProfileWords {
 
     static func providerLabel(_ provider: String) -> String { providers.first { $0.provider == provider }?.label ?? provider }
 
-    /// The Account row: the email, " · admin" for an admin; a server without sign-in is this Mac's.
-    static func account(signedIn: Bool, email: String?, role: String?) -> String {
-        guard signedIn else { return "This Mac, no sign-in" }
-        return (email ?? "") + (role == "admin" ? " · admin" : "")
+    /// The Account row: the email, " · admin" for an admin; a server without sign-in ("open") is this Mac's. While
+    /// the sign-in mode isn't known (offline at launch, /auth/me not answered yet), the email kept from the last status,
+    /// never "no sign-in"; nil when there's nothing known to say.
+    static func account(mode: String?, email: String?, role: String?) -> String? {
+        if mode == "open" { return "This Mac, no sign-in" }
+        guard let email, !email.isEmpty else { return nil }
+        return email + (role == "admin" ? " · admin" : "")
     }
 
     // MARK: Your settings

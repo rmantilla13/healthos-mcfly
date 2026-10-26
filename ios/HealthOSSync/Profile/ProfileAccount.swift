@@ -12,7 +12,8 @@ extension APIClient {
 
 /// Profile's Account row (G28): the email (" · admin" for an admin), the Signed in badge and a quiet Change password
 /// that opens the form under the row, as the web's does. A server without sign-in is "This Mac, no sign-in", with
-/// nothing to change.
+/// nothing to change. While the sign-in mode isn't known yet (offline at launch), the email kept from the last status
+/// with nothing to change, and no row at all when there's no email to show.
 struct ProfileAccountRow: View {
     var divider = true
     @Environment(Dashboard.self) private var dashboard
@@ -21,10 +22,18 @@ struct ProfileAccountRow: View {
     var body: some View {
         let signedIn = dashboard.signOutOffered
         let user = dashboard.status?.user ?? dashboard.account
+        let line = ProfileWords.account(mode: dashboard.authMode, email: user?.email ?? dashboard.account?.email, role: user?.role)
+        if line != nil || signedIn {
+            row(line: line, signedIn: signedIn)
+        }
+    }
+
+    private func row(line: String?, signedIn: Bool) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             ProfileRow("Account", divider: false) {
-                Text(ProfileWords.account(signedIn: signedIn, email: user?.email ?? dashboard.account?.email, role: user?.role))
-                    .accessibilityIdentifier("accountEmail")
+                if let line {
+                    Text(line).accessibilityIdentifier("accountEmail")
+                }
             } action: {
                 if signedIn {
                     // Side by side, or one over the other at the largest text sizes.
