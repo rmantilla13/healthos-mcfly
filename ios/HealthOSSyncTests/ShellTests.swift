@@ -275,9 +275,6 @@ final class ShellTests: XCTestCase {
         d.phase = .ready
         d.apply(status: try status(#"{"perspective":"portrait","onboarding":1}"#))
         XCTAssertEqual(d.onboarding, .new)
-        // The stub's "Not now": this session only, and nothing sent.
-        d.putOffOnboarding()
-        XCTAssertNil(d.onboarding)
         d.apply(status: try status(#"{"perspective":"portrait","onboarding":null}"#))
         XCTAssertNil(d.onboarding, "done")
 

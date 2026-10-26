@@ -14,7 +14,7 @@ extension Dashboard {
     /// server ignores what the welcome saves. The shell shows `OnboardingView(mode:)` (Onboarding/, slice A) for it.
     var onboarding: OnboardingMode? {
         guard phase == .ready, let settings = status?.settings, settings.perspective != nil else { return nil }
-        if settings.onboarding != nil, !onboardingPutOff { return .new }
+        if settings.onboarding != nil { return .new }
         return welcomeEditing ? .edit : nil
     }
 
@@ -23,8 +23,4 @@ extension Dashboard {
         welcomeEditing = false
         open(.profile)
     }
-
-    /// A new account's welcome put off until the next sign-in or launch. Only the stub offers it, while slice A builds
-    /// the flow: the web has no way past its welcome but finishing it or signing out. It never tells the server.
-    func putOffOnboarding() { onboardingPutOff = true }
 }

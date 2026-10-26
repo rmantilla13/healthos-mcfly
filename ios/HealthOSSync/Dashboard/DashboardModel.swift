@@ -107,8 +107,6 @@ final class Dashboard {
     var rangeDays = 30
     /// The welcome flow asked for again (#/welcome: Profile's Edit preferences), until it's closed (Shell/Welcome.swift).
     var welcomeEditing = false
-    /// A new account's welcome put off for this session: only the stub offers it, until slice A builds the flow.
-    var onboardingPutOff = false
     /// Ask McFly's conversation, for the Home pill's sheet and the page under More alike. In memory only, and gone with
     /// a sign-out, another person's sign-in or another server.
     let mcfly: McFlyChat
@@ -452,7 +450,6 @@ final class Dashboard {
         ProfileImages.clear()
         metricSheet = nil
         welcomeEditing = false
-        onboardingPutOff = false
     }
 
     func show(date newDate: String?) async {

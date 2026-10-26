@@ -29,10 +29,3 @@ enum HomeCards {
     /// The optional row: strain or active energy, activity, and food totals with Nutrition on.
     static let optionalRow = ["home.load", "home.activity", "home.food"]
 }
-
-extension Cards {
-    /// The grid this app had before it took the web's Home (four signal cards and the two optional ones), kept as it
-    /// was for the foundation's card-visibility tests (DashboardTests, CardVisibilityTests), which use it as a list to
-    /// filter. Home lays out `HomeCards.signals` and `HomeCards.optionalRow`.
-    static let todayGrid = ["home.readiness", "home.spo2", "home.hrv", "home.sleep", "home.load", "home.activity"]
-}

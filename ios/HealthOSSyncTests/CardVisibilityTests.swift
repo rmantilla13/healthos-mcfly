@@ -259,3 +259,10 @@ final class CardVisibilityTests: XCTestCase {
         XCTAssertFalse(Cards.allHidden([], hidden: []), "nothing to hide, so no note")
     }
 }
+
+extension Cards {
+    /// A sample list for the card-visibility tests (here, DashboardTests and HomeFigureTests) to filter: the grid this app
+    /// had before it took the web's Home, four signal cards and the two optional ones. Home itself lays out
+    /// `HomeCards.signals` and `HomeCards.optionalRow`.
+    static let todayGrid = ["home.readiness", "home.spo2", "home.hrv", "home.sleep", "home.load", "home.activity"]
+}
