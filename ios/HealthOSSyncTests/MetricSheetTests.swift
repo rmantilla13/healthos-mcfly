@@ -1,3 +1,4 @@
+import SwiftUI
 import XCTest
 @testable import HealthOSSync
 
@@ -733,5 +734,92 @@ final class MetricSheetTests: XCTestCase {
         let older = MetricSheetFallback.daySheet(.heartRate, day: nil, date: "2026-10-20", today: "2026-10-26", goal: nil)
         XCTAssertEqual(older.headline.label, "That day")
         XCTAssertEqual(older.emptyMessage, SheetWords.noHours)
+    }
+
+    // MARK: - Pressing and reading it, at every text size
+
+    /// The sheet's content width on a 402-point phone (18 points of margin each side).
+    private let sheetWidth: CGFloat = 366
+
+    /// A view's size at a text size, offered `width` across.
+    private func measure(_ view: some View, _ type: DynamicTypeSize, width: CGFloat? = nil) -> CGSize {
+        let host = UIHostingController(rootView: AnyView(view.environment(\.dynamicTypeSize, type)))
+        return host.sizeThatFits(in: CGSize(width: width ?? sheetWidth, height: .greatestFiniteMagnitude))
+    }
+
+    /// Shows a view in a window, as on screen, and hands back its accessibility elements (what VoiceOver reaches), in order.
+    private func onScreen(_ view: some View, run: ([NSObject]) async throws -> Void) async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let host = UIHostingController(rootView: view)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 402, height: 874)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        try await Task.sleep(for: .milliseconds(400))
+        func walk(_ o: NSObject, into out: inout [NSObject]) {
+            if o.isAccessibilityElement { out.append(o) }
+            let n = o.accessibilityElementCount()
+            if n != NSNotFound, n > 0 {
+                for i in 0..<n { if let e = o.accessibilityElement(at: i) as? NSObject { walk(e, into: &out) } }
+            }
+            for sub in (o as? UIView)?.subviews ?? [] { walk(sub, into: &out) }
+        }
+        var elements: [NSObject] = []
+        walk(host.view, into: &elements)
+        try await run(elements)
+    }
+
+    /// The Day's table from a sheet's hours, as the sheet draws it.
+    private func dayTable(_ sheet: MetricSheetData) throws -> SheetTable {
+        let day = try XCTUnwrap(sheet.day), series = try XCTUnwrap(day.metrics[sheet.key.rawValue]), hour = try XCTUnwrap(sheet.key.hourMetric)
+        return SheetChart.dayTable(series: series, reading: DayReading(metric: hour, series: series, data: day), running: hour.kind == .running,
+                                   format: SheetFormat(sheet))
+    }
+
+    /// Made-up steps by the hour until 6 AM, with a typical day, so the running table has every column filled.
+    private func stepsDay() -> MetricSheetData {
+        let hours: [Double?] = [0, 0, 0, 0, 0, 420, 1260] + Array(repeating: nil, count: 17)
+        let typical: [Double?] = [0, 0, 0, 0, 30, 380, 1850] + Array(repeating: nil, count: 17)
+        let day = DayData(date: "2026-10-26", today: "2026-10-26", asOf: 6, metrics: ["steps": DaySeries(hours: hours, typical: typical)])
+        return MetricSheetFallback.daySheet(.steps, day: day, date: "2026-10-26", today: "2026-10-26", goal: 10_000)
+    }
+
+    /// Every cell keeps to one line, as the web's td (white-space: nowrap) does, so no word or value is ever broken: a table
+    /// too wide for the sheet scrolls sideways (.table-wrap's overflow) and stays inside the sheet. Its height is then
+    /// exactly the names' line and one line per row, with the web's padding and a hairline under each.
+    func testTheTablesKeepEachCellToOneLineAtEveryTextSize() throws {
+        let css = try web("src/styles.css")
+        XCTAssertTrue(css.contains("  font-variant-numeric: tabular-nums;\n  white-space: nowrap;\n}"), "td keeps to one line")
+        XCTAssertTrue(css.contains(".table-wrap {\n  max-height: 360px;\n  overflow: auto;\n}"))
+
+        let heart = try dayTable(try fixture("metric-heart-rate-day"))
+        let steps = try dayTable(stepsDay())
+        let week = try fixture("metric-steps-week")
+        let weekTable = SheetTable(columns: ["Date", "Steps"], rows: week.points.map { [Fmt.day($0.date, "MMMdyyyy"), SheetFormat(week).value($0.value)] })
+        XCTAssertEqual(heart.columns, ["Hour", "Average", "Low", "High", "Typical"])
+        XCTAssertEqual(steps.columns, ["Hour", "This hour", "So far", "Typical by then"])
+        XCTAssertEqual(steps.rows.count, 7)
+        for table in [heart, steps, weekTable] {
+            XCTAssertLessThanOrEqual(table.rows.count, 9, "a short table is shown whole")
+            for type: DynamicTypeSize in [.large, .xLarge, .xxxLarge, .accessibility1, .accessibility3, .accessibility5] {
+                let name = measure(Text("Hour").font(.app(size: 12, weight: .medium, relativeTo: .caption)).fixedSize(), type, width: .greatestFiniteMagnitude).height
+                let line = measure(Text("57 bpm").font(.app(size: 13, relativeTo: .footnote)).fixedSize(), type, width: .greatestFiniteMagnitude).height
+                let size = measure(SheetTableView(table: table), type)
+                let rows = CGFloat(table.rows.count)
+                XCTAssertEqual(size.height, name + 16 + 1 + rows * (line + 16 + 1), accuracy: 1.5, "\(table.columns) at \(type): a cell wrapped")
+                XCTAssertLessThanOrEqual(size.width, sheetWidth + 0.5, "\(table.columns) at \(type): inside the sheet")
+            }
+        }
+    }
+
+    /// VoiceOver reads the table a row at a time, newest first, each row once, with its columns' names.
+    func testVoiceOverReadsEachTableRowOnce() async throws {
+        let table = try dayTable(try fixture("metric-heart-rate-day"))
+        try await onScreen(SheetTableView(table: table)) { elements in
+            let read = elements.compactMap(\.accessibilityLabel)
+            XCTAssertEqual(read, table.rows.reversed().map { SheetTableView.spoken(table.columns, $0) })
+            XCTAssertEqual(read.first, "Hour: \(table.rows.last![0]), Average: \(table.rows.last![1]), Low: \(table.rows.last![2]), High: \(table.rows.last![3]), Typical: \(table.rows.last![4])")
+        }
     }
 }

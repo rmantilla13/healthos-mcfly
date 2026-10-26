@@ -87,9 +87,28 @@ final class MetricSheetSnapshotTests: XCTestCase {
         let year = shot(.sleepHours, section: "Sleep", sheet: try fixture("metric-sleep-year"), openPage: "Sleep")
         try await both(Shot(page: AnyView(year.page.environment(\.sheetChartOpensOnTable, true)),
                             content: AnyView(year.content.environment(\.sheetChartOpensOnTable, true))), "sleep-year-table")
-        let heart = shot(.heartRate, section: "Body", sheet: try fixture("metric-heart-rate-day"))
-        try await both(Shot(page: AnyView(heart.page.environment(\.sheetChartOpensOnTable, true)),
-                            content: AnyView(heart.content.environment(\.sheetChartOpensOnTable, true))), "heart-rate-day-table")
+        // The Day's tables: every cell on one line at every text size, scrolling sideways when wider than the sheet.
+        let heart = table(shot(.heartRate, section: "Body", sheet: try fixture("metric-heart-rate-day")))
+        let steps = table(shot(.steps, section: "Body", sheet: stepsDay(), openPage: "Activity on Body"))
+        for (s, name) in [(heart, "heart-rate-day-table"), (steps, "steps-day-table")] {
+            try await both(s, name)
+            for size: DynamicTypeSize in [.xxxLarge, .accessibility3, .accessibility5] {
+                try await draw(s, name, size: size)
+            }
+            try await draw(s, name, dark: true, size: .accessibility3)
+        }
+    }
+
+    private func table(_ s: Shot) -> Shot {
+        Shot(page: AnyView(s.page.environment(\.sheetChartOpensOnTable, true)), content: AnyView(s.content.environment(\.sheetChartOpensOnTable, true)))
+    }
+
+    /// Made-up steps by the hour until 6 AM, against a made-up typical day.
+    private func stepsDay() -> MetricSheetData {
+        let hours: [Double?] = [0, 0, 0, 0, 0, 420, 1260] + Array(repeating: nil, count: 17)
+        let typical: [Double?] = [0, 0, 0, 0, 30, 380, 1850] + Array(repeating: nil, count: 17)
+        let day = DayData(date: "2026-10-26", today: "2026-10-26", asOf: 6, metrics: ["steps": DaySeries(hours: hours, typical: typical)])
+        return MetricSheetFallback.daySheet(.steps, day: day, date: "2026-10-26", today: "2026-10-26", goal: 10_000)
     }
 
     func testADayByTheHour() async throws {

@@ -150,48 +150,131 @@ private struct ViewSwitch: View {
     }
 }
 
-/// The table twin: every value readable without touching the chart, newest first, as on the web: the columns' names
-/// on white over hairlines, each column an even share of the width.
-private struct SheetTableView: View {
+/// The table twin: every value readable without touching the chart, newest first, as on the web (ChartCard's table in
+/// src/charts/Charts.tsx): the columns' names on a white band over hairlines, every cell on one line (td's nowrap), the
+/// columns sharing the width when they fit (SheetTableLayout) and the table scrolling sideways when they don't
+/// (.table-wrap's overflow), so no word is ever broken, at any text size. VoiceOver reads it a row at a time.
+struct SheetTableView: View {
     let table: SheetTable
 
     var body: some View {
-        // A long table scrolls inside 360 points (.table-wrap), as the web's does; a short one is shown whole.
+        ViewThatFits(in: .horizontal) {
+            window { grid }
+            window {
+                ScrollView(.horizontal) { grid }
+                    .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+                    .scrollIndicatorsFlash(onAppear: true)
+            }
+        }
+    }
+
+    /// A long table scrolls inside 360 points (.table-wrap's max-height), as the web's does; a short one is shown whole.
+    @ViewBuilder private func window(@ViewBuilder _ content: () -> some View) -> some View {
         if table.rows.count > 9 {
-            ScrollView { grid }
+            ScrollView(.vertical) { content() }
                 .frame(height: 360)
-                .scrollBounceBehavior(.basedOnSize)
+                .scrollBounceBehavior(.basedOnSize, axes: .vertical)
         } else {
-            grid
+            content()
         }
     }
 
     private var grid: some View {
-        Grid(alignment: .leading, horizontalSpacing: 0, verticalSpacing: 0) {
-            GridRow {
-                ForEach(Array(table.columns.enumerated()), id: \.offset) { _, c in
-                    Text(c).font(.app(size: 12, weight: .medium, relativeTo: .caption)).foregroundStyle(Palette.ink3)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 10).padding(.vertical, 8)
-                }
+        SheetTableLayout(columns: table.columns.count) {
+            ForEach(Array(table.columns.enumerated()), id: \.offset) { _, c in
+                cell(Text(c).font(.app(size: 12, weight: .medium, relativeTo: .caption)).foregroundStyle(Palette.ink3), band: true)
+                    .accessibilityHidden(true)
             }
-            .background(Palette.surface)
-            .accessibilityHidden(true)
-            Rectangle().fill(Palette.grid).frame(height: 1).gridCellUnsizedAxes(.horizontal)
             ForEach(Array(table.rows.reversed().enumerated()), id: \.offset) { _, row in
-                GridRow {
-                    ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
-                        Text(cell).font(.app(size: 13, relativeTo: .footnote)).foregroundStyle(Palette.ink)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 10).padding(.vertical, 8)
+                ForEach(Array(row.enumerated()), id: \.offset) { j, value in
+                    // The row's one VoiceOver element is its first cell, which reads the whole row; the others are left out.
+                    if j == 0 {
+                        cell(Text(value).font(.app(size: 13, relativeTo: .footnote)).foregroundStyle(Palette.ink))
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityLabel(Self.spoken(table.columns, row))
+                    } else {
+                        cell(Text(value).font(.app(size: 13, relativeTo: .footnote)).foregroundStyle(Palette.ink))
+                            .accessibilityHidden(true)
                     }
                 }
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(zip(table.columns, row).map { "\($0): \($1)" }.joined(separator: ", "))
-                Rectangle().fill(Palette.grid).frame(height: 1).gridCellUnsizedAxes(.horizontal)
             }
+        }
+    }
+
+    /// One cell: its words on one line, padded as the web's th and td, filling its column and row, over a hairline. The
+    /// names' cells are white, so together they're one even band.
+    private func cell(_ text: some View, band: Bool = false) -> some View {
+        text
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .background(band ? Palette.surface : .clear)
+            .padding(.bottom, 1)
+            .overlay(alignment: .bottom) { Rectangle().fill(Palette.grid).frame(height: 1) }
+    }
+
+    /// What VoiceOver says for a row: "Hour: 2 AM–3 AM, Average: 57 bpm, …".
+    static func spoken(_ columns: [String], _ row: [String]) -> String {
+        zip(columns, row).map { "\($0): \($1)" }.joined(separator: ", ")
+    }
+}
+
+/// The table's cells, a row at a time, laid out as the web's table (width: 100%, auto layout) with its cells kept to one
+/// line: each column at least as wide as its widest cell. When every column fits in an even share of the width, the
+/// columns are even; otherwise each is its own width and the room left is shared out evenly. Too wide for the room, it
+/// takes its full width, which SheetTableView scrolls sideways.
+struct SheetTableLayout: Layout {
+    let columns: Int
+
+    struct Cache {
+        var widths: [CGFloat]
+        var heights: [CGFloat]
+    }
+
+    func makeCache(subviews: Subviews) -> Cache {
+        var widths = Array(repeating: CGFloat(0), count: max(columns, 1))
+        var heights: [CGFloat] = []
+        for (i, cell) in subviews.enumerated() {
+            let size = cell.sizeThatFits(.unspecified)
+            let (row, column) = i.quotientAndRemainder(dividingBy: max(columns, 1))
+            if row == heights.count { heights.append(0) }
+            widths[column] = max(widths[column], size.width)
+            heights[row] = max(heights[row], size.height)
+        }
+        return Cache(widths: widths, heights: heights)
+    }
+
+    func updateCache(_ cache: inout Cache, subviews: Subviews) {
+        cache = makeCache(subviews: subviews)
+    }
+
+    /// The columns' widths across `room`: even when each fits in an even share, else their own and an even share of the rest.
+    static func widths(_ own: [CGFloat], room: CGFloat?) -> [CGFloat] {
+        let total = own.reduce(0, +)
+        guard let room, room.isFinite, room > total, !own.isEmpty else { return own }
+        let even = room / CGFloat(own.count)
+        if own.allSatisfy({ $0 <= even }) { return own.map { _ in even } }
+        return own.map { $0 + (room - total) / CGFloat(own.count) }
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache) -> CGSize {
+        CGSize(width: Self.widths(cache.widths, room: proposal.width).reduce(0, +), height: cache.heights.reduce(0, +))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache) {
+        let widths = Self.widths(cache.widths, room: bounds.width)
+        var y = bounds.minY
+        var x = bounds.minX
+        for (i, cell) in subviews.enumerated() {
+            let (row, column) = i.quotientAndRemainder(dividingBy: max(columns, 1))
+            if column == 0, i > 0 {
+                y += cache.heights[row - 1]
+                x = bounds.minX
+            }
+            cell.place(at: CGPoint(x: x, y: y), anchor: .topLeading, proposal: ProposedViewSize(width: widths[column], height: cache.heights[row]))
+            x += widths[column]
         }
     }
 }
