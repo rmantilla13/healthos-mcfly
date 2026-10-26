@@ -832,10 +832,11 @@ enum SummaryCache {
 
     static func load(for base: URL) -> (summary: Summary, status: ServerStatus?, version: String?, loadedOn: String?)? {
         guard let data = try? Data(contentsOf: file(for: base)), var e = try? JSONDecoder().decode(Entry.self, from: data) else { return nil }
-        // Cached by a build that never kept shownCards, so it can't say whether the server has optional cards. Take it
-        // that it does, as the hosted one does, until the first status read says: otherwise they'd show on the first
-        // launch after the update, then go (or stay, offline).
-        if e.format == nil, e.status?.settings?.hiddenCards != nil, e.status?.settings?.shownCards == nil {
+        // Cached by a build that never kept shownCards, so it can't say whether the server has optional cards. The
+        // hosted one has them: take it that they're off there until the first status read says, or they'd show on the
+        // first launch after the update, then go (or stay, offline). Any other server (a Mac or LAN one) may be older
+        // than optional cards, so it keeps the older rule, every card on unless hidden, as before the update.
+        if e.format == nil, e.status?.hosted == true, e.status?.settings?.hiddenCards != nil, e.status?.settings?.shownCards == nil {
             e.status?.settings?.shownCards = []
         }
         return (e.summary, e.status, e.version, e.loadedOn)

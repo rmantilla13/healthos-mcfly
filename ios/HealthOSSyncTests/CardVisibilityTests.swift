@@ -131,12 +131,14 @@ final class CardVisibilityTests: XCTestCase {
         return try JSONSerialization.jsonObject(with: Data(contentsOf: url))
     }
 
-    func testAStatusCachedByTheLastBuildLeavesTheOptionalCardsOff() throws {
+    func testAHostedStatusCachedByTheLastBuildLeavesTheOptionalCardsOff() throws {
         let base = try XCTUnwrap(URL(string: "https://cards-cache.invalid"))
         defer { SummaryCache.clear(for: base) }
         // The build before this one never kept shownCards, so its cache has none even from a server with optional cards.
-        func cacheAsTheLastBuild(_ settings: [String: Any]) throws {
-            let entry: [String: Any] = ["summary": try summaryJSON(), "status": ["settings": settings], "version": "v1", "loadedOn": "2026-10-24"]
+        func cacheAsTheLastBuild(_ settings: [String: Any], hosted: Bool? = true) throws {
+            var status: [String: Any] = ["settings": settings]
+            if let hosted { status["hosted"] = hosted }
+            let entry: [String: Any] = ["summary": try summaryJSON(), "status": status, "version": "v1", "loadedOn": "2026-10-24"]
             try JSONSerialization.data(withJSONObject: entry).write(to: SummaryCache.file(for: base))
         }
         try cacheAsTheLastBuild(["name": "Sam", "hiddenCards": ["home.hrv"]])
@@ -152,6 +154,19 @@ final class CardVisibilityTests: XCTestCase {
         // A server older than card hiding has no lists at all: nothing to fill in.
         try cacheAsTheLastBuild(["name": "Sam"])
         XCTAssertNil(try XCTUnwrap(SummaryCache.load(for: base)).status?.settings?.shownCards)
+
+        // A Mac or LAN server may be older than optional cards (main has none): every card stays on unless hidden, as
+        // before the update, until its first status read says otherwise. Offline away from home, that can be days.
+        for hosted in [false, nil] as [Bool?] {
+            try cacheAsTheLastBuild(["name": "Sam", "hiddenCards": ["home.hrv"]], hosted: hosted)
+            let local = try XCTUnwrap(SummaryCache.load(for: base))
+            XCTAssertNil(local.status?.settings?.shownCards)
+            let l = Dashboard()
+            l.apply(status: try XCTUnwrap(local.status))
+            XCTAssertTrue(l.cardShown("home.week"))
+            XCTAssertTrue(l.cardShown("home.load"))
+            XCTAssertFalse(l.cardShown("home.hrv"))
+        }
 
         // This build keeps what the server sent: no shownCards is an older server, where every card shows.
         SummaryCache.save(summary: cached.summary, status: try status(hidden: [], shown: nil), version: "v2", loadedOn: "2026-10-25", for: base)
