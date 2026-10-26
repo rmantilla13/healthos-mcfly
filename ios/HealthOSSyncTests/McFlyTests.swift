@@ -186,6 +186,15 @@ final class McFlyTests: XCTestCase {
         XCTAssertNil(chat.status)
     }
 
+    func testReturnSendsAndPastedLinesStay() {
+        XCTAssertTrue(McFlyScreen.returnPressed(old: "How did I sleep?", new: "How did I sleep?\n"))
+        XCTAssertTrue(McFlyScreen.returnPressed(old: "How did I sleep?", new: "How did\n I sleep?"), "Return anywhere sends")
+        XCTAssertFalse(McFlyScreen.returnPressed(old: "How did I sleep", new: "How did I sleep?"))
+        XCTAssertFalse(McFlyScreen.returnPressed(old: "Line one", new: "Line one\nLine two"), "a paste keeps its lines")
+        XCTAssertFalse(McFlyScreen.returnPressed(old: "Hi\n", new: "Hi"))
+        XCTAssertTrue(McFlyScreen.returnPressed(old: "", new: "\n"))
+    }
+
     // MARK: Answers' Markdown
 
     func testAnswersReadTheWebsLittleMarkdown() {

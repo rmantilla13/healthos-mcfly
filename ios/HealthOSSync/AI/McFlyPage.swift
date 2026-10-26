@@ -220,7 +220,15 @@ struct McFlyScreen: View {
                 .submitLabel(.send)
                 .onSubmit(send)
                 .disabled(left == 0)
-                .onChange(of: draft) { _, value in if value.count > 4000 { draft = String(value.prefix(4000)) } }
+                .onChange(of: draft) { old, value in
+                    // Return sends, as the web's Enter does; the field keeps lines pasted into it.
+                    if McFlyScreen.returnPressed(old: old, new: value) {
+                        draft = old
+                        send()
+                    } else if value.count > 4000 {
+                        draft = String(value.prefix(4000))
+                    }
+                }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
                 .frame(minHeight: 48, alignment: .topLeading)
@@ -253,6 +261,14 @@ struct McFlyScreen: View {
         }
         .padding(12)
         .background { CardSurface(shape: RoundedRectangle(cornerRadius: Radius.card, style: .continuous)) }
+    }
+
+    /// One character was typed and it was a line break: Return. (A vertical text field takes Return as a new line.)
+    static func returnPressed(old: String, new: String) -> Bool {
+        guard new.count == old.count + 1 else { return false }
+        let at = zip(old, new).prefix { $0 == $1 }.count
+        let i = new.index(new.startIndex, offsetBy: at)
+        return new[i] == "\n" && new[new.index(after: i)...] == old[old.index(old.startIndex, offsetBy: at)...]
     }
 
     private func send() {
