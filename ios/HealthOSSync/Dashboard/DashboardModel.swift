@@ -24,6 +24,10 @@ final class Dashboard {
         case starting
         case noServer
         case signIn
+        /// The server has sign-in but it isn't set up (its /auth/me says "misconfigured"): the web's Login says sign-in
+        /// isn't available right now (PhaseGate shows it).
+        case misconfigured
+        /// Can't load: offline with nothing kept on the phone.
         case unavailable(String)
         case ready
     }
@@ -71,6 +75,12 @@ final class Dashboard {
     var webPage: WebPage?
     /// The account menu ("Your workspace") is up, from any page's avatar (Shell/AccountMenu.swift).
     var accountMenuOpen = false
+    /// A metric's detail sheet showing over the app (`showMetric`, Shell/MetricRequest.swift).
+    var metricSheet: MetricRequest?
+    /// The welcome flow asked for again (#/welcome: Profile's Edit preferences), until it's closed (Shell/Welcome.swift).
+    var welcomeEditing = false
+    /// A new account's welcome put off for this session: only the stub offers it, until slice A builds the flow.
+    var onboardingPutOff = false
     /// Ask McFly's conversation, for the Home pill's sheet and the page under More alike. In memory only, and gone with
     /// a sign-out, another person's sign-in or another server.
     let mcfly: McFlyChat
@@ -210,7 +220,7 @@ final class Dashboard {
             // Every time, not only on the way into .signIn: the sign-in screen may be up already from a 401 that came
             // while the sign-in mode wasn't known (offline at launch), when the token's owner wasn't looked at.
             if !auth.authenticated { ingestSessionEnded() }
-        default: phase = .unavailable("Sign-in isn't set up on \(host ?? "the server") yet.")
+        default: phase = .misconfigured
         }
         // Signed in at launch (the first launch after an update included): a token with no known owner is theirs.
         checkIngestToken(signedInAs: account)
@@ -301,28 +311,32 @@ final class Dashboard {
     func signIn(email: String, password: String) async throws {
         guard let client = APIClient.current() else { throw APIError.network("Enter the server address in Profile.") }
         try await client.signIn(email: email, password: password)
-        let auth = try? await client.authState()
-        if let auth {
-            authMode = auth.mode
-            usesAccounts = auth.usesAccounts
-        }
-        // Before the email is replaced: an older build's token not looked at yet (the sign-in screen came up before
-        // the sign-in mode was known) is the email signed in with before this one's.
-        ingestSessionEnded(signingIn: true)
-        tokenStore.lastEmail = email
-        // Never the last person's, when the server can't say just now: the first status read says who it is.
-        account = auth?.user
-        signedIn()
-        await load()
+        await sessionStarted(email: email)
     }
 
     func join(code: String, name: String, email: String, password: String) async throws {
         guard let client = APIClient.current() else { throw APIError.network("Enter the server address in Profile.") }
         try await client.acceptInvite(code: code, email: email, name: name, password: password)
-        // No need to look at the email before it: a new account never keeps the token here (IngestTokenOwner).
+        await sessionStarted(email: email, newAccount: true)
+    }
+
+    /// The server just sent a session cookie for `email`: a sign-in, a new account from an invite, or a new password
+    /// from a reset link (POST /auth/reset, slice A). Who it is and the sign-in mode are read again, the ingest token is
+    /// checked against them, and the dashboard loads as theirs.
+    func sessionStarted(email: String, newAccount: Bool = false) async {
+        let auth = try? await APIClient.current()?.authState()
+        if let auth {
+            authMode = auth.mode
+            usesAccounts = auth.usesAccounts
+        }
+        // Before the email is replaced: an older build's token not looked at yet (the sign-in screen came up before
+        // the sign-in mode was known) is the email signed in with before this one's. A new account never keeps the
+        // token here (IngestTokenOwner), so it needs no look.
+        if !newAccount { ingestSessionEnded(signingIn: true) }
         tokenStore.lastEmail = email
-        account = (try? await client.authState())?.user
-        signedIn(newAccount: true)
+        // Never the last person's, when the server can't say just now: the first status read says who it is.
+        account = auth?.user
+        signedIn(newAccount: newAccount)
         await load()
     }
 
@@ -353,11 +367,14 @@ final class Dashboard {
     }
 
     /// What the app keeps of the person signed in beyond their data: the McFly conversation, what the server can do
-    /// for them, and the profile photo kept in Caches.
+    /// for them, the profile photo kept in Caches, and what's open over the app for them (a metric, the welcome).
     private func forgetPerson() {
         mcfly.forget()
         availability.forget()
         ProfileImages.clear()
+        metricSheet = nil
+        welcomeEditing = false
+        onboardingPutOff = false
     }
 
     func show(date newDate: String?) async {

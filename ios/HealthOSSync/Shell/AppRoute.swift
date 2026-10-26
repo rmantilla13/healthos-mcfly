@@ -3,10 +3,11 @@ import Foundation
 // Where everything in the app is: the web's pages (Page in shared/types.ts, titled as src/components/shell/nav.ts titles
 // them) by the web's own route ids, so a link from the server (an insight's page, a flag's) opens the same page here.
 
-/// A page of the app. The web's ids ('labs' is Blood records, 'mcfly' is Ask McFly), plus two only the iPhone has:
-/// Insights (the weekly digest, patterns, scatter plots and the year heatmap) and one day by hour, opened from Home.
+/// A page of the app. The web's ids ('labs' is Blood records, 'mcfly' is Ask McFly, 'welcome' is the welcome steps again,
+/// shown over the app rather than pushed), plus two only the iPhone has: Insights (the weekly digest, patterns, scatter
+/// plots and the year heatmap) and one day by hour, opened from Home.
 enum AppPage: String, CaseIterable, Hashable {
-    case home, family, vitals, sleep, body, nutrition, journal, labs, cycle, mcfly, integrations, profile, admin
+    case home, family, vitals, sleep, body, nutrition, journal, labs, cycle, mcfly, integrations, profile, admin, welcome
     case insights, day
 
     /// The header's title (PAGE_META in nav.ts).
@@ -25,6 +26,7 @@ enum AppPage: String, CaseIterable, Hashable {
         case .integrations: "Integrations"
         case .profile: "Profile"
         case .admin: "Admin"
+        case .welcome: "Welcome"
         case .insights: "Insights"
         case .day: "Day"
         }
@@ -47,6 +49,7 @@ enum AppPage: String, CaseIterable, Hashable {
         case .mcfly: "text.bubble"
         case .integrations: "link"
         case .admin: "person.2.badge.gearshape"
+        case .welcome: "sparkles"
         case .insights: "lightbulb"
         case .day: "clock"
         }
@@ -130,6 +133,9 @@ struct AppRoute: Hashable {
     static let integrations = AppRoute(.integrations)
     static let profile = AppRoute(.profile)
     static let admin = AppRoute(.admin)
+    /// The welcome's steps again, to edit them (Profile's Edit preferences, Body's "Change my representation"):
+    /// `open(.welcome)` shows them over the app.
+    static let welcome = AppRoute(.welcome)
     static let insights = AppRoute(.insights)
 
     /// One day by hour; nil is today.
@@ -140,12 +146,11 @@ struct AppRoute: Hashable {
     var title: String { page.title }
 
     /// The web page an insight, pattern or flag names, by the web's id. Its old addresses still work: 'settings' is
-    /// Profile and 'activity' is Body's Activity tab (App.tsx). nil for one this app has no page for ('welcome').
+    /// Profile and 'activity' is Body's Activity tab (App.tsx). nil for one this app has no page for.
     init?(page id: String, query: [String: String] = [:]) {
         switch id {
         case "settings": self.init(.profile, query: query)
         case "activity": self.init(.body, query: query.merging(["tab": "activity"]) { _, alias in alias })
-        case "welcome": return nil
         default:
             guard let page = AppPage(rawValue: id) else { return nil }
             self.init(page, query: query)

@@ -2,10 +2,10 @@ import SwiftUI
 
 /// The app's frame, the web's phone layout (src/components/shell/MobileNav.tsx): the tab bar (Home, Vitals, Body,
 /// Nutrition, More), each tab with its own pages pushed over it, your avatar and its account menu at the top right of
-/// every page, Ask McFly's pill over Home, and the server's web pages shown in the app.
+/// every page, Ask McFly over Home, and what shows over everything: the welcome, a metric's detail sheet, the account
+/// menu and the server's web pages.
 struct AppShell: View {
     @Environment(Dashboard.self) private var dashboard
-    @State private var chatOpen = false
     /// The account menu's choice, done once the menu has gone.
     @State private var chosen: AccountMenuItem?
 
@@ -13,14 +13,12 @@ struct AppShell: View {
         @Bindable var dashboard = dashboard
         TabView(selection: $dashboard.tab) {
             ForEach(AppTab.bar, id: \.self) { tab in
-                TabRoot(tab: tab, chatOpen: $chatOpen)
+                TabRoot(tab: tab)
                     .tabItem { Label(tab.title, systemImage: tab.symbol) }
                     .tag(tab)
             }
         }
-        .sheet(isPresented: $chatOpen) {
-            McFlySheet(chat: dashboard.mcfly).font(.app(.body))
-        }
+        .sheet(item: $dashboard.metricSheet) { MetricSheetView(request: $0) }
         .sheet(item: $dashboard.webPage) { SafariView(url: $0.url).ignoresSafeArea() }
         .sheet(isPresented: $dashboard.accountMenuOpen, onDismiss: {
             chosen?.run(dashboard)
@@ -40,15 +38,21 @@ struct AppShell: View {
         }
         // Family or Cycle went away (another server, tracking off) while open under More.
         .onChange(of: dashboard.featurePages) { _, _ in dashboard.dropMissingPages() }
-        // Asked to sign in (or the server went away) mid-conversation: the sheet doesn't stay up over the sign-in screen.
-        .onChange(of: dashboard.phase) { _, phase in if phase != .ready { chatOpen = false } }
+        // The welcome, over everything (the web shows it instead of the dashboard): a new account's until it's done,
+        // with no swipe away, or its steps again from Profile. It goes with a sign-out or a 401.
+        .fullScreenCover(item: welcome) { mode in
+            OnboardingView(mode: mode).interactiveDismissDisabled()
+        }
+    }
+
+    private var welcome: Binding<OnboardingMode?> {
+        Binding(get: { dashboard.onboarding }, set: { if $0 == nil { dashboard.welcomeEditing = false } })
     }
 }
 
 /// One tab: its page at the bottom of its own navigation, and the pages pushed over it.
 private struct TabRoot: View {
     let tab: AppTab
-    @Binding var chatOpen: Bool
     @Environment(Dashboard.self) private var dashboard
 
     var body: some View {
@@ -65,13 +69,10 @@ private struct TabRoot: View {
     private var root: some View {
         switch tab {
         case .home:
+            // Ask McFly (slice E's, in McFly.swift), mounted in every phase: it decides whether it shows and what it opens.
             // In the safe area, so it floats above the tab bar instead of under it, with room to breathe; the inset
             // also pads Home's scrolling, so the last card scrolls clear of it. On Home only, not on a day pushed over it.
-            ShellPage(route: .home).safeAreaInset(edge: .bottom) {
-                if dashboard.phase == .ready, dashboard.summary != nil, dashboard.mcfly.status?.available == true {
-                    AskMcFlyPill { chatOpen = true }.padding(.top, 8).padding(.bottom, 18)
-                }
-            }
+            ShellPage(route: .home).safeAreaInset(edge: .bottom) { AskMcFlyEntry() }
         case .vitals: ShellPage(route: .vitals)
         case .body: ShellPage(route: .body)
         case .nutrition: ShellPage(route: .nutrition)
@@ -116,6 +117,8 @@ struct ShellPage: View {
         case .integrations: IntegrationsScreen(query: route.query)
         case .profile: ProfileScreen(query: route.query)
         case .admin: AdminScreen()
+        // Never pushed: open(.welcome) shows it over the app.
+        case .welcome: OnboardingView(mode: .edit)
         case .insights: InsightsScreen()
         case .day: DayScreen(date: route.query["date"])
         }

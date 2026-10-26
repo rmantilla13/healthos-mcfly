@@ -911,14 +911,14 @@ final class FamilyStateTests: XCTestCase {
     }
 
     func testAnUnavailableServerSaysSoInsteadOfSpinning() throws {
-        // Sign-in misconfigured on the server, with a status cached from when it worked: the tab shows, but nothing
-        // will be read until the server is fixed.
+        // Offline at launch, with a status cached from when it worked but no summary: the tab shows, but nothing will
+        // be read until the server can be reached.
         let d = Dashboard()
         d.status = try status(sharing: true)
-        d.authMode = "misconfigured"
-        d.phase = .unavailable("Sign-in isn't set up on health.example.com yet.")
+        d.authMode = "required"
+        d.phase = .unavailable("Can't reach health.example.com.")
         XCTAssertTrue(d.familyAvailable)
-        XCTAssertEqual(describe(d.familyDisplay), "unavailable: Sign-in isn't set up on health.example.com yet.")
+        XCTAssertEqual(describe(d.familyDisplay), "unavailable: Can't reach health.example.com.")
         // Still starting: a spinner is right, start() is on its way.
         d.phase = .starting
         XCTAssertEqual(describe(d.familyDisplay), "loading")

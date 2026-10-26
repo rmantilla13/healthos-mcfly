@@ -12,15 +12,7 @@ struct FamilyScreen: View {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        Group {
-            if dashboard.signInRequired {
-                SignInView()
-            } else if dashboard.phase == .noServer {
-                Unavailable("No server yet", systemImage: "server.rack", description: "Add your healthOS address in Profile.")
-            } else {
-                FamilyContent()
-            }
-        }
+        PhaseGate { FamilyContent() }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Palette.page)
         // Other people's changes don't move your data version, so the board re-reads itself: on opening the tab, on

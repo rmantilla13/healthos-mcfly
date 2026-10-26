@@ -41,16 +41,43 @@ struct TodayGrid: View {
     }
 }
 
-/// A tappable card that opens the page its metric is on (Home's, and Vitals' compact ones).
+/// The two sizes of the web's signal card (VitalCard.tsx `variant`): Home's tall one, and the short one on Vitals and
+/// Sleep.
+enum MetricCardVariant {
+    case home, compact
+
+    var minHeight: CGFloat { self == .home ? 196 : 176 }
+}
+
+/// A tappable card for one metric (the web's VitalCard): Home's, and the compact ones on Vitals and Sleep. With a
+/// `metric`, a tap opens its detail sheet, whose "Open {Page}" goes to `route`, as the web's arrow does; without one, it
+/// opens `route`. Slice B's signal cards take the same `variant`, so Vitals (H) and Sleep (J) show them compact.
 struct MetricCard<Content: View>: View {
     let title: String
     let route: AppRoute
     var tint: CardTint = .plain
+    var variant: MetricCardVariant = .home
+    var metric: MetricKey?
+    /// The sheet's line above the metric's name.
+    var section = "Your signals"
     @ViewBuilder let content: Content
     @Environment(Dashboard.self) private var dashboard
 
+    init(title: String, route: AppRoute, tint: CardTint = .plain, variant: MetricCardVariant = .home, metric: MetricKey? = nil,
+         section: String = "Your signals", @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.route = route
+        self.tint = tint
+        self.variant = variant
+        self.metric = metric
+        self.section = section
+        self.content = content()
+    }
+
     var body: some View {
-        Button { dashboard.open(route) } label: {
+        Button {
+            if let metric { dashboard.showMetric(metric, section: section, page: route) } else { dashboard.open(route) }
+        } label: {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text(title).font(.app(.subheadline, weight: .medium)).foregroundStyle(Palette.ink2)
@@ -59,11 +86,11 @@ struct MetricCard<Content: View>: View {
                 }
                 content
             }
-            .frame(maxWidth: .infinity, minHeight: 196, maxHeight: .infinity, alignment: .topLeading)
+            .frame(maxWidth: .infinity, minHeight: variant.minHeight, maxHeight: .infinity, alignment: .topLeading)
             .card(tint)
         }
         .buttonStyle(.plain)
-        .accessibilityHint("Opens \(route.title)")
+        .accessibilityHint(metric == nil ? "Opens \(route.title)" : "Opens \(title) details")
     }
 }
 

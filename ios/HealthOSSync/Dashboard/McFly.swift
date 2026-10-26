@@ -348,6 +348,28 @@ final class McFlyFollow {
 
 private let threadSpace = "mcfly-thread"
 
+/// Ask McFly over Home (the web's AskPill, src/components/shell/AskPill.tsx). The shell mounts it at the bottom of Home
+/// in every phase, so whether it shows, and what a tap opens, are decided here (slice E's, G32). For now: the pill while
+/// signed in with Home's summary on screen and McFly available, opening the conversation in its own sheet, which closes
+/// if the sign-in screen comes. The web shows it on Home always and links to #/mcfly (`dashboard.open(.mcfly)`).
+struct AskMcFlyEntry: View {
+    @Environment(Dashboard.self) private var dashboard
+    @State private var open = false
+
+    var body: some View {
+        // A ZStack with a view in it even when the pill is hidden: an empty one has nothing to hang the sheet on.
+        ZStack {
+            Color.clear.frame(height: 0)
+            if dashboard.phase == .ready, dashboard.summary != nil, dashboard.mcfly.status?.available == true {
+                AskMcFlyPill { open = true }.padding(.top, 8).padding(.bottom, 18)
+            }
+        }
+        .sheet(isPresented: $open) { McFlySheet(chat: dashboard.mcfly).font(.app(.body)) }
+        // Asked to sign in (or the server went away) mid-conversation: the sheet doesn't stay over the sign-in screen.
+        .onChange(of: dashboard.phase) { _, phase in if phase != .ready { open = false } }
+    }
+}
+
 /// The floating pill at the bottom of Today: a glassy indigo capsule with a softly pulsing sparkle and a slow shimmer,
 /// a spring and a light tap when pressed. Reduce Motion stills it; Reduce Transparency drops the glass highlight.
 /// White text on the gradient stays above 7:1 in light mode and 5:1 in dark.
@@ -459,18 +481,26 @@ struct McFlySheet: View {
 
 /// Ask McFly as a page (More → Ask McFly, the web's #/mcfly): the same conversation as the pill's sheet. Unlike the
 /// pill, it's always listed, so on a server with McFly off it says so in the web's words instead of a composer.
-/// Signed out it asks for sign-in, never showing a conversation.
+/// Signed out it asks for sign-in (PhaseGate), never showing a conversation; it shows one only once signed in.
 struct McFlyPage: View {
     @Environment(Dashboard.self) private var dashboard
 
     var body: some View {
-        if dashboard.signInRequired {
-            SignInView()
-        } else if dashboard.phase == .noServer {
-            Unavailable("No server yet", systemImage: "server.rack", description: "Add your healthOS address in Profile.")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Palette.page)
-        } else if let status = dashboard.mcfly.status, !status.available {
+        PhaseGate {
+            switch dashboard.phase {
+            case .ready: content
+            case .unavailable(let message):
+                Unavailable("Can't load Ask McFly", systemImage: "wifi.exclamationmark", description: message)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Palette.page)
+            default: ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity).background(Palette.page)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if let status = dashboard.mcfly.status, !status.available {
             let admin = dashboard.status?.user?.role == "admin"
             Unavailable(status.configured ? "Ask McFly is turned off" : "Ask McFly isn't set up yet", systemImage: AppPage.mcfly.symbol,
                         description: !admin ? "Ask the admin to turn it on."

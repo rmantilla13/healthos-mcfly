@@ -111,6 +111,7 @@ private struct ServerSection: View {
         case .starting: "Connecting…"
         case .noServer: "No server"
         case .signIn: "Signed out"
+        case .misconfigured: "Sign-in isn't set up"
         case .unavailable: "Unavailable"
         case .ready:
             // A server with sign-in off reports a placeholder owner with no email.

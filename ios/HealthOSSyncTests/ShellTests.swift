@@ -93,7 +93,7 @@ final class ShellTests: XCTestCase {
         let main = navPages.flatMap { $0 == "home" ? [$0, "family"] : $0 == "body" ? [$0, "cycle"] : [$0] }
         let more = main.filter { !tabPages.contains($0) } + extras
         XCTAssertEqual(AppPage.more(family: true, cycle: true).map(\.rawValue), more + ["insights"])
-        for page in AppPage.allCases where page != .insights && page != .day {
+        for page in AppPage.allCases where page != .insights && page != .day && page != .welcome {
             XCTAssertNotEqual(page.tab, .settings)
             XCTAssertEqual(page.tab == .more, more.contains(page.rawValue) || page == .admin, "\(page) is on its own tab or under More")
         }
@@ -133,11 +133,11 @@ final class ShellTests: XCTestCase {
         let union = try XCTUnwrap(types.range(of: "export type Page =").map { String(types[$0.upperBound...].prefix { $0 != ";" }) })
         let ids = try matches(#"'(\w+)'"#, in: union).map { $0[0] }
         XCTAssertGreaterThan(ids.count, 10)
-        for id in ids where id != "welcome" {
+        for id in ids {
             XCTAssertNotNil(AppRoute(page: id), id)
         }
-        // Onboarding's edit mode: not a page here yet.
-        XCTAssertNil(AppRoute(page: "welcome"))
+        // Onboarding's edit mode, shown over the app.
+        XCTAssertEqual(AppRoute(page: "welcome"), .welcome)
         XCTAssertNil(AppRoute(page: "trends"))
         // The old addresses: Settings is Profile, Activity is a tab of Body.
         XCTAssertEqual(AppRoute(page: "settings"), .profile)
@@ -254,6 +254,78 @@ final class ShellTests: XCTestCase {
         d.tab = .settings
         XCTAssertEqual(d.paths[.more], [.profile])
         XCTAssertEqual(d.morePages.filter { $0 == .profile }, [.profile])
+    }
+
+    // MARK: Over the app
+
+    /// The welcome is over everything, as the web shows it instead of the dashboard: a new account's whenever the
+    /// server says its onboarding isn't done, and its steps again from #/welcome (Profile's Edit preferences). Not on a
+    /// server older than onboarding, and never while signed out.
+    func testTheWelcomeShowsOverTheApp() throws {
+        let d = Dashboard()
+        d.authMode = "required"
+        d.phase = .ready
+        d.apply(status: try status(#"{"perspective":"portrait","onboarding":1}"#))
+        XCTAssertEqual(d.onboarding, .new)
+        // The stub's "Not now": this session only, and nothing sent.
+        d.putOffOnboarding()
+        XCTAssertNil(d.onboarding)
+        d.apply(status: try status(#"{"perspective":"portrait","onboarding":null}"#))
+        XCTAssertNil(d.onboarding, "done")
+
+        d.open(.welcome)
+        XCTAssertEqual(d.onboarding, .edit)
+        XCTAssertTrue(d.paths.values.allSatisfy(\.isEmpty), "shown over the app, not pushed")
+        d.closeWelcome()
+        XCTAssertNil(d.onboarding)
+        XCTAssertEqual(d.tab, .more)
+        XCTAssertEqual(d.paths[.more], [.profile], "back to Profile, as the web's")
+
+        // An older server doesn't name perspective: it would ignore what the welcome saves.
+        d.apply(status: try status(#"{"onboarding":1}"#))
+        d.open(.welcome)
+        XCTAssertNil(d.onboarding)
+
+        // Signed out: never over the sign-in screen, and an edit asked for doesn't come back with the next person.
+        d.apply(status: try status(#"{"perspective":"portrait","onboarding":null}"#))
+        XCTAssertEqual(d.onboarding, .edit)
+        d.phase = .signIn
+        XCTAssertNil(d.onboarding)
+        XCTAssertFalse(d.welcomeEditing)
+    }
+
+    /// Any card's arrow opens its metric's sheet over the app, with the card's page for "Open {Page}".
+    func testAMetricSheetOpensOverTheApp() throws {
+        let d = Dashboard()
+        d.showMetric(.restingHr, page: .vitals, range: .week, date: "2026-10-20")
+        XCTAssertEqual(d.metricSheet?.key, .restingHr)
+        XCTAssertEqual(d.metricSheet?.section, "Your signals")
+        XCTAssertEqual(d.metricSheet?.page, .vitals)
+        XCTAssertEqual(d.metricSheet?.range, .week)
+        XCTAssertEqual(d.metricSheet?.date, "2026-10-20")
+        XCTAssertEqual(d.tab, .home, "over the page, not instead of it")
+        // Gone with the person.
+        d.phase = .ready
+        d.phase = .signIn
+        XCTAssertNil(d.metricSheet)
+
+        // The keys and ranges are the web's (shared/metrics.ts).
+        let metrics = try web("shared/metrics.ts")
+        let keys = try XCTUnwrap(metrics.range(of: "export type MetricKey =").map { String(metrics[$0.upperBound...].prefix { $0 != ";" }) })
+        XCTAssertEqual(try matches(#"'(\w+)'"#, in: keys).map { $0[0] }, MetricKey.allCases.map(\.rawValue))
+        let ranges = try XCTUnwrap(metrics.range(of: "export type MetricRange =").map { String(metrics[$0.upperBound...].prefix { $0 != ";" }) })
+        XCTAssertEqual(try matches(#"'(\w+)'"#, in: ranges).map { $0[0] }, MetricRange.allCases.map(\.rawValue))
+    }
+
+    /// A server whose sign-in isn't set up is its own phase, for the sign-in screens (slice A) to say so as the web does,
+    /// not a "Can't load your dashboard" with the host in it.
+    func testAMisconfiguredServerIsItsOwnPhase() throws {
+        let d = Dashboard()
+        let auth = try JSONDecoder().decode(AuthState.self, from: Data(#"{"mode":"misconfigured","authenticated":false}"#.utf8))
+        d.apply(auth: auth, host: "health.example.com")
+        XCTAssertEqual(d.phase, .misconfigured)
+        XCTAssertNil(d.onboarding)
+        XCTAssertFalse(d.signOutOffered)
     }
 
     // MARK: Account menu

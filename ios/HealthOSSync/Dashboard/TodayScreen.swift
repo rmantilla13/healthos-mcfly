@@ -6,16 +6,9 @@ struct TodayScreen: View {
     @Environment(Dashboard.self) private var dashboard
 
     var body: some View {
-        Group {
+        // No server, sign-in and a server whose sign-in isn't set up are the shell's (PhaseGate); the rest is Home's.
+        PhaseGate {
             switch dashboard.phase {
-            case .starting:
-                ProgressView()
-            case .noServer:
-                Unavailable("No server yet", systemImage: "server.rack", description: "Add your healthOS address in Profile.") {
-                    Button("Open Profile") { dashboard.tab = .settings }
-                }
-            case .signIn:
-                SignInView()
             case .unavailable(let message):
                 Unavailable("Can't load your dashboard", systemImage: "wifi.exclamationmark", description: message) {
                     Button("Try again") { Task { await dashboard.start() } }
@@ -26,6 +19,8 @@ struct TodayScreen: View {
                 } else {
                     ProgressView()
                 }
+            default:
+                ProgressView()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

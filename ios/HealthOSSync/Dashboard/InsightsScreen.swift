@@ -8,17 +8,11 @@ struct InsightsScreen: View {
     @Environment(Dashboard.self) private var dashboard
 
     var body: some View {
-        Group {
-            if dashboard.signInRequired {
-                SignInView()
-            } else if dashboard.phase == .noServer {
-                Unavailable("No server yet", systemImage: "server.rack", description: "Add your healthOS address in Profile.")
-            } else {
-                ScrollView {
-                    InsightsContent().padding(16)
-                }
-                .refreshable { await dashboard.load() }
+        PhaseGate {
+            ScrollView {
+                InsightsContent().padding(16)
             }
+            .refreshable { await dashboard.load() }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Palette.page)

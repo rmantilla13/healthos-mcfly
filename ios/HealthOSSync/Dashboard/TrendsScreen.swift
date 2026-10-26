@@ -22,44 +22,38 @@ struct TrendsPage: View {
     }
 
     var body: some View {
-        Group {
-            if dashboard.signInRequired {
-                SignInView()
-            } else if dashboard.phase == .noServer {
-                Unavailable("No server yet", systemImage: "server.rack", description: "Add your healthOS address in Profile.")
-            } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 14) {
-                        if sections.count > 1 { TrendsSectionChips(selection: $selection, sections: sections) }
-                        // At the accessibility text sizes the range goes under the line, so "30 days" never breaks.
-                        let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4)) : AnyLayout(HStackLayout())
-                        layout {
-                            Text(subtitle).font(.app(.footnote)).foregroundStyle(Palette.ink3)
-                            if !typeSize.isAccessibilitySize { Spacer() }
-                            // The cycle view has its own span.
-                            if selection != .cycle {
-                                Picker("Range", selection: $days) {
-                                    Text("7 days").tag(7)
-                                    Text("30 days").tag(30)
-                                    Text("90 days").tag(90)
-                                    Text("1 year").tag(365)
-                                }
-                                .pickerStyle(.menu)
-                                .fixedSize()
+        PhaseGate {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    if sections.count > 1 { TrendsSectionChips(selection: $selection, sections: sections) }
+                    // At the accessibility text sizes the range goes under the line, so "30 days" never breaks.
+                    let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4)) : AnyLayout(HStackLayout())
+                    layout {
+                        Text(subtitle).font(.app(.footnote)).foregroundStyle(Palette.ink3)
+                        if !typeSize.isAccessibilitySize { Spacer() }
+                        // The cycle view has its own span.
+                        if selection != .cycle {
+                            Picker("Range", selection: $days) {
+                                Text("7 days").tag(7)
+                                Text("30 days").tag(30)
+                                Text("90 days").tag(90)
+                                Text("1 year").tag(365)
                             }
-                        }
-                        switch selection {
-                        case .vitals: VitalsTrends(days: days)
-                        case .sleep: SleepTrends(days: days)
-                        case .activity: ActivityTrends(days: days)
-                        case .body: BodyTrends(days: days)
-                        case .cycle: CycleTrends()
+                            .pickerStyle(.menu)
+                            .fixedSize()
                         }
                     }
-                    .padding(16)
+                    switch selection {
+                    case .vitals: VitalsTrends(days: days)
+                    case .sleep: SleepTrends(days: days)
+                    case .activity: ActivityTrends(days: days)
+                    case .body: BodyTrends(days: days)
+                    case .cycle: CycleTrends()
+                    }
                 }
-                .refreshable { await dashboard.load() }
+                .padding(16)
             }
+            .refreshable { await dashboard.load() }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Palette.page)

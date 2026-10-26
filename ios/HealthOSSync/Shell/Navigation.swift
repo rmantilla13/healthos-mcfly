@@ -5,8 +5,13 @@ import Foundation
 
 extension Dashboard {
     /// Opens a page where the web's phone layout has it: a tab's own page on that tab, back at its top; one day over
-    /// Home; anything else pushed under More (a Family member over the board, so Back goes to the board).
+    /// Home; anything else pushed under More (a Family member over the board, so Back goes to the board). The welcome
+    /// shows over everything, as the web shows it instead of the dashboard.
     func open(_ route: AppRoute) {
+        if route.page == .welcome {
+            welcomeEditing = true
+            return
+        }
         // Not built here yet: the web dashboard's own page, in the app.
         if route.page == .admin, !AdminScreen.native {
             showWeb("#/admin")

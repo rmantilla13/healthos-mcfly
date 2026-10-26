@@ -7,14 +7,8 @@ struct NutritionScreen: View {
     @Environment(Dashboard.self) private var dashboard
 
     var body: some View {
-        Group {
-            if dashboard.signInRequired {
-                SignInView()
-            } else if dashboard.phase == .noServer {
-                Unavailable("No server yet", systemImage: "server.rack", description: "Add your healthOS address in Profile.") {
-                    Button("Open Profile") { dashboard.tab = .settings }
-                }
-            } else if dashboard.status == nil {
+        PhaseGate {
+            if dashboard.status == nil {
                 // Whether Nutrition is on comes with the status: until it arrives there's nothing honest to show.
                 if case .unavailable(let message) = dashboard.phase {
                     Unavailable("Can't load your dashboard", systemImage: "wifi.exclamationmark", description: message)
