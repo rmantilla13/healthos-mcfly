@@ -334,7 +334,7 @@ private struct PortraitTile: View {
                     .accessibilityLabel(PortraitWords.portraitLabel(p))
                     .accessibilityAddTraits(.isImage)
                 } else if p.status != "pending" {
-                    Image(systemName: "exclamationmark.circle")
+                    Image(systemName: "exclamationmark.triangle")
                         .font(.system(size: 20))
                         .foregroundStyle(ColorToken.badgeBadInk.color)
                         .accessibilityHidden(true)
@@ -390,7 +390,7 @@ struct BadNote: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
-            if icon { Image(systemName: "exclamationmark.circle").imageScale(.small).accessibilityHidden(true) }
+            if icon { Image(systemName: "exclamationmark.triangle").imageScale(.small).accessibilityHidden(true) }
             Text(text).fixedSize(horizontal: false, vertical: true)
         }
         .font(.app(size: 13, relativeTo: .footnote))

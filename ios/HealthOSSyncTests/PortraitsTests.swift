@@ -407,6 +407,15 @@ final class PortraitsTests: XCTestCase {
                        "an older server without the route")
         XCTAssertEqual(PhotoWords.saveFailure(APIClient.error(status: 400, message: "Missing cutout", path: "/profile/photo/upload")), "Missing cutout")
         XCTAssertEqual(PhotoWords.saveFailure(APIClient.error(status: 500, message: nil, path: "/profile/photo/upload")), PhotoWords.couldNotSave)
+        // The cut-out's failures in the web's words (src/photo/process.ts).
+        let process = try web("src/photo/process.ts")
+        XCTAssertTrue(process.contains(PhotoWords.noFace))
+        XCTAssertTrue(process.contains(PhotoWords.unreadable))
+        XCTAssertEqual(PhotoWords.cutOutFailure(PhotoCutout.Failure(message: "No face found. Choose a photo where your face is clearly visible.")), PhotoWords.noFace)
+        XCTAssertEqual(PhotoWords.cutOutFailure(PhotoCutout.Failure(message: "Couldn't read that image. Choose a photo.")), PhotoWords.unreadable)
+        XCTAssertEqual(PhotoWords.cutOutFailure(PhotoCutout.Failure(message: "Couldn't separate you from the background.")),
+                       "Couldn't separate you from the background.")
+        XCTAssertTrue(process.contains("Couldn't separate you from the background."))
     }
 
     // MARK: Look

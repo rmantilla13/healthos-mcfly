@@ -35,6 +35,17 @@ enum PhotoWords {
     static let current = "Your cut-out photo"
     static let newCutout = "Your new cut-out"
     static let newAvatar = "Your new avatar"
+    // src/photo/process.ts, where the iPhone's cut-out (PhotoCutout) words the same failure its own way.
+    static let noFace = "No face found. Use a photo where your face is clearly visible."
+    static let unreadable = "Couldn't read that image. Use a JPEG or PNG photo."
+
+    /// Cutting out failed: in the web's words where they differ from the cut-out's own.
+    static func cutOutFailure(_ error: Error) -> String {
+        let said = error.localizedDescription
+        if said.hasPrefix("No face found") { return noFace }
+        if said.hasPrefix("Couldn't read that image") { return unreadable }
+        return said
+    }
 
     /// Saving failed: too large (here or at the server), a server without the route, or the server's words.
     static func saveFailure(_ error: Error) -> String {
@@ -147,7 +158,7 @@ private struct PhotoAsIs: View {
             guard let data = try await picked.loadTransferable(type: Data.self) else { throw PhotoCutout.Failure(message: PhotoWords.couldNotLoad) }
             preview = try await Task.detached(priority: .userInitiated) { try PhotoCutout.process(data) }.value
         } catch {
-            if !APIClient.isCancellation(error) { self.error = error.localizedDescription }
+            if !APIClient.isCancellation(error) { self.error = PhotoWords.cutOutFailure(error) }
         }
     }
 
