@@ -274,16 +274,22 @@ struct ProfileNutritionSheet: View {
 }
 
 /// The person's own targets (the web's TargetInputs), each optional and blank by default; calories only while those
-/// show. A target is a plain line on the charts, never a score. Saved when the field is left, as the web's on blur.
-/// The server leaves a value outside its range as it was, which would look saved: the phone says so instead.
+/// show. A target is a plain line on the charts, never a score. Saved when the field is left, as the web's on blur,
+/// and when the sheet closes with one still typed. While one is typed and not saved the sheet doesn't swipe away (×
+/// and Done close it, and save). The server leaves a value outside its range as it was, which would look saved: the
+/// phone says so instead.
 private struct ProfileNutritionTargets: View {
     let mode: NutritionMode
     let busy: Bool
     @Environment(Dashboard.self) private var dashboard
     /// What's being typed, by key; nil shows the server's value.
     @State private var drafts: [String: String] = [:]
+    /// Targets on their way to the server, so leaving the field and closing the sheet don't send one twice.
+    @State private var sending: Set<String> = []
     @State private var error: String?
     @FocusState private var focus: String?
+    /// Wide enough for five digits, or "None", at every text size (180 holds them at the largest).
+    @ScaledMetric(relativeTo: .subheadline) private var fieldWidth: CGFloat = 96
 
     var body: some View {
         ProfileField(ProfileWords.targetsTitle) {
@@ -299,6 +305,11 @@ private struct ProfileNutritionTargets: View {
         .onChange(of: focus) { old, _ in
             if let old { commit(old) }
         }
+        // Closed with a target typed and the keyboard still up: saved as leaving the field would save it.
+        .onDisappear {
+            for key in drafts.keys { commit(key) }
+        }
+        .interactiveDismissDisabled(drafts.contains { $0.value != current($0.key) })
     }
 
     @ViewBuilder
@@ -312,7 +323,7 @@ private struct ProfileNutritionTargets: View {
                         .focused($focus, equals: f.key)
                         .disabled(busy)
                         .profileInput()
-                        .frame(width: 96)
+                        .frame(width: min(fieldWidth, 180))
                         .accessibilityLabel("\(f.label) target in \(f.unit)")
                         .accessibilityIdentifier("target-\(f.key)")
                     Text(f.unit).font(.app(size: 12, relativeTo: .caption)).foregroundStyle(Palette.ink3)
@@ -328,7 +339,7 @@ private struct ProfileNutritionTargets: View {
     }
 
     private func commit(_ key: String) {
-        guard let draft = drafts[key], let field = NutritionTargetField.all.first(where: { $0.key == key }) else { return }
+        guard !sending.contains(key), let draft = drafts[key], let field = NutritionTargetField.all.first(where: { $0.key == key }) else { return }
         guard draft != current(key) else { drafts[key] = nil; return }
         let value = draft.isEmpty ? nil : Double(draft)
         if let message = field.problem(value) {
@@ -336,6 +347,9 @@ private struct ProfileNutritionTargets: View {
             return
         }
         error = nil
+        sending.insert(key)
+        // Held here, not read from the view once it may have gone (the sheet closing).
+        let dashboard = dashboard
         Task {
             do {
                 try await dashboard.setNutritionTarget(key, value)
@@ -344,6 +358,7 @@ private struct ProfileNutritionTargets: View {
             } catch {
                 if dashboard.phase == .ready { self.error = "Couldn't save: \(error.localizedDescription)" }
             }
+            sending.remove(key)
         }
     }
 }

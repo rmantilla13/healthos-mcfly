@@ -73,15 +73,17 @@ struct ProfileBasicsSheet: View {
         .onChange(of: name) { _, typed in
             if typed.count > ProfileWords.nameLimit { name = String(typed.prefix(ProfileWords.nameLimit)) }
         }
+        // Digits only, and no more than seven: any seven-digit goal is already over 100,000, so a longer one (pasted)
+        // is still refused, never cut down to a number that would be saved.
         .onChange(of: goal) { _, typed in
-            let digits = typed.filter(\.isASCIIDigit)
+            let digits = String(typed.filter(\.isASCIIDigit).prefix(ProfileWords.stepGoalDigits))
             if digits != typed { goal = digits }
         }
         .onDisappear { flash?.cancel() }
     }
 
     /// What closing the sheet sends: the name if its trimmed words changed, the goal if it's a new number (the web's
-    /// done()). `goalOutOfRange`: one the server would ignore.
+    /// done()). `goalOutOfRange`: one the server would ignore, a number too long to read included.
     struct Patch: Equatable {
         var fields: [String: String] = [:]
         var goal: Int?
@@ -92,8 +94,13 @@ struct ProfileBasicsSheet: View {
     static func patch(name: String, goal: String, settings: ServerStatus.Settings?) -> Patch {
         var patch = Patch()
         if name.trimmingCharacters(in: .whitespacesAndNewlines) != (settings?.name ?? "") { patch.fields["name"] = name }
-        if let typed = Int(goal), Double(typed) != settings?.stepGoal {
-            if ProfileWords.stepGoalRange.contains(typed) { patch.goal = typed } else { patch.goalOutOfRange = true }
+        if let typed = Int(goal) {
+            if Double(typed) != settings?.stepGoal {
+                if ProfileWords.stepGoalRange.contains(typed) { patch.goal = typed } else { patch.goalOutOfRange = true }
+            }
+        } else if !goal.isEmpty {
+            // Digits too many for a number: far over 100,000.
+            patch.goalOutOfRange = true
         }
         return patch
     }
