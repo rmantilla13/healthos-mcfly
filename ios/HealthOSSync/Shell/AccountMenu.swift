@@ -76,6 +76,8 @@ struct AccountMenuSheet: View {
         .presentationDetents([.height(height)])
         .presentationCornerRadius(22)
         .presentationBackground { GradientFill(.menuBg) }
+        // The menu is named as a whole; each row keeps its own name.
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("Your workspace")
     }
 
