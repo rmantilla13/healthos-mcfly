@@ -236,7 +236,7 @@ final class McFlyVisualTests: XCTestCase {
         empty.apply(.text("\n\n"))
         empty.finishAnswer()
         XCTAssertTrue(empty.failed)
-        XCTAssertEqual(empty.error, "No answer came back. Try again.")
+        XCTAssertEqual(empty.error, "McFly had no answer. Try asking another way.")
 
         var refused = McFlyMessage(role: .assistant, content: "")
         refused.apply(.text("Partly"))
