@@ -1149,26 +1149,13 @@ final class CardHidingTests: XCTestCase {
         XCTAssertFalse(Cards.nutritionOverview(mode: .all, hidden: ["nutrition.protein", "nutrition.water", "nutrition.logged", "nutrition.macros", "nutrition.insights"]).allHidden)
     }
 
-    func testOnlyCardsTheAppShowsAreMapped() {
-        XCTAssertEqual(Cards.ids(in: .today), ["home.spo2", "home.hrv", "home.sleep", "home.readiness", "home.week", "home.timeline", "home.insights", "home.load", "home.activity"])
-        XCTAssertEqual(Cards.todayGrid.filter { Cards.card($0)?.place == .today }, Cards.todayGrid, "every grid card is a Today card")
-        XCTAssertEqual(Cards.ids(in: .trends(.sleep)), ["sleep.total", "sleep.score", "sleep.efficiency", "sleep.stages"])
-        XCTAssertEqual(Cards.ids(in: .nutrition),
-                       ["nutrition.energy", "nutrition.protein", "nutrition.water", "nutrition.logged", "nutrition.macros", "nutrition.insights"])
-        // No food card on Today, and nothing of the Body overview in the app.
-        XCTAssertNil(Cards.card("home.food")?.place)
-        XCTAssertTrue(Cards.all.filter { $0.page == .body }.allSatisfy { $0.place == nil })
-        XCTAssertTrue(Cards.ids(in: .trends(.body)).isEmpty)
-        XCTAssertNil(Cards.card("future.card"))
-    }
-
     func testHiddenCardsLeaveTheRestInOrder() throws {
         let hidden: Set<String> = ["home.spo2", "home.load", "sleep.total", "future.card"]
         XCTAssertEqual(Cards.visible(Cards.todayGrid, hidden: hidden), ["home.readiness", "home.hrv", "home.sleep", "home.activity"])
         XCTAssertEqual(Cards.visible(Cards.todayGrid, hidden: []), Cards.todayGrid)
-        XCTAssertFalse(Cards.allHidden(in: .today, hidden: hidden))
-        XCTAssertTrue(Cards.allHidden(in: .today, hidden: Set(Cards.ids(in: .today))))
-        XCTAssertFalse(Cards.allHidden(in: .trends(.body), hidden: Set(Cards.all.map(\.id))), "nothing to hide there, so no note")
+        XCTAssertFalse(Cards.allHidden(in: .home, hidden: hidden))
+        XCTAssertTrue(Cards.allHidden(in: .home, hidden: Set(Cards.ids(in: .home))))
+        XCTAssertFalse(Cards.allHidden(in: CardPlace(.vitals), hidden: Set(Cards.all.map(\.id))), "nothing to hide there, so no note")
 
         // The status's list, unknown ids ignored.
         let d = try dashboard(hidden: ["home.hrv", "future.card"])

@@ -79,11 +79,16 @@ final class ShellTests: XCTestCase {
 
     /// Profile → Cards says where each card shows by the page's name: there's no Today or Trends tab any more.
     func testCardPlacesNameThePages() {
-        XCTAssertEqual(CardPlace.today.label, "Home")
-        XCTAssertEqual(CardPlace.trends(.sleep).label, "Sleep")
-        XCTAssertEqual(CardPlace.trends(.vitals).label, "Vitals")
-        XCTAssertEqual(CardPlace.trends(.activity).label, "Body · Activity")
-        XCTAssertEqual(CardPlace.nutrition.label, "Nutrition · Overview")
+        XCTAssertEqual(CardPlace.home.label, "Home")
+        XCTAssertEqual(CardPlace.sleep.label, "Sleep")
+        XCTAssertEqual(CardPlace(.vitals).label, "Vitals")
+        XCTAssertEqual(CardPlace.bodyActivity.label, "Body · Activity")
+        XCTAssertEqual(CardPlace.nutritionOverview.label, "Nutrition · Overview")
+        XCTAssertEqual(CardPlace(.sleep, tab: "overview").label, "Sleep · Overview")
+        // Each opens where it says.
+        XCTAssertEqual(CardPlace.bodyActivity.route, .activity)
+        XCTAssertEqual(CardPlace.home.route, .home)
+        XCTAssertEqual(CardPlace.nutritionOverview.route, AppRoute(.nutrition, query: ["tab": "overview"]))
     }
 
     // MARK: Links

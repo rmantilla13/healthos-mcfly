@@ -593,36 +593,6 @@ private struct FoodScanSection: View {
     }
 }
 
-/// VisionKit's live barcode reader, for EAN-13 (and UPC-A within it), EAN-8 and UPC-E.
-private struct BarcodeScanner: UIViewControllerRepresentable {
-    let onCode: (String) -> Void
-
-    func makeUIViewController(context: Context) -> DataScannerViewController {
-        let vc = DataScannerViewController(recognizedDataTypes: [.barcode(symbologies: [.ean13, .ean8, .upce])], qualityLevel: .balanced,
-                                           recognizesMultipleItems: false, isHighFrameRateTrackingEnabled: false, isHighlightingEnabled: true)
-        vc.delegate = context.coordinator
-        DispatchQueue.main.async { try? vc.startScanning() }
-        return vc
-    }
-
-    func updateUIViewController(_ vc: DataScannerViewController, context: Context) {}
-
-    static func dismantleUIViewController(_ vc: DataScannerViewController, coordinator: Coordinator) { vc.stopScanning() }
-
-    func makeCoordinator() -> Coordinator { Coordinator(onCode: onCode) }
-
-    final class Coordinator: NSObject, DataScannerViewControllerDelegate {
-        let onCode: (String) -> Void
-        init(onCode: @escaping (String) -> Void) { self.onCode = onCode }
-
-        func dataScanner(_ scanner: DataScannerViewController, didAdd items: [RecognizedItem], allItems: [RecognizedItem]) {
-            for case .barcode(let b) in items {
-                if let s = b.payloadStringValue { onCode(s); return }
-            }
-        }
-    }
-}
-
 /// One database food: which portion, how many, what that comes to (only the amounts the setting shows), then Add.
 private struct FoodPickView: View {
     let pick: FoodPick
@@ -779,33 +749,6 @@ private struct FoodEstimateSection: View {
             }
             busy = false
         }
-    }
-}
-
-/// The camera, for a meal photo (devices only).
-private struct CameraPicker: UIViewControllerRepresentable {
-    let done: (UIImage?) -> Void
-
-    func makeUIViewController(context: Context) -> UIImagePickerController {
-        let vc = UIImagePickerController()
-        vc.sourceType = .camera
-        vc.delegate = context.coordinator
-        return vc
-    }
-
-    func updateUIViewController(_ vc: UIImagePickerController, context: Context) {}
-
-    func makeCoordinator() -> Coordinator { Coordinator(done: done) }
-
-    final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
-        let done: (UIImage?) -> Void
-        init(done: @escaping (UIImage?) -> Void) { self.done = done }
-
-        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
-            done(info[.originalImage] as? UIImage)
-        }
-
-        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) { done(nil) }
     }
 }
 

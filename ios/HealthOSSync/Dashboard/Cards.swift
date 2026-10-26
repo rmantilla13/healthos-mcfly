@@ -10,6 +10,16 @@ enum CardPage: String, CaseIterable, Identifiable {
     case home, sleep, body, nutrition
     var id: String { rawValue }
 
+    /// The app's page of the same name.
+    var appPage: AppPage {
+        switch self {
+        case .home: .home
+        case .sleep: .sleep
+        case .body: .body
+        case .nutrition: .nutrition
+        }
+    }
+
     var label: String {
         switch self {
         case .home: "Home"
@@ -20,21 +30,28 @@ enum CardPage: String, CaseIterable, Identifiable {
     }
 }
 
-/// Where this app shows a card.
-enum CardPlace: Equatable {
-    case today
-    case trends(TrendsSection)
-    case nutrition
+/// Where this app shows a card: a page, and the tab of it the card is on (the web's ?tab=), as AppRoute names them.
+/// Each page says which of its cards it shows, in its own table (`Cards.place(of:)`).
+struct CardPlace: Hashable {
+    let page: AppPage
+    /// The page's tab ("overview", "activity"); nil for a page without tabs, or its only view.
+    var tab: String?
 
-    var label: String {
-        switch self {
-        case .today: "Home"
-        // Each section is its page's, Activity a tab of Body.
-        case .trends(.activity): "Body · Activity"
-        case .trends(let section): section.rawValue
-        case .nutrition: "Nutrition · Overview"
-        }
+    init(_ page: AppPage, tab: String? = nil) {
+        self.page = page
+        self.tab = tab
     }
+
+    static let home = CardPlace(.home)
+    static let sleep = CardPlace(.sleep)
+    static let bodyActivity = CardPlace(.body, tab: "activity")
+    static let nutritionOverview = CardPlace(.nutrition, tab: "overview")
+
+    /// Where Profile → Cards says it shows: "Home", "Sleep", "Body · Activity", "Nutrition · Overview".
+    var label: String { tab.map { "\(page.title) · \($0.prefix(1).uppercased())\($0.dropFirst())" } ?? page.title }
+
+    /// The link to it.
+    var route: AppRoute { AppRoute(page, query: tab.map { ["tab": $0] } ?? [:]) }
 }
 
 /// One card from the registry.
@@ -46,8 +63,9 @@ struct DashboardCard: Identifiable, Equatable {
     var nutrition = false
     /// Off until the person turns it on (defaultHidden in shared/cards.ts).
     var optional = false
-    /// Where this app shows it, and hides it; nil when only the web dashboard hides it.
-    var place: CardPlace?
+
+    /// Where this app shows it, and hides it, from its page's table; nil when only the web dashboard shows it.
+    var place: CardPlace? { Cards.place(of: id) }
 }
 
 /// One page's cards in Profile.
@@ -58,32 +76,31 @@ struct CardGroup: Identifiable {
 }
 
 enum Cards {
-    /// shared/cards.ts CARDS, in its order (a test checks them against that file). Each card the app shows has its
-    /// place; the rest still change the web dashboard. The Body overview's cards (heart, recovery, strain,
-    /// movement, the latest workout and lab results) have no counterpart here.
+    /// shared/cards.ts CARDS, in its order (a test checks them against that file). Where the app shows each is in its
+    /// page's table (`place(of:)`); the rest still change the web dashboard.
     static let all: [DashboardCard] = [
         DashboardCard(id: "home.rhr", page: .home, label: "Resting heart rate"),
-        DashboardCard(id: "home.spo2", page: .home, label: "Blood oxygen", place: .today),
-        DashboardCard(id: "home.hrv", page: .home, label: "HRV", place: .today),
-        DashboardCard(id: "home.sleep", page: .home, label: "Sleep", place: .today),
+        DashboardCard(id: "home.spo2", page: .home, label: "Blood oxygen"),
+        DashboardCard(id: "home.hrv", page: .home, label: "HRV"),
+        DashboardCard(id: "home.sleep", page: .home, label: "Sleep"),
         // Recovery here, or VO₂ max without WHOOP; the id predates the card's name.
-        DashboardCard(id: "home.readiness", page: .home, label: "Recovery", place: .today),
+        DashboardCard(id: "home.readiness", page: .home, label: "Recovery"),
         DashboardCard(id: "home.resp", page: .home, label: "Respiratory rate"),
         DashboardCard(id: "home.nutrition", page: .home, label: "Today's nutrition"),
         DashboardCard(id: "home.journal", page: .home, label: "Your health journal"),
-        DashboardCard(id: "home.week", page: .home, label: "Week so far", optional: true, place: .today),
+        DashboardCard(id: "home.week", page: .home, label: "Week so far", optional: true),
         // Today's path, and with it the portrait's heart following its marker.
-        DashboardCard(id: "home.timeline", page: .home, label: "Today's timeline", optional: true, place: .today),
-        DashboardCard(id: "home.insights", page: .home, label: "Recent insights", optional: true, place: .today),
-        DashboardCard(id: "home.load", page: .home, label: "Strain or active energy", optional: true, place: .today),
-        DashboardCard(id: "home.activity", page: .home, label: "Activity", optional: true, place: .today),
+        DashboardCard(id: "home.timeline", page: .home, label: "Today's timeline", optional: true),
+        DashboardCard(id: "home.insights", page: .home, label: "Recent insights", optional: true),
+        DashboardCard(id: "home.load", page: .home, label: "Strain or active energy", optional: true),
+        DashboardCard(id: "home.activity", page: .home, label: "Activity", optional: true),
         DashboardCard(id: "home.food", page: .home, label: "Food totals", nutrition: true, optional: true),
-        DashboardCard(id: "sleep.total", page: .sleep, label: "Sleep", place: .trends(.sleep)),
+        DashboardCard(id: "sleep.total", page: .sleep, label: "Sleep"),
         // WHOOP's sleep performance; efficiency has its own card.
-        DashboardCard(id: "sleep.score", page: .sleep, label: "Sleep performance", place: .trends(.sleep)),
-        DashboardCard(id: "sleep.efficiency", page: .sleep, label: "Sleep efficiency", place: .trends(.sleep)),
+        DashboardCard(id: "sleep.score", page: .sleep, label: "Sleep performance"),
+        DashboardCard(id: "sleep.efficiency", page: .sleep, label: "Sleep efficiency"),
         DashboardCard(id: "sleep.rhr", page: .sleep, label: "Resting heart rate"),
-        DashboardCard(id: "sleep.stages", page: .sleep, label: "Sleep stages", place: .trends(.sleep)),
+        DashboardCard(id: "sleep.stages", page: .sleep, label: "Sleep stages"),
         DashboardCard(id: "sleep.insights", page: .sleep, label: "Sleep insights"),
         DashboardCard(id: "sleep.timeline", page: .sleep, label: "Sleep timeline"),
         DashboardCard(id: "body.figure", page: .body, label: "Your figure"),
@@ -100,12 +117,12 @@ enum Cards {
         DashboardCard(id: "body.workout", page: .body, label: "Latest workout"),
         DashboardCard(id: "body.glucose", page: .body, label: "Glucose"),
         DashboardCard(id: "body.biomarkers", page: .body, label: "Key biomarkers"),
-        DashboardCard(id: "nutrition.energy", page: .nutrition, label: "Energy", nutrition: true, place: .nutrition),
-        DashboardCard(id: "nutrition.protein", page: .nutrition, label: "Protein", nutrition: true, place: .nutrition),
-        DashboardCard(id: "nutrition.water", page: .nutrition, label: "Water", nutrition: true, place: .nutrition),
-        DashboardCard(id: "nutrition.logged", page: .nutrition, label: "Days logged", nutrition: true, place: .nutrition),
-        DashboardCard(id: "nutrition.macros", page: .nutrition, label: "Macro balance", nutrition: true, place: .nutrition),
-        DashboardCard(id: "nutrition.insights", page: .nutrition, label: "Food insights", nutrition: true, place: .nutrition),
+        DashboardCard(id: "nutrition.energy", page: .nutrition, label: "Energy", nutrition: true),
+        DashboardCard(id: "nutrition.protein", page: .nutrition, label: "Protein", nutrition: true),
+        DashboardCard(id: "nutrition.water", page: .nutrition, label: "Water", nutrition: true),
+        DashboardCard(id: "nutrition.logged", page: .nutrition, label: "Days logged", nutrition: true),
+        DashboardCard(id: "nutrition.macros", page: .nutrition, label: "Macro balance", nutrition: true),
+        DashboardCard(id: "nutrition.insights", page: .nutrition, label: "Food insights", nutrition: true),
     ]
 
     /// The optional cards (shared/cards.ts OPTIONAL_CARDS): off until the person turns them on.
@@ -149,8 +166,19 @@ enum Cards {
 
     static func card(_ id: String) -> DashboardCard? { all.first { $0.id == id } }
 
-    /// Today's metric cards, in the grid's order (the first row of the web's Home page).
-    static let todayGrid = ["home.readiness", "home.spo2", "home.hrv", "home.sleep", "home.load", "home.activity"]
+    /// Where this app shows a card, from the table of the page it's on (shared/cards.ts `page`), each in that page's
+    /// own folder, so a page's cards change only there: Home/HomeCards.swift, Sleep/SleepCards.swift,
+    /// Body/BodyCards.swift and Nutrition/NutritionCards.swift. nil for a card in none, or one this app doesn't know.
+    static func place(of id: String) -> CardPlace? {
+        guard let card = card(id) else { return nil }
+        let table: [String: CardPlace] = switch card.page {
+        case .home: HomeCards.places
+        case .sleep: SleepCards.places
+        case .body: BodyCards.places
+        case .nutrition: NutritionCards.places
+        }
+        return table[id]
+    }
 
     /// The cards this app shows in one place, in the registry's order.
     static func ids(in place: CardPlace) -> [String] { all.filter { $0.place == place }.map(\.id) }

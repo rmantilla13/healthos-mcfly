@@ -79,7 +79,7 @@ private struct TodayContent: View {
                 // Left out with all six hidden, so no extra gap is left where the grid was.
                 if !gridIds.isEmpty { TodayGrid(summary: summary, ids: gridIds, goal: dashboard.stepGoal) }
                 if !hidden.contains("home.insights") { InsightsCard(insights: summary.insights ?? [], today: summary.today) }
-                if Cards.allHidden(in: .today, hidden: hidden) { AllCardsHiddenNote() }
+                if Cards.allHidden(in: .home, hidden: hidden) { AllCardsHiddenNote() }
             }
             .padding(16)
             .opacity(dashboard.loading ? 0.6 : 1)

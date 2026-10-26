@@ -63,7 +63,10 @@ final class Dashboard {
     var webPage: WebPage?
     /// Ask McFly's conversation, for the Home pill's sheet and the page under More alike. In memory only, and gone with
     /// a sign-out, another person's sign-in or another server.
-    let mcfly = McFlyChat()
+    let mcfly: McFlyChat
+    /// What this server can do for the person signed in (Shell/Availability.swift): own AI keys, estimates, voice
+    /// notes, portraits, reading lab reports, Ask McFly. Gone with them too.
+    let availability: Availability
     /// "open" (no sign-in, e.g. a local server) or "required" (the hosted dashboard).
     var authMode: String?
     /// The server signs in with email and password (per-person accounts), not a password alone.
@@ -118,6 +121,9 @@ final class Dashboard {
     init(tokenStore: IngestTokenStore = MemoryTokenStore()) {
         self.tokenStore = tokenStore
         ingestOwner = tokenStore.owner
+        let chat = McFlyChat()
+        mcfly = chat
+        availability = Availability(chat: chat)
     }
 
     var units: Units { Units(rawValue: status?.settings?.units ?? "") ?? .metric }
@@ -254,6 +260,7 @@ final class Dashboard {
             error = nil
             if case .unavailable = phase { phase = .ready }
             clearCaches()
+            availability.loadedAgain()
             // Your own tile changed with your data: read the board again next time, keeping it on screen until then.
             familyReadAt = nil
             generation += 1
@@ -335,10 +342,11 @@ final class Dashboard {
         resetNavigation()
     }
 
-    /// What the app keeps of the person signed in beyond their data: the McFly conversation, and the profile photo
-    /// kept in Caches.
+    /// What the app keeps of the person signed in beyond their data: the McFly conversation, what the server can do
+    /// for them, and the profile photo kept in Caches.
     private func forgetPerson() {
         mcfly.forget()
+        availability.forget()
         ProfileImages.clear()
     }
 
@@ -416,12 +424,12 @@ final class Dashboard {
     /// Turns Nutrition on with what the person chose to see (the web's opt-in): the server refuses it without a choice.
     /// The phone starts reading food once a sync hears it's on.
     func turnOnNutrition(_ mode: NutritionMode) async throws {
-        try await updateSettings(["nutrition": true, "nutritionNumbers": mode.rawValue])
+        try await save(settings: ["nutrition": true, "nutritionNumbers": mode.rawValue])
     }
 
     /// Sets or clears (nil) one of the person's own targets: "energy_kcal", "protein_g" or "water_ml".
     func setNutritionTarget(_ key: String, _ value: Double?) async throws {
-        try await updateSettings(["nutritionTargets": [key: value.map { $0 as Any } ?? NSNull()]])
+        try await save(settings: ["nutritionTargets": [key: value.map { $0 as Any } ?? NSNull()]])
     }
 
     func sleepTiming(days: Int) async throws -> SleepTiming? {
@@ -520,13 +528,13 @@ final class Dashboard {
     /// The status the server answers with drops the board from before at once (see `apply(status:)`), so a read
     /// that fails afterwards can't leave everyone on screen.
     func setFamilySharing(_ on: Bool) async throws {
-        try await updateSettings(["familySharing": on])
+        try await save(settings: ["familySharing": on])
         await loadFamily(force: true)
     }
 
     /// Shows or hides your cycle phase on your tile; the server keeps it off unless tracking and sharing are on.
     func setShareCyclePhase(_ on: Bool) async throws {
-        try await updateSettings(["shareCyclePhase": on])
+        try await save(settings: ["shareCyclePhase": on])
         if familyBoard?.sharing == true { await loadFamily(force: true) }
     }
 
@@ -534,7 +542,7 @@ final class Dashboard {
     func dismissFamilyNotice() async {
         hideFamilyNotice()
         do {
-            try await updateSettings(["familyNoticeSeen": true])
+            try await save(settings: ["familyNoticeSeen": true])
         } catch {
             familyNoticeDismissed = false
         }
@@ -554,7 +562,7 @@ final class Dashboard {
         let send = send ?? { fields in try await self.fetch { try await $0.updateSettings(fields) } }
         timeZoneSent = zone
         do {
-            show(settings: try await send(["timeZone": zone]))
+            showChanged(try await send(["timeZone": zone]))
         } catch {
             if Self.worthRetrying(error) { timeZoneSent = nil }
             return false
@@ -694,19 +702,36 @@ final class Dashboard {
             var status = try await send(change.body)
             // A server from before one-card changes ignored it: the same change again, as the whole list.
             if let retry = change.retry(stored: status.settings?.hiddenCards) { status = try await send(retry.body) }
-            show(settings: status)
+            showChanged(status)
         }
         cardQueue = Task { _ = try? await work.value }
         try await work.value
     }
 
-    /// PUT /api/settings, then shows the status it answers with.
-    private func updateSettings(_ fields: [String: Any]) async throws {
-        show(settings: try await fetch { try await $0.updateSettings(fields) })
+    // MARK: Settings
+
+    /// Saves settings the way every page does (PUT /api/settings), e.g. ["perspective": "portrait"] or ["units":
+    /// "imperial", "stepGoal": 8000]: the status the server answers with shows at once, and is kept with today's
+    /// summary for the next launch. Throws the server's refusal ("Choose what to show before turning nutrition on."),
+    /// with nothing saved. An older server ignores keys it doesn't know and still answers with its status, so check the
+    /// answer, never that the save went through: a feature shows only where the status names its setting (onboarding
+    /// and "Edit preferences" only where settings.perspective is present).
+    ///
+    /// `reload`: the change moves what the data shows (units, name, step goal, demo data), so the summary is read again.
+    /// Card changes go through `changeCards`, which keeps them in order. `send` is the request; tests pass their own.
+    @discardableResult
+    func save(settings fields: [String: Any], reload: Bool = false,
+              send: (@MainActor ([String: Any]) async throws -> ServerStatus)? = nil) async throws -> ServerStatus {
+        let send = send ?? { fields in try await self.fetch { try await $0.updateSettings(fields) } }
+        let status = try await send(fields)
+        showChanged(status)
+        if reload { await load() }
+        return status
     }
 
-    /// Shows the status a settings change answered with, and keeps it with today's summary for the next launch.
-    private func show(settings status: ServerStatus) {
+    /// Shows a status the server answered a change with (PUT /api/settings, or another write that answers with the
+    /// status), and keeps it with today's summary for the next launch. Not after a plain read: that's `apply(status:)`.
+    func showChanged(_ status: ServerStatus) {
         apply(status: status)
         if date == nil, let summary, let client = APIClient.current() {
             SummaryCache.save(summary: summary, status: status, version: dataVersion, loadedOn: loadedOn, for: client.base)
@@ -761,8 +786,9 @@ final class Dashboard {
         timeZoneSent = nil
         clearCaches()
         resetFamily()
-        // Another server's conversation, or nobody's yet: it doesn't carry over.
+        // Another server's conversation, or nobody's yet: it doesn't carry over, and nor does what it could do.
         mcfly.forget()
+        availability.forget()
     }
 
     /// Forgets the board and its photos; a read already on its way is dropped when it lands.

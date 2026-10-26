@@ -54,7 +54,7 @@ final class CardVisibilityTests: XCTestCase {
             XCTAssertFalse(d.cardShown(id), id)
             XCTAssertTrue(d.cardsOff.contains(id), id)
         }
-        XCTAssertFalse(Cards.allHidden(in: .today, hidden: d.cardsOff))
+        XCTAssertFalse(Cards.allHidden(in: .home, hidden: d.cardsOff))
 
         // Turned on (on the web or here), they show.
         let on = try dashboard(hidden: [], shown: ["home.week", "home.load"])
@@ -105,7 +105,7 @@ final class CardVisibilityTests: XCTestCase {
         // There the sleep score still hides sleep efficiency too, as before it had its card, and keeps that server's name.
         let d = try dashboard(hidden: ["sleep.score"], shown: nil)
         XCTAssertFalse(d.cardShown("sleep.efficiency"))
-        XCTAssertEqual(Cards.visible(Cards.ids(in: .trends(.sleep)), hidden: d.cardsOff), ["sleep.total", "sleep.stages"])
+        XCTAssertEqual(Cards.visible(Cards.ids(in: .sleep), hidden: d.cardsOff), ["sleep.total", "sleep.stages"])
         XCTAssertTrue(try dashboard(hidden: [], shown: nil).cardShown("sleep.efficiency"))
         let score = try XCTUnwrap(Cards.card("sleep.score"))
         XCTAssertEqual(Cards.label(score, optionalCards: false), "Sleep score")
@@ -249,7 +249,7 @@ final class CardVisibilityTests: XCTestCase {
     }
 
     func testSleepEfficiencyIsItsOwnCard() throws {
-        let sleep = Cards.ids(in: .trends(.sleep))
+        let sleep = Cards.ids(in: .sleep)
         XCTAssertEqual(Cards.visible(sleep, hidden: try dashboard(hidden: ["sleep.efficiency"], shown: []).cardsOff), ["sleep.total", "sleep.score", "sleep.stages"])
         XCTAssertEqual(Cards.visible(sleep, hidden: try dashboard(hidden: ["sleep.score"], shown: []).cardsOff), ["sleep.total", "sleep.efficiency", "sleep.stages"])
         // Without WHOOP there's no performance card to show, so the rest hidden is all of them.

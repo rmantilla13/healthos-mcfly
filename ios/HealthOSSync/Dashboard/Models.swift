@@ -992,6 +992,9 @@ struct LossyArray<Element: Codable>: Codable {
     }
 }
 
+extension Lossy: Equatable where Value: Equatable {}
+extension LossyArray: Equatable where Element: Equatable {}
+
 extension KeyedDecodingContainer {
     func decode<V>(_ type: Lossy<V>.Type, forKey key: Key) throws -> Lossy<V> {
         (try? decodeIfPresent(type, forKey: key)) ?? Lossy(wrappedValue: nil)

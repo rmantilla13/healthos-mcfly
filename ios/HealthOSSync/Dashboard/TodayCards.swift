@@ -41,8 +41,8 @@ struct TodayGrid: View {
     }
 }
 
-/// A tappable card that opens the page its metric is on.
-private struct MetricCard<Content: View>: View {
+/// A tappable card that opens the page its metric is on (Home's, and Vitals' compact ones).
+struct MetricCard<Content: View>: View {
     let title: String
     let route: AppRoute
     var tint: CardTint = .plain

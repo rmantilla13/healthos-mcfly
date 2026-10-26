@@ -159,14 +159,14 @@ struct DayCard: View {
 
 // MARK: - Metrics and day math (src/charts/day.ts)
 
-private enum HoursKind {
+enum HoursKind {
     /// A running total climbing from zero at midnight, plotted at the end of each hour (steps, energy).
     case running
     /// An hourly average at the middle of each hour, with its low–high band (heart rate).
     case hourly
 }
 
-private struct HourMetric {
+struct HourMetric {
     let title: String
     let kind: HoursKind
     let unit: String
@@ -236,7 +236,7 @@ private enum DayMath {
 }
 
 /// What one metric's day says: the line to draw and the headline (the web DayCard's value and note).
-private struct DayReading {
+struct DayReading {
     let through: Int?
     /// Running totals or hourly averages, nil after `through`.
     let shown: [Double?]
@@ -366,8 +366,8 @@ private struct BandPoint: Identifiable {
 }
 
 /// The day against the dashed typical day (src/charts/Day.tsx DayChart). `compact` is Today's mini version: no axes,
-/// no goal and no scrubbing.
-private struct HoursChart: View {
+/// no goal and no scrubbing. Vitals and Body draw a day with it too.
+struct HoursChart: View {
     let metric: HourMetric
     let series: DaySeries
     let reading: DayReading

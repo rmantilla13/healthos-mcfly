@@ -319,7 +319,7 @@ private struct FoodCardFoot: View {
     }
 }
 
-private struct FoodEnergyCard: View {
+struct FoodEnergyCard: View {
     let week: [FoodMath.DayValue]
     let target: Double?
     let today: String
@@ -342,7 +342,7 @@ private struct FoodEnergyCard: View {
     }
 }
 
-private struct FoodProteinCard: View {
+struct FoodProteinCard: View {
     let week: [FoodMath.DayValue]
     let before: [FoodMath.DayValue]
     let target: Double?
@@ -521,7 +521,7 @@ private struct MacroBalanceCard: View {
     }
 }
 
-private struct MacroDonut: View {
+struct MacroDonut: View {
     let parts: [FoodMath.Part]
     let energy: Double?
 
@@ -643,7 +643,7 @@ private struct NutritionMacros: View {
 }
 
 /// The latest logged day: each nutrient, and protein, carbs and fat as one split by weight.
-private struct FoodDayCard: View {
+struct FoodDayCard: View {
     let day: FoodDay
     let today: String
     let mode: NutritionMode
@@ -744,7 +744,7 @@ private struct NutritionHydration: View {
 
 /// One bar per logged day across the whole window (days with nothing logged stay empty, never zero), the median as a
 /// faint line, and the person's own target as a plain dashed one. Every bar is one colour.
-private struct FoodChartCard: View {
+struct FoodChartCard: View {
     let title: String
     let points: [Point]
     let start: String

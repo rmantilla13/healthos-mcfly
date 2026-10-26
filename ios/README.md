@@ -28,7 +28,7 @@ The app reads the same API as the website (`/api/summary`, `/api/trends`, `/api/
   - **Log** (only on servers with the food log, `GET /api/nutrition/log`): the same log as the web's Log tab, one day at a time. Tap an entry to change its name or portions, swipe to delete it. Entries from the web show here and the other way round.
     - **Water in one tap:** a glass or a bottle (250 or 500 mL, or 8 or 16.9 fl oz), at the sheet's time. Not shown with "No amounts".
     - **Add food or drink:** search USDA and Open Food Facts, scan a barcode (or type its number), ask McFly to estimate a photo or a description (only when the server has McFly on; you review its drafts before they're saved, and saving or discarding touches only that estimate), or quick add your own amounts. Quick add types only what your "numbers" setting shows: no Calories with "No calories", no Quick add with "No amounts".
-    - **Photos** are shrunk on the phone to 1,280 px on the long edge and re-encoded, which drops the location and other metadata, and are sent only for that estimate.
+    - **Photos** are turned upright, shrunk on the phone to 1,280 px on the long edge and re-encoded, which drops the location and other metadata (`PhotoPipeline`), and are sent only for that estimate.
     - **Saved to Apple Health:** see Apple Health sync below.
   - **No judgement:** a day with nothing logged is a gap, never a zero. A target you set (Profile → Nutrition targets) is a plain dashed line. No score, no "remaining", no red or green.
 - **Cycle** (only while cycle tracking is on): this cycle's phase ring and estimates, each fertile day's estimated chance, the temperature curve for any cycle (cover line, ovulation, the rise after it), a five-week calendar, past cycles split before and after ovulation, and patterns from your own cycles. Estimates never mark a day as safe.
@@ -54,7 +54,7 @@ Cards hide or switch to fit your sources, as on the web: no WHOOP means VO₂ ma
   - **A token from an older build** first seen while nobody is signed in is taken to be the email that build last signed in with here: that email signing in keeps it, any other removes it. With no email to go by (a reinstall), it can't be told whose, so the next sign-in removes it.
   - A token pasted while signed out is the next person's to sign in.
   - Servers without sign-in work as before, unless the token belongs to an account on another server: then a pause from Sign out stays until that server's account signs in.
-- **Errors:** when the server refuses something with a message written for people (400, 403, 409 or 429), the app shows that message as it is, as the web does; otherwise it says "Server answered" with the code.
+- **Errors:** when the server refuses something with a message written for people (400, 403, 409, 413 or 429), the app shows that message as it is, as the web does; otherwise it says "Server answered" with the code. A sign-in, an invite, a password change, and an invite or reset link's check show theirs too, a used-up link's 404 included. A feature the server hasn't set up answers 503 in its own words ("Connecting your own key isn't set up on this server."), shown as they are.
 - **Offline:** the last summary is cached on the phone, so the app opens with numbers even offline.
 - **Fresh data without re-downloading:** the app checks `GET /api/version` on open, on return, after syncs and every minute while open. It downloads the summary and trends again only when the version changed or the day rolled over, or on pull to refresh. Servers without `/api/version` get a reload on open, on return and after syncs.
 
@@ -74,6 +74,27 @@ The app takes the web's look from `src/styles.css`, light and dark.
   - It's the web's latin subset: other scripts fall back to the system face. It has no tabular figures, so digits are proportional, as on the web, and `.monospacedDigit()` doesn't change them. The web's own file (`@fontsource-variable/dm-sans`) has none either, so its `font-variant-numeric: tabular-nums` changes nothing there.
 - **Shared pieces** (`Components/`): the accent and quiet pill buttons, Badge, ChoiceCard (radio card), ChipToggle, Eyebrow, PageIntro, SheetScaffold (eyebrow, title, close button, footer buttons, the sheet gradient, full height), ProfileCard and ProfileRow, Collapsible, Orb (McFly's mark; its pulse stops with Reduce Motion), the "—" empty value, Unavailable (empty and error states), ChartLegend, and SafariView. Translucent fills turn solid with Reduce Transparency.
 - **The largest text sizes:** at the accessibility sizes, Home's metric cards go one to a row and the chart pages put their range picker under the page's line, so no word breaks in the middle. The pills over the figure stop growing at xxLarge, as the labels beside it already do; VoiceOver reads them in full.
+
+## Building a page
+
+What every page uses, so each page's work stays in its own files.
+
+- **What the server can do** (`Shell/Availability.swift`, `dashboard.availability`): own AI keys (`GET /api/ai`), meal estimates and voice notes (the food log's `can`), portraits (`PortraitList.canGenerate`), reading lab reports (`GET /api/labs/reader`) and Ask McFly (its status, McFlyChat's). Each flag is the server's own answer, never an assumption about a server, since keys come and go.
+  - A flag is nil until the server says, and nothing is shown about it until then: never "not on this server" because a read failed.
+  - The shell reads `GET /api/ai` after every load while signed in. A page that needs it sooner calls `dashboard.loadAI()`, and one that gets an AiStatus back (saving a key) passes it to `availability.heard(ai:)`.
+  - The web's own sentences for a feature that isn't there are `ServerWords`, quoted from the web files they're in (a test checks them).
+  - It's forgotten with a sign-out, another person's sign-in or another server, and never kept on disk.
+- **Older servers:** "Change server" can point the phone at an older Mac or LAN server. A route it doesn't have answers its catch-all 404 `{"error": "Not found"}` (or, older still, a 404 with no JSON): `APIError.routeMissing`. `APIClient.optional` (a GET) and its write form (`POST /nutrition/log/day`) return nil then, so the page hides or falls back. A route's own 404s ("No such entry") aren't that. A route for one item by id (an image) answers the same "Not found" when that item is gone, so use it only on routes that answer a list or a state.
+- **Settings:** `dashboard.save(settings:)` (`PUT /api/settings`) shows the status the server answers with and keeps it with today's summary; `reload: true` reads the summary again after units, name, step goal or demo data change. An older server ignores keys it doesn't know and still answers, so a feature shows only where the status names its setting (onboarding only where `settings.perspective` is present), never because the save went through. Another write that answers with the status goes through `dashboard.showChanged(_:)`.
+- **Endpoints:** each page adds its own as an `APIClient` extension in its own folder (`Portraits/PortraitsAPI.swift`), with `request` (a raw body takes its `contentType` and extra `headers`, such as X-Filename), `get`, `sendJSON` and `optional`. An upload that shows progress, or a download read as it arrives, builds its request with `urlRequest` and checks the answer with `checked`, on `APIClient.session`.
+- **Cards:** where each card shows (`CardPlace`: a page, and its tab) is in its page's own table: `Home/HomeCards.swift`, `Sleep/SleepCards.swift`, `Body/BodyCards.swift` and `Nutrition/NutritionCards.swift`. Profile → Cards says "Home", "Sleep", "Body · Activity" or "Nutrition · Overview" from it, and a card in no table changes the web dashboard only. `CardPlacesTests` has a test per page.
+- **Photos** (`Photos/PhotoPipeline.swift`): a photo from Photos, the camera or a file is turned upright first, since the server never turns one (it reads the JPEG's own pixels). Then it's shrunk and re-encoded as a JPEG with no metadata: no location, time or camera. `PhotoPipeline.reference` shrinks a portrait reference as the web does: 1,600 px on the long side, then a quarter smaller each time until it's under the server's 4.4 million base64 characters. `addReference` (`Portraits/PortraitsAPI.swift`) sends it.
+- **Shared views:**
+  - `CameraPicker` and `BarcodeScanner` (`Components/`).
+  - `PhotoSection` and `PhotoPreview`, "Use a photo as is" (`Portraits/PhotoSection.swift`).
+  - `HoursChart` (a day by hour), `WorkoutsCard` and `WorkoutListRow`, `TrendsLoader` and `MetricCard`.
+  - Nutrition's `FoodEnergyCard`, `FoodProteinCard`, `MacroDonut`, `FoodDayCard` and `FoodChartCard`.
+  - Profile's age-group comparison and portrait photos: `PeersSection` (`Peers/`) and `PortraitPhotosSection` (`Portraits/`). Each is the whole card that opens in place, for Profile to place.
 
 ## Apple Health sync
 

@@ -20,10 +20,12 @@ struct AppShell: View {
             McFlySheet(chat: dashboard.mcfly).font(.app(.body))
         }
         .sheet(item: $dashboard.webPage) { SafariView(url: $0.url).ignoresSafeArea() }
-        // Whether the server has McFly on, and how many questions are left: after every load, while signed in.
+        // Whether the server has McFly on and how many questions are left, and what this person's AI requests use
+        // (Availability): after every load, while signed in.
         .task(id: "\(dashboard.generation)|\(dashboard.phase == .ready)") {
             guard dashboard.phase == .ready else { return }
             await dashboard.mcfly.refreshStatus()
+            await dashboard.loadAI(force: true)
         }
         // Family or Cycle went away (another server, sharing or tracking off) while open under More.
         .onChange(of: dashboard.morePages) { _, _ in dashboard.dropMissingPages() }

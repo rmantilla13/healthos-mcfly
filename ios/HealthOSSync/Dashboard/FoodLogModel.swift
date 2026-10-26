@@ -7,7 +7,16 @@ extension Dashboard {
     func loadFoodLog(days: Int = 14) async throws -> FoodLog? {
         let log = try await fetch { try await $0.foodLog(days: days) }
         foodLogAvailable = log != nil
+        availability.heard(foodCan: log?.can)
         return log
+    }
+
+    /// One day of the log (nil date: today), for Nutrition's Today; nil from a server older than it, which shows the
+    /// Log tab's days instead (`loadFoodLog`).
+    func loadFoodLogDay(date: String?) async throws -> FoodLogDay? {
+        let day = try await fetch { try await $0.foodLogDay(date: date) }
+        availability.heard(foodCan: day?.can)
+        return day
     }
 
     /// Asks once per server whether it has the food log, so the Log tab shows only where it works.

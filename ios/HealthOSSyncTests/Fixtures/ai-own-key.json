@@ -1,0 +1,14 @@
+{
+  "byok": true,
+  "shared": true,
+  "keys": [
+    {"provider": "openai", "last4": "Q7xa", "model": null, "addedAt": 1761300000000, "lastUsedAt": 1761390000000, "lastError": null},
+    {"provider": "anthropic", "last4": "9fKe", "model": "claude-sonnet-4-5", "addedAt": 1761200000000, "lastUsedAt": null, "lastError": "That key wasn't accepted by Claude."},
+    {"provider": "gemini"}
+  ],
+  "chat": {"provider": "openai", "source": "own", "model": "gpt-5.1"},
+  "chatChoice": "openai",
+  "estimate": {"provider": "openai", "source": "own"},
+  "voice": true,
+  "portraits": true
+}

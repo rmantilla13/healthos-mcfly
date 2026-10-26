@@ -112,7 +112,7 @@ private struct TrendsSectionChips: View {
 }
 
 /// Loads one set of trend metrics for the chosen range and hands them to `content`.
-private struct TrendsLoader<Content: View>: View {
+struct TrendsLoader<Content: View>: View {
     let metrics: [String]
     let days: Int
     @ViewBuilder let content: (Trends) -> Content
@@ -203,7 +203,7 @@ private struct SleepTrends: View {
             let hidden = dashboard.cardsOff
             let performance = t["sleep_performance"] ?? []
             // Sleep performance is WHOOP's alone: without any, its card has nothing to show, so it doesn't count below.
-            let cards = Cards.ids(in: .trends(.sleep)).filter { $0 != "sleep.score" || !performance.isEmpty }
+            let cards = Cards.ids(in: .sleep).filter { $0 != "sleep.score" || !performance.isEmpty }
             if !hidden.contains("sleep.stages") { StagesCard(trends: t, days: days, average: hours.average) }
             if let timing { SleepConsistencyCard(timing: timing) }
             if !hidden.contains("sleep.total") { TrendCard(title: "Time asleep", points: hours, format: Fmt.hoursMinutes) }
@@ -328,7 +328,8 @@ private struct ActivityTrends: View {
     }
 }
 
-private struct WorkoutsCard: View {
+/// The range's workouts, newest first (the web's Body · Activity list).
+struct WorkoutsCard: View {
     let days: Int
     @Environment(Dashboard.self) private var dashboard
     @State private var workouts: [Workout]?
@@ -355,7 +356,8 @@ private struct WorkoutsCard: View {
     }
 }
 
-private struct WorkoutListRow: View {
+/// One workout: its sport, when, how long and how hard, and where it came from.
+struct WorkoutListRow: View {
     let workout: Workout
     let units: Units
 
@@ -388,12 +390,17 @@ private struct WorkoutListRow: View {
         return parts.joined(separator: " · ")
     }
 
-    private var source: String {
-        switch workout.source {
+    private var source: String { Self.sourceName(workout.source) }
+
+    /// Where a workout came from, in the web's words (WorkoutCard.tsx, MeasurementCard.tsx SOURCE_NAME).
+    static func sourceName(_ source: String) -> String {
+        switch source {
         case "apple": "Apple Health"
         case "whoop": "WHOOP"
+        case "apple+whoop": "Apple Health and WHOOP"
+        case "fitbit": "Fitbit"
         case "demo": "Demo"
-        default: workout.source
+        default: source
         }
     }
 

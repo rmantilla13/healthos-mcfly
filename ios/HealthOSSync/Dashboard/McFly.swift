@@ -3,13 +3,36 @@ import SwiftUI
 // Ask McFly: the dashboard's health assistant (server/mcfly.ts). The conversation lives in memory only,
 // never on disk, like the web.
 
-struct McFlyStatus: Decodable {
+/// GET /api/mcfly (shared/types.ts McflyStatus). On the shared key, limit and usedToday are the admin's daily limit; on
+/// the person's own key they're its anti-abuse cap, and `limited` is false. provider, source and limited are missing
+/// from older servers, and while nothing is set up. Read field by field: one the app can't read is the web's default.
+struct McFlyStatus: Decodable, Equatable {
     let configured: Bool
     let limit: Int
     let usedToday: Int
+    /// "anthropic" | "openai" | "gemini": whose model answers.
+    var provider: String?
+    /// "own" (the person's own key) | "shared" (the server's).
+    var source: String?
+    /// The shared daily limit applies ("N questions left today").
+    var limited: Bool?
 
-    var available: Bool { configured && limit > 0 }
+    /// Answers can be asked for: set up, and on the person's own key or under a shared limit above 0 (src/pages/McFly.tsx).
+    var available: Bool { configured && (source == "own" || limit > 0) }
     var left: Int { max(0, limit - usedToday) }
+}
+
+extension McFlyStatus {
+    private enum CodingKeys: String, CodingKey { case configured, limit, usedToday, provider, source, limited }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        func value<T: Decodable>(_ key: CodingKeys) -> T? { try? c.decodeIfPresent(T.self, forKey: key) }
+        // Counts can come as 3.0 from some servers' JSON.
+        func count(_ key: CodingKeys) -> Int { value(key) ?? (value(key) as Double?).map { Int($0) } ?? 0 }
+        self.init(configured: value(.configured) ?? false, limit: count(.limit), usedToday: count(.usedToday),
+                  provider: value(.provider), source: value(.source), limited: value(.limited))
+    }
 }
 
 enum McFlyEvent: Equatable {

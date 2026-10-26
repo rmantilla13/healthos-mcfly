@@ -7,9 +7,9 @@ enum APIError: LocalizedError {
     case server(Int, String)
     case network(String)
 
-    /// Answers whose message the server writes for people (a bad entry, a wrong password, a clash, too many tries):
-    /// shown as they are, as the web shows them.
-    static let plainWords: Set<Int> = [400, 403, 409, 429]
+    /// Answers whose message the server writes for people (a bad entry, a wrong password, a clash, a photo or file too
+    /// large, too many tries): shown as they are, as the web shows them.
+    static let plainWords: Set<Int> = [400, 403, 409, 413, 429]
 
     var errorDescription: String? {
         switch self {
@@ -22,17 +22,40 @@ enum APIError: LocalizedError {
         case .network(let message): message
         }
     }
+
+    /// The server has no such route: it's older than the feature ("Change server" can point the phone at an older Mac
+    /// or LAN server). Its catch-all answers 404 {error: "Not found"}, and one older still answers 404 with no JSON at
+    /// all. A route's own 404s ("No such entry", "Unknown metric", "This code or link is invalid…") aren't this. Only
+    /// for routes that answer a list or a state (GET /ai, /portraits, /peers, /journal, /labs/documents, /labs/reader,
+    /// POST /nutrition/log/day): an image or a file by id (/portraits/:id/image, /family/:id/avatar.png) answers the
+    /// same "Not found" when that one is gone.
+    var routeMissing: Bool {
+        guard case .server(404, let message) = self else { return false }
+        return message.isEmpty || message == "Not found"
+    }
+
+    /// The server's own words when a feature isn't set up there (a 503: "Connecting your own key isn't set up on this
+    /// server.", "Voice notes need an OpenAI key. Connect one in your Profile."), for that feature to show as they
+    /// are. nil for any other failure.
+    var notSetUpHere: String? {
+        if case .misconfigured(let message) = self { return message }
+        return nil
+    }
 }
 
 /// Read access to the healthOS API (the same endpoints the web dashboard uses). The hosted server
 /// signs in with the dashboard password and a session cookie; the cookie lives in the Keychain,
 /// not in a cookie jar on disk, and goes out as a header from a session that stores no cookies.
+///
+/// Each page adds its own endpoints in its own file, as an extension (`McFly.swift`, `Portraits/PortraitsAPI.swift`),
+/// through `request`, `sendJSON` and `optional` here. An upload that reports progress, or a download read as it
+/// arrives, builds its request with `urlRequest` and checks the answer with `checked`, on `session`.
 struct APIClient {
     let base: URL
 
     static func current() -> APIClient? { Config.serverURL().map { APIClient(base: $0) } }
 
-    private static let session: URLSession = {
+    static let session: URLSession = {
         let config = URLSessionConfiguration.ephemeral
         config.httpCookieStorage = nil
         config.httpShouldSetCookies = false
@@ -44,7 +67,11 @@ struct APIClient {
         let error: String?
     }
 
-    private func request(_ path: String, query: [URLQueryItem] = [], method: String = "GET", body: Data? = nil, timeout: TimeInterval? = nil) async throws -> Data {
+    /// A request to /api`path` with what every one carries: the session cookie, and on a write X-HealthOS (the server
+    /// requires it) and the body's type, JSON unless said otherwise (a recording, a report: "audio/mp4",
+    /// "application/pdf"). `headers` adds others, such as X-Filename.
+    func urlRequest(_ path: String, query: [URLQueryItem] = [], method: String = "GET", contentType: String = "application/json",
+                    headers: [String: String] = [:], timeout: TimeInterval? = nil) -> URLRequest {
         var components = URLComponents(url: base.appendingPathComponent("api" + path), resolvingAgainstBaseURL: false)!
         if !query.isEmpty { components.queryItems = query }
         var req = URLRequest(url: components.url!)
@@ -53,21 +80,17 @@ struct APIClient {
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         if method != "GET" {
             req.setValue("1", forHTTPHeaderField: "X-HealthOS") // the server requires it on every write
-            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            req.httpBody = body
+            req.setValue(contentType, forHTTPHeaderField: "Content-Type")
         }
+        for (name, value) in headers { req.setValue(value, forHTTPHeaderField: name) }
         if let cookie = SessionStore.cookie(for: base) { req.setValue("\(SessionStore.name)=\(cookie)", forHTTPHeaderField: "Cookie") }
+        return req
+    }
 
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await Self.session.data(for: req)
-        } catch {
-            if Self.isCancellation(error) { throw CancellationError() }
-            throw APIError.network("Can't reach \(base.host ?? base.absoluteString). \(error.localizedDescription)")
-        }
+    /// The body of an answer to `path`, once it's known to be a yes: a new session cookie is kept, and a refusal is
+    /// thrown as the error for it (`error(status:message:path:)`), a 401 also dropping the session.
+    func checked(_ data: Data, _ response: URLResponse, path: String) throws -> Data {
         guard let http = response as? HTTPURLResponse else { throw APIError.network("No response from the server.") }
-
         if let setCookie = http.value(forHTTPHeaderField: "Set-Cookie") {
             SessionStore.update(from: setCookie, url: http.url ?? base, base: base)
         }
@@ -76,6 +99,27 @@ struct APIClient {
         let error = Self.error(status: http.statusCode, message: (try? JSONDecoder().decode(ErrorBody.self, from: data))?.error, path: path)
         if case .signInRequired = error { SessionStore.clear() }
         throw error
+    }
+
+    /// "Can't reach <host>" for a request that never got an answer; a cancelled one stays a cancellation.
+    func unreachable(_ error: Error) -> Error {
+        if Self.isCancellation(error) { return CancellationError() }
+        return APIError.network("Can't reach \(base.host ?? base.absoluteString). \(error.localizedDescription)")
+    }
+
+    /// One request and its answer's body. `body` is JSON unless `contentType` says otherwise.
+    func request(_ path: String, query: [URLQueryItem] = [], method: String = "GET", body: Data? = nil, contentType: String = "application/json",
+                 headers: [String: String] = [:], timeout: TimeInterval? = nil) async throws -> Data {
+        var req = urlRequest(path, query: query, method: method, contentType: contentType, headers: headers, timeout: timeout)
+        if method != "GET" { req.httpBody = body }
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await Self.session.data(for: req)
+        } catch {
+            throw unreachable(error)
+        }
+        return try checked(data, response, path: path)
     }
 
     /// The error for a refused request to `path`, from its status and the server's message (nil when it sent none).
@@ -87,8 +131,9 @@ struct APIClient {
         let signInForm = path == "/auth/login" || path == "/auth/invite"
         if status == 401, !signInForm { return .signInRequired }
         if status == 503 { return .misconfigured(message) }
-        // Account forms' errors (wrong password, too many attempts) are written for people; show them as they are.
-        let accountForm = signInForm || path == "/auth/password"
+        // Account forms' errors (wrong password, too many attempts, a link that's used up) are written for people;
+        // show them as they are. A link's check and a reset answer 404 for a code that's invalid or used.
+        let accountForm = signInForm || path == "/auth/password" || path == "/auth/link" || path == "/auth/reset"
         if accountForm, (400..<500).contains(status) { return .network(message) }
         return .server(status, said)
     }
@@ -103,13 +148,7 @@ struct APIClient {
 
     /// A POST whose response is read as it arrives (server-sent events). Status handling is left to the caller.
     func stream(_ path: String, body: Data) async throws -> (URLSession.AsyncBytes, HTTPURLResponse) {
-        var req = URLRequest(url: base.appendingPathComponent("api" + path))
-        req.httpMethod = "POST"
-        req.timeoutInterval = 120
-        req.setValue("1", forHTTPHeaderField: "X-HealthOS")
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-        if let cookie = SessionStore.cookie(for: base) { req.setValue("\(SessionStore.name)=\(cookie)", forHTTPHeaderField: "Cookie") }
+        var req = urlRequest(path, method: "POST", headers: ["Accept": "text/event-stream"], timeout: 120)
         req.httpBody = body
         do {
             let (bytes, response) = try await Self.session.bytes(for: req)
@@ -119,14 +158,13 @@ struct APIClient {
         } catch let e as APIError {
             throw e
         } catch {
-            if Self.isCancellation(error) { throw CancellationError() }
-            throw APIError.network("Can't reach \(base.host ?? base.absoluteString). \(error.localizedDescription)")
+            throw unreachable(error)
         }
     }
 
     func post(_ path: String, body: Data) async throws -> Data { try await request(path, method: "POST", body: body) }
 
-    private func get<T: Decodable>(_ path: String, query: [URLQueryItem] = []) async throws -> T {
+    func get<T: Decodable>(_ path: String, query: [URLQueryItem] = []) async throws -> T {
         try JSONDecoder().decode(T.self, from: try await request(path, query: query))
     }
 
@@ -175,11 +213,22 @@ struct APIClient {
 
     func status() async throws -> ServerStatus { try await get("/status") }
 
-    /// A GET for an endpoint newer servers have: nil when the server answers 404 (it predates it), so the feature hides.
-    private func optional<T: Decodable>(_ path: String, query: [URLQueryItem] = []) async throws -> T? {
+    /// A GET for an endpoint newer servers have: nil when the server has no such route (it predates it), so the
+    /// feature hides or falls back. Any other failure, the route's own 404s included, is thrown.
+    func optional<T: Decodable>(_ path: String, query: [URLQueryItem] = []) async throws -> T? {
         do {
             return try await get(path, query: query) as T
-        } catch APIError.server(404, _) {
+        } catch let error as APIError where error.routeMissing {
+            return nil
+        }
+    }
+
+    /// The same for a write (POST /nutrition/log/day, which takes its date in the body): nil when the server has no
+    /// such route.
+    func optional<T: Decodable>(_ method: String, _ path: String, _ body: [String: Any], timeout: TimeInterval? = nil) async throws -> T? {
+        do {
+            return try await sendJSON(method, path, body, timeout: timeout) as T
+        } catch let error as APIError where error.routeMissing {
             return nil
         }
     }
@@ -210,9 +259,16 @@ struct APIClient {
         try await optional("/nutrition/log", query: [URLQueryItem(name: "days", value: String(days))])
     }
 
-    private func sendJSON<T: Decodable>(_ method: String, _ path: String, _ body: [String: Any]? = nil, timeout: TimeInterval? = nil) async throws -> T {
+    /// A write with a JSON body, and its JSON answer.
+    func sendJSON<T: Decodable>(_ method: String, _ path: String, _ body: [String: Any]? = nil, timeout: TimeInterval? = nil) async throws -> T {
         let data = try await request(path, method: method, body: try JSONSerialization.data(withJSONObject: body ?? [:]), timeout: timeout)
         return try JSONDecoder().decode(T.self, from: data)
+    }
+
+    /// One day of the log, any day in the last year (POST /nutrition/log/day, the date in the body). nil from a server
+    /// older than it: fall back to `foodLog(days:)`.
+    func foodLogDay(date: String?) async throws -> FoodLogDay? {
+        try await optional("POST", "/nutrition/log/day", date.map { ["date": $0] } ?? [:])
     }
 
     func addFood(_ body: [String: Any]) async throws -> FoodEntry { try await sendJSON("POST", "/nutrition/log", body) }
