@@ -157,6 +157,9 @@ final class Dashboard {
             return
         }
         if server != client.base {
+            // Another server, not the first connect at launch (which a tapped notification's page may already be
+            // waiting for): nothing pushed stays open on what the last one showed.
+            if server != nil { dropPages() }
             server = client.base
             clearData()
             if let cached = SummaryCache.load(for: client.base) {

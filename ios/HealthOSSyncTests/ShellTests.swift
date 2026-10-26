@@ -289,6 +289,26 @@ final class ShellTests: XCTestCase {
         XCTAssertEqual(d.paths[.more], [])
     }
 
+    /// Another server: its pages go too, even when both answer (two servers without sign-in). Not the first connect
+    /// at launch, which a tapped notification's page may already be waiting for. Nothing listens on these ports.
+    func testAnotherServerClosesThePagesOfTheLast() async {
+        let saved = UserDefaults.standard.string(forKey: "serverURL")
+        defer {
+            if let saved { UserDefaults.standard.set(saved, forKey: "serverURL") } else { UserDefaults.standard.removeObject(forKey: "serverURL") }
+        }
+        let d = Dashboard()
+        Config.serverText = "http://127.0.0.1:9"
+        d.open(.insights)
+        await d.start()
+        XCTAssertEqual(d.paths[.more], [.insights], "the first connect keeps what's waiting")
+
+        d.paths = [.more: [.profile], .home: [.day(nil)]]
+        Config.serverText = "http://127.0.0.1:7"
+        await d.start()
+        XCTAssertEqual(d.paths[.home], [])
+        XCTAssertEqual(d.paths[.more], [.profile], "Profile, where the address was changed, stays")
+    }
+
     /// Family went away (another server) or cycle tracking turned off while its page was open: back to More.
     func testPagesThatWentAwayLeaveMore() throws {
         let d = Dashboard()
