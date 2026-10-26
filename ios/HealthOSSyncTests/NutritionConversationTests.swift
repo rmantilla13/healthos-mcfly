@@ -1,3 +1,4 @@
+import Network
 import UIKit
 import XCTest
 @testable import HealthOSSync
@@ -757,5 +758,214 @@ final class NutritionConversationTests: XCTestCase {
         XCTAssertEqual(link.take(RouteRequest(route: AppRoute(.nutrition, query: [:]), id: 7))?.tab, .today)
         // The web reads compose=1 from the address of Today alone (Nutrition.tsx).
         XCTAssertTrue(try web("src/pages/Nutrition.tsx").contains("compose={params.get('compose') === '1'}"))
+    }
+
+    // MARK: Sending
+
+    func testNothingIsSentBeforeTheDayIsRead() throws {
+        // Until the day is read, an estimate waiting from the web hasn't joined the conversation: a message then would
+        // replace it unseen (server/estimate.ts deletes the drafts waiting), so Send waits for the day, as the web's does.
+        XCTAssertFalse(NutritionChat.canSend(dayRead: false, estimate: true, busy: false, draft: "two eggs", photo: false))
+        XCTAssertFalse(NutritionChat.canEstimate(dayRead: false, estimate: true))
+        XCTAssertTrue(NutritionChat.canSend(dayRead: true, estimate: true, busy: false, draft: "two eggs", photo: false))
+        XCTAssertTrue(NutritionChat.canSend(dayRead: true, estimate: true, busy: false, draft: "  \n ", photo: true), "a photo alone")
+        XCTAssertFalse(NutritionChat.canSend(dayRead: true, estimate: true, busy: false, draft: " \n\t ", photo: false))
+        XCTAssertFalse(NutritionChat.canSend(dayRead: true, estimate: true, busy: true, draft: "two eggs", photo: false))
+        XCTAssertFalse(NutritionChat.canSend(dayRead: true, estimate: false, busy: false, draft: "two eggs", photo: false))
+        XCTAssertFalse(NutritionChat.canSend(dayRead: true, estimate: nil, busy: false, draft: "two eggs", photo: false), "unknown isn't yes")
+        let chat = try web("src/pages/NutritionChat.tsx")
+        XCTAssertTrue(chat.contains("const canEstimate = Boolean(can?.estimate);"))
+        XCTAssertTrue(chat.contains("const ready = canEstimate && !busy && (Boolean(text.trim()) || Boolean(photo));"))
+        XCTAssertTrue(try web("server/estimate.ts").contains("DELETE FROM food_log WHERE user_id = $1 AND draft"))
+    }
+
+    // MARK: Older servers, against a server on this simulator
+
+    private func withServer(_ body: (LoopbackServer) async throws -> Void) async throws {
+        let server = try await LoopbackServer.start()
+        let saved = UserDefaults.standard.string(forKey: "serverURL")
+        Config.serverText = server.url.absoluteString
+        defer {
+            server.stop()
+            if let saved { UserDefaults.standard.set(saved, forKey: "serverURL") } else { UserDefaults.standard.removeObject(forKey: "serverURL") }
+        }
+        try await body(server)
+    }
+
+    /// POST /nutrition/log/day is new on this branch. A server older than it answers its catch-all (server/app.ts),
+    /// and the page shows the Log instead; the route's own refusals aren't that.
+    func testOneDayOnAnOlderServerFallsBackAndOnThisOneReads() async throws {
+        XCTAssertTrue(try web("server/app.ts").contains("app.use('/api', (_req, res) => void res.status(404).json({ error: 'Not found' }));"))
+        try await withServer { server in
+            let client = APIClient(base: server.url)
+            server.reply(404, #"{"error":"Not found"}"#)
+            let older = try await client.foodLogDay(date: "2026-10-20")
+            XCTAssertNil(older, "an older server: the Log instead")
+            let asked = try XCTUnwrap(server.requests.last)
+            XCTAssertEqual(asked.line, "POST /api/nutrition/log/day HTTP/1.1")
+            XCTAssertEqual(try JSONSerialization.jsonObject(with: asked.body) as? [String: String], ["date": "2026-10-20"], "the date in the body, never the address")
+            XCTAssertEqual(asked.headers["x-healthos"], "1")
+            server.reply(404, "")
+            let oldest = try await client.foodLogDay(date: nil)
+            XCTAssertNil(oldest, "older still: a 404 with no JSON")
+
+            server.reply(404, #"{"error":"No such entry"}"#)
+            do {
+                _ = try await client.foodLogDay(date: nil)
+                XCTFail("a route's own 404 isn't an older server")
+            } catch {
+                XCTAssertEqual((error as? APIError)?.routeMissing, false)
+            }
+            server.reply(409, #"{"error":"Turn on Nutrition to log food."}"#)
+            do {
+                _ = try await client.foodLogDay(date: nil)
+                XCTFail("Nutrition off elsewhere is said, not hidden")
+            } catch {
+                XCTAssertEqual(error.foodMessage, "Turn on Nutrition to log food.")
+            }
+
+            server.reply(200, String(decoding: try fixture("food-log-day"), as: UTF8.self))
+            let day = try await client.foodLogDay(date: nil)
+            XCTAssertEqual(day?.date, "2026-10-23")
+            XCTAssertEqual(day?.entries.map(\.id), ["e1", "e2"])
+            XCTAssertEqual(try JSONSerialization.jsonObject(with: try XCTUnwrap(server.requests.last).body) as? [String: String], [:], "today: no date")
+            // The page's views on such a server: the Log in Today's place.
+            XCTAssertEqual(NutritionTab.current(.today, in: NutritionTab.visible(.all, today: false)), .log)
+        }
+    }
+
+    /// A voice note's words through the dashboard, as the page asks for them: the recording sent as it is, and each
+    /// refusal in the words the person sees.
+    func testATranscriptionThroughTheDashboard() async throws {
+        try await withServer { server in
+            let d = Dashboard()
+            let audio = Data([0, 0, 0, 0x18, 0x66, 0x74, 0x79, 0x70] + Array(repeating: 7, count: 64))
+            server.reply(200, #"{"text":"two eggs and toast"}"#)
+            let words = try await d.transcribe(audio)
+            XCTAssertEqual(words, "two eggs and toast")
+            let asked = try XCTUnwrap(server.requests.last)
+            XCTAssertEqual(asked.line, "POST /api/ai/transcribe HTTP/1.1")
+            XCTAssertEqual(asked.headers["content-type"], "audio/mp4")
+            XCTAssertEqual(asked.body, audio, "the recording as it is, sent once")
+            XCTAssertEqual(server.requests.count, 1)
+
+            server.reply(404, #"{"error":"Not found"}"#)
+            await assertRefused(VoiceWords.notTranscribed) { try await d.transcribe(audio) }
+            let limit = "You've used today's 20 voice notes on healthOS's shared key. Type what you had instead."
+            server.reply(429, #"{"error":"\#(limit)"}"#)
+            await assertRefused(limit) { try await d.transcribe(audio) }
+            server.reply(200, #"{"nothing":true}"#)
+            await assertRefused(VoiceWords.notTranscribed) { try await d.transcribe(audio) }
+        }
+        // Nothing listening (the server stopped): the web's words for that.
+        Config.serverText = "http://127.0.0.1:9"
+        defer { UserDefaults.standard.removeObject(forKey: "serverURL") }
+        await assertRefused(VoiceWords.unreachable) { try await Dashboard().transcribe(Data([1])) }
+    }
+
+    private func assertRefused(_ words: String, file: StaticString = #filePath, line: UInt = #line, _ call: () async throws -> String) async {
+        do {
+            _ = try await call()
+            XCTFail("expected: \(words)", file: file, line: line)
+        } catch {
+            XCTAssertEqual(error.foodMessage, words, file: file, line: line)
+        }
+    }
+}
+
+/// A web server on this simulator's loopback for a test: each request gets the reply set last, and what was asked is
+/// kept. Nothing leaves the simulator.
+final class LoopbackServer: @unchecked Sendable {
+    struct Request {
+        let line: String
+        let headers: [String: String]
+        let body: Data
+    }
+
+    private let listener: NWListener
+    private let queue = DispatchQueue(label: "loopback-server")
+    private let lock = NSLock()
+    private var answer = (status: 200, body: "{}")
+    private var asked: [Request] = []
+    let url: URL
+
+    private init(listener: NWListener, port: UInt16) {
+        self.listener = listener
+        url = URL(string: "http://127.0.0.1:\(port)")!
+    }
+
+    static func start() async throws -> LoopbackServer {
+        let params = NWParameters.tcp
+        params.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
+        let listener = try NWListener(using: params)
+        let queue = DispatchQueue(label: "loopback-listener")
+        let port: UInt16 = try await withCheckedThrowingContinuation { done in
+            var resumed = false
+            listener.stateUpdateHandler = { state in
+                guard !resumed else { return }
+                switch state {
+                case .ready:
+                    resumed = true
+                    done.resume(returning: listener.port?.rawValue ?? 0)
+                case .failed(let error):
+                    resumed = true
+                    done.resume(throwing: error)
+                default: break
+                }
+            }
+            listener.newConnectionHandler = { $0.cancel() }
+            listener.start(queue: queue)
+        }
+        let server = LoopbackServer(listener: listener, port: port)
+        listener.newConnectionHandler = { [server] connection in server.serve(connection) }
+        return server
+    }
+
+    func reply(_ status: Int, _ body: String) {
+        lock.withLock { answer = (status, body) }
+    }
+
+    var requests: [Request] { lock.withLock { asked } }
+
+    func stop() { listener.cancel() }
+
+    private func serve(_ connection: NWConnection) {
+        connection.start(queue: queue)
+        read(connection, Data())
+    }
+
+    private func read(_ connection: NWConnection, _ sofar: Data) {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 1 << 20) { [self] data, _, done, error in
+            var got = sofar
+            if let data { got.append(data) }
+            if let request = Self.parse(got) {
+                let (status, body) = lock.withLock { () -> (Int, String) in
+                    asked.append(request)
+                    return (answer.status, answer.body)
+                }
+                let bytes = Data(body.utf8)
+                let head = "HTTP/1.1 \(status) \(HTTPURLResponse.localizedString(forStatusCode: status))\r\nContent-Type: application/json\r\nContent-Length: \(bytes.count)\r\nConnection: close\r\n\r\n"
+                connection.send(content: Data(head.utf8) + bytes, completion: .contentProcessed { _ in connection.cancel() })
+            } else if done || error != nil {
+                connection.cancel()
+            } else {
+                read(connection, got)
+            }
+        }
+    }
+
+    /// A whole request (its head, and as much body as its Content-Length says), or nil while more is to come.
+    private static func parse(_ data: Data) -> Request? {
+        guard let end = data.range(of: Data("\r\n\r\n".utf8)) else { return nil }
+        let lines = String(decoding: data[..<end.lowerBound], as: UTF8.self).components(separatedBy: "\r\n")
+        var headers: [String: String] = [:]
+        for line in lines.dropFirst() {
+            guard let colon = line.firstIndex(of: ":") else { continue }
+            headers[line[..<colon].lowercased()] = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
+        }
+        let length = Int(headers["content-length"] ?? "0") ?? 0
+        let body = data[end.upperBound...]
+        guard body.count >= length else { return nil }
+        return Request(line: lines.first ?? "", headers: headers, body: Data(body.prefix(length)))
     }
 }

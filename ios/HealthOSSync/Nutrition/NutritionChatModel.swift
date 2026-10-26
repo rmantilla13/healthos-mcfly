@@ -126,6 +126,16 @@ enum NutritionChat {
         FoodMoment(date: viewing, time: viewing == today ? FoodBody.time(now, in: zone) : "12:00")
     }
 
+    /// McFly can estimate a meal here: only once the day is read (the web's `day?.can?.estimate`). Before that, an
+    /// estimate waiting from the web or another iPhone hasn't joined the conversation, so a message wouldn't be its
+    /// correction, and the server would replace it unseen.
+    static func canEstimate(dayRead: Bool, estimate: Bool?) -> Bool { dayRead && estimate == true }
+
+    /// Send is on (the web's `ready`): words or a photo, McFly free, and estimates working here once the day is read.
+    static func canSend(dayRead: Bool, estimate: Bool?, busy: Bool, draft: String, photo: Bool) -> Bool {
+        canEstimate(dayRead: dayRead, estimate: estimate) && !busy && (!words(draft).isEmpty || photo)
+    }
+
     /// Voice notes can't be written down here: why, in the web's words; nil when they can.
     static func voiceOff(voice: Bool?, byok: Bool?) -> String? {
         if voice == true { return nil }

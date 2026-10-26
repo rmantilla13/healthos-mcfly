@@ -174,7 +174,9 @@ struct NutritionChatCard: View {
     @State private var choosingPhoto = false
     @State private var problem: String?
 
-    private var canEstimate: Bool { dashboard.availability.estimate == true }
+    /// McFly can estimate here, once the day is read (the web's day.can.estimate): until then a message could replace
+    /// an estimate waiting from elsewhere that hasn't joined the conversation yet.
+    private var canEstimate: Bool { NutritionChat.canEstimate(dayRead: day != nil, estimate: dashboard.availability.estimate) }
     /// Why voice notes can't be written down here; nil when they can, and while the day isn't read yet.
     private var voiceOff: String? { day == nil ? nil : NutritionChat.voiceOff(voice: dashboard.availability.voice, byok: dashboard.availability.byok) }
     private var open: (id: UUID, turn: EstimateTurn)? { thread.open(batch: day?.draftBatch) }
@@ -212,6 +214,7 @@ struct NutritionChatCard: View {
                 let typed = thread.draft
                 thread.draft = typed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? words : "\(typed.trimmingTrailingSpace) \(words)"
                 focused = true
+                AccessibilityNotification.Announcement("Added to your message: \(words)").post()
             }
         }
         .onDisappear { voice?.cancel() }
@@ -219,6 +222,10 @@ struct NutritionChatCard: View {
         // inactive for a moment, and a note started from VoiceOver goes on through that.
         .onChange(of: scenePhase) { _, phase in
             if phase == .background { voice?.cancel() }
+        }
+        // The problem line is a status on the web (role="status"): VoiceOver hears it as it appears.
+        .onChange(of: problem ?? voice?.error) { _, shown in
+            if let shown { AccessibilityNotification.Announcement(shown).post() }
         }
         .onChange(of: thread.turns.count) { old, new in if new > old { scrollToBottom() } }
         .onChange(of: thread.busy) { _, busy in if busy { scrollToBottom() } }
@@ -397,7 +404,7 @@ struct NutritionChatCard: View {
     }
 
     private var composerRow: some View {
-        let ready = canEstimate && !thread.busy && (!thread.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || thread.photo != nil)
+        let ready = sendable
         return HStack(spacing: 8) {
             Button { focused = false; menu = true } label: {
                 Image(systemName: "plus")
@@ -430,7 +437,8 @@ struct NutritionChatCard: View {
                     .frame(width: 44, height: 44)
                     .contentShape(Circle())
             }
-            .buttonStyle(.plain)
+            // Its own style: a plain one dims a disabled button, and the web's is drawn in --nutri-send-off as it is.
+            .buttonStyle(SendButtonStyle())
             .disabled(!ready)
             .accessibilityLabel(open != nil ? "Send the correction" : "Send to McFly")
             .accessibilityIdentifier("nutritionSend")
@@ -446,9 +454,14 @@ struct NutritionChatCard: View {
             .accessibilityHidden(true)
     }
 
+    /// Send is on: something to send, McFly free, and the day read.
+    private var sendable: Bool {
+        NutritionChat.canSend(dayRead: day != nil, estimate: dashboard.availability.estimate, busy: thread.busy, draft: thread.draft, photo: thread.photo != nil)
+    }
+
     private func send() {
         let words = NutritionChat.words(thread.draft)
-        guard !words.isEmpty || thread.photo != nil, !thread.busy, canEstimate else { return }
+        guard sendable else { return }
         problem = nil
         voice?.clearError()
         let sent = thread.photo
@@ -517,6 +530,13 @@ struct NutritionChatCard: View {
                 FoodWaterButtons(when: when, units: units)
             }
         }
+    }
+}
+
+/// Send's look as it is, enabled or not: the label draws its own fill (the gradient, or the web's --nutri-send-off).
+private struct SendButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.opacity(configuration.isPressed ? 0.8 : 1)
     }
 }
 
