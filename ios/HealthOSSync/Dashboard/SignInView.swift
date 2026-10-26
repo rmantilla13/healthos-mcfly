@@ -20,6 +20,14 @@ struct SignInView: View {
                 Text("healthOS").font(.largeTitle.bold()).foregroundStyle(Palette.ink)
                 Text("Sign in to \(Config.serverURL()?.host ?? "your dashboard")").font(.subheadline).foregroundStyle(Palette.ink3)
             }
+            // Otherwise nothing here says why the background uploads stopped (IngestTokenOwner).
+            if dashboard.ingestWaitsForSignIn {
+                Label("This iPhone's Apple Health uploads wait until you sign in.", systemImage: "pause.circle")
+                    .font(.footnote)
+                    .foregroundStyle(Palette.ink3)
+                    .multilineTextAlignment(.center)
+                    .accessibilityIdentifier("uploadsWait")
+            }
             // Shown unless the server is known to sign in with a password alone (older single-user servers).
             if dashboard.usesAccounts || dashboard.authMode == nil {
                 TextField("Email", text: $email)

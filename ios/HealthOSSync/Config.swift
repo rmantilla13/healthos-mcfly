@@ -129,75 +129,144 @@ enum Config {
 
 /// The ingest token belongs to one account on the server, whoever is signed in here: Health data sent with it lands in
 /// that account. So a phone that changes hands would keep sending the new person's Health data to the last person.
-/// To stop that, being signed out pauses the sync, in the app and in the background: after Sign out, a session that
-/// ran out or was ended elsewhere, or no session at launch. The same account signing back in resumes it; anyone else
-/// signing in removes the token, and Settings asks to set this iPhone up again. A token nobody can be told the owner of
-/// is never handed to whoever signs in next. A server without sign-in (authMode "open") has one person, so nothing
-/// pauses there.
+/// To stop that, the app remembers whose the token is. Sign out pauses the sync, in the app and in the background,
+/// until someone signs in. A session that ran out or was ended elsewhere (or none at launch) doesn't, while the owner
+/// is known: the sync goes on, as it did before owners were kept, and only a token whose owner can't be told waits.
+/// The same account signing back in resumes it; anyone else signing in removes the token, and Settings asks to set
+/// this iPhone up again. A token nobody can be told the owner of is never handed to whoever signs in next. A server
+/// without sign-in (authMode "open") has one person, so nothing pauses there.
 struct IngestTokenOwner: Codable, Equatable {
     /// An account on one server: ids repeat across servers ("owner" is the first account on each).
     struct Account: Codable, Equatable {
         let server: String
         let id: String
+        /// Nil in a record kept before emails were, and on a server without sign-in.
+        var email: String?
+
+        /// The same account: the same id on the same server, or the same id and email on a server reached at another
+        /// address (a Mac server at home and on the LAN, another name for the hosted one). Not `==`, which compares
+        /// the emails too.
+        func isSame(as other: Account) -> Bool {
+            guard id == other.id else { return false }
+            if server == other.server { return true }
+            guard let mine = IngestTokenOwner.normalized(email), let theirs = IngestTokenOwner.normalized(other.email) else { return false }
+            return mine == theirs
+        }
     }
 
     /// Who may take a token whose owner isn't known (`account` nil).
     enum Claim: String, Codable {
         /// Here before owners were kept (an older build's): the account signed in when it's first seen. First seen
-        /// while nobody is signed in, it becomes `nobody`'s.
+        /// while nobody is signed in, it becomes `lastEmail`'s, or `nobody`'s.
         case firstSeen
         /// Typed or pasted while nobody was signed in: whoever signs in next.
         case nextSignIn
-        /// First seen while nobody was signed in, so it can't be told whose: the next sign-in removes it.
+        /// First seen while nobody was signed in, after an older build signed in here as `email` (Config.lastEmail,
+        /// which older builds kept): that email's. It signing in keeps the token; any other removes it.
+        case lastEmail
+        /// First seen while nobody was signed in, with no email to go by (a reinstall: Keychain items stay, the
+        /// rest goes), so it can't be told whose: the next sign-in removes it.
         case nobody
     }
 
     /// Who the token was set under, or first seen with while signed in; nil when not known, or there's no token.
     var account: Account?
     var claim = Claim.firstSeen
+    /// With `claim` lastEmail: the email the token is taken to be, trimmed and lowercased.
+    var email: String?
     /// Nobody is signed in on a server with sign-in: no Health data goes up until someone signs in.
     var paused = false
     /// The token was removed because it may be someone else's: Settings asks to set this iPhone up again.
     var setUpAgain = false
 
+    /// Emails are compared trimmed and lowercased: the sign-in form keeps what was typed, the server may not. Nil
+    /// when empty.
+    static func normalized(_ email: String?) -> String? {
+        guard let e = email?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(), !e.isEmpty else { return nil }
+        return e
+    }
+
     /// The token was typed, pasted or removed while `signedIn` (nil: signed out, or a server without accounts).
     mutating func tokenChanged(hasToken: Bool, signedIn: Account?) {
         account = hasToken ? signedIn : nil
         claim = hasToken && signedIn == nil ? .nextSignIn : .firstSeen
+        email = nil
         if hasToken { setUpAgain = false }
     }
 
     /// Someone is signed in: a sign-in, a new account from an invite, or any status read while signed in. `who` is nil
     /// on an older server with one password and no accounts: one person, so the token is theirs. A token whose owner
     /// isn't known yet is taken as this account's (a token from before owners were kept, or one pasted while signed
-    /// out), except one nobody can be told the owner of, and except after an invite: an account made a moment ago
+    /// out), except one that's another email's or nobody's, and except after an invite: an account made a moment ago
     /// can't have made a token, so the one here is someone else's. Returns true when the token has to go.
     mutating func signedIn(_ who: Account?, hasToken: Bool, newAccount: Bool = false) -> Bool {
         paused = false
         guard hasToken else {
             account = nil
             claim = .firstSeen
+            email = nil
             return false
         }
         if !newAccount {
             guard let who else { return false }
-            if account == nil, claim != .nobody { account = who }
-            if account == who { return false }
+            if let account {
+                if account.isSame(as: who) {
+                    // Kept up to date: the address it's reached at now, and the email it has now.
+                    self.account = Account(server: who.server, id: who.id, email: who.email ?? account.email)
+                    return false
+                }
+            } else {
+                let mine: Bool
+                switch claim {
+                case .firstSeen, .nextSignIn: mine = true
+                case .lastEmail: mine = email != nil && Self.normalized(who.email) == email
+                case .nobody: mine = false
+                }
+                if mine {
+                    account = who
+                    claim = .firstSeen
+                    email = nil
+                    return false
+                }
+            }
         }
         account = nil
         claim = .firstSeen
+        email = nil
         setUpAgain = true
         return true
     }
 
-    /// Nobody is signed in now: `who` signed out with the button, or (nil) the session ended or there was none at
-    /// launch. Nothing goes up until someone signs in. A token whose owner isn't known yet is the one signing out's;
-    /// one from before owners were kept, first seen now, can't be told whose.
-    mutating func signedOut(_ who: Account?, hasToken: Bool) {
-        if hasToken, account == nil, claim != .nobody {
-            if let who { account = who } else if claim == .firstSeen { claim = .nobody }
+    /// Sign out was tapped by `who` (nil on an older server with one password): nothing goes up until someone signs
+    /// in. A token whose owner isn't known yet is the one signing out's; without one, it's taken as `sessionEnded`
+    /// takes it.
+    mutating func signedOut(_ who: Account?, hasToken: Bool, lastEmail: String) {
+        if hasToken, account == nil {
+            if let who, claim == .firstSeen || claim == .nextSignIn { account = who; claim = .firstSeen } else { claimByLastEmail(lastEmail) }
         }
         paused = true
+    }
+
+    /// Nobody is signed in, and Sign out wasn't tapped: the session ran out or was ended elsewhere, or there was none
+    /// at launch. A token whose owner is known goes on syncing, as before owners were kept: if someone else has the
+    /// phone now, their sign-in removes it. An older build's, first seen now, is taken to be the email last signed in
+    /// with here (`lastEmail`), the same. Any other waits for a sign-in, since nobody can say whose it is. Never lifts
+    /// a pause (one from Sign out stays), and looking again changes nothing.
+    mutating func sessionEnded(hasToken: Bool, lastEmail: String) {
+        if hasToken { claimByLastEmail(lastEmail) }
+        if account == nil, claim != .lastEmail { paused = true }
+    }
+
+    /// An older build's token (owner never seen) looked at while nobody is signed in: older builds kept the email last
+    /// signed in with here, so it's that email's. With none, it can't be told whose.
+    private mutating func claimByLastEmail(_ lastEmail: String) {
+        guard account == nil, claim == .firstSeen else { return }
+        if let e = Self.normalized(lastEmail) {
+            claim = .lastEmail
+            email = e
+        } else {
+            claim = .nobody
+        }
     }
 
     /// A server without sign-in, `server`: one person, so nothing waits. Except for a token that's an account's on
@@ -211,13 +280,14 @@ struct IngestTokenOwner: Codable, Equatable {
 }
 
 extension IngestTokenOwner {
-    private enum CodingKeys: String, CodingKey { case account, claim, paused, setUpAgain }
+    private enum CodingKeys: String, CodingKey { case account, claim, email, paused, setUpAgain }
 
     /// Field by field, each with its default when missing or unreadable.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.init(account: try? c.decodeIfPresent(Account.self, forKey: .account),
                   claim: (try? c.decodeIfPresent(Claim.self, forKey: .claim)) ?? .firstSeen,
+                  email: try? c.decodeIfPresent(String.self, forKey: .email),
                   paused: (try? c.decodeIfPresent(Bool.self, forKey: .paused)) ?? false,
                   setUpAgain: (try? c.decodeIfPresent(Bool.self, forKey: .setUpAgain)) ?? false)
     }
@@ -227,6 +297,9 @@ extension IngestTokenOwner {
 protocol IngestTokenStore: AnyObject {
     var hasToken: Bool { get }
     var owner: IngestTokenOwner { get set }
+    /// The email last signed in with here (Config.lastEmail). Older builds kept it too, so it says whose a token from
+    /// before owners were kept most likely is.
+    var lastEmail: String { get set }
     /// Removes the token because it may be someone else's.
     func removeToken()
 }
@@ -238,6 +311,11 @@ final class KeychainTokenStore: IngestTokenStore {
     var owner: IngestTokenOwner {
         get { Config.ingestOwner }
         set { Config.ingestOwner = newValue }
+    }
+
+    var lastEmail: String {
+        get { Config.lastEmail }
+        set { Config.lastEmail = newValue }
     }
 
     func removeToken() {
@@ -252,10 +330,12 @@ final class KeychainTokenStore: IngestTokenStore {
 final class MemoryTokenStore: IngestTokenStore {
     var token: String
     var owner: IngestTokenOwner
+    var lastEmail: String
 
-    init(token: String = "", owner: IngestTokenOwner = IngestTokenOwner()) {
+    init(token: String = "", owner: IngestTokenOwner = IngestTokenOwner(), lastEmail: String = "") {
         self.token = token
         self.owner = owner
+        self.lastEmail = lastEmail
     }
 
     var hasToken: Bool { !token.isEmpty }

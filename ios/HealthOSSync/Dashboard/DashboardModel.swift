@@ -49,9 +49,9 @@ final class Dashboard {
 
     var phase: Phase = .starting {
         didSet {
-            // Signed out however it happened (Sign out, a session that ran out or was ended elsewhere, none at launch):
-            // nothing of this phone's Health data goes up until someone signs in.
-            if phase == .signIn, oldValue != .signIn { ingestPaused(by: nil) }
+            // Signed out without Sign out (a session that ran out or was ended elsewhere, none at launch): a token
+            // nobody can be told the owner of waits for a sign-in; one whose owner is known goes on (IngestTokenOwner).
+            if phase == .signIn, oldValue != .signIn { ingestSessionEnded() }
         }
     }
     var summary: Summary?
@@ -176,18 +176,7 @@ final class Dashboard {
             }
         }
         do {
-            let auth = try await client.authState()
-            authMode = auth.mode
-            usesAccounts = auth.usesAccounts
-            account = auth.user
-            switch auth.mode {
-            case "open": phase = .ready
-            case "required": phase = auth.authenticated ? .ready : .signIn
-            default: phase = .unavailable("Sign-in isn't set up on \(client.base.host ?? "the server") yet.")
-            }
-            // Signed in at launch (the first launch after an update included): a token with no known owner is theirs.
-            // Signed out, the sync is paused already (`phase`).
-            checkIngestToken(signedInAs: account?.id)
+            apply(auth: try await client.authState(), host: client.base.host)
         } catch is CancellationError {
             return
         } catch {
@@ -197,6 +186,24 @@ final class Dashboard {
             return
         }
         if phase == .ready { await refreshIfChanged(includeStatus: true) }
+    }
+
+    /// What /auth/me said at the start: the sign-in mode, who's signed in, and so the phase.
+    func apply(auth: AuthState, host: String?) {
+        authMode = auth.mode
+        usesAccounts = auth.usesAccounts
+        account = auth.user
+        switch auth.mode {
+        case "open": phase = .ready
+        case "required":
+            phase = auth.authenticated ? .ready : .signIn
+            // Every time, not only on the way into .signIn: the sign-in screen may be up already from a 401 that came
+            // while the sign-in mode wasn't known (offline at launch), when the token's owner wasn't looked at.
+            if !auth.authenticated { ingestSessionEnded() }
+        default: phase = .unavailable("Sign-in isn't set up on \(host ?? "the server") yet.")
+        }
+        // Signed in at launch (the first launch after an update included): a token with no known owner is theirs.
+        checkIngestToken(signedInAs: account)
     }
 
     /// Reloads only when the server's data changed since what's on screen, or the day rolled over. Runs on open, on
@@ -275,7 +282,7 @@ final class Dashboard {
     /// After every status read, never a settings change's own answer: who's signed in against the ingest token's
     /// owner, then the time zone. True when the server's "today" moved, so the caller reads the day again.
     private func statusRead() async -> Bool {
-        checkIngestToken(signedInAs: status?.user?.id ?? account?.id)
+        checkIngestToken(signedInAs: status?.user?.id != nil ? status?.user : account)
         return await followTimeZone()
     }
 
@@ -283,12 +290,15 @@ final class Dashboard {
     func signIn(email: String, password: String) async throws {
         guard let client = APIClient.current() else { throw APIError.network("Enter the server address in Settings.") }
         try await client.signIn(email: email, password: password)
-        Config.lastEmail = email
         let auth = try? await client.authState()
         if let auth {
             authMode = auth.mode
             usesAccounts = auth.usesAccounts
         }
+        // Before the email is replaced: an older build's token not looked at yet (the sign-in screen came up before
+        // the sign-in mode was known) is the email signed in with before this one's.
+        ingestSessionEnded(signingIn: true)
+        tokenStore.lastEmail = email
         // Never the last person's, when the server can't say just now: the first status read says who it is.
         account = auth?.user
         signedIn()
@@ -298,7 +308,8 @@ final class Dashboard {
     func join(code: String, name: String, email: String, password: String) async throws {
         guard let client = APIClient.current() else { throw APIError.network("Enter the server address in Settings.") }
         try await client.acceptInvite(code: code, email: email, name: name, password: password)
-        Config.lastEmail = email
+        // No need to look at the email before it: a new account never keeps the token here (IngestTokenOwner).
+        tokenStore.lastEmail = email
         account = (try? await client.authState())?.user
         signedIn(newAccount: true)
         await load()
@@ -311,7 +322,7 @@ final class Dashboard {
         resetFamily()
         timeZoneSent = nil
         phase = .ready
-        checkIngestToken(signedInAs: account?.id, newAccount: newAccount)
+        checkIngestToken(signedInAs: account, newAccount: newAccount)
     }
 
     func signOut() async {
@@ -564,9 +575,12 @@ final class Dashboard {
     // MARK: Ingest token
 
     /// The account signed in now, as the token's owner is kept.
-    private func ingestAccount(_ id: String?) -> IngestTokenOwner.Account? {
-        id.map { IngestTokenOwner.Account(server: server?.absoluteString ?? "", id: $0) }
+    private func ingestAccount(_ user: AuthState.User?) -> IngestTokenOwner.Account? {
+        user?.id.map { IngestTokenOwner.Account(server: server?.absoluteString ?? "", id: $0, email: user?.email) }
     }
+
+    /// Who's signed in by what the app knows now: the sign-in's answer, or the last status read's.
+    private var signedInUser: AuthState.User? { account?.id != nil ? account : status?.user }
 
     private func updateIngestOwner(_ change: (inout IngestTokenOwner, Bool) -> Bool) {
         var owner = tokenStore.owner
@@ -576,10 +590,10 @@ final class Dashboard {
         ingestOwner = owner
     }
 
-    /// Someone is signed in as `id` (a sign-in, a new account, or a status read): the same account as the token's
+    /// Someone is signed in as `user` (a sign-in, a new account, or a status read): the same account as the token's
     /// resumes the sync, anyone else's removes the token. On a server with accounts and no id yet, nothing changes
     /// until a read says who it is. A server without sign-in doesn't pause, unless the token is another server's.
-    func checkIngestToken(signedInAs id: String?, newAccount: Bool = false) {
+    func checkIngestToken(signedInAs user: AuthState.User?, newAccount: Bool = false) {
         guard phase == .ready else { return }
         switch authMode {
         case "open":
@@ -589,34 +603,47 @@ final class Dashboard {
                 return false
             }
         case "required":
-            if usesAccounts, id == nil, !newAccount { return }
-            updateIngestOwner { $0.signedIn(ingestAccount(id), hasToken: $1, newAccount: newAccount) }
+            if usesAccounts, user?.id == nil, !newAccount { return }
+            updateIngestOwner { $0.signedIn(ingestAccount(user), hasToken: $1, newAccount: newAccount) }
         default:
             break
         }
     }
 
-    /// Signing out with the button: nothing of this phone's Health data goes up until someone signs in.
-    func ingestSignedOut() { ingestPaused(by: ingestAccount(account?.id ?? status?.user?.id)) }
-
-    /// Nobody is signed in on a server with sign-in: `who` signed out with the button, or (nil) the server says there's
-    /// no session. Never who a cached status names: that's who was signed in, not who holds the phone.
-    private func ingestPaused(by who: IngestTokenOwner.Account?) {
+    /// Signing out with the button (offered only while signed in): nothing of this phone's Health data goes up until
+    /// someone signs in.
+    func ingestSignedOut() {
         guard authMode == "required" else { return }
+        let who = ingestAccount(signedInUser)
+        let lastEmail = tokenStore.lastEmail
         updateIngestOwner { owner, hasToken in
-            owner.signedOut(who, hasToken: hasToken)
+            owner.signedOut(who, hasToken: hasToken, lastEmail: lastEmail)
+            return false
+        }
+    }
+
+    /// The server with sign-in says there's no session, and Sign out wasn't tapped (IngestTokenOwner.sessionEnded).
+    /// `signingIn`: a sign-in just went through, so the server has sign-in even if its mode wasn't known yet.
+    func ingestSessionEnded(signingIn: Bool = false) {
+        guard authMode == "required" || signingIn else { return }
+        let lastEmail = tokenStore.lastEmail
+        updateIngestOwner { owner, hasToken in
+            owner.sessionEnded(hasToken: hasToken, lastEmail: lastEmail)
             return false
         }
     }
 
     /// The token was typed, pasted or removed in Settings: it's the signed-in account's, if anyone's.
     func ingestTokenChanged() {
-        let who = authMode == "required" && phase == .ready ? ingestAccount(account?.id ?? status?.user?.id) : nil
+        let who = authMode == "required" && phase == .ready ? ingestAccount(signedInUser) : nil
         updateIngestOwner { owner, hasToken in
             owner.tokenChanged(hasToken: hasToken, signedIn: who)
             return false
         }
     }
+
+    /// The sign-in screen says why this iPhone's Health data isn't going up: the sync waits for a sign-in, with a token.
+    var ingestWaitsForSignIn: Bool { ingestOwner.paused && tokenStore.hasToken }
 
     // MARK: Cards
 
