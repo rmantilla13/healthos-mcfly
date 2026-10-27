@@ -554,10 +554,10 @@ final class IntegrationsDuoTests: XCTestCase {
         XCTAssertEqual(reads.n, readsBefore, "no read again for a fold")
     }
 
-    /// The open Duo in landscape (decisions.md Q5): the intro and Apple Watch / Health on the leading side, WHOOP and
-    /// Fitbit one row in the trailing side's two columns, the note under them, none across the fold. Upright and outer:
+    /// The open Duo in landscape (decisions.md Q5): the intro and Apple Watch / Health on the leading side, WHOOP,
+    /// Fitbit and the note on the trailing side, each across its two columns, none across the fold. Upright and outer:
     /// one column, the web's order.
-    func testTheLeadOnTheLeadingSideTheRestInTwoColumns() async throws {
+    func testTheLeadOnTheLeadingSideTheRestOnTheTrailingSide() async throws {
         for bar: HorizontalEdge in [.trailing, .leading] {
             let state = DuoState.innerLandscape(bar: bar)
             let host = try await DuoHost(try page(Self.memberStatus), as: state)
@@ -574,9 +574,10 @@ final class IntegrationsDuoTests: XCTestCase {
             XCTAssertLessThan(apple.maxX, fold.lowerBound, "\(state)")
             XCTAssertGreaterThan(apple.minY, title.maxY, "\(state)")
             for card in [whoop, fitbit, note] { XCTAssertGreaterThan(card.minX, fold.upperBound, "\(state)") }
-            XCTAssertEqual(whoop.minY, fitbit.minY, accuracy: 1, "one row of the trailing side's two columns, \(state)")
-            XCTAssertLessThan(whoop.maxX, fitbit.minX, "\(state)")
-            XCTAssertGreaterThan(note.minY, whoop.maxY, "\(state)")
+            // Each across the side's two columns (Q5), so no button is cut short: WHOOP, then Fitbit, then the note.
+            XCTAssertEqual(whoop.minX, fitbit.minX, accuracy: 1, "\(state)")
+            XCTAssertGreaterThan(fitbit.minY, whoop.maxY, "\(state)")
+            XCTAssertGreaterThan(note.minY, fitbit.maxY, "\(state)")
         }
         for state: DuoState in [.outer, .innerPortrait()] {
             let host = try await DuoHost(try page(Self.memberStatus), as: state)

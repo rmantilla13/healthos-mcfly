@@ -71,7 +71,7 @@ struct IntegrationsScreen: View {
 /// (the web's single column below 1080 px). On the open Duo held sideways, the no-picture frame (decisions.md Q5): the
 /// lead on the leading side of the fold (the intro, the banner and Apple Watch / Health, this iPhone's own source, with
 /// Set up this iPhone and the token shown once), scrolling on its own since the setup grows; the other sources, the
-/// note and the demo card on the trailing side, two columns that scroll together. No card crosses the fold, and an open
+/// note and the demo card on the trailing side, each across that side's two columns, scrolling together. No card crosses the fold, and an open
 /// setup leaves no side empty beside the other. Everything a fold's swap of panes would lose is in the model (P4); the
 /// confirmation dialogs stay on their buttons, their anchor at regular width, so a swap may close one (P10, accepted).
 private struct IntegrationsContent: View {
@@ -87,8 +87,10 @@ private struct IntegrationsContent: View {
             .padding(.vertical, 16)
         } secondary: {
             VStack(alignment: .leading, spacing: 14) {
+                // Q5: a card that needs the width spans the side's two columns. Each of these does at the open Duo's
+                // sizes: half a side cuts WHOOP's and Fitbit's buttons ("Re-sync full…") and wraps the demo choices.
                 DuoGrid(IntegrationsCell.trailing(status), id: \.self, paneColumns: 2) { cell in
-                    self.cell(cell).id(cell.id)
+                    self.cell(cell).duoSpans().id(cell.id)
                 }
             }
             .scrollTargetLayout()
