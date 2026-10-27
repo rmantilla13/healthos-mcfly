@@ -61,13 +61,15 @@ struct ProfileBasicsSheet: View {
                 .padding(.top, -6)
                 if let error { ProfileNote(text: error, good: false) }
             }
+            // Done over the number pad (the goal has no return key), inside the sheet: from iOS 27.1 the sheet sits in a
+            // navigation stack (DuoSheetStack), and a keyboard toolbar from outside it doesn't reach these fields.
+            .keyboardDismissal()
         } footer: {
             Button("Done") { Task { await done() } }
                 .buttonStyle(.accentPill)
                 .disabled(busy)
                 .accessibilityIdentifier("basicsDone")
         }
-        .keyboardDismissal()
         .interactiveDismissDisabled(patch.changed || busy)
         // The server keeps 40 characters of a name; the field holds no more, as the web's maxLength.
         .onChange(of: name) { _, typed in
