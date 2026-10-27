@@ -174,16 +174,20 @@ private struct NutritionIntro: View {
     var body: some View {
         DuoPage { _ in
             // Q5's frame on the open Duo: the intro and the way to turn it on leading, what it shows and keeps private
-            // trailing. One column everywhere else, as before.
-            DuoPanes {
+            // trailing, the pane that scrolls the page's content. One column everywhere else, as before. A fold hands
+            // the row at the top between the one column and the trailing pane by its id (§4).
+            DuoPanes(anchor: .secondary) {
                 VStack(alignment: .leading, spacing: 16) { lead }.padding(.vertical, 16)
             } secondary: {
-                VStack(alignment: .leading, spacing: 16) { if dashboard.nutritionAvailable { cards } }.padding(.vertical, 16)
+                VStack(alignment: .leading, spacing: 16) { if dashboard.nutritionAvailable { cards } }
+                    .scrollTargetLayout()
+                    .padding(.vertical, 16)
             } single: {
                 VStack(alignment: .leading, spacing: 16) {
                     lead
                     if dashboard.nutritionAvailable { cards }
                 }
+                .scrollTargetLayout()
                 .padding(.vertical, 16)
             }
         }
@@ -192,13 +196,14 @@ private struct NutritionIntro: View {
     }
 
     @ViewBuilder private var lead: some View {
-        PageIntro(sub: "A conversation about what nourishes you. Off until you turn it on.")
+        PageIntro(sub: "A conversation about what nourishes you. Off until you turn it on.").id("nutritionOff.intro")
         if dashboard.nutritionAvailable {
-            hero
+            hero.id("nutritionOff.hero")
         } else {
             Text("This healthOS server doesn't have Nutrition yet.")
                 .font(.app(.footnote)).foregroundStyle(Palette.ink2)
                 .card()
+                .id("nutritionOff.unavailable")
         }
     }
 
@@ -209,11 +214,13 @@ private struct NutritionIntro: View {
             ("chart.bar.xaxis", "Macro balance, water and caffeine", "Your day by weight, the water you log as glasses, and your daily caffeine."),
             ("moon", "How it goes with your sleep and HRV", "Patterns from your own days, worded as things that tend to go together, never as causes."),
         ])
+        .id("nutritionOff.shows")
         IntroCard(title: "What stays private", items: [
             ("checkmark.shield", "Only you see it", "Never on the Family board, never in the admin screens."),
             ("checkmark", "You choose how much you see", "Everything, everything except calories, or no calorie or nutrient amounts at all. Ask McFly sees only that much."),
             ("sparkle", "No scores, streaks or set targets", "Set your own targets later if you like; they show only as a plain line. Turn it off or delete it any time in your Profile."),
         ])
+        .id("nutritionOff.private")
     }
 
     private var hero: some View {

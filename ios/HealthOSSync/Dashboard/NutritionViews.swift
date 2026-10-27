@@ -166,8 +166,9 @@ enum NutritionPart: Equatable {
 /// the outer display and the inner display upright. Split on the fold (the open Duo in landscape), Q5's frame: the
 /// intro (the views and the range) and the view's lead on the leading side (Trends' macro balance, Macros' average day,
 /// Hydration's water chart), and the rest on the trailing side, small cards two to a row. The read is here, above the
-/// panes (P4), so a fold never reads again; a chart's table view and its picked day go back to the chart on a fold
-/// that swaps the panes. The three views are one page, as they were one scroll view, so moving between them keeps it.
+/// panes (P4), so a fold never reads again, and so are the charts' table views and picked days (`foodChartPicks`). A
+/// fold hands the row at the top between the one column and the trailing pane by its id (§4). The three views are one
+/// page, as they were one scroll view, so moving between them keeps it.
 struct NutritionRangeTab<Intro: View>: View {
     let tab: NutritionTab
     let days: Int
@@ -176,6 +177,7 @@ struct NutritionRangeTab<Intro: View>: View {
     @Environment(Dashboard.self) private var dashboard
     @Environment(\.nutritionReads) private var reads
     @State private var state = RangeRead(tab: .trends)
+    @State private var picks = FoodChartPicks()
 
     /// One view's read: what came, whether it has, and why it couldn't. Another view starts afresh, as it always has; a
     /// new range or a reload keeps what's shown until the answer comes.
@@ -196,20 +198,24 @@ struct NutritionRangeTab<Intro: View>: View {
                 }
                 .padding(.vertical, 16)
             } secondary: {
+                // The rows a fold hands over (§4): each card, or grid, by the same id as in the one column.
                 VStack(alignment: .leading, spacing: 16) {
                     if let data = read.data { content(data, .rest) }
                 }
+                .scrollTargetLayout()
                 .padding(.vertical, 16)
             } single: {
                 VStack(alignment: .leading, spacing: 16) {
-                    intro()
-                    VStack(spacing: 16) {
-                        if let data = read.data { content(data, .all) } else { status(read) }
-                    }
+                    intro().id("nutrition.intro")
+                    if let data = read.data { content(data, .all) } else { status(read).id("nutrition.status") }
                 }
+                .scrollTargetLayout()
                 .padding(.vertical, 16)
             }
         }
+        // A chart's table view and its picked day, above the panes (P4), for this view only.
+        .environment(\.foodChartPicks, picks)
+        .onChange(of: tab) { picks = FoodChartPicks() }
         .background(Palette.page)
         .refreshable { await dashboard.load() }
         .task(id: "\(dashboard.generation)|\(dashboard.nutritionMode?.rawValue ?? "off")|\(tab.rawValue)|\(days)|\(insights)") { await load() }
@@ -268,23 +274,27 @@ struct NutritionOverview: View {
         let latest = data.days.last
         // Cards hidden in Profile → Cards (shared/cards.ts) are left out, and the rest close up.
         let layout = Cards.nutritionOverview(mode: data.mode, hidden: dashboard.cardsOff)
+        // Each row's id is the same in the one column and in the open Duo's pane, so a fold hands it over (§4).
         if latest == nil && data.water.isEmpty {
-            if part.lead { FoodNothingLoggedCard() }
+            if part.lead { FoodNothingLoggedCard().id("trends.nothing") }
         } else if data.mode == .none {
-            if part.rest, layout.row.contains("nutrition.logged") { FoodLoggedCard(data: data) }
-            if part.lead { FoodNoAmountsCard(latest: latest, today: data.today) }
+            if part.rest, layout.row.contains("nutrition.logged") { FoodLoggedCard(data: data).id("trends.logged") }
+            if part.lead { FoodNoAmountsCard(latest: latest, today: data.today).id("trends.noAmounts") }
         } else if layout.allHidden {
-            if part.lead { AllCardsHiddenNote(text: "All the cards on this page are hidden.") }
+            if part.lead { AllCardsHiddenNote(text: "All the cards on this page are hidden.").id("trends.hidden") }
         } else {
-            if part.rest { FoodOverviewCards(data: data, week: week, units: units, ids: layout.row) }
+            if part.rest { FoodOverviewCards(data: data, week: week, units: units, ids: layout.row).id("trends.cards") }
             if part.lead, layout.pair.contains("nutrition.macros") {
-                if let latest {
-                    MacroBalanceCard(day: latest, today: data.today, mode: data.mode, caffeine: data.caffeine.first { $0.date == latest.date }?.value)
-                } else {
-                    FoodNothingLoggedCard()
+                Group {
+                    if let latest {
+                        MacroBalanceCard(day: latest, today: data.today, mode: data.mode, caffeine: data.caffeine.first { $0.date == latest.date }?.value)
+                    } else {
+                        FoodNothingLoggedCard()
+                    }
                 }
+                .id("trends.macros")
             }
-            if part.rest, layout.pair.contains("nutrition.insights") { FoodInsightsCard(insights: data.insights) }
+            if part.rest, layout.pair.contains("nutrition.insights") { FoodInsightsCard(insights: data.insights).id("trends.insights") }
         }
     }
 }
@@ -674,27 +684,30 @@ struct NutritionMacros: View {
 
     var body: some View {
         if data.days.isEmpty {
-            if part.lead { FoodNothingLoggedCard() }
+            if part.lead { FoodNothingLoggedCard().id("macros.nothing") }
         } else {
             if part.lead {
-                FoodAverageCard(data: data)
-                FoodLoggedCard(data: data)
+                FoodAverageCard(data: data).id("macros.average")
+                FoodLoggedCard(data: data).id("macros.logged")
             }
             if part.rest { rest }
         }
     }
 
+    /// Each row with the same id in the one column and the open Duo's pane, so a fold hands it over (§4).
     @ViewBuilder private var rest: some View {
-        ForEach(FoodMath.order.filter { n in data.days.contains { $0.values[n] != nil } }, id: \.self) { n in
+        ForEach(FoodMath.order.filter { n in data.days.contains { $0.values[n] != nil } }.map { "macros.chart.\($0)" }, id: \.self) { id in
+            let n = String(id.dropFirst("macros.chart.".count))
             let target = n == "energy_kcal" || n == "protein_g" ? data.targets?[n] : nil
             FoodChartCard(title: FoodMath.name(n), points: data.days.compactMap { d in d.values[n].map { Point(date: d.date, value: $0) } },
                           start: data.start, end: data.end, target: target,
                           table: FoodChartTable(columns: ["Date", "\(FoodMath.name(n)) (\(FoodMath.names[n]?.unit ?? ""))"]) { [Fmt.day($0.date, "MMMdyyyy"), Fmt.number($0.value)] },
                           format: { FoodMath.amount(n, $0) })
         }
-        if data.apps.count > 1 { FoodAppChoice(data: data) }
+        if data.apps.count > 1 { FoodAppChoice(data: data).id("macros.apps") }
         Text("Days with nothing logged are left out, not counted as zero. When two apps logged the same day, one is shown and the other isn't added in, because food apps often copy each other's entries through Apple Health.")
             .font(.app(.caption)).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
+            .id("macros.note")
     }
 }
 
@@ -784,22 +797,25 @@ struct NutritionHydration: View {
 
     var body: some View {
         if data.water.isEmpty && data.caffeine.isEmpty {
-            if part.lead { nothing }
+            if part.lead { nothing.id("hydration.nothing") }
         } else {
             let water = { (ml: Double) in "\(FoodMath.glassesText(ml)) \(FoodMath.glasses(ml) == 1 ? "glass" : "glasses") · \(FoodMath.water(ml, units: units))" }
             let waterSummary = HydrationSummaryCard(title: "Water", points: data.water, format: water, target: data.targets?["water_ml"].map { FoodMath.water($0, units: units) }, days: days)
             let caffeineSummary = HydrationSummaryCard(title: "Caffeine", points: data.caffeine, format: { "\(Fmt.number($0)) mg" }, target: nil, days: days)
+            // The ids a fold hands over (§4): the pane's pair of averages has the one column's water average's id. The
+            // caffeine average is a row only in the one column, so an unfold from it opens the pane at its top.
             switch part {
             case .all:
-                waterSummary
-                caffeineSummary
-                waterChart
-                caffeineChart
+                waterSummary.id("hydration.averages")
+                caffeineSummary.id("hydration.caffeineAverage")
+                waterChart.id("hydration.water")
+                caffeineChart.id("hydration.caffeine")
             case .lead:
-                waterChart
+                waterChart.id("hydration.water")
             case .rest:
                 DuoPair(spacing: 16, paneSideBySide: true) { waterSummary } second: { caffeineSummary }
-                caffeineChart
+                    .id("hydration.averages")
+                caffeineChart.id("hydration.caffeine")
             }
         }
     }
@@ -851,11 +867,16 @@ struct FoodChartCard: View {
     var table: FoodChartTable?
     let format: (Double) -> String
     var axis: (Double) -> String = { Fmt.compact($0) }
-    /// The picked day's date (a bar is the day's "yyyy-MM-dd").
-    @State private var selected: String?
-    @State private var asTable = false
+    /// The picked day's date (a bar is the day's "yyyy-MM-dd") and the table view: the page's (`foodChartPicks`, above
+    /// the open Duo's panes, so a fold keeps them, P4), or this card's own where no page holds them.
+    @Environment(\.foodChartPicks) private var picks
+    @State private var own = FoodChartPick()
+    private var pick: FoodChartPick { picks?.pick(title) ?? own }
+    private var selected: String? { pick.selected }
+    private var asTable: Bool { pick.asTable }
 
     var body: some View {
+        let pick = pick
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -866,7 +887,7 @@ struct FoodChartCard: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
-                if !points.isEmpty { ChartTableToggle(title: title, asTable: $asTable) }
+                if !points.isEmpty { ChartTableToggle(title: title, asTable: Bindable(pick).asTable) }
             }
             if !points.isEmpty {
                 if asTable {
@@ -950,7 +971,7 @@ struct FoodChartCard: View {
                     }
             }
         }
-        .chartScrub($selected)
+        .chartScrub(Bindable(pick).selected)
         .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { v in
             AxisGridLine().foregroundStyle(Palette.grid)
             AxisValueLabel { if let n = v.as(Double.self) { Text(axis(n)) } }.font(.axis).foregroundStyle(Palette.ink3)
@@ -1058,6 +1079,39 @@ struct GlassBars: View {
         .accessibilityElement()
         .accessibilityLabel(label)
         .accessibilityValue(days.map { "\(Fmt.day($0.date, "EEE")) \($0.value.map(format) ?? "nothing logged")" }.joined(separator: ", "))
+    }
+}
+
+/// One chart's picked day and whether it shows as a table.
+@MainActor @Observable
+final class FoodChartPick {
+    var selected: String?
+    var asTable = false
+}
+
+/// A range view's charts' picks, by chart title, held by the page above the open Duo's panes (P4), so a fold that swaps
+/// them leaves each chart as it was. Each chart watches only its own.
+@MainActor @Observable
+final class FoodChartPicks {
+    @ObservationIgnored private var picks: [String: FoodChartPick] = [:]
+
+    func pick(_ title: String) -> FoodChartPick {
+        if let p = picks[title] { return p }
+        let p = FoodChartPick()
+        picks[title] = p
+        return p
+    }
+}
+
+private struct FoodChartPicksKey: EnvironmentKey {
+    static var defaultValue: FoodChartPicks? { nil }
+}
+
+extension EnvironmentValues {
+    /// The page's chart picks (NutritionRangeTab); nil: each chart keeps its own.
+    var foodChartPicks: FoodChartPicks? {
+        get { self[FoodChartPicksKey.self] }
+        set { self[FoodChartPicksKey.self] = newValue }
     }
 }
 
