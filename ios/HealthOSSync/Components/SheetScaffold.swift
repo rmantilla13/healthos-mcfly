@@ -29,7 +29,8 @@ enum SheetSize: Sendable {
 /// it's as it always was. Where the sheet has a vertical bar of its own (the iPhone Duo's outer display), that bar
 /// shows and holds Close (`.cancellationAction`, at its top) in place of the round ×. The sheet is its own scope: its
 /// band comes from its own width, and it reads its own bar edge from inside itself (Shell/Duo/DuoScope.swift). It never
-/// splits on the fold: the system places the sheet.
+/// splits on the fold: the system places the sheet. Its band, width, height and table window (`\.duoTableWindow`) are
+/// set for the views inside it: read them in a view inside the scaffold, not in the struct that builds it.
 ///
 ///     .sheet(isPresented: $editing) {
 ///         SheetScaffold(eyebrow: "Home", title: "Edit widgets") {

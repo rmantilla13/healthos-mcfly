@@ -7,6 +7,10 @@ import SwiftUI
 /// `maxWidth` caps the content the same way, through the margins (leading-aligned). It persists across every band and
 /// fold change: branch on the band only inside its DuoScroll (P14).
 ///
+/// The closure gets the band only. The fold, the content width, the scope's height and the table window are set for
+/// the views inside the page, so read them (`@Environment(\.duoFold)` and the rest) in a view inside it, never in the
+/// struct whose body builds the DuoPage: there they're still the defaults (no fold, no width, a 360 table window).
+///
 ///     DuoPage { band in
 ///         DuoScroll {
 ///             VStack(alignment: .leading, spacing: 14) { … }
