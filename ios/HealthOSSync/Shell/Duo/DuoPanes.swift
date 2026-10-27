@@ -5,7 +5,8 @@ import SwiftUI
 /// the fold. Each pane is its own scope, compact, and scrolls only when its content is taller than it. Inside a pane,
 /// `DuoGrid(paneColumns: 2)` and `DuoPair(paneSideBySide: true)` lay out the open Duo's two columns (decisions.md Q5:
 /// the page's picture or lead in the primary pane, the rest in two columns in the secondary). With the secondary as
-/// the anchor (every page), the primary doesn't scroll (DuoStillPane): each page keeps its lead to what fits. `single` (one DuoScroll)
+/// the anchor, the primary doesn't scroll (DuoStillPane): each page keeps its lead to what fits; `leadScrolls` is for
+/// a lead that's a list (list | detail), which scrolls on its own. `single` (one DuoScroll)
 /// otherwise. Switching rebuilds what's inside, so the page keeps its state, sheets and loaders above this (P4). Give it
 /// the pane contents, not scroll views: DuoPanes scrolls each one. A fold hands the row at the top (by its String id)
 /// between `single` and the `anchor` pane (the primary unless said; Home's cards, beside its figure, are its secondary);
@@ -29,6 +30,9 @@ struct DuoPanes<Primary: View, Secondary: View, Single: View>: View {
     enum Pane: Sendable { case primary, secondary }
 
     private let anchor: Pane
+    /// The leading pane scrolls too: a list beside its detail (Blood records), a composer above entries that grow
+    /// (Journal). Otherwise it stays put (DuoStillPane).
+    private let leadScrolls: Bool
     private let primary: Primary
     private let secondary: Secondary
     private let single: Single
@@ -44,9 +48,10 @@ struct DuoPanes<Primary: View, Secondary: View, Single: View>: View {
     /// path, which splits on the fold read, and no page changes.
     static var usesArrangement: Bool { false }
 
-    init(anchor: Pane = .primary, @ViewBuilder primary: () -> Primary, @ViewBuilder secondary: () -> Secondary,
+    init(anchor: Pane = .primary, leadScrolls: Bool = false, @ViewBuilder primary: () -> Primary, @ViewBuilder secondary: () -> Secondary,
          @ViewBuilder single: () -> Single) {
         self.anchor = anchor
+        self.leadScrolls = leadScrolls
         self.primary = primary()
         self.secondary = secondary()
         self.single = single()
@@ -73,8 +78,8 @@ struct DuoPanes<Primary: View, Secondary: View, Single: View>: View {
         let spans = Self.paneSpans(margins: margins, fold: span)
         return HStack(spacing: 0) {
             DuoScope(.pane(margins: DuoMargins(leading: margins.leading, trailing: gap))) { _ in
-                if anchor == .primary {
-                    DuoScroll { primary }.duoPaneScroll().duoHandoff(handoff)
+                if anchor == .primary || leadScrolls {
+                    DuoScroll { primary }.duoPaneScroll().duoHandoff(anchor == .primary ? handoff : nil)
                 } else {
                     DuoStillPane { primary }
                 }
