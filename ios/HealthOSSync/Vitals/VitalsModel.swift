@@ -112,6 +112,11 @@ enum VitalsTrendItem: Identifiable, Equatable {
 }
 
 enum VitalsTrendCards {
+    /// The card's table (Detail.tsx Trend): Date and the card's title, a row a reading, the date with its year.
+    static func table(_ trend: VitalsTrend) -> SheetTable {
+        SheetTable(columns: ["Date", trend.title], rows: trend.points.map { [Fmt.day($0.date, "yMMMd"), trend.format($0.value)] })
+    }
+
     /// GET /api/trends?metrics=…, as the web asks.
     static let metrics = ["resting_hr", "hrv_rmssd", "hrv_sdnn", "spo2", "resp_rate", "wrist_temp", "skin_temp", "body_temp", "recovery"]
     /// What only the iPhone shows on Vitals, asked for with the same request (the server takes up to 20): blood
