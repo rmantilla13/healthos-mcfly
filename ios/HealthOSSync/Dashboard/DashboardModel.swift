@@ -103,6 +103,12 @@ final class Dashboard {
     var webPage: WebPage?
     /// The account menu ("Your workspace") is up, from any page's avatar (Shell/AccountMenu.swift).
     var accountMenuOpen = false
+    /// Search is up (Search/SearchScreen.swift), from the toolbar's Search item, which shows only once Search is built
+    /// (`SearchScreen.ready`).
+    var searchOpen = false
+    /// Where each page's scroll stands, by the id of the row at its top (`duoScrollAnchor`, Shell/Duo/), so a fold that
+    /// rebuilds a page's scroll view brings it back to the same row. Memory only.
+    var scrollAnchors: [AppPage: String] = [:]
     /// A metric's detail sheet showing over the app (`showMetric`, Shell/MetricRequest.swift).
     var metricSheet: MetricRequest?
     /// The chart pages' range in days (RangeFilters), shared by Vitals, Body and Sleep as the web shares it in a

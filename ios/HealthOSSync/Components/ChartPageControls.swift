@@ -5,6 +5,9 @@ import UIKit
 // What the web's chart pages (Vitals, Body, Sleep) share from Detail.tsx: the day picker, the range picker and the
 // page's tabs. Here once, so slices H, I and J build their pages from the same pieces. A page keeps its own selection;
 // its first one comes from its route's query (`dashboard.request(for:)` on a tab, the `query` its init gets under More).
+// On a page split on the iPhone Duo's fold each keeps to one side (D10): the tabs to the leading side, the range and day
+// pickers no wider than the narrower side. They read the page's fold, so put them in the page's content, full width
+// (the tabs) or in a full-width header row (the pickers).
 
 /// A chart page's range (RANGES in Detail.tsx): 7 days to a year, and Day once the page has hourly data (DAY_RANGE).
 struct ChartRange: Hashable, Identifiable {
@@ -28,12 +31,18 @@ struct ChartRange: Hashable, Identifiable {
 struct RangeFilters: View {
     @Binding var days: Int
     var ranges: [ChartRange] = ChartRange.standard
+    @Environment(\.duoFold) private var fold
+    @Environment(\.duoContentWidth) private var contentWidth
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
             well(HStack(spacing: 0) { chips }).fixedSize()
             well(WrapLayout(spacing: 0, lineSpacing: 0) { chips }).fixedSize(horizontal: false, vertical: true)
         }
+        // On a page split on the fold (the iPhone Duo open), never wider than the narrower side, so wherever its row
+        // puts it (trailing, after the page's line, or under it) it sits wholly on one side. Elsewhere this changes
+        // nothing.
+        .frame(maxWidth: contentWidth.flatMap { fold.narrowerSide(width: $0) })
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Date range")
     }
@@ -81,6 +90,8 @@ struct PageTabs: View {
     let label: String
 
     var body: some View {
+        // On a page split on the fold, the tabs keep to the leading side and scroll there when they don't fit
+        // (`duoOneSide`); elsewhere they're as they were.
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 4) {
                 ForEach(tabs) { tab in
@@ -97,6 +108,7 @@ struct PageTabs: View {
                 }
             }
         }
+        .duoOneSide()
         .accessibilityElement(children: .contain)
         .accessibilityLabel(label)
     }
@@ -109,6 +121,8 @@ struct DayNav: View {
     @Binding var date: String?
     /// The day in words; Today, Yesterday, a few days ago or the date when nil.
     var label: ((String) -> String)?
+    @Environment(\.duoFold) private var fold
+    @Environment(\.duoContentWidth) private var contentWidth
 
     var body: some View {
         let current = date ?? today
@@ -124,6 +138,9 @@ struct DayNav: View {
             }
             .disabled(current >= today)
         }
+        // On a page split on the fold, never wider than the narrower side (put it in the header's trailing group, or as
+        // its own leading and trailing groups); elsewhere this changes nothing.
+        .frame(maxWidth: contentWidth.flatMap { fold.narrowerSide(width: $0) })
     }
 
     private func step(_ symbol: String, _ name: String, action: @escaping () -> Void) -> some View {
