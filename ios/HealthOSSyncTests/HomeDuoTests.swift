@@ -296,6 +296,18 @@ final class HomeDuoTests: XCTestCase {
         let nutrition = try XCTUnwrap(u["card-home.nutrition"]), journal = try XCTUnwrap(u["card-journal"] ?? u["card-home.journal"])
         XCTAssertGreaterThan(journal.minY, nutrition.maxY - 0.5, "Nutrition and Journal stacked")
         XCTAssertEqual(nutrition.width, 669 - 32, accuracy: 0.5)
+        // The top bar on one line, as the web's at 669: Edit widgets keeps its words on one line, as tall as Refresh.
+        let refresh = try XCTUnwrap(u["refresh"]), edit = try XCTUnwrap(u["editWidgets"])
+        XCTAssertEqual(edit.minY, refresh.minY, accuracy: 0.5, "Refresh and Edit widgets side by side")
+        XCTAssertEqual(edit.height, refresh.height, accuracy: 0.5, "as tall as Refresh")
+        // Its words on one line at the width the row gives the pill. Laid out on the window's pixel grid it gets 130 of
+        // the 130.33 its words want, and words free to wrap went onto two lines there (the pill's 34pt floor hid it).
+        let words = { (oneLine: Bool, width: CGFloat) in
+            UIHostingController(rootView: EditWidgetsLabel(oneLine: oneLine).font(.app(.footnote, weight: .medium)))
+                .sizeThatFits(in: CGSize(width: width, height: 1000))
+        }
+        let natural = words(false, 1000), given = edit.width - 30
+        XCTAssertEqual(words(true, given).height, natural.height, accuracy: 0.5, "the top bar's Edit widgets keeps them on one line")
     }
 
     // MARK: Across a fold (P4, P14)

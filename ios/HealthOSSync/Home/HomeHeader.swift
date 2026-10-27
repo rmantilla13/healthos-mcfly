@@ -48,7 +48,7 @@ struct HomeHeader: View {
                         if demo { demoPill }
                         dayPicker
                         refresh
-                        editButton
+                        edit()
                         AccountMenu(size: 34)
                     }
                 }
@@ -102,9 +102,10 @@ struct HomeHeader: View {
                 if demo { demoPill }
                 dayPicker
                 Spacer(minLength: 0)
-                // On one line only where all of it fits (wider than any iPhone, as the iPhone Duo's inner display), so
-                // Refresh and Edit widgets keep their words on one line.
-                actions.fixedSize(horizontal: true, vertical: false)
+                // On one line only where all of it fits at its own width (the iPhone Duo's inner display upright, or a
+                // phone without the demo note), and there Edit widgets keeps its words on one line, as the web's at 669.
+                HStack(spacing: 10) { refresh; edit(oneLine: true) }
+                    .fixedSize(horizontal: true, vertical: false)
             }
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 10) {
@@ -149,8 +150,8 @@ struct HomeHeader: View {
     private var actions: some View {
         // Side by side, or at the largest text sizes one above the other, so neither is cut off.
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: 10) { refresh; editButton }
-            VStack(alignment: .leading, spacing: 8) { refresh; editButton }
+            HStack(spacing: 10) { refresh; edit() }
+            VStack(alignment: .leading, spacing: 8) { refresh; edit() }
         }
     }
 
@@ -158,20 +159,29 @@ struct HomeHeader: View {
         RefreshPill(running: sync.syncingSources) { Task { await sync.syncAll(force: true) } }
     }
 
-    @ViewBuilder private var editButton: some View {
+    /// Edit widgets. With `oneLine` (the top bar's one-line form) its words never wrap: the pill takes their width.
+    @ViewBuilder private func edit(oneLine: Bool = false) -> some View {
         if editable {
             // Its words go on a narrow phone (the web hides them at 420px and below); VoiceOver still says them.
-            let words = width + 32 > 420
-            Button { editing = true } label: {
-                HStack(spacing: 7) {
-                    Image(systemName: "gearshape").font(.system(size: 14, weight: .medium))
-                    if words { Text("Edit widgets") }
-                }
-            }
+            Button { editing = true } label: { EditWidgetsLabel(words: width + 32 > 420, oneLine: oneLine) }
             .buttonStyle(HomePillStyle())
             .accessibilityLabel("Edit widgets")
             .accessibilityHint("Choose what Home shows")
             .accessibilityIdentifier("editWidgets")
+        }
+    }
+}
+
+/// Edit widgets' gear and, where there's room, its words; with `oneLine`, kept to one line (the pill grows to fit them)
+/// rather than wrapping as they may in the stacked forms at the accessibility text sizes.
+struct EditWidgetsLabel: View {
+    var words = true
+    var oneLine = false
+
+    var body: some View {
+        HStack(spacing: 7) {
+            Image(systemName: "gearshape").font(.system(size: 14, weight: .medium))
+            if words { Text("Edit widgets").fixedSize(horizontal: oneLine, vertical: false) }
         }
     }
 }
