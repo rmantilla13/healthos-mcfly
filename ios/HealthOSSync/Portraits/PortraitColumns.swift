@@ -25,8 +25,10 @@ enum PortraitTileColumns {
 
 /// The comparison's measurements (src/styles/profile.css .profile-peers): the web's `repeat(auto-fill, minmax(300px,
 /// 1fr))`, which is one to a row on every iPhone and on the Duo upright. In one of DuoPanes' panes (the open Duo's wide
-/// layout, decisions.md Q5: "two columns on the right side") two to a row, as long as each is at least as wide as a
-/// portrait tile beside it (156) and the text isn't an accessibility size.
+/// layout, decisions.md Q5: "two columns on the right side") two to a row, as long as each column is at least Q5's
+/// pane minimum (DuoPaneColumns.minColumn, 170) and the text isn't an accessibility size. So a card needs 350 pt: the
+/// pane on the bar's side of a 951 pt display (343, or 323 beside the 40 pt fold the device measured) keeps one to a
+/// row, and the other pane (407, or 387) goes two.
 enum PeerColumns {
     /// The web's minmax(300px).
     static let minRow: CGFloat = 300
@@ -36,7 +38,7 @@ enum PeerColumns {
     static func count(width: CGFloat, inPane: Bool, typeSize: DynamicTypeSize) -> Int {
         if typeSize.isAccessibilitySize { return 1 }
         if inPane {
-            return DuoPaneColumns.count(2, width: width, spacing: spacing, minColumn: PortraitTileColumns.minTile, typeSize: typeSize)
+            return DuoPaneColumns.count(2, width: width, spacing: spacing, minColumn: DuoPaneColumns.minColumn, typeSize: typeSize)
         }
         return max(1, Int(((width + spacing) / (minRow + spacing)).rounded(.down)))
     }

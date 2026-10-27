@@ -111,8 +111,8 @@ struct PeerContent: View {
 
 /// A row per measurement (.profile-peers): one to a row on every iPhone and on the Duo upright (the web's auto-fill of
 /// 300 pt gives two only on a card at least 610 wide, which no iPhone and no Duo scope gives a Profile card), and two to
-/// a row in one of the open Duo's panes (PeerColumns, decisions.md Q5), a row's cards as tall as each other with their
-/// bars along the bottom.
+/// a row in one of the open Duo's panes where a column keeps Q5's 170 pt (PeerColumns, decisions.md Q5), a row's cards
+/// as tall as each other with their bars along the bottom.
 private struct PeerRows: View {
     let metrics: [PeerMetric]
     @Environment(\.duoInPane) private var inPane

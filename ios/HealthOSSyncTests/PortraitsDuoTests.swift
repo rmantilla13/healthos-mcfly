@@ -140,9 +140,15 @@ final class PortraitsDuoTests: XCTestCase {
             XCTAssertEqual(PeerColumns.count(width: w, inPane: false, typeSize: .large), 1, "\(w)")
         }
         XCTAssertEqual(PeerColumns.count(width: 610, inPane: false, typeSize: .large), 2, "the web's auto-fill")
-        XCTAssertEqual(PeerColumns.count(width: 343, inPane: true, typeSize: .large), 2, "a pane, bar trailing: 166.5 each")
-        XCTAssertEqual(PeerColumns.count(width: 407, inPane: true, typeSize: .large), 2)
-        XCTAssertEqual(PeerColumns.count(width: 320, inPane: true, typeSize: .large), 1, "155 a column is under a tile")
+        // Q5's pane minimum, 170 a column (DuoPaneColumns.minColumn): two need a card of 350.
+        XCTAssertEqual(PeerColumns.count(width: 349, inPane: true, typeSize: .large), 1, "169.5 a column")
+        XCTAssertEqual(PeerColumns.count(width: 350, inPane: true, typeSize: .large), 2, "170 a column")
+        // The 951 pt display's panes. Drawn (no fold): the bar's pane 343, the other 407. Beside the 40 pt fold the
+        // device measured, centred, each loses 20: 323 and 387.
+        XCTAssertEqual(PeerColumns.count(width: 343, inPane: true, typeSize: .large), 1, "bar's pane, drawn: 166.5 each")
+        XCTAssertEqual(PeerColumns.count(width: 323, inPane: true, typeSize: .large), 1, "bar's pane, measured fold: 156.5 each")
+        XCTAssertEqual(PeerColumns.count(width: 407, inPane: true, typeSize: .large), 2, "other pane, drawn: 198.5 each")
+        XCTAssertEqual(PeerColumns.count(width: 387, inPane: true, typeSize: .large), 2, "other pane, measured fold: 188.5 each")
         XCTAssertEqual(PeerColumns.count(width: 407, inPane: true, typeSize: .accessibility3), 1)
     }
 
@@ -188,11 +194,18 @@ final class PortraitsDuoTests: XCTestCase {
         }
     }
 
-    /// Q5's frame as drawn: the cards in the trailing pane, the tiles two to a row there and the comparison's rows two
-    /// to a row; the outer display keeps one comparison row to a line.
+    /// Q5's frame as drawn: the cards in the trailing pane, the tiles two to a row there, and the comparison's rows two
+    /// to a row where a column keeps 170 pt (the pane away from the bar), one in the bar's narrower pane.
     func testTheTrailingPaneHoldsTwoColumns() async throws {
+        // The bar trailing: the trailing pane is the bar's (343 a card), so the comparison keeps one to a row there.
+        try await trailingPane(.innerLandscape(), paneX: 487...868, peerColumns: 1)
+        // The bar leading: the trailing pane is the wider one (407 a card), two to a row.
+        try await trailingPane(.innerLandscape(bar: .leading), paneX: nil, peerColumns: 2)
+    }
+
+    private func trailingPane(_ state: DuoState, paneX: ClosedRange<CGFloat>?, peerColumns: Int) async throws {
         let view = try await page()
-        let host = try await DuoHost(view, as: .innerLandscape())
+        let host = try await DuoHost(view, as: state)
         defer { host.close() }
         let elements = try await host.elements()
         func frames(_ prefix: String) -> [CGRect] {
@@ -205,10 +218,13 @@ final class PortraitsDuoTests: XCTestCase {
         let peerRows = elements.filter { e in sources.contains { (e.accessibilityLabel ?? "").contains($0) } && e.accessibilityFrame.height > 40 }
             .map(\.accessibilityFrame)
         XCTAssertGreaterThanOrEqual(peerRows.count, 2)
-        // The bar's trailing: the pane runs from 488 to 867.
-        for f in tiles + peerRows { XCTAssertGreaterThanOrEqual(f.minX, 487, "\(f)"); XCTAssertLessThanOrEqual(f.maxX, 868, "\(f)") }
-        XCTAssertEqual(Set(peerRows.map { $0.minX.rounded() }).count, 2, "two columns of measurements: \(peerRows)")
-        XCTAssertEqual(Set(tiles.map { $0.minX.rounded() }).count, 2, "two columns of tiles: \(tiles)")
+        // Everything in the trailing pane: past the middle of the 951 pt display (and, bar trailing, 488 to 867).
+        for f in tiles + peerRows {
+            XCTAssertGreaterThanOrEqual(f.minX, paneX?.lowerBound ?? 475, "\(state) \(f)")
+            if let paneX { XCTAssertLessThanOrEqual(f.maxX, paneX.upperBound, "\(state) \(f)") }
+        }
+        XCTAssertEqual(Set(peerRows.map { $0.minX.rounded() }).count, peerColumns, "\(state): measurements \(peerRows)")
+        XCTAssertEqual(Set(tiles.map { $0.minX.rounded() }).count, 2, "\(state): two columns of tiles \(tiles)")
     }
 
     // MARK: Dialogs on their buttons (P10)
