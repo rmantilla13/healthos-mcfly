@@ -68,11 +68,17 @@ final class NutritionDuoTests: XCTestCase {
               log: try JSONDecoder().decode(FoodLog.self, from: Data(Self.logJSON.utf8)))
     }
 
-    private func dashboard() throws -> Dashboard {
+    private func dashboard(on: Bool = true) throws -> Dashboard {
         let d = Dashboard()
         d.phase = .ready
-        d.apply(status: try JSONDecoder().decode(ServerStatus.self, from: Data(#"{"settings":{"nutrition":true,"nutritionNumbers":"all"}}"#.utf8)))
+        let settings = on ? #"{"settings":{"nutrition":true,"nutritionNumbers":"all"}}"# : #"{"settings":{"nutrition":false}}"#
+        d.apply(status: try JSONDecoder().decode(ServerStatus.self, from: Data(settings.utf8)))
         return d
+    }
+
+    /// Nutrition turned off: the page that turns it on (NutritionIntro), with the server able to.
+    private func offPage() throws -> some View {
+        NutritionScreen().environment(try dashboard(on: false)).environment(AppModel()).environment(\.nutritionReads, try reads().reads)
     }
 
     /// The Nutrition tab as the shell shows it (without its navigation bar), opened on `tab` as a link does.
@@ -125,6 +131,16 @@ final class NutritionDuoTests: XCTestCase {
         }
     }
 
+    /// Nutrition off (the page that turns it on): every state, light and dark, and AX3 where the layout changes.
+    func testTheOffPage() async throws {
+        for state in DuoState.all + [.innerLandscape(foldActive: true)] {
+            for dark in [false, true] { try await DuoSnapshot.draw(try offPage(), as: state, dark: dark, name: "d-off") }
+        }
+        for state: DuoState in [.outer, .innerPortrait(), .innerLandscape(), .innerLandscape(foldActive: true)] {
+            try await DuoSnapshot.draw(try offPage(), as: state, typeSize: .accessibility3, name: "d-off")
+        }
+    }
+
     private func both(_ tab: NutritionTab, _ state: DuoState) async throws {
         for dark in [false, true] { try await DuoSnapshot.draw(try drawn(tab), as: state, dark: dark, name: "d-\(tab.rawValue)") }
     }
@@ -132,21 +148,23 @@ final class NutritionDuoTests: XCTestCase {
     // MARK: The fold (P6, D10)
 
     func testNothingTappableOnTheFoldFlat() async throws {
-        for tab in NutritionTab.allCases {
-            for state: DuoState in [.innerLandscape(), .innerLandscape(bar: .leading)] {
-                for size: DynamicTypeSize in [.large, .accessibility3] {
+        for state: DuoState in [.innerLandscape(), .innerLandscape(bar: .leading)] {
+            for size: DynamicTypeSize in [.large, .accessibility3] {
+                for tab in NutritionTab.allCases {
                     try await DuoFoldAssertions.assertNothingTappableOnTheFold(try drawn(tab), state: state, typeSize: size)
                 }
+                try await DuoFoldAssertions.assertNothingTappableOnTheFold(try offPage(), state: state, typeSize: size)
             }
         }
     }
 
     func testNothingTappableOnTheFoldActive() async throws {
-        for tab in NutritionTab.allCases {
-            for state: DuoState in [.innerLandscape(foldActive: true), .innerLandscape(foldActive: true, bar: .leading)] {
-                for size: DynamicTypeSize in [.large, .accessibility3] {
+        for state: DuoState in [.innerLandscape(foldActive: true), .innerLandscape(foldActive: true, bar: .leading)] {
+            for size: DynamicTypeSize in [.large, .accessibility3] {
+                for tab in NutritionTab.allCases {
                     try await DuoFoldAssertions.assertNothingTappableOnTheFold(try drawn(tab), state: state, typeSize: size)
                 }
+                try await DuoFoldAssertions.assertNothingTappableOnTheFold(try offPage(), state: state, typeSize: size)
             }
         }
     }
@@ -225,22 +243,164 @@ final class NutritionDuoTests: XCTestCase {
             XCTAssertEqual(r.totals, 1, "\(tab): a fold never reads again")
         }
 
+    }
+
+    /// The Log's two panes (Q5) swap with one column on a fold: what's typed in the add card (the search, the way in
+    /// chosen, the amounts) and an entry being edited all stay, as P4 asks, and the Log isn't read again.
+    func testTheLogKeepsWhatsTypedAcrossAPaneSwap() async throws {
         let d = try dashboard(), r = try reads()
         let host = try await DuoHost(page(.log, d, r), as: .outer)
         defer { host.close() }
-        let field = try XCTUnwrap(DuoKitTests.textField(in: host.window), "the Log's search")
-        field.becomeFirstResponder()
-        field.insertText("lentil")
-        try await host.settle()
-        for state: DuoState in [.innerLandscape(), .innerPortrait(), .outer] {
+        try await type("lentil", into: try XCTUnwrap(DuoKitTests.textField(in: host.window), "the Log's search"), host)
+        try await activate("Edit Greek yogurt", host)
+        try await type(" plain", into: try XCTUnwrap(Self.textField("Greek yogurt", in: host.window), "the entry's name"), host)
+        for state: DuoState in [.innerLandscape(), .innerPortrait(), .innerLandscape(bar: .leading), .outer] {
             try await host.set(state)
-            XCTAssertEqual(DuoKitTests.textField(in: host.window)?.text, "lentil", "the search in \(state)")
+            XCTAssertNotNil(Self.textField("lentil", in: host.window), "the search in \(state)")
+            XCTAssertNotNil(Self.textField("Greek yogurt plain", in: host.window), "the editor, open with its typing, in \(state)")
+        }
+        // Amounts: the way in chosen and what's typed stay too.
+        let ways = try XCTUnwrap(Self.segments(in: host.window), "the ways in")
+        let quick = try XCTUnwrap((0..<ways.numberOfSegments).first { ways.titleForSegment(at: $0) == FoodAddMode.quick.rawValue })
+        ways.selectedSegmentIndex = quick
+        ways.sendActions(for: .valueChanged)
+        try await host.settle()
+        try await type("toast", into: try XCTUnwrap(Self.textField("", placeholder: "Quick add", in: host.window), "the quick add's name"), host)
+        for state: DuoState in [.innerLandscape(), .outer, .innerLandscape()] {
+            try await host.set(state)
+            XCTAssertEqual(Self.segments(in: host.window)?.selectedSegmentIndex, quick, "Quick add still chosen in \(state)")
+            XCTAssertNotNil(Self.textField("toast", in: host.window), "the amounts' name in \(state)")
         }
         XCTAssertEqual(r.log, 1, "the Log isn't read again")
-        DuoKitTests.textField(in: host.window)?.resignFirstResponder()
+        host.window.endEditing(true)
+    }
+
+    /// Nutrition off: choosing what to see, once asked for, stays up across the pane swap (its state is above the panes).
+    func testTheOffPageKeepsItsChoiceAcrossAPaneSwap() async throws {
+        let host = try await DuoHost(try offPage(), as: .outer)
+        defer { host.close() }
+        try await activate("Turn on Nutrition", host)
+        for state: DuoState in [.innerLandscape(), .outer, .innerLandscape(bar: .leading), .innerPortrait()] {
+            try await host.set(state)
+            let ids = try await host.elements().compactMap { Self.identifier($0) }
+            XCTAssertTrue(ids.contains("nutritionChoice-all"), "the choices still shown in \(state)")
+        }
+    }
+
+    /// Today's journal: an entry being edited stays open with what's typed when a fold swaps the panes.
+    func testAnEntryEditorSurvivesAPaneSwap() async throws {
+        let d = try dashboard(), r = try reads()
+        let host = try await DuoHost(page(.today, d, r), as: .outer)
+        defer { host.close() }
+        try await activate("Edit Greek yogurt", host)
+        try await type(" plain", into: try XCTUnwrap(Self.textField("Greek yogurt", in: host.window), "the entry's name"), host)
+        for state: DuoState in [.innerLandscape(), .outer, .innerLandscape(bar: .leading), .innerPortrait()] {
+            try await host.set(state)
+            XCTAssertNotNil(Self.textField("Greek yogurt plain", in: host.window), "the editor, open with its typing, in \(state)")
+        }
+        XCTAssertEqual(r.day, 1)
+        host.window.endEditing(true)
+    }
+
+    /// A chart's table view stays across the range views' pane swap.
+    func testAChartsTableViewSurvivesAPaneSwap() async throws {
+        let d = try dashboard(), r = try reads()
+        let host = try await DuoHost(page(.macros, d, r), as: .outer)
+        defer { host.close() }
+        let tables = try await host.elements().filter { $0.accessibilityLabel == "Table" }
+        let first = try XCTUnwrap(tables.first, "the charts' table toggles")
+        XCTAssertTrue(first.accessibilityActivate())
+        try await host.settle()
+        let before = try await host.elements().filter { $0.accessibilityLabel == "Table" && $0.accessibilityTraits.contains(.selected) }.count
+        XCTAssertEqual(before, 1, "one chart as a table")
+        for state: DuoState in [.innerLandscape(), .outer, .innerLandscape()] {
+            try await host.set(state)
+            let now = try await host.elements().filter { $0.accessibilityLabel == "Table" && $0.accessibilityTraits.contains(.selected) }.count
+            XCTAssertEqual(now, 1, "the chart still a table in \(state)")
+        }
+    }
+
+    /// A fold hands the row at the top between the one column and the pane that scrolls the content (§4). Macros: a
+    /// chart well down the trailing pane, not its first row, so a pane opening at its top fails. The off page: its last
+    /// card, which the one column shows at its end and the pane, where both cards fit, shows whole. (With the made-up
+    /// day, Today's journal and the Log's add card are the last rows and can't reach the top of the one column; the
+    /// Log's pane has that one row.)
+    func testAFoldKeepsTheRowAtTheTop() async throws {
+        let cases: [(String, () throws -> AnyView, String)] = [
+            ("Macros", { AnyView(self.page(.macros, try self.dashboard(), try self.reads())) }, "Sugar"),
+            ("Off", { AnyView(try self.offPage()) }, "What stays private"),
+        ]
+        for (name, make, row) in cases {
+            let host = try await DuoHost(try make(), as: .outer)
+            defer { host.close() }
+            let scroll = try XCTUnwrap(Self.scrollViews(in: host.window).filter { $0.contentSize.height > $0.bounds.height }
+                .max { $0.bounds.height < $1.bounds.height }, "\(name): the page's scroll view")
+            let start = try await headerFrame(row, host)
+            let end = scroll.contentSize.height + scroll.adjustedContentInset.bottom - scroll.bounds.height
+            DuoScrollTests.drag(scroll, by: min(start.minY - scroll.convert(scroll.bounds, to: nil).minY - 8, end - scroll.contentOffset.y))
+            try await host.settle()
+            try await assertNearTop(row, host, "\(name), one column", strict: name == "Macros")
+            try await host.set(.innerLandscape())
+            let unfolded = try await assertNearTop(row, host, "\(name), unfolded", strict: name == "Macros")
+            XCTAssertGreaterThan(unfolded.minX, 475.5, "\(name): on the trailing side")
+            try await host.set(.outer)
+            try await assertNearTop(row, host, "\(name), folded again", strict: name == "Macros")
+        }
     }
 
     // MARK: Helpers
+
+    private func activate(_ label: String, _ host: DuoHost) async throws {
+        let element = try await host.elements().first { $0.accessibilityLabel == label }
+        XCTAssertTrue(try XCTUnwrap(element, label).accessibilityActivate(), label)
+        try await host.settle()
+    }
+
+    private func type(_ text: String, into field: UITextField, _ host: DuoHost) async throws {
+        field.becomeFirstResponder()
+        field.insertText(text)
+        try await host.settle()
+    }
+
+    /// The frame (window points) of the header `label`, the lowest if there are several.
+    private func headerFrame(_ label: String, _ host: DuoHost) async throws -> CGRect {
+        let found = try await host.elements().filter { $0.accessibilityLabel == label && $0.accessibilityTraits.contains(.header) }
+        return try XCTUnwrap(found.map(\.accessibilityFrame).max { $0.minY < $1.minY }, "the header \(label)")
+    }
+
+    /// The header sits just under the top of the scroll view it's in: the row was handed over. Or, where the scroll view
+    /// can't bring it that far (not `strict`), the scroll view is at its end with the header in view.
+    @discardableResult
+    private func assertNearTop(_ label: String, _ host: DuoHost, _ what: String, strict: Bool = false) async throws -> CGRect {
+        let frame = try await headerFrame(label, host)
+        let scroll = try XCTUnwrap(Self.scrollViews(in: host.window).filter {
+            let f = $0.convert($0.bounds, to: nil)
+            return f.height > 200 && f.minX <= frame.midX && f.maxX >= frame.midX && f.minY <= frame.minY
+        }.max { $0.bounds.height < $1.bounds.height }, "\(what): the scroll view")
+        let shown = scroll.convert(scroll.bounds, to: nil)
+        let top = shown.minY + scroll.adjustedContentInset.top
+        let end = max(-scroll.adjustedContentInset.top, scroll.contentSize.height + scroll.adjustedContentInset.bottom - scroll.bounds.height)
+        if !strict, scroll.contentOffset.y >= end - 1, frame.maxY <= shown.maxY - scroll.adjustedContentInset.bottom + 1 {
+            XCTAssertGreaterThanOrEqual(frame.minY, top - 1, "\(what): \(label) in view")
+            return frame
+        }
+        XCTAssertGreaterThanOrEqual(frame.minY, top - 1, "\(what): \(label) at \(frame.minY), the top at \(top)")
+        XCTAssertLessThan(frame.minY, top + 80, "\(what): \(label) at \(frame.minY), the top at \(top)")
+        return frame
+    }
+
+    /// A text field showing `text` (or empty, with `placeholder`).
+    static func textField(_ text: String, placeholder: String? = nil, in view: UIView) -> UITextField? {
+        if let field = view as? UITextField, (field.text ?? "") == text, placeholder == nil || field.placeholder == placeholder { return field }
+        for sub in view.subviews { if let found = textField(text, placeholder: placeholder, in: sub) { return found } }
+        return nil
+    }
+
+    static func segments(in view: UIView) -> UISegmentedControl? {
+        if let s = view as? UISegmentedControl { return s }
+        for sub in view.subviews { if let found = segments(in: sub) { return found } }
+        return nil
+    }
 
     /// The composer: a text view (TextField with a vertical axis), the one whose identifier is nutritionComposer.
     static func composer(in view: UIView) -> UITextView? {
@@ -321,11 +481,41 @@ final class VoiceNoteHoldTests: XCTestCase {
         XCTAssertEqual(voice.state, .idle)
         XCTAssertEqual(recorder.stopped, 0, "the recording is never read")
         XCTAssertEqual(recorder.cancelled, 1, "it's thrown away")
-        XCTAssertEqual(voice.error, VoiceNote.stoppedWords)
+        // On any iPhone a scroll can take the touch: the line says what happened, not that the screen changed.
+        XCTAssertEqual(voice.error, VoiceNote.touchTakenWords)
         voice.release()
         await settle(voice)
         XCTAssertEqual(sent(), 0)
-        XCTAssertEqual(voice.error, "Stopped when the screen changed. Hold to talk again.")
+        XCTAssertEqual(voice.error, "Stopped before you let go, so nothing was sent. Hold to talk again.")
+    }
+
+    /// A fold that takes the touch: whichever comes first, the touch's end or the size change, the line says it was the
+    /// screen, and nothing is sent.
+    func testAFoldThatTakesTheTouchSaysTheScreenChanged() async {
+        for touchFirst in [true, false] {
+            let (voice, _, clock, sent) = note()
+            await voice.start(.press)
+            clock.now = clock.now.addingTimeInterval(3)
+            if touchFirst {
+                voice.holdCancelled()
+                voice.screenChanged()
+            } else {
+                voice.screenChanged()
+                voice.holdCancelled()
+            }
+            voice.release()
+            await settle(voice)
+            XCTAssertEqual(voice.error, VoiceNote.stoppedWords, "touch first: \(touchFirst)")
+            XCTAssertEqual(sent(), 0)
+        }
+        // A size change long after a scroll took the touch leaves the scroll's words.
+        let (voice, _, clock, _) = note()
+        await voice.start(.press)
+        clock.now = clock.now.addingTimeInterval(3)
+        voice.holdCancelled()
+        clock.now = clock.now.addingTimeInterval(5)
+        voice.screenChanged()
+        XCTAssertEqual(voice.error, VoiceNote.touchTakenWords)
     }
 
     /// A fold or unfold mid-note: thrown away, and the finger lifting after it sends nothing; held or from VoiceOver.

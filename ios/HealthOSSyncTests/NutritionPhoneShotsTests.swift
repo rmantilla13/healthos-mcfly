@@ -40,10 +40,11 @@ final class NutritionPhoneShotsTests: XCTestCase {
         return try Data(contentsOf: url)
     }
 
-    private func dashboard() throws -> Dashboard {
+    private func dashboard(on: Bool = true) throws -> Dashboard {
         let d = Dashboard()
         d.phase = .ready
-        d.apply(status: try JSONDecoder().decode(ServerStatus.self, from: Data(#"{"settings":{"nutrition":true,"nutritionNumbers":"all"}}"#.utf8)))
+        let settings = on ? #"{"settings":{"nutrition":true,"nutritionNumbers":"all"}}"# : #"{"settings":{"nutrition":false}}"#
+        d.apply(status: try JSONDecoder().decode(ServerStatus.self, from: Data(settings.utf8)))
         return d
     }
 
@@ -67,11 +68,22 @@ final class NutritionPhoneShotsTests: XCTestCase {
         }
     }
 
-    private func draw(_ tab: NutritionTab, dark: Bool, size: DynamicTypeSize, height: CGFloat, menu: Bool = false) async throws {
-        let d = try dashboard()
+    /// Nutrition off: the page that turns it on, whole.
+    func testTheOffPage() async throws {
+        for dark in [false, true] {
+            for size: DynamicTypeSize in [.large, .accessibility5] {
+                try await draw(.today, dark: dark, size: size, height: size == .large ? 1600 : 4000, off: true)
+            }
+        }
+    }
+
+    private func draw(_ tab: NutritionTab, dark: Bool, size: DynamicTypeSize, height: CGFloat, menu: Bool = false, off: Bool = false) async throws {
+        let d = try dashboard(on: !off)
         if tab != .today { d.open(AppRoute(.nutrition, query: ["tab": tab.rawValue])) }
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        let host = UIHostingController(rootView: AnyView(NutritionScreen().environment(d).environment(\.dynamicTypeSize, size)))
+        // The off page turns Nutrition on through the app's sync (AppModel).
+        let screen = NutritionScreen().environment(d).environment(\.dynamicTypeSize, size)
+        let host = UIHostingController(rootView: off ? AnyView(screen.environment(AppModel())) : AnyView(screen))
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(x: 0, y: 0, width: 402, height: height)
         window.overrideUserInterfaceStyle = dark ? .dark : .light
@@ -89,7 +101,7 @@ final class NutritionPhoneShotsTests: XCTestCase {
         let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
             _ = window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
         }
-        let name = "\(menu ? "plus-menu" : tab.rawValue)-\(dark ? "dark" : "light")\(size == .large ? "" : "-ax5").png"
+        let name = "\(off ? "off" : menu ? "plus-menu" : tab.rawValue)-\(dark ? "dark" : "light")\(size == .large ? "" : "-ax5").png"
         try XCTUnwrap(image.pngData()).write(to: folder.appendingPathComponent(name))
     }
 }
