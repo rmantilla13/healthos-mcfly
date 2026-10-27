@@ -338,13 +338,11 @@ struct AppleCard: View {
     var body: some View {
         let apple = status.apple
         let busy = IntegrationsRules.appleBusy(apple)
-        SourceCard(tile: "⌘", title: IntegrationsWords.appleTitle, chip: IntegrationsRules.appleChip(apple, hosted: hosted),
+        SourceCard(tile: "⌘", title: IntegrationsWords.appleTitle, chip: IntegrationsRules.appleChip(apple),
                    showsActions: IntegrationsRules.showsRemoveApple(apple)) {
             Text(IntegrationsWords.appleBody)
             SourceState(text: IntegrationsWords.appleExportOnMac + (hosted && status.user?.role == "admin" ? " " + IntegrationsWords.appleAdminImport : ""))
-            if let last = apple?.lastImport, let ago = IntegrationsWords.ago(last.importedAt) {
-                SourceState(text: "Imported \(ago)")
-            }
+            if let line = IntegrationsRules.appleImportState(apple) { SourceState(text: line) }
             if busy {
                 SourceState(text: apple?.job?.state == "uploading" ? IntegrationsWords.appleUploading
                             : IntegrationsWords.appleReading(Int(apple?.job?.records ?? 0).formatted()))

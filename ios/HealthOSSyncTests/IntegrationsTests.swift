@@ -154,11 +154,12 @@ final class IntegrationsTests: XCTestCase {
 
     func testAppleChipAndWhenRemoveShows() throws {
         let phone = try apple(#"{"lastSync":{"syncedAt":"2026-10-27T10:00:00Z"},"job":{"state":"idle"}}"#)
-        XCTAssertEqual(IntegrationsRules.appleChip(phone, hosted: true).text, "Syncing from iPhone")
-        XCTAssertEqual(IntegrationsRules.appleChip(try apple(#"{"iphoneToken":true}"#), hosted: true).text, "Syncing from iPhone")
-        XCTAssertEqual(IntegrationsRules.appleChip(try apple(#"{"job":{"state":"parsing"}}"#), hosted: false).text, "Importing…")
-        XCTAssertEqual(IntegrationsRules.appleChip(try apple(#"{"job":{"state":"idle"}}"#), hosted: true).text, "Ready to connect")
-        XCTAssertEqual(IntegrationsRules.appleChip(try apple(#"{"job":{"state":"idle"}}"#), hosted: false).text, "File import available")
+        XCTAssertEqual(IntegrationsRules.appleChip(phone).text, "Syncing from iPhone")
+        XCTAssertEqual(IntegrationsRules.appleChip(try apple(#"{"iphoneToken":true}"#)).text, "Syncing from iPhone")
+        XCTAssertEqual(IntegrationsRules.appleChip(try apple(#"{"job":{"state":"parsing"}}"#)).text, "Importing…")
+        XCTAssertEqual(IntegrationsRules.appleChip(try apple(#"{"job":{"state":"idle"}}"#)).text, "Ready to connect")
+        // The iPhone's: no "File import available" on a local server either, since the card has no import (the Mac's).
+        XCTAssertEqual(IntegrationsRules.appleChip(try apple(#"{"job":{"state":"idle"},"lastSync":null}"#)).text, "Ready to connect")
         // Remove shows while the server holds Apple Health data: the iPhone's sync counts, not only an export's import.
         XCTAssertTrue(IntegrationsRules.showsRemoveApple(phone))
         XCTAssertTrue(IntegrationsRules.showsRemoveApple(try apple(#"{"lastImport":{"importedAt":"2026-10-01T10:00:00Z"}}"#)))
@@ -166,6 +167,21 @@ final class IntegrationsTests: XCTestCase {
                        "not while an export import runs (the server answers 409)")
         XCTAssertFalse(IntegrationsRules.showsRemoveApple(try apple(#"{"iphoneToken":true}"#)), "a token, but nothing sent yet")
         XCTAssertFalse(IntegrationsRules.showsRemoveApple(nil), "no status part: nothing said")
+    }
+
+    /// The web's line: "Imported {ago} · {N} records · {Mon YYYY – Mon YYYY}".
+    func testAppleImportSaysItsRecordsAndSpan() throws {
+        let now = ISO8601DateFormatter.lenient("2026-10-27T12:00:00Z")!
+        let full = try apple(#"{"lastImport":{"records":12345,"days":40,"workouts":3,"firstDate":"2021-03-02","lastDate":"2026-10-20","importedAt":"2026-10-27T10:00:00Z"}}"#)
+        let span = try XCTUnwrap(IntegrationsWords.span("2021-03-02", "2026-10-20"))
+        XCTAssertEqual(IntegrationsRules.appleImportState(full, now: now), "Imported 2 h ago · \(12345.formatted()) records · \(span)")
+        let noDays = try apple(#"{"lastImport":{"records":1,"firstDate":null,"lastDate":null,"importedAt":"2026-10-27T11:55:00Z"}}"#)
+        XCTAssertEqual(IntegrationsRules.appleImportState(noDays, now: now), "Imported 5 min ago · 1 records")
+        let older = try apple(#"{"lastImport":{"importedAt":"2026-10-27T11:59:50Z"}}"#)
+        XCTAssertEqual(IntegrationsRules.appleImportState(older, now: now), "Imported just now", "an older server's import says what it sent")
+        XCTAssertNil(IntegrationsRules.appleImportState(try apple(#"{"lastImport":null}"#), now: now))
+        let page = try web("src/pages/Integrations.tsx")
+        XCTAssertTrue(page.contains("Imported {ago(a.lastImport.importedAt)} · {fmt(a.lastImport.records)} records"), "the web's line")
     }
 
     func testAppleStaleOnlyOnTheHostedServer() throws {
@@ -513,8 +529,9 @@ final class IntegrationsDuoTests: XCTestCase {
         }
     }
 
-    /// A fold changes the grid's columns only; the model is above the page (P4), so the token shown once, the open
-    /// disclosure and a question being asked stay, and the page doesn't read the status again.
+    /// A fold swaps the panes for one column and back; the model is above the page (P4), so the token shown once and
+    /// the open disclosure stay, a question being asked may close but is never answered (P10), and the page doesn't
+    /// read the status again.
     func testStateSurvivesAFold() async throws {
         let model = IntegrationsModel()
         model.asking = .removeApple
@@ -528,15 +545,19 @@ final class IntegrationsDuoTests: XCTestCase {
             XCTAssertTrue(labels.contains("Token, shown only now"), "the token shown once, in \(state)")
             XCTAssertTrue(labels.contains("Copy token"), "\(state)")
             XCTAssertFalse(labels.contains(Self.madeUpToken), "a secret isn't in the accessibility tree")
-            XCTAssertEqual(model.asking, .removeApple, "the question stays up, in \(state)")
+            // P10 (design.md §4): a confirmation dialog stays on the button that opens it, its anchor at regular width,
+            // so a fold that swaps the panes may close it (accepted: one tap opens it again). Closing never answers it.
+            XCTAssertTrue(model.asking == nil || model.asking == .removeApple, "\(state)")
+            XCTAssertFalse(model.isBusy(.appleRemove), "a closed question removes nothing, in \(state)")
             XCTAssertTrue(model.phoneSetupOpen, "\(state)")
         }
         XCTAssertEqual(reads.n, readsBefore, "no read again for a fold")
     }
 
-    /// The open Duo in landscape: the intro on the leading side, the source cards two a row, one each side of the fold
-    /// (WHOOP | Fitbit, then Apple | the note), none across it. Upright and outer: one column, the web's order.
-    func testTheSourcesGoOneEachSideOfTheFold() async throws {
+    /// The open Duo in landscape (decisions.md Q5): the intro and Apple Watch / Health on the leading side, WHOOP and
+    /// Fitbit one row in the trailing side's two columns, the note under them, none across the fold. Upright and outer:
+    /// one column, the web's order.
+    func testTheLeadOnTheLeadingSideTheRestInTwoColumns() async throws {
         for bar: HorizontalEdge in [.trailing, .leading] {
             let state = DuoState.innerLandscape(bar: bar)
             let host = try await DuoHost(try page(Self.memberStatus), as: state)
@@ -550,12 +571,12 @@ final class IntegrationsDuoTests: XCTestCase {
             let whoop = try frame("WHOOP"), fitbit = try frame(IntegrationsWords.fitbitTitle)
             let apple = try frame(IntegrationsWords.appleTitle), note = try frame(IntegrationsWords.noteTitle)
             XCTAssertLessThan(title.maxX, fold.lowerBound, "\(state)")
-            XCTAssertLessThan(whoop.maxX, fold.lowerBound, "\(state)")
-            XCTAssertGreaterThan(fitbit.minX, fold.upperBound, "\(state)")
-            XCTAssertEqual(whoop.minY, fitbit.minY, accuracy: 1, "one row, \(state)")
             XCTAssertLessThan(apple.maxX, fold.lowerBound, "\(state)")
-            XCTAssertGreaterThan(note.minX, fold.upperBound, "\(state)")
-            XCTAssertGreaterThan(apple.minY, whoop.maxY, "\(state)")
+            XCTAssertGreaterThan(apple.minY, title.maxY, "\(state)")
+            for card in [whoop, fitbit, note] { XCTAssertGreaterThan(card.minX, fold.upperBound, "\(state)") }
+            XCTAssertEqual(whoop.minY, fitbit.minY, accuracy: 1, "one row of the trailing side's two columns, \(state)")
+            XCTAssertLessThan(whoop.maxX, fitbit.minX, "\(state)")
+            XCTAssertGreaterThan(note.minY, whoop.maxY, "\(state)")
         }
         for state: DuoState in [.outer, .innerPortrait()] {
             let host = try await DuoHost(try page(Self.memberStatus), as: state)
@@ -565,16 +586,44 @@ final class IntegrationsDuoTests: XCTestCase {
             let y = { (label: String) in elements.first { $0.accessibilityLabel == label }?.accessibilityFrame.minY ?? .infinity }
             XCTAssertLessThan(y(IntegrationsWords.title), y("WHOOP"), "\(state)")
             XCTAssertLessThan(y("WHOOP"), y(IntegrationsWords.fitbitTitle), "\(state)")
+            XCTAssertLessThan(y(IntegrationsWords.fitbitTitle), y(IntegrationsWords.appleTitle), "\(state)")
+            XCTAssertLessThan(y(IntegrationsWords.appleTitle), y(IntegrationsWords.noteTitle), "\(state)")
             XCTAssertEqual(x("WHOOP"), x(IntegrationsWords.fitbitTitle), accuracy: 1, "one column, \(state)")
         }
     }
 
-    /// The grid's cells follow the status: a server that doesn't name WHOOP or Fitbit moves nothing else.
-    func testTheGridHoldsWhatTheStatusNames() throws {
+    /// Set up this iPhone open with its token shown grows the Apple card: it stays on the leading side, which scrolls
+    /// on its own, while the other cards fill the trailing side, so neither side is left empty beside the other.
+    func testAnOpenSetUpKeepsBothSidesFilled() async throws {
+        for bar: HorizontalEdge in [.trailing, .leading] {
+            let state = DuoState.innerLandscape(bar: bar)
+            let host = try await DuoHost(try page(Self.memberStatus, setupOpen: true, token: true), as: state)
+            defer { host.close() }
+            let elements = try await host.elements()
+            func frame(_ label: String) throws -> CGRect {
+                try XCTUnwrap(elements.first { $0.accessibilityLabel == label }?.accessibilityFrame, label)
+            }
+            let fold = try XCTUnwrap(DuoFoldAssertions.band(state))
+            let token = try frame("Token, shown only now"), apple = try frame(IntegrationsWords.appleTitle)
+            XCTAssertLessThan(token.maxX, fold.lowerBound, "the token with its card, \(state)")
+            XCTAssertLessThan(apple.maxX, fold.lowerBound, "\(state)")
+            for label in ["WHOOP", IntegrationsWords.fitbitTitle, IntegrationsWords.noteTitle] {
+                XCTAssertGreaterThan(try frame(label).minX, fold.upperBound, "\(label) on the trailing side, \(state)")
+            }
+            XCTAssertLessThan(try frame("WHOOP").minY, apple.maxY, "the trailing side starts beside the lead, \(state)")
+        }
+    }
+
+    /// The cells follow the status: a server that doesn't name WHOOP or Fitbit moves nothing else; Apple Watch /
+    /// Health leads the open Duo's leading side, the rest go on the trailing side.
+    func testTheCellsHoldWhatTheStatusNames() throws {
         let all = try IntegrationsTests.status(Self.memberStatus)
-        XCTAssertEqual(IntegrationsCell.cells(all).map(\.rawValue), ["whoop", "fitbit", "apple", "aside"])
+        XCTAssertEqual(IntegrationsCell.cells(all).map(\.rawValue), ["whoop", "fitbit", "apple", "note"])
+        XCTAssertEqual(IntegrationsCell.trailing(all).map(\.rawValue), ["whoop", "fitbit", "note"])
+        let owner = try IntegrationsTests.status(Self.ownerStatus)
+        XCTAssertEqual(IntegrationsCell.trailing(owner).map(\.rawValue), ["whoop", "fitbit", "note", "demo"])
         let older = try IntegrationsTests.status(#"{"hosted":true,"apple":{"lastSync":null}}"#)
-        XCTAssertEqual(IntegrationsCell.cells(older).map(\.rawValue), ["apple", "aside"])
+        XCTAssertEqual(IntegrationsCell.cells(older).map(\.rawValue), ["apple", "note"])
     }
 
     /// A server without accounts has no Set up this iPhone.

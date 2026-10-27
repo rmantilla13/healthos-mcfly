@@ -5,8 +5,9 @@ import SwiftUI
 /// local server for its owner, the demo data. `query` is the web's (?whoop= after WHOOP's sign-in), applied again when
 /// the same link opens the page while it's up.
 ///
-/// On the open iPhone Duo (inner display in landscape) the cards go two a row, one each side of the fold, the intro on
-/// the leading side; everywhere else one column, in the web's order. Everything the page holds is in its model, above
+/// On the open iPhone Duo (inner display in landscape) the page takes decisions.md Q5's frame: the intro and Apple Watch /
+/// Health on the leading side of the fold, the other cards in two columns on the trailing side; everywhere else one
+/// column, in the web's order. Everything the page holds is in its model, above
 /// the DuoPage (P4): the token shown once, the dialogs and disclosures, what's running.
 struct IntegrationsScreen: View {
     var query: [String: String] = [:]
@@ -66,29 +67,49 @@ struct IntegrationsScreen: View {
     }
 }
 
-/// The page's content, one scroll in every state. Its cards go in one DuoGrid: one column on every iPhone, the outer
-/// display and the inner display upright (the web's single column below 1080 px), and two a row on the open Duo, one
-/// each side of the fold (WHOOP | Fitbit, then Apple | the note and the demo), so neither side is left empty while the
-/// other scrolls and no card crosses the fold. The intro and the banner keep to the leading side. Nothing here is
-/// rebuilt by a fold (no panes), so the scroll and every card's state stay; the rest is in the model, above (P4).
+/// The page's content. On every iPhone, the outer display and the inner display upright: one column in the web's order
+/// (the web's single column below 1080 px). On the open Duo held sideways, the no-picture frame (decisions.md Q5): the
+/// lead on the leading side of the fold (the intro, the banner and Apple Watch / Health, this iPhone's own source, with
+/// Set up this iPhone and the token shown once), scrolling on its own since the setup grows; the other sources, the
+/// note and the demo card on the trailing side, two columns that scroll together. No card crosses the fold, and an open
+/// setup leaves no side empty beside the other. Everything a fold's swap of panes would lose is in the model (P4); the
+/// confirmation dialogs stay on their buttons, their anchor at regular width, so a swap may close one (P10, accepted).
 private struct IntegrationsContent: View {
     let status: ServerStatus
     @Bindable var model: IntegrationsModel
 
     var body: some View {
-        DuoScroll {
+        DuoPanes(anchor: .secondary, leadScrolls: true) {
             VStack(alignment: .leading, spacing: 14) {
-                PageIntro(IntegrationsWords.title, sub: IntegrationsWords.sub)
-                    .padding(.bottom, 4)
-                    .duoOneSide()
-                if let banner = IntegrationsRules.banner(query: model.query, hosted: status.hosted ?? true, admin: status.user?.role == "admin") {
-                    IntegrationsBanner(text: banner.text, good: banner.good).duoOneSide()
-                }
-                DuoGrid(IntegrationsCell.cells(status), id: \.self, medium: 1) { cell in
+                lead
+                AppleCard(status: status, model: model).id(IntegrationsCell.apple.id)
+            }
+            .padding(.vertical, 16)
+        } secondary: {
+            VStack(alignment: .leading, spacing: 14) {
+                DuoGrid(IntegrationsCell.trailing(status), id: \.self, paneColumns: 2) { cell in
                     self.cell(cell).id(cell.id)
                 }
             }
+            .scrollTargetLayout()
             .padding(.vertical, 16)
+        } single: {
+            VStack(alignment: .leading, spacing: 14) {
+                lead
+                ForEach(IntegrationsCell.cells(status), id: \.self) { cell in
+                    self.cell(cell).id(cell.id)
+                }
+            }
+            .scrollTargetLayout()
+            .padding(.vertical, 16)
+        }
+    }
+
+    @ViewBuilder private var lead: some View {
+        PageIntro(IntegrationsWords.title, sub: IntegrationsWords.sub)
+            .padding(.bottom, 4)
+        if let banner = IntegrationsRules.banner(query: model.query, hosted: status.hosted ?? true, admin: status.user?.role == "admin") {
+            IntegrationsBanner(text: banner.text, good: banner.good)
         }
     }
 
@@ -100,29 +121,31 @@ private struct IntegrationsContent: View {
             if let fitbit = status.fitbit { FitbitCard(fitbit: fitbit, model: model) }
         case .apple:
             AppleCard(status: status, model: model)
-        case .aside:
-            VStack(alignment: .leading, spacing: 14) {
-                SourcesNote()
-                if IntegrationsRules.showsDemo(status) { DemoCard(status: status, model: model) }
-            }
-            .frame(maxHeight: .infinity, alignment: .top)
+        case .note:
+            SourcesNote()
+        case .demo:
+            DemoCard(status: status, model: model)
         }
     }
 }
 
-/// One cell of Integrations' grid, by a fixed id, so a source the server doesn't name moves nothing else.
+/// One card of Integrations, by a fixed id, so a source the server doesn't name moves nothing else.
 enum IntegrationsCell: String, Hashable {
-    case whoop, fitbit, apple, aside
+    case whoop, fitbit, apple, note, demo
     var id: String { "integrations.\(rawValue)" }
 
-    /// What the grid holds: the sources the status names, then the note (with the demo card under it).
+    /// The web's order: the sources the status names, the note, then (a local server's owner) the demo card.
     static func cells(_ status: ServerStatus) -> [IntegrationsCell] {
         var cells: [IntegrationsCell] = []
         if status.whoop != nil { cells.append(.whoop) }
         // Only where the status names it: a server older than the Fitbit import would answer its routes 404.
         if status.fitbit != nil { cells.append(.fitbit) }
         cells.append(.apple)
-        cells.append(.aside)
+        cells.append(.note)
+        if IntegrationsRules.showsDemo(status) { cells.append(.demo) }
         return cells
     }
+
+    /// The open Duo's trailing side: everything but Apple Watch / Health, which leads on the leading side.
+    static func trailing(_ status: ServerStatus) -> [IntegrationsCell] { cells(status).filter { $0 != .apple } }
 }

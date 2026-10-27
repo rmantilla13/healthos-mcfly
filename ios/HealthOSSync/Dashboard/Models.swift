@@ -824,7 +824,13 @@ struct ServerStatus: Codable {
 
     struct Apple: Codable {
         struct Sync: Codable { let syncedAt: String }
-        struct Import: Codable { let importedAt: String }
+        /// An export's import (shared/types.ts): its records and the days it spans are nil from older servers.
+        struct Import: Codable {
+            let importedAt: String
+            let records: Double?
+            let firstDate: String?
+            let lastDate: String?
+        }
         /// The Mac's export import while it runs (shared/types.ts ImportJob).
         struct Job: Codable {
             /// "idle" | "uploading" | "parsing" | "done" | "error"

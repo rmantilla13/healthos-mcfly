@@ -184,12 +184,23 @@ enum IntegrationsRules {
     /// The iPhone app is how this account syncs: it has a token, or the phone has sent something.
     static func phone(_ a: ServerStatus.Apple?) -> Bool { a?.iphoneToken == true || a?.lastSync != nil }
 
-    static func appleChip(_ a: ServerStatus.Apple?, hosted: Bool) -> Chip {
+    static func appleChip(_ a: ServerStatus.Apple?) -> Chip {
         if phone(a) { return Chip(text: "Syncing from iPhone", tone: .sage) }
         if appleBusy(a) { return Chip(text: "Importing…", tone: .muted) }
         if let last = a?.lastImport, let day = IntegrationsWords.shortDay(last.importedAt) { return Chip(text: "Imported \(day)", tone: .sage) }
-        // Hosted, the export import runs on the Mac only: the iPhone app is how Apple Health gets there.
-        return hosted ? Chip(text: "Ready to connect", tone: .peach) : Chip(text: "File import available", tone: .sage)
+        // The iPhone's, on every server: the web's local "File import available" offers its export import, which runs
+        // on the Mac (the card says so), so here, as on the hosted server, this iPhone app is how Apple Health gets there.
+        return Chip(text: "Ready to connect", tone: .peach)
+    }
+
+    /// "Imported 2 h ago · 12,345 records · Mar 2021 – Oct 2026", as the web's line; an older server's import without
+    /// its records or days says only what it sent.
+    static func appleImportState(_ a: ServerStatus.Apple?, now: Date = Date()) -> String? {
+        guard let last = a?.lastImport, let ago = IntegrationsWords.ago(last.importedAt, now: now) else { return nil }
+        var line = "Imported \(ago)"
+        if let records = last.records { line += " · \(Int(records.rounded()).formatted()) records" }
+        if let span = IntegrationsWords.span(last.firstDate, last.lastDate) { line += " · \(span)" }
+        return line
     }
 
     /// Hosted, an account that syncs from its iPhone and hasn't sent anything in a day.
