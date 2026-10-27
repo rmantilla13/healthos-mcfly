@@ -31,6 +31,12 @@ private struct DuoMenuSheet: ViewModifier {
 /// doesn't reach fields inside a NavigationStack). The stack draws no background of its own, so the sheet's
 /// presentation background (its gradient) shows through.
 struct DuoSheetStack<Content: View>: View {
+    /// Whether a sheet sits in the NavigationStack on this iOS (27.1 and later): only then can a bar of the sheet's own
+    /// hold Close. Drawn tests run on iOS 27.0 with a bar edge injected, so there SheetScaffold keeps its round ×.
+    static var stacks: Bool {
+        if #available(iOS 27.1, *) { true } else { false }
+    }
+
     private let content: Content
 
     init(@ViewBuilder content: () -> Content) {

@@ -272,6 +272,19 @@ final class DuoLayoutTests: XCTestCase {
         XCTAssertEqual(probe3.frames["phone"]?.width, 382 - 36)
     }
 
+    /// Drawn tests run on iOS 27.0, where a sheet has no NavigationStack, so a bar of its own can't hold Close: with the
+    /// outer display's bar edge injected, SheetScaffold keeps its round × (on the Duo, 27.1, Close is in the bar).
+    func testDrawnSheetsKeepTheirClose() async throws {
+        for state: DuoState in [.outer, .innerPortrait(), .innerLandscape()] {
+            let host = try await DuoHost(SheetScaffold(title: "T") { Text("body") }, as: state)
+            defer { host.close() }
+            let labels = try await host.elements().compactMap(\.accessibilityLabel)
+            XCTAssertTrue(labels.contains("Close"), "\(state): \(labels)")
+        }
+        let atLeast27_1 = ProcessInfo.processInfo.isOperatingSystemAtLeast(OperatingSystemVersion(majorVersion: 27, minorVersion: 1, patchVersion: 0))
+        XCTAssertEqual(DuoSheetStack<EmptyView>.stacks, atLeast27_1)
+    }
+
     func testChartHeight() {
         XCTAssertEqual(DuoBand.compact.chartHeight(200), 200)
         XCTAssertEqual(DuoBand.medium.chartHeight(200), 260)
