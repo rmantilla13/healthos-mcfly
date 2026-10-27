@@ -104,6 +104,11 @@ extension APIClient {
     func deleteJournal(id: String) async throws {
         _ = try await request("/journal/\(id)", method: "DELETE")
     }
+
+    /// Deletes every check-in (POST /api/journal/delete: the Journal page's "Delete all check-ins").
+    func deleteAllJournal() async throws {
+        _ = try await request("/journal/delete", method: "POST", body: Data("{}".utf8))
+    }
 }
 
 extension Dashboard {
@@ -119,4 +124,6 @@ extension Dashboard {
     }
 
     func deleteJournal(id: String) async throws { try await fetch { try await $0.deleteJournal(id: id) } }
+
+    func deleteAllJournal() async throws { try await fetch { try await $0.deleteAllJournal() } }
 }

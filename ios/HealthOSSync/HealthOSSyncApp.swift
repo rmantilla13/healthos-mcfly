@@ -19,7 +19,10 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        AppShell()
+        shell
+            // iPhone Duo: the vertical bar's edge for the shell (More's symbol), and the Debug display log and fold
+            // overlay (-duoLogDisplay, -duoShowFold; Shell/Duo/DuoBarEdge.swift).
+            .readsDuoBarEdge()
             .environment(dashboard)
             .environment(sync)
             // DM Sans for any text that doesn't set its own font (Form rows, labels, fields), and the web's green switches.
@@ -61,6 +64,15 @@ struct RootView: View {
                     await dashboard.refreshIfChanged(includeStatus: false)
                 }
             }
+    }
+
+    /// The app; in Debug builds launched with `-duoTestPage YES`, the iPhone Duo's test page in its place (G4–G6).
+    @ViewBuilder private var shell: some View {
+        #if DEBUG
+        if DuoTestPage.requested { DuoTestPage() } else { AppShell() }
+        #else
+        AppShell()
+        #endif
     }
 
     private func openDigestIfTapped() {

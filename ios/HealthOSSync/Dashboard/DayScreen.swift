@@ -23,54 +23,105 @@ struct DayScreen: View {
     var body: some View {
         // The server's today wins (the person's time zone), then the summary's, then the phone's.
         let today = data?.today ?? dashboard.summary?.today ?? Day.today()
-        let current = picked ?? today
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                header(current: current, today: today)
-                if let data, !data.metrics.isEmpty {
-                    let stale = data.date != current
-                    VStack(spacing: 14) {
-                        if let s = data.steps { HoursCard(metric: .steps, series: s, data: data, goal: dashboard.stepGoal) }
-                        if let e = data.activeEnergy { HoursCard(metric: .energy, series: e, data: data) }
-                        if let hr = data.heartRate { HoursCard(metric: .heart, series: hr, data: data) }
-                    }
-                    .opacity(stale ? 0.6 : 1)
-                    .animation(.easeInOut(duration: 0.2), value: stale)
-                } else if let error {
-                    Unavailable("Couldn't load this day", systemImage: "chart.xyaxis.line", description: error)
-                } else if loaded {
-                    Text("No hourly readings yet. They come from the healthOS app on your iPhone, after a sync.")
-                        .font(.app(.footnote)).foregroundStyle(Palette.ink3)
-                        .card()
-                } else {
-                    ProgressView().frame(maxWidth: .infinity, minHeight: 200)
+        // The day, its loaders and the date it shows live here, above the page's panes (P4): a fold that swaps the open
+        // Duo's two panes for one column (or back) rebuilds neither.
+        DayPage(current: picked ?? today, today: today, data: data, loaded: loaded, error: error, goal: dashboard.stepGoal) { picked = $0 }
+            .background(Palette.page)
+            .navigationTitle("Day")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(.visible, for: .navigationBar)
+            .refreshable { await dashboard.load() }
+            .task(id: "\(picked ?? "today")|\(dashboard.generation)") {
+                do {
+                    data = try await dashboard.day(date: picked)
+                    error = nil
+                } catch {
+                    // A fetch cancelled by stepping to another day isn't an error.
+                    guard !Task.isCancelled else { return }
+                    self.error = error.localizedDescription
+                    data = nil
                 }
+                loaded = true
             }
-            .padding(16)
-        }
-        .background(Palette.page)
-        .navigationTitle("Day")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.visible, for: .navigationBar)
-        .refreshable { await dashboard.load() }
-        .task(id: "\(picked ?? "today")|\(dashboard.generation)") {
-            do {
-                data = try await dashboard.day(date: picked)
-                error = nil
-            } catch {
-                // A fetch cancelled by stepping to another day isn't an error.
-                guard !Task.isCancelled else { return }
-                self.error = error.localizedDescription
-                data = nil
+    }
+}
+
+/// The Day view's page, from what DayScreen loaded (drawn tests draw it from a fixture). One column on every iPhone, the
+/// outer display and the inner display upright, the charts 1.3 × taller upright (`duoChartHeight`). On the open iPhone
+/// Duo held sideways (decisions.md Q5), the page's lead on the leading side of the fold, the date with its previous and
+/// next and the day's readings in short, staying put; the hourly charts on the trailing side, each across that side's
+/// two columns, since a chart you scrub needs the width.
+struct DayPage: View {
+    let current: String
+    let today: String
+    let data: DayData?
+    let loaded: Bool
+    let error: String?
+    var goal: Double?
+    /// Another day picked: nil is today.
+    let pick: (String?) -> Void
+
+    var body: some View {
+        DuoPage { _ in
+            DuoPanes(anchor: .secondary) {
+                VStack(alignment: .leading, spacing: 14) {
+                    header.id("day.header")
+                    if let data, !data.metrics.isEmpty { DaySummaryCard(data: data).id("day.summary") }
+                }
+                .padding(.vertical, 16)
+            } secondary: {
+                VStack(alignment: .leading, spacing: 14) { cards }
+                    .scrollTargetLayout()
+                    .padding(.vertical, 16)
+            } single: {
+                VStack(alignment: .leading, spacing: 14) {
+                    header.id("day.header")
+                    cards
+                }
+                .scrollTargetLayout()
+                .padding(.vertical, 16)
             }
-            loaded = true
         }
     }
 
-    private func header(current: String, today: String) -> some View {
+    private var header: some View {
+        DayHeader(current: current, today: today, pick: pick)
+    }
+
+    /// The charts, or what stands in for them; each a row of its own (by id) for the fold's scroll handoff.
+    @ViewBuilder private var cards: some View {
+        if let data, !data.metrics.isEmpty {
+            let stale = data.date != current
+            Group {
+                if let s = data.steps { HoursCard(metric: .steps, series: s, data: data, goal: goal).id("day.steps") }
+                if let e = data.activeEnergy { HoursCard(metric: .energy, series: e, data: data).id("day.energy") }
+                if let hr = data.heartRate { HoursCard(metric: .heart, series: hr, data: data).id("day.heart") }
+            }
+            .opacity(stale ? 0.6 : 1)
+            .animation(.easeInOut(duration: 0.2), value: stale)
+        } else if let error {
+            Unavailable("Couldn't load this day", systemImage: "chart.xyaxis.line", description: error).id("day.state")
+        } else if loaded {
+            Text("No hourly readings yet. They come from the healthOS app on your iPhone, after a sync.")
+                .font(.app(.footnote)).foregroundStyle(Palette.ink3)
+                .card()
+                .id("day.state")
+        } else {
+            ProgressView().frame(maxWidth: .infinity, minHeight: 200).id("day.state")
+        }
+    }
+}
+
+/// The day's date, how long ago it was, and previous and next (never past today), with Back to today.
+private struct DayHeader: View {
+    let current: String
+    let today: String
+    let pick: (String?) -> Void
+
+    var body: some View {
         let isToday = current >= today
         let ago = Fmt.daysBetween(current, today)
-        return VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 2) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(Fmt.day(current, "EEEEMMMd")).font(.app(.title2, weight: .semibold)).foregroundStyle(Palette.ink)
@@ -78,11 +129,11 @@ struct DayScreen: View {
                 }
                 Spacer()
                 Group {
-                    Button { step(current, -1, today: today) } label: {
+                    Button { step(-1) } label: {
                         Image(systemName: "chevron.left").frame(width: 44, height: 44)
                     }
                     .accessibilityLabel("Previous day")
-                    Button { step(current, 1, today: today) } label: {
+                    Button { step(1) } label: {
                         Image(systemName: "chevron.right").frame(width: 44, height: 44)
                     }
                     .disabled(isToday)
@@ -92,14 +143,39 @@ struct DayScreen: View {
                 .buttonStyle(.plain)
             }
             if !isToday {
-                Button("Back to today") { picked = nil }.font(.app(.footnote))
+                Button("Back to today") { pick(nil) }.font(.app(.footnote))
             }
         }
     }
 
-    private func step(_ current: String, _ days: Int, today: String) {
+    private func step(_ days: Int) {
         let next = Day.add(current, days)
-        picked = next >= today ? nil : next
+        pick(next >= today ? nil : next)
+    }
+}
+
+/// The open Duo's lead for the Day view (Q5): each of the day's readings in a line, its value and its note, beside the
+/// charts. Only shown in the leading pane; the charts carry the same numbers everywhere else.
+private struct DaySummaryCard: View {
+    let data: DayData
+
+    var body: some View {
+        let rows: [(HourMetric, DaySeries)] = [(.steps, data.steps), (.energy, data.activeEnergy), (.heart, data.heartRate)]
+            .compactMap { metric, series in series.map { (metric, $0) } }
+        VStack(alignment: .leading, spacing: 12) {
+            Text(data.date >= data.today ? "Today so far" : "The day").font(.app(.headline)).foregroundStyle(Palette.ink)
+            ForEach(rows, id: \.0.title) { metric, series in
+                let reading = DayReading(metric: metric, series: series, data: data)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(metric.title).font(.app(.subheadline, weight: .medium)).foregroundStyle(Palette.ink2)
+                    Text(reading.value.map(metric.format) ?? "—").font(.app(.title3, weight: .semibold)).foregroundStyle(Palette.ink).monospacedDigit()
+                    Text(reading.note).font(.app(.caption)).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
+                }
+                .accessibilityElement(children: .combine)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .card()
     }
 }
 
@@ -311,7 +387,7 @@ private struct HoursCard: View {
             Text(reading.note).font(.app(.caption)).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
             if reading.through != nil, DayMath.extent(reading.shown, series.typical) != nil {
                 HoursChart(metric: metric, series: series, reading: reading, goal: goal, label: "\(metric.title) by hour, \(dayLabel)")
-                    .frame(height: 200)
+                    .duoChartHeight(200)
                     .padding(.top, 6)
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 14) { legend(dayLabel) }

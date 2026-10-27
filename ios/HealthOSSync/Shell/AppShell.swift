@@ -6,6 +6,8 @@ import SwiftUI
 /// menu and the server's web pages.
 struct AppShell: View {
     @Environment(Dashboard.self) private var dashboard
+    /// Where the system puts a vertical bar (iPhone Duo), read at the root (readsDuoBarEdge): More's symbol there.
+    @Environment(\.duoBarEdge) private var barEdge
     /// The account menu's choice, done once the menu has gone.
     @State private var chosen: AccountMenuItem?
 
@@ -48,10 +50,12 @@ struct AppShell: View {
         return TabView(selection: $dashboard.tab) {
             ForEach(AppTab.bar, id: \.self) { tab in
                 TabRoot(tab: tab)
-                    .tabItem { Label(tab.title, systemImage: tab.symbol) }
+                    // In a vertical bar More's ellipsis would read as the system's overflow menu (O3).
+                    .tabItem { Label(tab.title, systemImage: tab.symbol(verticalBar: barEdge != nil)) }
                     .tag(tab)
             }
         }
+        .duoVerticalBarControl()
         .sheet(item: $dashboard.metricSheet) { MetricSheetView(request: $0) }
         .sheet(item: $dashboard.webPage) { SafariView(url: $0.url).ignoresSafeArea() }
         .sheet(isPresented: $dashboard.accountMenuOpen, onDismiss: {
@@ -63,6 +67,8 @@ struct AppShell: View {
                 dashboard.accountMenuOpen = false
             }
         }
+        // Search (slice S's), from the toolbar's Search item, which shows only once SearchScreen is ready.
+        .sheet(isPresented: $dashboard.searchOpen) { SearchScreen() }
     }
 }
 

@@ -8,22 +8,26 @@ struct MoreScreen: View {
 
     var body: some View {
         let pages = dashboard.morePages
-        ScrollView {
-            VStack(alignment: .leading, spacing: 10) {
-                Eyebrow("More").padding(.horizontal, 6)
-                VStack(spacing: 0) {
-                    ForEach(Array(pages.enumerated()), id: \.element) { index, page in
-                        NavigationLink(value: AppRoute(page)) {
-                            MoreRow(page: page, divider: index < pages.count - 1)
+        // One column, as on the phone: full width upright on the open iPhone Duo, and on the leading side of the fold when
+        // it's open sideways (§7), where nothing tappable meets the fold.
+        DuoPage(side: .leadingOfFold) { _ in
+            DuoScroll {
+                VStack(alignment: .leading, spacing: 10) {
+                    Eyebrow("More").padding(.horizontal, 6)
+                    VStack(spacing: 0) {
+                        ForEach(Array(pages.enumerated()), id: \.element) { index, page in
+                            NavigationLink(value: AppRoute(page)) {
+                                MoreRow(page: page, divider: index < pages.count - 1)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("more.\(page.rawValue)")
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("more.\(page.rawValue)")
                     }
+                    .padding(.horizontal, 8)
+                    .background { CardSurface(shape: RoundedRectangle(cornerRadius: Radius.card, style: .continuous)) }
                 }
-                .padding(.horizontal, 8)
-                .background { CardSurface(shape: RoundedRectangle(cornerRadius: Radius.card, style: .continuous)) }
+                .padding(.vertical, 16)
             }
-            .padding(16)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Palette.page)
