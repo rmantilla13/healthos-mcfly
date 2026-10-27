@@ -20,6 +20,9 @@ struct RootView: View {
 
     var body: some View {
         shell
+            // iPhone Duo: the vertical bar's edge for the shell (More's symbol), and the Debug display log and fold
+            // overlay (-duoLogDisplay, -duoShowFold; Shell/Duo/DuoBarEdge.swift).
+            .readsDuoBarEdge()
             .environment(dashboard)
             .environment(sync)
             // DM Sans for any text that doesn't set its own font (Form rows, labels, fields), and the web's green switches.
