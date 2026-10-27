@@ -62,6 +62,19 @@ final class VitalsFixtures {
             })
     }
 
+    /// The iPhone's own metrics added to the trends answer (made-up readings on the same nights as resting heart rate).
+    func addPhoneMetrics() {
+        let nights = (trendsReply["resting_hr"] ?? []).map(\.date)
+        func series(_ base: Double, _ step: Double) -> [Point] {
+            nights.enumerated().map { Point(date: $0.element, value: base + Double($0.offset % 5) * step) }
+        }
+        trendsReply["blood_pressure_systolic"] = series(118, 2)
+        trendsReply["blood_pressure_diastolic"] = series(76, 1)
+        trendsReply["glucose"] = series(92, 3)
+        trendsReply["breathing_disturbances"] = series(3, 1)
+        tempReply = trendsReply
+    }
+
     /// A dashboard showing the demo summary and status, signed in on no server.
     func dashboard(range: Int = 30) -> Dashboard {
         let d = Dashboard()
@@ -93,6 +106,19 @@ final class VitalsTests: XCTestCase {
     }
 
     // MARK: Words
+
+    /// Each trend card's table, as Detail.tsx's Trend gives ChartCard: Date and the card's title, a row a reading, the
+    /// date with its year and the value as the card formats it.
+    func testATrendCardsTable() {
+        let trend = VitalsTrend(metric: "resting_hr", title: "Resting heart rate", points: points([52, 50]),
+                                format: { "\(Fmt.number($0)) bpm" })
+        let table = VitalsTrendCards.table(trend)
+        XCTAssertEqual(table.columns, ["Date", "Resting heart rate"])
+        XCTAssertEqual(table.rows.count, 2)
+        XCTAssertEqual(table.rows[1][1], "50 bpm")
+        XCTAssertEqual(table.rows[0][0], Fmt.day("2026-10-01", "yMMMd"))
+        XCTAssertTrue(table.rows[0][0].contains("2026"), "the date with its year")
+    }
 
     func testTheWordsAreTheWebs() throws {
         let detail = try VitalsFixtures.web("src/pages/Detail.tsx")
