@@ -82,6 +82,9 @@ struct SheetScaffold<Content: View, Footer: View>: View {
                         }
                     }
             }
+            // A keyboardDismissal() on this sheet's view asks for the keyboard's Done; inside the stack (27.1) the
+            // sheet puts it here, where its fields can reach it (Shell/Duo/DuoKeyboard.swift).
+            .duoSheetKeyboardDone()
         }
         .presentationDetents([.large])
         .presentationCornerRadius(Radius.sheet)
