@@ -235,6 +235,42 @@ final class MetricSheetDuoTests: XCTestCase {
         return nil
     }
 
+    // MARK: - A picked point doesn't outlive its range
+
+    /// The scroll-friendly pick stays when the finger lifts, so a new range's points clear it: a day picked in the
+    /// month, then the week shown in the same chart, draws the week as a fresh chart draws it, with nothing picked (no
+    /// tooltip on a day the person never picked, and the latest value's label back at the line's end). The bars' pick
+    /// is a date, so the week's latest day picked would carry into a shorter run that still holds it.
+    func testANewRangeClearsThePickedPoint() async throws {
+        let month = try fixture("metric-hrv-month")
+        let week = try fixture("metric-steps-week")
+        let line = { (points: [Point]) in
+            SheetTrendChart(points: points, format: SheetFormat(month), color: Palette.series1, label: "HRV", gapDays: 3, period: nil)
+        }
+        let bars = { (points: [Point]) in
+            SheetBarChart(points: points, format: SheetFormat(week), label: "Steps", period: nil, goal: week.goal)
+        }
+        try await assertNewPointsClearThePick(line, from: month.points, picking: 5, to: Array(month.points.suffix(7)), "the line")
+        try await assertNewPointsClearThePick(bars, from: week.points, picking: week.points.count - 1, to: Array(week.points.suffix(3)), "the bars")
+    }
+
+    /// Draws `chart` with `from`'s point at `index` picked, changes its points to `to` under the same hosted chart, and
+    /// compares that with a fresh chart of `to` that has nothing picked.
+    private func assertNewPointsClearThePick<Chart: View>(_ chart: @escaping ([Point]) -> Chart, from: [Point], picking index: Int,
+                                                          to: [Point], _ name: String) async throws {
+        let box = ChartPointsBox(from)
+        let picked = try await DuoHost(ChartPointsSwap(box: box, chart: chart).environment(\.sheetChartPicksPoint, index).padding(16), as: .outer)
+        defer { picked.close() }
+        let unpicked = try await DuoHost(ChartPointsSwap(box: ChartPointsBox(from), chart: chart).padding(16), as: .outer)
+        defer { unpicked.close() }
+        XCTAssertNotEqual(picked.image().pngData(), unpicked.image().pngData(), "\(name): the pick is drawn")
+        box.points = to
+        try await picked.settle()
+        let fresh = try await DuoHost(ChartPointsSwap(box: ChartPointsBox(to), chart: chart).padding(16), as: .outer)
+        defer { fresh.close() }
+        XCTAssertEqual(picked.image().pngData(), fresh.image().pngData(), "\(name): nothing picked once the points change")
+    }
+
     // MARK: - Folding keeps the sheet (P4, P14, D13)
 
     /// The sheet from the shell (MetricSheetView), its answers from a made-up server: a week picked, its table open,
@@ -343,6 +379,20 @@ private struct Presented<Sheet: View>: View {
         }
         .ignoresSafeArea()
     }
+}
+
+/// A chart's points, changed under the same hosted chart, as a new range changes them under the sheet's chart.
+@MainActor @Observable
+private final class ChartPointsBox {
+    var points: [Point]
+    init(_ points: [Point]) { self.points = points }
+}
+
+private struct ChartPointsSwap<Chart: View>: View {
+    let box: ChartPointsBox
+    let chart: ([Point]) -> Chart
+
+    var body: some View { chart(box.points) }
 }
 
 /// The centred sheet's rounded outline, which clips what's in it; at compact width nothing is clipped.

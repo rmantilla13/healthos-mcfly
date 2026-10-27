@@ -439,6 +439,9 @@ struct SheetTrendChart: View {
         .padding(.top, 20)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         .onAppear { if let picks, points.indices.contains(picks) { selected = x(points[picks]) } }
+        // The pick stays when the finger lifts (chartScrub), and the chart is the same across ranges, so a new range's
+        // points drop it rather than move it to a day the person never picked.
+        .onChange(of: points.map(\.date)) { selected = nil }
         .accessibilityLabel(plan.median.map { "\(label), median \(format.value($0))" } ?? label)
     }
 
@@ -587,6 +590,8 @@ struct SheetBarChart: View {
         .duoChartHeight(220)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         .onAppear { if let picks, points.indices.contains(picks) { selected = points[picks].date } }
+        // As the line's: a new range's bars drop the pick, even where they hold the picked day.
+        .onChange(of: points.map(\.date)) { selected = nil }
         .accessibilityLabel(mid.map { "\(label), median \(format.value($0))" } ?? label)
     }
 }
