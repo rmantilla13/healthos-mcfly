@@ -238,15 +238,20 @@ enum DuoSnapshot {
     }
 
     /// Draws `view` as the Duo shows it in `state`, and writes `<name>-<state>-<light|dark>[-<size>].png` when asked.
-    /// Asserts only that something was drawn.
+    /// Asserts that something was drawn, and on the open Duo in landscape that the leading pane didn't have to scroll.
     @discardableResult
     static func draw(_ view: some View, as state: DuoState, dark: Bool = false, typeSize: DynamicTypeSize = .large, name: String,
                      file: StaticString = #filePath, line: UInt = #line) async throws -> UIImage {
+        DuoStillPaneLog.scrolled = 0
         let host = try await DuoHost(view, as: state, dark: dark, typeSize: typeSize)
         defer { host.close() }
         let image = host.image()
         write(image, name: name, state: state, dark: dark, typeSize: typeSize)
         XCTAssertEqual(image.size, state.size, "\(name) \(state)", file: file, line: line)
+        // The open Duo's leading pane stays put: what a page puts there fits it, short of the accessibility sizes.
+        if case .innerLandscape = state, !typeSize.isAccessibilitySize {
+            XCTAssertEqual(DuoStillPaneLog.scrolled, 0, "\(name) \(state): the leading pane scrolls at \(typeSize)", file: file, line: line)
+        }
         return image
     }
 

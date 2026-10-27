@@ -676,7 +676,7 @@ private struct FoodInsightsCard: View {
 
 // MARK: - Macros
 
-/// Macros. On the open Duo (Q5) the average day and the days logged are its lead, beside the intro and the range; the
+/// Macros. On the open Duo (Q5) the average day is its lead, beside the intro and the range; the days logged, the
 /// nutrients' charts, which need the width, and the app choice are on the trailing side.
 struct NutritionMacros: View {
     let data: NutritionData
@@ -686,10 +686,9 @@ struct NutritionMacros: View {
         if data.days.isEmpty {
             if part.lead { FoodNothingLoggedCard().id("macros.nothing") }
         } else {
-            if part.lead {
-                FoodAverageCard(data: data).id("macros.average")
-                FoodLoggedCard(data: data).id("macros.logged")
-            }
+            if part.lead { FoodAverageCard(data: data).id("macros.average") }
+            // The days logged go first on the trailing side on the open Duo, so the leading side fits without scrolling.
+            if part.rest { FoodLoggedCard(data: data).id("macros.logged") }
             if part.rest { rest }
         }
     }
@@ -1196,6 +1195,8 @@ private struct FoodTableView: View {
 /// count as zero), and protein, carbs and fat by weight. In place of repeating the latest day, which Trends shows.
 struct FoodAverageCard: View {
     let data: NutritionData
+    /// In the open Duo's leading pane, which doesn't scroll: the ring over the values, three to a row.
+    @Environment(\.duoInPane) private var inPane
 
     /// Each nutrient's mean over the days it was logged.
     static func averages(_ days: [FoodDay]) -> [String: Double] {
@@ -1216,7 +1217,8 @@ struct FoodAverageCard: View {
             NutriCardHead(title: "Average day") {
                 Text("\(data.days.count) logged \(data.days.count == 1 ? "day" : "days") in the last \(span)").mutedSmall()
             }
-            let values = LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 16, alignment: .topLeading)], alignment: .leading, spacing: 12) {
+            // Three to a row in the open Duo's leading pane (it doesn't scroll), whichever side the bar is on.
+            let values = LazyVGrid(columns: [GridItem(.adaptive(minimum: inPane ? 88 : 120), spacing: inPane ? 12 : 16, alignment: .topLeading)], alignment: .leading, spacing: 12) {
                 ForEach(shown, id: \.self) { n in
                     VStack(alignment: .leading, spacing: 2) {
                         Text(FoodMath.name(n)).font(.app(.caption)).foregroundStyle(Palette.ink2)
@@ -1231,9 +1233,13 @@ struct FoodAverageCard: View {
                     .frame(width: 124, height: 124)
                     .accessibilityLabel("Average by weight: " + parts.map { "\($0.label.lowercased()) \($0.percent)%" }.joined(separator: ", "))
                 // Side by side where the values have room (.average-day-body wraps), else the ring over them.
-                ViewThatFits(in: .horizontal) {
-                    HStack(alignment: .center, spacing: 24) { donut; values.frame(minWidth: 220) }
+                if inPane {
                     VStack(alignment: .leading, spacing: 16) { donut; values }
+                } else {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(alignment: .center, spacing: 24) { donut; values.frame(minWidth: 220) }
+                        VStack(alignment: .leading, spacing: 16) { donut; values }
+                    }
                 }
             } else {
                 values
