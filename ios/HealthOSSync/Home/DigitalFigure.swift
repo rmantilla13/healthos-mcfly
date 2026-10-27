@@ -19,13 +19,15 @@ struct DigitalArt {
 
     var ratio: CGFloat { height / width }
 
-    /// The man (figures/digital-man.webp, 640×600), with Figure.tsx's MAN table.
+    /// The man (figures/digital-man.webp, 640×600), with Figure.tsx's MAN table, but the heart's label beside it on the
+/// right rather than across the body on the left.
     static let man = DigitalArt(
         asset: FigureVariant.man.assetName, width: 640, height: 600,
         spots: [
             .spo2: Spot(dot: CGPoint(x: 0.397, y: 0.2095), label: CGPoint(x: 0.016, y: 0.163), line: CGPoint(x: 0.094, y: 0.18), left: true),
             .breathing: Spot(dot: CGPoint(x: 0.495, y: 0.17), label: CGPoint(x: 0.92, y: 0.15), line: CGPoint(x: 0.909, y: 0.165), left: false),
-            .heart: Spot(dot: CGPoint(x: 0.534, y: 0.2505), label: CGPoint(x: 0.016, y: 0.28), line: CGPoint(x: 0.07, y: 0.297), left: true),
+            // On the chest's side, under breathing, so its line doesn't cross the body to a label on the other side.
+            .heart: Spot(dot: CGPoint(x: 0.534, y: 0.2505), label: CGPoint(x: 0.92, y: 0.28), line: CGPoint(x: 0.909, y: 0.297), left: false),
             .temp: Spot(dot: CGPoint(x: 0.494, y: 0.075), label: CGPoint(x: 0.6, y: 0.0), line: CGPoint(x: 0.592, y: 0.035), left: false),
         ],
         wrist: Spot(dot: CGPoint(x: 0.0625, y: 0.233), label: CGPoint(x: 0.016, y: 0.135), line: CGPoint(x: 0.06, y: 0.2), left: true))
@@ -103,7 +105,7 @@ struct DigitalFigure: View {
                     var line = Path()
                     line.move(to: CGPoint(x: s.dot.x * width, y: s.dot.y * height))
                     line.addLine(to: CGPoint(x: s.line.x * width + d.dx, y: s.line.y * height + d.dy))
-                    ctx.stroke(line, with: .color(Palette.calloutLine), lineWidth: 1)
+                    CalloutLine.stroke(line, in: &ctx)
                 }
             }
             .frame(width: width, height: height)

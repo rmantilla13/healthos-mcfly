@@ -72,12 +72,48 @@ enum PhotoLabels {
         return [.temp: t, .breathing: b, .heart: h, .spo2: s]
     }
 
-    /// Which side each label goes, top to bottom by their dots, so leader lines never cross. With blood oxygen (Home's
-    /// set), its label and heart's go on the left and breathing's on the right, as designed.
+    /// Which side each label goes, top to bottom by their dots: each beside its own dot, so no leader line crosses the
+    /// body to reach it (blood oxygen's on the shoulder opposite the heart, the heart on the chest's side), and the dots
+    /// down the middle (the throat's breathing, the forehead's temperature) on whichever side has fewer, the right on a
+    /// tie. On each side the labels run in their dots' order, so the lines never cross.
     static func slots(_ dots: [CalloutKey: CGPoint], callouts: [CalloutKey]) -> [Slot] {
-        let withSpo2 = callouts.contains(.spo2)
-        let all = [Slot(key: .temp, left: true), Slot(key: .breathing, left: !withSpo2), Slot(key: .heart, left: withSpo2), Slot(key: .spo2, left: true)]
-        return all.filter { callouts.contains($0.key) }.sorted { (dots[$0.key]?.y ?? 0) < (dots[$1.key]?.y ?? 0) }
+        let middle = Double(dots[.breathing]?.x ?? 0.5)
+        let keys = callouts.filter { dots[$0] != nil }
+        let centred = { (k: CalloutKey) in abs(Double(dots[k]!.x) - middle) < 0.04 }
+        var left = 0, right = 0
+        var out: [Slot] = []
+        for key in keys where !centred(key) {
+            let onLeft = Double(dots[key]!.x) < middle
+            out.append(Slot(key: key, left: onLeft))
+            if onLeft { left += 1 } else { right += 1 }
+        }
+        for key in keys.filter(centred).sorted(by: { dots[$0]!.y < dots[$1]!.y }) {
+            let onLeft = left < right
+            out.append(Slot(key: key, left: onLeft))
+            if onLeft { left += 1 } else { right += 1 }
+        }
+        return out.sorted { (dots[$0.key]?.y ?? 0) < (dots[$1.key]?.y ?? 0) }
+    }
+
+    /// Where the photo sits in the figure: centred in a figure that may be wider than it (the open Duo's leading pane,
+    /// an upright inner display), so the labels have the page beside the photo as well as the photo's own margins.
+    struct Frame: Equatable {
+        /// The photo's left edge and width, and the figure's width, in points.
+        let offset: Double
+        let photoWidth: Double
+        let width: Double
+
+        /// A point in 0–1 of the photo, in 0–1 of the figure.
+        func x(_ x: Double) -> Double { (offset + x * photoWidth) / width }
+
+        func dots(_ dots: [CalloutKey: CGPoint]) -> [CalloutKey: CGPoint] {
+            dots.mapValues { CGPoint(x: x(Double($0.x)), y: $0.y) }
+        }
+
+        /// The silhouette's rows across the figure; an empty row stays empty.
+        func outline(_ rows: [[Double]]) -> [[Double]] {
+            rows.map { $0.count == 2 && $0[0] <= $0[1] ? [x($0[0]), x($0[1])] : [1, 0] }
+        }
     }
 
     /// The silhouette by row, [left, right]; [1, 0] where empty. Older metadata has no outline: the face is the obstacle
@@ -95,7 +131,11 @@ enum PhotoLabels {
     /// Each label in empty page space beside the silhouette, as close as possible (vertically) to its dot
     /// (Figure.tsx placeLabels). `sizes` are the labels' measured sizes, and the figure's, in points.
     static func place(photo: PhotoMeta, dots: [CalloutKey: CGPoint], slots: [Slot], sizes: [CalloutKey: CGSize], width: Double, height: Double) -> [Placed] {
-        let outline = outline(photo)
+        place(outline: outline(photo), dots: dots, slots: slots, sizes: sizes, width: width, height: height)
+    }
+
+    /// The same, for a silhouette already in the figure's own 0–1 (a photo inside a wider figure: `Frame.outline`).
+    static func place(outline: [[Double]], dots: [CalloutKey: CGPoint], slots: [Slot], sizes: [CalloutKey: CGSize], width: Double, height: Double) -> [Placed] {
         func rows(_ top: Double, _ bottom: Double, _ overFade: Bool) -> [[Double]] {
             let from = max(0, Int((top * 100).rounded(.down)))
             let to = min(100, Int((bottom * 100).rounded(.up)))
@@ -144,9 +184,10 @@ enum PhotoLabels {
         return placed
     }
 
-    /// Where a leader line meets its label: beside its value line, 6pt off the label's edge toward the body.
-    static func lineEnd(_ p: Placed, width: Double, height: Double) -> CGPoint {
-        CGPoint(x: (p.x + (p.left ? 6 / width : -6 / width)) * width, y: (p.y + 30 / height) * height)
+    /// Where a leader line meets its label: beside its value line (`valueMid` below the label's top, 30pt at the
+    /// default size), 6pt off the label's edge toward the body.
+    static func lineEnd(_ p: Placed, width: Double, height: Double, valueMid: Double = 30) -> CGPoint {
+        CGPoint(x: (p.x + (p.left ? 6 / width : -6 / width)) * width, y: p.y * height + min(valueMid, p.h * height * 0.75))
     }
 }
 
@@ -175,35 +216,45 @@ struct PortraitFigure: View {
     /// The figure's size as last laid out, for the reveal's glyph grid only (it never sets the layout).
     @State private var size = CGSize(width: 343, height: 457)
     @State private var sizes: [CalloutKey: CGSize] = [:]
+    /// The middle of a label's value line below its top, with the text size (the labels stop growing at xxLarge).
+    @ScaledMetric(relativeTo: .headline) private var scaledValueMid: CGFloat = 30
+    private var valueMid: CGFloat { min(scaledValueMid, 38) }
 
-    /// The figure is at most 440pt wide on a phone (styles.css .figure at 820px and below).
+    /// The photo is at most 440pt wide on a phone (styles.css .figure at 820px and below).
     static let maxWidth: CGFloat = 440
     private static var played: Set<String> = []
 
     var body: some View {
         Group {
             if let dots = PhotoLabels.dots(photo) {
-                // The photo's own shape sets the figure's size from the width it's given; everything is drawn over it.
-                Color.clear
-                    .aspectRatio(CGFloat(photo.width / max(1, photo.height)), contentMode: .fit)
-                    .frame(maxWidth: Self.maxWidth)
-                    .overlay {
-                        GeometryReader { geo in
-                            let width = geo.size.width, height = geo.size.height
-                            let slots = PhotoLabels.slots(dots, callouts: callouts)
-                            let placed = PhotoLabels.place(photo: photo, dots: dots, slots: slots, sizes: sizes, width: width, height: height)
-                            ZStack(alignment: .topLeading) {
-                                glow(width: width, height: height)
-                                figure(width: width, height: height)
-                                callouts(dots: dots, placed: placed, width: width, height: height)
-                                    .opacity(revealed ? 1 : 0)
-                                    .animation(reduceMotion ? nil : .easeOut(duration: 0.5), value: revealed)
+                let aspect = CGFloat(photo.width / max(1, photo.height))
+                // The photo's own shape sets its size from the width it's given (at most 440), or from the height the
+                // open Duo's leading pane leaves it; the figure takes the whole width, so the labels can sit on the page
+                // beside the photo as well as in its margins.
+                PortraitFrame(aspect: aspect, maxWidth: Self.maxWidth) {
+                    GeometryReader { geo in
+                        let width = geo.size.width, height = geo.size.height
+                        let photoWidth = min(width, height * aspect)
+                        let frame = PhotoLabels.Frame(offset: Double(((width - photoWidth) / 2).rounded(.down)), photoWidth: Double(photoWidth), width: Double(width))
+                        let shown = frame.dots(dots)
+                        let slots = PhotoLabels.slots(dots, callouts: callouts)
+                        let placed = PhotoLabels.place(outline: frame.outline(PhotoLabels.outline(photo)), dots: shown, slots: slots, sizes: sizes,
+                                                       width: width, height: height)
+                        ZStack(alignment: .topLeading) {
+                            Group {
+                                glow(width: photoWidth, height: height)
+                                figure(width: photoWidth, height: height)
                             }
-                            .frame(width: width, height: height, alignment: .topLeading)
-                            .onAppear { size = geo.size }
-                            .onChange(of: geo.size) { _, new in size = new }
+                            .offset(x: CGFloat(frame.offset))
+                            callouts(dots: shown, placed: placed, width: width, height: height)
+                                .opacity(revealed ? 1 : 0)
+                                .animation(reduceMotion ? nil : .easeOut(duration: 0.5), value: revealed)
                         }
+                        .frame(width: width, height: height, alignment: .topLeading)
+                        .onAppear { size = CGSize(width: photoWidth, height: height) }
+                        .onChange(of: CGSize(width: photoWidth, height: height)) { _, new in size = new }
                     }
+                }
             } else {
                 Color.clear.frame(height: 0).onAppear { onFailed?() }
             }
@@ -252,17 +303,16 @@ struct PortraitFigure: View {
 
     private func callouts(dots: [CalloutKey: CGPoint], placed: [PhotoLabels.Placed], width: CGFloat, height: CGFloat) -> some View {
         ZStack(alignment: .topLeading) {
-            // Over a photo, leader lines cross hair, skin and page: a light line with a soft dark edge reads on all three.
+            // Leader lines cross hair, skin and page: an ink line on a page-coloured edge reads on all three, in both themes.
             Canvas { ctx, _ in
                 for p in placed {
                     guard let d = dots[p.key] else { continue }
                     var line = Path()
                     line.move(to: CGPoint(x: d.x * width, y: d.y * height))
-                    line.addLine(to: PhotoLabels.lineEnd(p, width: width, height: height))
-                    ctx.stroke(line, with: .color(.white.opacity(0.9)), lineWidth: 1.25)
+                    line.addLine(to: PhotoLabels.lineEnd(p, width: width, height: height, valueMid: valueMid))
+                    CalloutLine.stroke(line, in: &ctx)
                 }
             }
-            .shadow(color: .black.opacity(0.45), radius: 1)
             .frame(width: width, height: height)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
@@ -282,13 +332,13 @@ struct PortraitFigure: View {
 
     @ViewBuilder private func label(_ text: CalloutText) -> some View {
         if text.key == .heart, let onHeart {
-            Button(action: onHeart) { CalloutLabel(text: text).contentShape(Rectangle()) }
+            Button(action: onHeart) { CalloutLabel(text: text, backed: true).contentShape(Rectangle()) }
                 .buttonStyle(.plain)
                 .accessibilityLabel(text.spoken)
                 .accessibilityHint("Opens live heart rate")
                 .accessibilityIdentifier("callout-heart")
         } else {
-            CalloutLabel(text: text)
+            CalloutLabel(text: text, backed: true)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(text.spoken)
                 .accessibilityIdentifier("callout-\(text.key.rawValue)")
@@ -323,6 +373,31 @@ struct PortraitFigure: View {
         // Backstop: the band can't stay up if the timeline stops ticking (e.g. the screen goes away).
         try? await Task.sleep(for: .seconds(RevealMath.duration + 0.2))
         revealed = true
+    }
+}
+
+/// The photo figure's size: the whole width it's offered, and the photo's height there: the photo as wide as that width
+/// (at most `maxWidth`), or less where a height is offered too (the open Duo's leading pane, which doesn't scroll), so
+/// it fits. Never narrower than `minWidth`, where its labels still fit beside it.
+struct PortraitFrame: Layout {
+    let aspect: CGFloat
+    let maxWidth: CGFloat
+    var minWidth: CGFloat = 220
+
+    func photoWidth(for proposal: ProposedViewSize) -> CGFloat {
+        let width = proposal.width ?? maxWidth
+        var photo = min(width, maxWidth)
+        if let height = proposal.height, height.isFinite, height > 0 { photo = min(photo, max(min(width, minWidth), height * aspect)) }
+        return photo
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let photo = photoWidth(for: proposal)
+        return CGSize(width: proposal.width ?? photo, height: (photo / max(0.01, aspect)).rounded(.down))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for subview in subviews { subview.place(at: bounds.origin, proposal: ProposedViewSize(bounds.size)) }
     }
 }
 

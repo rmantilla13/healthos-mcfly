@@ -73,7 +73,9 @@ enum HomeDuoFixture {
         }
         json["settings"] = settings
         if photo {
+            // A made-up cut-out's layout, as the cut-out tool writes it: the head narrow above the shoulders, then the body.
             json["photo"] = ["version": 7, "width": 900, "height": 1200, "face": [0.38, 0.06, 0.24, 0.24], "shoulderY": 0.36,
+                             "outline": outline,
                              "dots": ["temp": [0.5, 0.1], "breathing": [0.5, 0.3], "heart": [0.56, 0.45]]] as [String: Any]
         }
         return try JSONDecoder().decode(ServerStatus.self, from: JSONSerialization.data(withJSONObject: json))
@@ -95,11 +97,21 @@ enum HomeDuoFixture {
             .environment(\.homeReads, reads.reads)
     }
 
-    /// A made-up cut-out: a grey figure-shaped block.
+    /// The made-up cut-out's silhouette by row (0–1 of its width): empty above the head, the head, then the shoulders
+    /// and body, as `cutout` draws them.
+    static let outline: [[Double]] = (0..<100).map { i in
+        let y = (Double(i) + 0.5) / 100
+        if y < 0.05 { return [1, 0] }
+        if y < 0.33 { return [0.38, 0.62] }
+        return [0.26, 0.74]
+    }
+
+    /// A made-up cut-out: a grey head and body, in the outline's shape.
     static var cutout: UIImage {
         UIGraphicsImageRenderer(size: CGSize(width: 90, height: 120)).image { ctx in
             UIColor.gray.setFill()
-            ctx.fill(CGRect(x: 25, y: 5, width: 40, height: 115))
+            ctx.cgContext.fillEllipse(in: CGRect(x: 90 * 0.38, y: 120 * 0.05, width: 90 * 0.24, height: 120 * 0.28))
+            ctx.fill(CGRect(x: 90 * 0.26, y: 120 * 0.33, width: 90 * 0.48, height: 120 * 0.67))
         }
     }
 }
@@ -266,10 +278,10 @@ final class HomeDuoTests: XCTestCase {
             let timeline = try XCTUnwrap(f["card-home.timeline"])
             XCTAssertEqual(timeline.minX, rhr.minX, accuracy: 0.5)
             XCTAssertEqual(timeline.maxX, spo2.maxX, accuracy: 0.5, "the timeline spans both columns")
+            // The figure's pane doesn't scroll at all: the cards' pane is the page's one scroll view.
             let scrolls = Self.verticalScrolls(in: host.window)
-            XCTAssertEqual(scrolls.count, 2, "two panes")
-            let leadScroll = try XCTUnwrap(scrolls.min { $0.frame.minX < $1.frame.minX })
-            XCTAssertLessThanOrEqual(leadScroll.contentSize.height, leadScroll.bounds.height + 0.5, "the figure's pane doesn't scroll")
+            XCTAssertEqual(scrolls.count, 1, "only the cards pane scrolls")
+            XCTAssertGreaterThan(try XCTUnwrap(scrolls.first).convert(CGPoint.zero, to: nil).x, 463, "and it's the trailing pane")
         }
     }
 

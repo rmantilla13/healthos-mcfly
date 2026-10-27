@@ -100,6 +100,7 @@ struct HomeLead: View {
     let figure: HomeFigureState
     /// The pane's height (its scope's), read here inside it.
     @Environment(\.duoScopeHeight) private var height
+    @Environment(Dashboard.self) private var dashboard
 
     @Environment(\.dynamicTypeSize) private var typeSize
 
@@ -116,7 +117,10 @@ struct HomeLead: View {
             if stats {
                 LiveHeartRateButton(state: figure)
             } else {
+                // A photo takes the height left for it, keeping the pane's width for its labels beside it.
                 HomeFigure(summary: summary, scrub: scrub, state: figure)
+                    .layoutValue(key: HomeFigureFillsHeight.self,
+                                 value: HomeFigure.shown(Perspective.of(dashboard.status?.settings), photo: dashboard.status?.photo, failed: figure.failedPhoto) == .portrait)
             }
             HomeTagline()
         }
@@ -124,11 +128,15 @@ struct HomeLead: View {
     }
 }
 
+/// A figure that sizes itself to a height it's offered as well as a width (the photo: PortraitFrame), so the leading
+/// pane gives it the height left and keeps its whole width for the labels.
+struct HomeFigureFillsHeight: LayoutValueKey { static let defaultValue = false }
+
 /// The leading pane's three parts, one under the other: the header, the figure, the tagline. With `fits`, the figure is
-/// as wide as leaves all three inside `height` (the pane, so nothing scrolls), down to `minFigure`. Without
-/// `fits` (at the accessibility text sizes, where the header alone is so tall the pane scrolls whatever the figure's
-/// size, so shrinking it would gain nothing and crowd its callouts) the figure keeps the pane's width, up to its own
-/// cap, and the pane scrolls. The figure is centred in the pane.
+/// as big as leaves all three inside `height` (the pane, which doesn't scroll): a photo is offered that height and the
+/// pane's width; the digital human is as wide as fits, down to `minFigure`. Without `fits` (at the accessibility text
+/// sizes, where the header alone is so tall the pane scrolls whatever the figure's size, so shrinking it would gain
+/// nothing and crowd its callouts) the figure keeps the pane's width, up to its own cap. The figure is centred.
 struct HomeLeadLayout: Layout {
     /// The height the three should fit in; nil: each at its own size.
     var height: CGFloat?
@@ -136,14 +144,23 @@ struct HomeLeadLayout: Layout {
     var headerGap: CGFloat = 18
     var taglineGap: CGFloat = 14
 
-    /// The narrowest the figure goes to stay inside the pane: its labels still fit beside it there.
+    /// The narrowest the digital human goes to stay inside the pane: its labels still fit beside it there.
     static let minFigure: CGFloat = 260
 
-    func figureWidth(_ subviews: Subviews, width: CGFloat) -> CGFloat {
-        guard fits, let height, subviews.count == 3 else { return width }
-        let fixed = subviews[0].sizeThatFits(ProposedViewSize(width: width, height: nil)).height
-            + subviews[2].sizeThatFits(ProposedViewSize(width: width, height: nil)).height + headerGap + taglineGap
-        return Self.fit(width: width, room: height - fixed) { subviews[1].sizeThatFits(ProposedViewSize(width: $0, height: nil)).height }
+    /// What's left for the figure: the height less the header, the tagline and the gaps.
+    private func room(_ subviews: Subviews, width: CGFloat, height: CGFloat) -> CGFloat {
+        height - subviews[0].sizeThatFits(ProposedViewSize(width: width, height: nil)).height
+            - subviews[2].sizeThatFits(ProposedViewSize(width: width, height: nil)).height - headerGap - taglineGap
+    }
+
+    /// What each part is offered.
+    func proposals(_ subviews: Subviews, width: CGFloat) -> [ProposedViewSize] {
+        let plain = ProposedViewSize(width: width, height: nil)
+        guard fits, let height, subviews.count == 3 else { return subviews.map { _ in plain } }
+        let room = max(0, room(subviews, width: width, height: height))
+        if subviews[1][HomeFigureFillsHeight.self] { return [plain, ProposedViewSize(width: width, height: room), plain] }
+        let figure = Self.fit(width: width, room: room) { subviews[1].sizeThatFits(ProposedViewSize(width: $0, height: nil)).height }
+        return [plain, ProposedViewSize(width: figure, height: nil), plain]
     }
 
     /// The figure's width: the pane's, or the widest at which the figure is no taller than `room`, down to `minFigure`.
@@ -158,11 +175,10 @@ struct HomeLeadLayout: Layout {
         return lo.rounded(.down)
     }
 
-    private func sizes(_ subviews: Subviews, width: CGFloat) -> [CGSize] {
-        let figure = figureWidth(subviews, width: width)
-        return subviews.indices.map { i in
-            let w = i == 1 ? figure : width
-            return CGSize(width: w, height: subviews[i].sizeThatFits(ProposedViewSize(width: w, height: nil)).height)
+    private func sizes(_ subviews: Subviews, width: CGFloat) -> [(ProposedViewSize, CGSize)] {
+        zip(subviews, proposals(subviews, width: width)).map { subview, proposal in
+            let size = subview.sizeThatFits(proposal)
+            return (proposal, CGSize(width: min(size.width, proposal.width ?? size.width), height: size.height))
         }
     }
 
@@ -170,16 +186,16 @@ struct HomeLeadLayout: Layout {
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let width = proposal.width ?? 400
-        let heights = sizes(subviews, width: width).map(\.height)
+        let heights = sizes(subviews, width: width).map(\.1.height)
         let gaps = (0..<max(0, heights.count - 1)).map(gap(after:)).reduce(0, +)
         return CGSize(width: width, height: heights.reduce(0, +) + gaps)
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         var y = bounds.minY
-        for (i, size) in sizes(subviews, width: bounds.width).enumerated() {
+        for (i, (offer, size)) in sizes(subviews, width: bounds.width).enumerated() {
             let x = i == 1 ? bounds.minX + ((bounds.width - size.width) / 2).rounded(.down) : bounds.minX
-            subviews[i].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(width: size.width, height: size.height))
+            subviews[i].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(width: size.width, height: offer.height ?? size.height))
             y += size.height + gap(after: i)
         }
     }
