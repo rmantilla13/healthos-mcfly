@@ -15,7 +15,7 @@ struct ProfileCardsSheet: View {
     var body: some View {
         let nutrition = dashboard.status?.settings?.nutrition == true
         let optional = dashboard.optionalCards
-        SheetScaffold(eyebrow: "Profile", title: "Cards", onClose: close) {
+        SheetScaffold(eyebrow: "Profile", title: "Cards", size: .lg, onClose: close) {
             VStack(alignment: .leading, spacing: 20) {
                 ProfileFine("\(ProfileWords.cardPages(nutrition: nutrition)) \(ProfileWords.cardsNote)")
                 // A server older than optional cards gets only the cards it knows: it refuses the newer ones.

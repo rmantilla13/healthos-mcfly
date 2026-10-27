@@ -230,11 +230,13 @@ struct ProfileNutritionSheet: View {
                 ProfileFine(!on ? ProfileWords.nutritionOff : dashboard.status?.hosted == true ? ProfileWords.nutritionHosted : ProfileWords.nutritionMac)
                 if let error { ProfileNote(text: error, good: false) }
             }
+            // Done over the targets' number pads, inside the sheet: from iOS 27.1 the sheet sits in a navigation stack
+            // (DuoSheetStack), and a keyboard toolbar from outside it doesn't reach these fields.
+            .keyboardDismissal()
             ProfileSheetPart("Delete nutrition data", text: ProfileWords.deleteNutrition, divided: true) {
                 ProfileDeleteLine(title: "Delete all nutrition data", id: "deleteNutrition", busy: deleting, done: deleted.map(ProfileWords.nutritionDeleted)) { confirmDelete = true }
             }
         }
-        .keyboardDismissal()
         .alert(ProfileWords.deleteNutritionAsk, isPresented: $confirmDelete) {
             Button("Delete all nutrition data", role: .destructive) { Task { await delete() } }
             Button("Cancel", role: .cancel) {}

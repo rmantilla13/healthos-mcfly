@@ -245,9 +245,9 @@ enum ProfileExport {
                 if sheet == nil || (sheet?.presentingViewController == nil && sheet?.viewIfLoaded?.window == nil) { once() }
             }
         }
+        // A popover only at regular width (the open iPhone Duo): it points at Download JSON (design §2.7).
         if let popover = sheet.popoverPresentationController {
-            popover.sourceView = top.view
-            popover.sourceRect = CGRect(x: top.view.bounds.midX, y: top.view.bounds.midY, width: 0, height: 0)
+            ProfileExportAnchor.shared.point(popover, fallback: top.view)
         }
         top.present(sheet, animated: true)
         return sheet
@@ -262,6 +262,80 @@ enum ProfileExport {
             let run = action
             action = nil
             run?()
+        }
+    }
+}
+
+/// Where the share sheet points from where it shows as a popover (regular width: the open iPhone Duo): the export row's
+/// Download JSON button. A fold can make the row again (from the page's one column into a pane), so the popover that's
+/// up moves to the button that's there now, and a change of window size points it at that button too. With no button
+/// in a window it points at the middle of what's showing, as before. Every other iPhone shows the share sheet as a
+/// sheet, where none of this is used.
+@MainActor
+final class ProfileExportAnchor: NSObject, UIPopoverPresentationControllerDelegate {
+    static let shared = ProfileExportAnchor()
+
+    /// The button's stand-in now in a window, if any.
+    private(set) weak var view: UIView?
+    /// The share sheet's popover while it's up.
+    private weak var popover: UIPopoverPresentationController?
+
+    /// Points `popover` at the button, or at the middle of `fallback` without one, and follows it from now on.
+    func point(_ popover: UIPopoverPresentationController, fallback: UIView) {
+        if let view, view.window != nil {
+            popover.sourceView = view
+            popover.sourceRect = view.bounds
+        } else {
+            popover.sourceView = fallback
+            popover.sourceRect = CGRect(x: fallback.bounds.midX, y: fallback.bounds.midY, width: 0, height: 0)
+        }
+        popover.delegate = self
+        self.popover = popover
+    }
+
+    /// A button came into a window (Profile showing, or its row made again after a fold): the popover that's up moves to it.
+    func arrived(_ view: UIView) {
+        self.view = view
+        guard let popover, popover.presentedViewController.presentingViewController != nil else { return }
+        popover.sourceView = view
+        popover.sourceRect = view.bounds
+        popover.containerView?.setNeedsLayout()
+    }
+
+    /// A button left its window: no longer the one to point at, unless another has come since.
+    func left(_ view: UIView) {
+        if self.view === view { self.view = nil }
+    }
+
+    /// The window changed size (a fold): the popover points at the button that's there now.
+    func popoverPresentationController(_ popoverPresentationController: UIPopoverPresentationController,
+                                       willRepositionPopoverTo rect: UnsafeMutablePointer<CGRect>,
+                                       in view: AutoreleasingUnsafeMutablePointer<UIView>) {
+        guard let anchor = self.view, anchor.window != nil else { return }
+        view.pointee = anchor
+        rect.pointee = anchor.bounds
+    }
+}
+
+/// Download JSON's stand-in for the share sheet's popover: an empty view behind the button that tells
+/// `ProfileExportAnchor` when it's in a window. It draws nothing, takes no touches and isn't read by VoiceOver.
+struct ProfileExportAnchorView: UIViewRepresentable {
+    func makeUIView(context: Context) -> Stand { Stand() }
+    func updateUIView(_ uiView: Stand, context: Context) {}
+
+    final class Stand: UIView {
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            isUserInteractionEnabled = false
+            isAccessibilityElement = false
+            backgroundColor = .clear
+        }
+
+        required init?(coder: NSCoder) { nil }
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            if window != nil { ProfileExportAnchor.shared.arrived(self) } else { ProfileExportAnchor.shared.left(self) }
         }
     }
 }
@@ -384,8 +458,8 @@ final class ProfileExportJob {
         ProfileExport.removeAll()
     }
 
-    /// Profile's row went (Back, another tab): its line goes with it, as the web's does, unless an export is still on
-    /// its way or its share sheet is up.
+    /// Profile went (Back, another tab; ProfileScreen calls it): the row's line goes with it, as the web's does, unless
+    /// an export is still on its way or its share sheet is up.
     func rowGone() {
         guard !busy, sheet == nil else { return }
         result = nil
@@ -465,7 +539,7 @@ final class ProfileExportJob {
 
 /// Profile's "Export your data" row: Download JSON (Preparing… while the server builds it), then the share sheet.
 /// Under the row, "Saved <name>." or what went wrong, read out as it changes. A server that answers it has no export
-/// (older than it) gets no button again.
+/// (older than it) gets no button again. On the open iPhone Duo the share sheet is a popover from Download JSON.
 struct ProfileExportRow: View {
     var divider = true
     @Environment(Dashboard.self) private var dashboard
@@ -484,11 +558,13 @@ struct ProfileExportRow: View {
                     .buttonStyle(ProfilePillStyle())
                     .disabled(job.busy)
                     .accessibilityIdentifier("exportData")
+                    // Where the share sheet points from as a popover (the open iPhone Duo).
+                    .background(ProfileExportAnchorView().accessibilityHidden(true))
             }
         }
         .onChange(of: job.result?.text) { _, text in
             if let text { UIAccessibility.post(notification: .announcement, argument: text) }
         }
-        .onDisappear { job.rowGone() }
+        // Its line goes when Profile goes (ProfileScreen), not when a fold only moves this row into a pane.
     }
 }
