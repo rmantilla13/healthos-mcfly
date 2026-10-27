@@ -101,11 +101,17 @@ struct HomeLead: View {
     /// The pane's height (its scope's), read here inside it.
     @Environment(\.duoScopeHeight) private var height
 
+    @Environment(\.dynamicTypeSize) private var typeSize
+
     /// The stack's own top and bottom padding.
     static let padding: CGFloat = 16
 
+    /// Whether the figure is fitted to the pane: not with "Just the statistics" (no figure), nor at the accessibility
+    /// text sizes, where the pane scrolls anyway (HomeLeadLayout).
+    nonisolated static func fits(stats: Bool, typeSize: DynamicTypeSize) -> Bool { !stats && !typeSize.isAccessibilitySize }
+
     var body: some View {
-        HomeLeadLayout(height: height.map { $0 - 2 * Self.padding }, fits: !stats) {
+        HomeLeadLayout(height: height.map { $0 - 2 * Self.padding }, fits: Self.fits(stats: stats, typeSize: typeSize)) {
             HomeHeader(summary: summary, editing: $editing, wide: true)
             if stats {
                 LiveHeartRateButton(state: figure)
@@ -119,8 +125,10 @@ struct HomeLead: View {
 }
 
 /// The leading pane's three parts, one under the other: the header, the figure, the tagline. With `fits`, the figure is
-/// as wide as leaves all three inside `height` (the pane, so nothing scrolls), down to `minFigure`; then the pane
-/// scrolls, as at the accessibility text sizes. The figure is centred in the pane.
+/// as wide as leaves all three inside `height` (the pane, so nothing scrolls), down to `minFigure`. Without
+/// `fits` (at the accessibility text sizes, where the header alone is so tall the pane scrolls whatever the figure's
+/// size, so shrinking it would gain nothing and crowd its callouts) the figure keeps the pane's width, up to its own
+/// cap, and the pane scrolls. The figure is centred in the pane.
 struct HomeLeadLayout: Layout {
     /// The height the three should fit in; nil: each at its own size.
     var height: CGFloat?
@@ -135,10 +143,13 @@ struct HomeLeadLayout: Layout {
         guard fits, let height, subviews.count == 3 else { return width }
         let fixed = subviews[0].sizeThatFits(ProposedViewSize(width: width, height: nil)).height
             + subviews[2].sizeThatFits(ProposedViewSize(width: width, height: nil)).height + headerGap + taglineGap
-        let room = height - fixed
-        func tall(_ w: CGFloat) -> CGFloat { subviews[1].sizeThatFits(ProposedViewSize(width: w, height: nil)).height }
+        return Self.fit(width: width, room: height - fixed) { subviews[1].sizeThatFits(ProposedViewSize(width: $0, height: nil)).height }
+    }
+
+    /// The figure's width: the pane's, or the widest at which the figure is no taller than `room`, down to `minFigure`.
+    static func fit(width: CGFloat, room: CGFloat, tall: (CGFloat) -> CGFloat) -> CGFloat {
         if tall(width) <= room { return width }
-        var lo = min(Self.minFigure, width), hi = width
+        var lo = min(minFigure, width), hi = width
         if tall(lo) > room { return lo }
         for _ in 0..<12 {
             let mid = (lo + hi) / 2

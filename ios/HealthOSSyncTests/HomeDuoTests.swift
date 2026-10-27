@@ -310,6 +310,19 @@ final class HomeDuoTests: XCTestCase {
         XCTAssertEqual(words(true, given).height, natural.height, accuracy: 0.5, "the top bar's Edit widgets keeps them on one line")
     }
 
+    /// At the accessibility text sizes the open Duo's leading pane scrolls whatever the figure's size (the header is
+    /// tall), so the figure isn't shrunk: it keeps the pane's width up to its cap, and its callouts their room.
+    func testTheFigureIsntShrunkWhereThePaneScrollsAnyway() async throws {
+        for bar: HorizontalEdge in [.trailing, .leading] {
+            let host = try await DuoHost(try page(), as: .innerLandscape(bar: bar), typeSize: .accessibility3)
+            defer { host.close() }
+            let f = try await frames(host)
+            let figure = try XCTUnwrap(f["figure-digital"])
+            let pane: CGFloat = bar == .trailing ? 463 - 20 : 463 - 84
+            XCTAssertEqual(figure.width, min(HomeFigure.maxWidth, pane), accuracy: 1, "the figure at full size, bar \(bar)")
+        }
+    }
+
     // MARK: Across a fold (P4, P14)
 
     /// Edit widgets stays open when a fold swaps Home's column for the panes and back: its state is on the page.
@@ -383,6 +396,19 @@ final class HomeRowsTests: XCTestCase {
         XCTAssertEqual(Set(cards).subtracting(single), [], "every pane row is a column row")
         XCTAssertEqual(Set(single).subtracting(cards), ["home.header", "home.live", "home.statsTagline"])
         XCTAssertEqual(HomeRows.cards(HomeRows.Shown())[0], HomeRows.Row(id: "home.signals", top: 0))
+    }
+
+    /// The leading pane's figure: the pane's width when it fits, else the widest that fits, down to 260; and fitted only
+    /// with a figure and below the accessibility text sizes, where the pane scrolls whatever the figure's size.
+    func testTheLeadingPaneFitsTheFigureOnlyWhereThatStopsItScrolling() {
+        let tall: (CGFloat) -> CGFloat = { $0 * 1.5 }
+        XCTAssertEqual(HomeLeadLayout.fit(width: 420, room: 700, tall: tall), 420, "fits as it is")
+        XCTAssertEqual(HomeLeadLayout.fit(width: 420, room: 450, tall: tall), 300, accuracy: 1, "shrunk to fit")
+        XCTAssertEqual(HomeLeadLayout.fit(width: 420, room: 300, tall: tall), 260, "no smaller than 260")
+        XCTAssertTrue(HomeLead.fits(stats: false, typeSize: .large))
+        XCTAssertTrue(HomeLead.fits(stats: false, typeSize: .xxxLarge))
+        XCTAssertFalse(HomeLead.fits(stats: false, typeSize: .accessibility1), "the pane scrolls anyway")
+        XCTAssertFalse(HomeLead.fits(stats: true, typeSize: .large), "no figure")
     }
 
     func testAnEmptyCardIsNoTallerThanThePromaxs() {
