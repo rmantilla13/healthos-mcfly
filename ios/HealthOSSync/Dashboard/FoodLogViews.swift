@@ -8,10 +8,15 @@ import VisionKit
 // Same tone as the rest of Nutrition: no score, no "remaining", no colour for more or less. Today's conversation
 // (Nutrition/NutritionToday.swift) reuses the pieces here, as the web's NutritionChat.tsx reuses FoodLog.tsx's.
 
-/// The Log view: a day of the last two weeks, and the card that adds to it.
+/// The Log view: a day of the last two weeks, and the card that adds to it. On the open iPhone Duo, split on the fold
+/// (decisions.md Q5), the day is the lead on the leading side and the card that adds to it is on the trailing side, the
+/// intro above the day; they scroll together. Not two panes: what's typed into the add card (a search, amounts, an
+/// estimate's words) is its own, and a fold that swapped panes would lose it (P4), so the page is one scroll view that
+/// a fold never rebuilds. One column everywhere else, as before.
 struct FoodLogTab<Header: View>: View {
     @ViewBuilder let header: () -> Header
     @Environment(Dashboard.self) private var dashboard
+    @Environment(\.nutritionReads) private var reads
     @State private var log: FoodLog?
     @State private var error: String?
     @State private var loading = false
@@ -19,25 +24,31 @@ struct FoodLogTab<Header: View>: View {
     @State private var counted: NutritionData?
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                header()
-                if let log {
-                    let selected = selectedDay(log)
-                    let entries = log.entries.filter { $0.date == selected }
-                    FoodLogDayCard(log: log, day: selected, entries: entries, counted: counted?.days.first { $0.date == selected }?.app) { step in
-                        day = Day.add(selected, step)
+        DuoPage { _ in
+            DuoScroll {
+                VStack(alignment: .leading, spacing: 16) {
+                    // The views row keeps to the leading side (D10).
+                    header().duoOneSide()
+                    if let log {
+                        let selected = selectedDay(log)
+                        let entries = log.entries.filter { $0.date == selected }
+                        DuoPair(spacing: 16) {
+                            FoodLogDayCard(log: log, day: selected, entries: entries, counted: counted?.days.first { $0.date == selected }?.app) { step in
+                                day = Day.add(selected, step)
+                            }
+                        } second: {
+                            FoodAddCard(log: log, date: selected, units: dashboard.units)
+                        }
+                    } else if let error {
+                        Text("Couldn't load your food log: \(error)").font(.app(.footnote)).foregroundStyle(Palette.ink2).card()
+                    } else {
+                        ProgressView().frame(maxWidth: .infinity, minHeight: 200)
                     }
-                    FoodAddCard(log: log, date: selected, units: dashboard.units)
-                } else if let error {
-                    Text("Couldn't load your food log: \(error)").font(.app(.footnote)).foregroundStyle(Palette.ink2).card()
-                } else {
-                    ProgressView().frame(maxWidth: .infinity, minHeight: 200)
                 }
+                .opacity(loading && log != nil ? 0.6 : 1)
+                .animation(.easeOut(duration: 0.2), value: loading)
+                .padding(.vertical, 16)
             }
-            .opacity(loading && log != nil ? 0.6 : 1)
-            .animation(.easeOut(duration: 0.2), value: loading)
-            .padding(16)
         }
         .scrollDismissesKeyboard(.interactively)
         .background(Palette.page)
@@ -58,9 +69,9 @@ struct FoodLogTab<Header: View>: View {
         loading = true
         defer { loading = false }
         do {
-            log = try await dashboard.loadFoodLog(days: 14)
+            log = try await reads.log(dashboard, 14)
             error = nil
-            counted = try? await dashboard.nutrition(days: 14)
+            counted = try? await reads.totals(dashboard, 14, false)
         } catch {
             guard !Task.isCancelled, !APIClient.isCancellation(error) else { return }
             self.error = error.foodMessage
@@ -570,14 +581,11 @@ struct FoodSearchPanel: View {
                 Button(scanning ? "Stop scanning" : "Scan a barcode") { scanning.toggle() }
                     .buttonStyle(.quietPill(size: .compact))
                 if scanning {
-                    BarcodeScanner { code in
+                    FoodBarcodeReader { code in
                         guard code != lastScanned, !busy else { return }
                         lastScanned = code
                         lookUp(code)
                     }
-                    .frame(height: 220)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .accessibilityLabel("Barcode reader")
                 }
             }
             if let error { NoteBad(error, size: 12) }
@@ -758,6 +766,35 @@ private struct FoodResultRow: View {
     }
 }
 
+/// The iPhone's barcode reader in a card (§2.8): at most 480 wide, centred in its card, so a wide sheet or column never
+/// makes it a thin strip; 220 tall. It starts reading again whenever its size changes (a fold, an unfold) and when it
+/// comes back on screen: BarcodeScanner (Components/) starts once, as it's made, so here it's made anew then.
+private struct FoodBarcodeReader: View {
+    let onCode: (String) -> Void
+    static let widest: CGFloat = 480
+    @State private var size: CGSize?
+    @State private var run = 0
+    @State private var shown = false
+
+    var body: some View {
+        BarcodeScanner(onCode: onCode)
+            .id(run)
+            .frame(maxWidth: Self.widest)
+            .frame(height: 220)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .frame(maxWidth: .infinity)
+            .onGeometryChange(for: CGSize.self, of: { $0.size }) { new in
+                if let size, size != new { run += 1 }
+                size = new
+            }
+            .onAppear {
+                if shown { run += 1 }
+                shown = true
+            }
+            .accessibilityLabel("Barcode reader")
+    }
+}
+
 /// A barcode: the iPhone's reader where it has a camera, or the numbers typed (also when the camera is off).
 private struct FoodScanPanel: View {
     let when: () -> FoodMoment
@@ -778,15 +815,12 @@ private struct FoodScanPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             if canScan {
-                BarcodeScanner { scanned in
+                FoodBarcodeReader { scanned in
                     guard scanned != lastScanned, !busy else { return }
                     lastScanned = scanned
                     code = scanned
                     lookUp()
                 }
-                .frame(height: 220)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .accessibilityLabel("Barcode reader")
             } else {
                 Text("Scanning needs the camera. Type the numbers under the barcode instead.").font(.app(size: 14, relativeTo: .subheadline)).foregroundStyle(Palette.ink2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -846,6 +880,7 @@ private struct FoodEstimatePanel: View {
     @State private var description = ""
     @State private var photo: AttachedPhoto?
     @State private var choosing = false
+    @State private var pick: MealPhotoPick?
     @State private var busy = false
     @State private var error: String?
     @State private var note: String?
@@ -870,6 +905,8 @@ private struct FoodEstimatePanel: View {
                 }
             } else {
                 Button("Add a photo") { choosing = true }.buttonStyle(.quietPill(size: .compact))
+                    // The question on its button (a popover on it at regular width, P10).
+                    .mealPhotoChoice(isPresented: $choosing, pick: $pick)
             }
             Text("\(NutritionChat.estimatePrivacy(can)) Estimates are rough, often a third off on calories, so you check them before anything is saved. A few words about oil, sauces or portion size help most.")
                 .mutedSmall()
@@ -880,7 +917,7 @@ private struct FoodEstimatePanel: View {
                 .disabled(busy || (description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && photo == nil))
                 .accessibilityIdentifier("estimate")
         }
-        .mealPhotoSource(isPresented: $choosing) { photo = $0 } failed: {
+        .mealPhotoPicker(pick: $pick) { photo = $0 } failed: {
             error = "That photo couldn't be opened here. Try a JPEG or PNG, or describe it instead."
         }
     }

@@ -87,20 +87,10 @@ private struct NutritionPage: View {
                 }
             case .log:
                 FoodLogTab { intro(tabs, current) }
+            case .macros, .hydration:
+                NutritionRangeTab(tab: current, days: days, insights: false) { intro(tabs, current) }
             default:
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        intro(tabs, current)
-                        switch current {
-                        case .macros: NutritionLoader(days: days, insights: false) { NutritionMacros(data: $0) }
-                        case .hydration: NutritionLoader(days: days, insights: false) { NutritionHydration(data: $0, units: dashboard.units, days: days) }
-                        default: NutritionLoader(days: 14, insights: true) { NutritionOverview(data: $0, units: dashboard.units) }
-                        }
-                    }
-                    .padding(16)
-                }
-                .background(Palette.page)
-                .refreshable { await dashboard.load() }
+                NutritionRangeTab(tab: current, days: 14, insights: true) { intro(tabs, current) }
             }
         }
         // A link to a view (#/nutrition?tab=macros, Profile's card places, Home's orb with compose=1), once each.
@@ -180,33 +170,50 @@ private struct NutritionIntro: View {
     @State private var saving: NutritionMode?
     @State private var error: String?
 
+    // The choosing, the save and its error are here, above the panes the open iPhone Duo swaps on a fold (P4).
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                PageIntro(sub: "A conversation about what nourishes you. Off until you turn it on.")
-                if dashboard.nutritionAvailable {
-                    hero
-                    IntroCard(title: "What it shows", items: [
-                        ("fork.knife", "What you log, here or in your food app",
-                         "Search for a food or type a barcode (or scan one on iPhone), describe it or snap a photo for McFly to estimate, or type the amounts. Or read the daily totals from MyFitnessPal, Cronometer, Lose It!, MacroFactor or Yazio, through Apple Health."),
-                        ("chart.bar.xaxis", "Macro balance, water and caffeine", "Your day by weight, the water you log as glasses, and your daily caffeine."),
-                        ("moon", "How it goes with your sleep and HRV", "Patterns from your own days, worded as things that tend to go together, never as causes."),
-                    ])
-                    IntroCard(title: "What stays private", items: [
-                        ("checkmark.shield", "Only you see it", "Never on the Family board, never in the admin screens."),
-                        ("checkmark", "You choose how much you see", "Everything, everything except calories, or no calorie or nutrient amounts at all. Ask McFly sees only that much."),
-                        ("sparkle", "No scores, streaks or set targets", "Set your own targets later if you like; they show only as a plain line. Turn it off or delete it any time in your Profile."),
-                    ])
-                } else {
-                    Text("This healthOS server doesn't have Nutrition yet.")
-                        .font(.app(.footnote)).foregroundStyle(Palette.ink2)
-                        .card()
+        DuoPage { _ in
+            // Q5's frame on the open Duo: the intro and the way to turn it on leading, what it shows and keeps private
+            // trailing. One column everywhere else, as before.
+            DuoPanes {
+                VStack(alignment: .leading, spacing: 16) { lead }.padding(.vertical, 16)
+            } secondary: {
+                VStack(alignment: .leading, spacing: 16) { if dashboard.nutritionAvailable { cards } }.padding(.vertical, 16)
+            } single: {
+                VStack(alignment: .leading, spacing: 16) {
+                    lead
+                    if dashboard.nutritionAvailable { cards }
                 }
+                .padding(.vertical, 16)
             }
-            .padding(16)
         }
         .background(Palette.page)
         .refreshable { await dashboard.load() }
+    }
+
+    @ViewBuilder private var lead: some View {
+        PageIntro(sub: "A conversation about what nourishes you. Off until you turn it on.")
+        if dashboard.nutritionAvailable {
+            hero
+        } else {
+            Text("This healthOS server doesn't have Nutrition yet.")
+                .font(.app(.footnote)).foregroundStyle(Palette.ink2)
+                .card()
+        }
+    }
+
+    @ViewBuilder private var cards: some View {
+        IntroCard(title: "What it shows", items: [
+            ("fork.knife", "What you log, here or in your food app",
+             "Search for a food or type a barcode (or scan one on iPhone), describe it or snap a photo for McFly to estimate, or type the amounts. Or read the daily totals from MyFitnessPal, Cronometer, Lose It!, MacroFactor or Yazio, through Apple Health."),
+            ("chart.bar.xaxis", "Macro balance, water and caffeine", "Your day by weight, the water you log as glasses, and your daily caffeine."),
+            ("moon", "How it goes with your sleep and HRV", "Patterns from your own days, worded as things that tend to go together, never as causes."),
+        ])
+        IntroCard(title: "What stays private", items: [
+            ("checkmark.shield", "Only you see it", "Never on the Family board, never in the admin screens."),
+            ("checkmark", "You choose how much you see", "Everything, everything except calories, or no calorie or nutrient amounts at all. Ask McFly sees only that much."),
+            ("sparkle", "No scores, streaks or set targets", "Set your own targets later if you like; they show only as a plain line. Turn it off or delete it any time in your Profile."),
+        ])
     }
 
     private var hero: some View {

@@ -153,48 +153,114 @@ enum FoodMath {
 
 // MARK: - Reading
 
-/// Reads GET /api/nutrition for its content, and says why when it can't.
-struct NutritionLoader<Content: View>: View {
+/// Which of a view's cards to draw: all of them in one column, or one of the open iPhone Duo's two panes (decisions.md
+/// Q5): the lead (beside the intro, staying put) or the rest (two columns that scroll).
+enum NutritionPart: Equatable {
+    case all, lead, rest
+
+    var lead: Bool { self != .rest }
+    var rest: Bool { self != .lead }
+}
+
+/// Trends, Macros and Hydration: GET /api/nutrition for the range, and why when it can't be read. One column on a phone,
+/// the outer display and the inner display upright. Split on the fold (the open Duo in landscape), Q5's frame: the
+/// intro (the views and the range) and the view's lead on the leading side (Trends' macro balance, Macros' average day,
+/// Hydration's water chart), and the rest on the trailing side, small cards two to a row. The read is here, above the
+/// panes (P4), so a fold never reads again; a chart's table view and its picked day go back to the chart on a fold
+/// that swaps the panes. The three views are one page, as they were one scroll view, so moving between them keeps it.
+struct NutritionRangeTab<Intro: View>: View {
+    let tab: NutritionTab
     let days: Int
     let insights: Bool
-    @ViewBuilder let content: (NutritionData) -> Content
+    @ViewBuilder let intro: () -> Intro
     @Environment(Dashboard.self) private var dashboard
-    @State private var data: NutritionData?
-    @State private var loaded = false
-    @State private var error: String?
+    @Environment(\.nutritionReads) private var reads
+    @State private var state = RangeRead(tab: .trends)
+
+    /// One view's read: what came, whether it has, and why it couldn't. Another view starts afresh, as it always has; a
+    /// new range or a reload keeps what's shown until the answer comes.
+    struct RangeRead {
+        let tab: NutritionTab
+        var data: NutritionData?
+        var loaded = false
+        var error: String?
+    }
 
     var body: some View {
-        VStack(spacing: 16) {
-            if let data {
-                content(data)
-            } else if let error {
-                Unavailable("Couldn't load your nutrition", systemImage: "fork.knife", description: error)
-            } else if loaded {
-                Text("Nutrition isn't available from this server yet.")
-                    .font(.app(.footnote)).foregroundStyle(Palette.ink3)
-                    .card()
-            } else {
-                ProgressView().frame(maxWidth: .infinity, minHeight: 200)
+        let read = state.tab == tab ? state : RangeRead(tab: tab)
+        DuoPage { _ in
+            DuoPanes(anchor: .secondary) {
+                VStack(alignment: .leading, spacing: 16) {
+                    intro()
+                    if let data = read.data { content(data, .lead) } else { status(read) }
+                }
+                .padding(.vertical, 16)
+            } secondary: {
+                VStack(alignment: .leading, spacing: 16) {
+                    if let data = read.data { content(data, .rest) }
+                }
+                .padding(.vertical, 16)
+            } single: {
+                VStack(alignment: .leading, spacing: 16) {
+                    intro()
+                    VStack(spacing: 16) {
+                        if let data = read.data { content(data, .all) } else { status(read) }
+                    }
+                }
+                .padding(.vertical, 16)
             }
         }
-        .task(id: "\(dashboard.generation)|\(dashboard.nutritionMode?.rawValue ?? "off")|\(days)|\(insights)") {
-            do {
-                data = try await dashboard.nutrition(days: days, insights: insights)
-                error = nil
-            } catch {
-                guard !Task.isCancelled else { return }
-                self.error = error.localizedDescription
-            }
-            loaded = true
+        .background(Palette.page)
+        .refreshable { await dashboard.load() }
+        .task(id: "\(dashboard.generation)|\(dashboard.nutritionMode?.rawValue ?? "off")|\(tab.rawValue)|\(days)|\(insights)") { await load() }
+    }
+
+    @ViewBuilder
+    private func content(_ data: NutritionData, _ part: NutritionPart) -> some View {
+        switch tab {
+        case .macros: NutritionMacros(data: data, part: part)
+        case .hydration: NutritionHydration(data: data, units: dashboard.units, days: days, part: part)
+        default: NutritionOverview(data: data, units: dashboard.units, part: part)
+        }
+    }
+
+    @ViewBuilder
+    private func status(_ read: RangeRead) -> some View {
+        if let error = read.error {
+            Unavailable("Couldn't load your nutrition", systemImage: "fork.knife", description: error)
+        } else if read.loaded {
+            Text("Nutrition isn't available from this server yet.")
+                .font(.app(.footnote)).foregroundStyle(Palette.ink3)
+                .card()
+        } else {
+            ProgressView().frame(maxWidth: .infinity, minHeight: 200)
+        }
+    }
+
+    private func load() async {
+        let asked = tab
+        do {
+            let data = try await reads.totals(dashboard, days, insights)
+            guard !Task.isCancelled, asked == tab else { return }
+            state = RangeRead(tab: asked, data: data, loaded: true)
+        } catch {
+            guard !Task.isCancelled, asked == tab else { return }
+            var kept = state.tab == asked ? state : RangeRead(tab: asked)
+            kept.error = error.localizedDescription
+            kept.loaded = true
+            state = kept
         }
     }
 }
 
 // MARK: - Overview
 
+/// Trends. On the open Duo (Q5) the macro balance is its lead, beside the intro; the small cards go two to a row and the
+/// insights across, on the trailing side.
 struct NutritionOverview: View {
     let data: NutritionData
     let units: Units
+    var part: NutritionPart = .all
     @Environment(Dashboard.self) private var dashboard
 
     var body: some View {
@@ -203,28 +269,29 @@ struct NutritionOverview: View {
         // Cards hidden in Profile → Cards (shared/cards.ts) are left out, and the rest close up.
         let layout = Cards.nutritionOverview(mode: data.mode, hidden: dashboard.cardsOff)
         if latest == nil && data.water.isEmpty {
-            FoodNothingLoggedCard()
+            if part.lead { FoodNothingLoggedCard() }
         } else if data.mode == .none {
-            if layout.row.contains("nutrition.logged") { FoodLoggedCard(data: data) }
-            FoodNoAmountsCard(latest: latest, today: data.today)
+            if part.rest, layout.row.contains("nutrition.logged") { FoodLoggedCard(data: data) }
+            if part.lead { FoodNoAmountsCard(latest: latest, today: data.today) }
         } else if layout.allHidden {
-            AllCardsHiddenNote(text: "All the cards on this page are hidden.")
+            if part.lead { AllCardsHiddenNote(text: "All the cards on this page are hidden.") }
         } else {
-            FoodOverviewCards(data: data, week: week, units: units, ids: layout.row)
-            if layout.pair.contains("nutrition.macros") {
+            if part.rest { FoodOverviewCards(data: data, week: week, units: units, ids: layout.row) }
+            if part.lead, layout.pair.contains("nutrition.macros") {
                 if let latest {
                     MacroBalanceCard(day: latest, today: data.today, mode: data.mode, caffeine: data.caffeine.first { $0.date == latest.date }?.value)
                 } else {
                     FoodNothingLoggedCard()
                 }
             }
-            if layout.pair.contains("nutrition.insights") { FoodInsightsCard(insights: data.insights) }
+            if part.rest, layout.pair.contains("nutrition.insights") { FoodInsightsCard(insights: data.insights) }
         }
     }
 }
 
 /// Energy (only when everything is shown), protein, water and days logged, without the hidden ones: one to a row,
-/// as the web's phone lays out its cards (.cards-4 under 560px).
+/// as the web's phone lays out its cards (.cards-4 under 560px); the web's count upright on the open Duo (4 as 2 × 2,
+/// 3 as 2 and one across); two to a row in the open Duo's trailing pane (Q5).
 private struct FoodOverviewCards: View {
     let data: NutritionData
     let week: [String]
@@ -232,9 +299,7 @@ private struct FoodOverviewCards: View {
     let ids: [String]
 
     var body: some View {
-        VStack(spacing: 16) {
-            ForEach(ids, id: \.self) { id in card(id, wide: true) }
-        }
+        DuoGrid(ids, id: \.self, medium: 2, paneColumns: 2, spacing: 16) { id in card(id, wide: true) }
     }
 
     @ViewBuilder
@@ -601,26 +666,35 @@ private struct FoodInsightsCard: View {
 
 // MARK: - Macros
 
+/// Macros. On the open Duo (Q5) the average day and the days logged are its lead, beside the intro and the range; the
+/// nutrients' charts, which need the width, and the app choice are on the trailing side.
 struct NutritionMacros: View {
     let data: NutritionData
+    var part: NutritionPart = .all
 
     var body: some View {
-        if !data.days.isEmpty {
-            FoodAverageCard(data: data)
-            FoodLoggedCard(data: data)
-            ForEach(FoodMath.order.filter { n in data.days.contains { $0.values[n] != nil } }, id: \.self) { n in
-                let target = n == "energy_kcal" || n == "protein_g" ? data.targets?[n] : nil
-                FoodChartCard(title: FoodMath.name(n), points: data.days.compactMap { d in d.values[n].map { Point(date: d.date, value: $0) } },
-                              start: data.start, end: data.end, target: target,
-                              table: FoodChartTable(columns: ["Date", "\(FoodMath.name(n)) (\(FoodMath.names[n]?.unit ?? ""))"]) { [Fmt.day($0.date, "MMMdyyyy"), Fmt.number($0.value)] },
-                              format: { FoodMath.amount(n, $0) })
-            }
-            if data.apps.count > 1 { FoodAppChoice(data: data) }
-            Text("Days with nothing logged are left out, not counted as zero. When two apps logged the same day, one is shown and the other isn't added in, because food apps often copy each other's entries through Apple Health.")
-                .font(.app(.caption)).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
+        if data.days.isEmpty {
+            if part.lead { FoodNothingLoggedCard() }
         } else {
-            FoodNothingLoggedCard()
+            if part.lead {
+                FoodAverageCard(data: data)
+                FoodLoggedCard(data: data)
+            }
+            if part.rest { rest }
         }
+    }
+
+    @ViewBuilder private var rest: some View {
+        ForEach(FoodMath.order.filter { n in data.days.contains { $0.values[n] != nil } }, id: \.self) { n in
+            let target = n == "energy_kcal" || n == "protein_g" ? data.targets?[n] : nil
+            FoodChartCard(title: FoodMath.name(n), points: data.days.compactMap { d in d.values[n].map { Point(date: d.date, value: $0) } },
+                          start: data.start, end: data.end, target: target,
+                          table: FoodChartTable(columns: ["Date", "\(FoodMath.name(n)) (\(FoodMath.names[n]?.unit ?? ""))"]) { [Fmt.day($0.date, "MMMdyyyy"), Fmt.number($0.value)] },
+                          format: { FoodMath.amount(n, $0) })
+        }
+        if data.apps.count > 1 { FoodAppChoice(data: data) }
+        Text("Days with nothing logged are left out, not counted as zero. When two apps logged the same day, one is shown and the other isn't added in, because food apps often copy each other's entries through Apple Health.")
+            .font(.app(.caption)).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -700,35 +774,60 @@ private struct MacroSplit: View {
 
 // MARK: - Hydration
 
+/// Hydration. On the open Duo (Q5) the water chart is its lead, beside the intro and the range; the two averages, small
+/// cards, go side by side on the trailing side, with the caffeine chart across under them.
 struct NutritionHydration: View {
     let data: NutritionData
     let units: Units
     let days: Int
+    var part: NutritionPart = .all
 
     var body: some View {
         if data.water.isEmpty && data.caffeine.isEmpty {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("No water or caffeine logged").font(.app(.headline)).foregroundStyle(Palette.ink)
-                Text("Apps that log drinks, like WaterMinder or your food app, write water and caffeine to Apple Health, and they show up here.")
-                    .font(.app(.footnote)).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
-            }
-            .card()
+            if part.lead { nothing }
         } else {
             let water = { (ml: Double) in "\(FoodMath.glassesText(ml)) \(FoodMath.glasses(ml) == 1 ? "glass" : "glasses") · \(FoodMath.water(ml, units: units))" }
-            HydrationSummaryCard(title: "Water", points: data.water, format: water, target: data.targets?["water_ml"].map { FoodMath.water($0, units: units) }, days: days)
-            HydrationSummaryCard(title: "Caffeine", points: data.caffeine, format: { "\(Fmt.number($0)) mg" }, target: nil, days: days)
-            FoodChartCard(title: "Water", points: data.water, start: data.start, end: data.end, target: data.targets?["water_ml"],
-                          note: "1 glass = \(FoodMath.glassSize(units))", medianNote: false,
-                          table: FoodChartTable(columns: ["Date", units == .imperial ? "Water (fl oz)" : "Water (mL)", "Glasses"]) {
-                              [Fmt.day($0.date, "MMMdyyyy"), FoodMath.water($0.value, units: units), Fmt.number(FoodMath.glasses($0.value), 1)]
-                          },
-                          format: { FoodMath.water($0, units: units) },
-                          axis: { units == .imperial ? Fmt.number($0 / 29.5735) : Fmt.number($0) })
-            FoodChartCard(title: "Caffeine", points: data.caffeine, start: data.start, end: data.end, target: nil,
-                          note: "daily total", medianNote: false,
-                          table: FoodChartTable(columns: ["Date", "Caffeine (mg)"]) { [Fmt.day($0.date, "MMMdyyyy"), Fmt.number($0.value)] },
-                          format: { "\(Fmt.number($0)) mg" })
+            let waterSummary = HydrationSummaryCard(title: "Water", points: data.water, format: water, target: data.targets?["water_ml"].map { FoodMath.water($0, units: units) }, days: days)
+            let caffeineSummary = HydrationSummaryCard(title: "Caffeine", points: data.caffeine, format: { "\(Fmt.number($0)) mg" }, target: nil, days: days)
+            switch part {
+            case .all:
+                waterSummary
+                caffeineSummary
+                waterChart
+                caffeineChart
+            case .lead:
+                waterChart
+            case .rest:
+                DuoPair(spacing: 16, paneSideBySide: true) { waterSummary } second: { caffeineSummary }
+                caffeineChart
+            }
         }
+    }
+
+    private var nothing: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("No water or caffeine logged").font(.app(.headline)).foregroundStyle(Palette.ink)
+            Text("Apps that log drinks, like WaterMinder or your food app, write water and caffeine to Apple Health, and they show up here.")
+                .font(.app(.footnote)).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
+        }
+        .card()
+    }
+
+    private var waterChart: some View {
+        FoodChartCard(title: "Water", points: data.water, start: data.start, end: data.end, target: data.targets?["water_ml"],
+                      note: "1 glass = \(FoodMath.glassSize(units))", medianNote: false,
+                      table: FoodChartTable(columns: ["Date", units == .imperial ? "Water (fl oz)" : "Water (mL)", "Glasses"]) {
+                          [Fmt.day($0.date, "MMMdyyyy"), FoodMath.water($0.value, units: units), Fmt.number(FoodMath.glasses($0.value), 1)]
+                      },
+                      format: { FoodMath.water($0, units: units) },
+                      axis: { units == .imperial ? Fmt.number($0 / 29.5735) : Fmt.number($0) })
+    }
+
+    private var caffeineChart: some View {
+        FoodChartCard(title: "Caffeine", points: data.caffeine, start: data.start, end: data.end, target: nil,
+                      note: "daily total", medianNote: false,
+                      table: FoodChartTable(columns: ["Date", "Caffeine (mg)"]) { [Fmt.day($0.date, "MMMdyyyy"), Fmt.number($0.value)] },
+                      format: { "\(Fmt.number($0)) mg" })
     }
 }
 
@@ -774,7 +873,8 @@ struct FoodChartCard: View {
                     FoodTableView(table: table ?? FoodChartTable(columns: ["Date", title]) { [Fmt.day($0.date, "MMMdyyyy"), format($0.value)] }, points: points)
                         .padding(.top, 6)
                 } else {
-                    GeometryReader { geo in chart(width: geo.size.width) }.frame(height: 180).padding(.top, 6)
+                    // 180 on a phone; taller where the band is wider (P9).
+                    GeometryReader { geo in chart(width: geo.size.width) }.duoChartHeight(180).padding(.top, 6)
                 }
             }
         }
@@ -1006,10 +1106,12 @@ private struct ChartTableToggle: View {
     }
 }
 
-/// The table itself, scrolling inside its card past a few dozen days (.table-wrap).
+/// The table itself, scrolling inside its card past a few dozen days (.table-wrap): a 360 pt window on a phone; on the
+/// open Duo the smaller of that and 45% of the scope's height (§2.7).
 private struct FoodTableView: View {
     let table: FoodChartTable
     let points: [Point]
+    @Environment(\.duoTableWindow) private var window
 
     var body: some View {
         let rows = points.reversed().map(table.row)
@@ -1032,7 +1134,7 @@ private struct FoodTableView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxHeight: 360)
+        .frame(maxHeight: window)
     }
 }
 

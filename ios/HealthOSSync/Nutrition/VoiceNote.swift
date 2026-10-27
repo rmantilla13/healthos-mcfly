@@ -104,9 +104,39 @@ final class VoiceNote {
         Task { await begin(.press, id) }
     }
 
-    /// The finger lifted, or the touch was taken away (the microphone's permission question, a scroll): stops.
+    /// The finger lifted (the drag's normal end): stops, and the note is written down.
     func release() {
         if via == .press { stop() }
+    }
+
+    /// What a held note says when it ended any way but the finger lifting: nothing of it was sent.
+    static let stoppedWords = "Stopped when the screen changed. Hold to talk again."
+
+    /// A hold that ended without the finger lifting: the touch was taken away (a scroll, a fold, the button going with
+    /// the panes it was in). A note being recorded is thrown away, never sent: only a normal release sends. Before the
+    /// microphone was ready (its permission question takes the touch), it's as a release then: nothing is recorded.
+    func holdCancelled() {
+        guard via == .press else { return }
+        if state == .recording { discard() } else { release() }
+    }
+
+    /// The screen changed under a note being started or recorded (a fold or unfold, the panes swapping): the microphone
+    /// stops and the recording is thrown away, held or turned on from VoiceOver alike. A fold never sends half a note; a
+    /// finger lifting after it sends nothing. A note already being written down goes on.
+    func screenChanged() {
+        if state == .starting || state == .recording { discard() }
+    }
+
+    /// The recording goes without being sent (it never left memory), and the line says so.
+    private func discard() {
+        note += 1
+        released = true
+        ticker?.cancel()
+        ticker = nil
+        recorder.cancel()
+        state = .idle
+        seconds = 0
+        error = Self.stoppedWords
     }
 
     /// VoiceOver's activate, Switch Control or a keyboard: starts, and again stops.
