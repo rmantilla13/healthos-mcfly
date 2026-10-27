@@ -70,7 +70,7 @@ struct ProfileAccountRow: View {
     @ViewBuilder
     private var actions: some View {
         Badge("Signed in", tone: .sage)
-        Button("Change password") { draft.open.toggle() }
+        Button("Change password") { draft.toggle() }
             .buttonStyle(ProfileQuietStyle())
             .accessibilityValue(draft.open ? "Expanded" : "Collapsed")
             .accessibilityIdentifier("changePassword")
@@ -78,8 +78,10 @@ struct ProfileAccountRow: View {
 }
 
 /// Change password's form as the page keeps it: open or not, the three fields, whether a change is on its way and what
-/// came of it. The passwords live only here, in memory, while Profile is up; `reset()` clears them (signed out, someone
-/// else signed in), and a change that went through clears them itself.
+/// came of it. The passwords live only here, in memory, while the form is open: closing it (`toggle()`) clears them and
+/// its last line, as closing the form always has; `reset()` clears everything (signed out, someone else signed in), and
+/// a change that went through clears them itself. Kept on the page only so a fold that swaps Profile's one column for
+/// its two panes doesn't close the open form (P4).
 @MainActor
 @Observable
 final class ProfilePasswordDraft {
@@ -89,6 +91,20 @@ final class ProfilePasswordDraft {
     var confirm = ""
     var busy = false
     var result: (ok: Bool, text: String)?
+
+    /// Change password tapped: opens the form, or closes it and forgets what was typed and what came of it. A change on
+    /// its way finishes on its own (and clears the fields when it goes through).
+    func toggle() {
+        if open {
+            open = false
+            current = ""
+            next = ""
+            confirm = ""
+            result = nil
+        } else {
+            open = true
+        }
+    }
 
     func reset() {
         open = false
@@ -103,7 +119,7 @@ final class ProfilePasswordDraft {
 /// Current, new and confirm (the web's PasswordForm): Change password once the new one is at least 10 characters and
 /// typed the same twice. The fields are marked for passwords, so iOS offers to keep the new one. Then the web's
 /// "Password changed. Other devices are signed out." or the server's words. The passwords live only in the page's
-/// draft while Profile is up, and are cleared once changed.
+/// draft while the form is open, and are cleared once changed or when the form closes.
 struct ProfilePasswordForm: View {
     @Bindable var draft: ProfilePasswordDraft
     @Environment(Dashboard.self) private var dashboard
