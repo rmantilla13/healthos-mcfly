@@ -173,27 +173,30 @@ final class MetricSheetDuoTests: XCTestCase {
     /// the outer display and in Split View; 60 and 66 points taller (1.3 times) and a 297 window in the centred sheet;
     /// and back to the outer display's at AX3, where the centred sheet's band drops to compact (its table rows stack
     /// there, with no window). The chart's element also holds its axes, so its height is compared with the outer
-    /// display's at the same text size.
+    /// display's at the same text size. The line, whose element's frame is its marks' since it takes the scroll-friendly
+    /// pick, is measured on its own in each band: 200 tall and its 20-point top margin, 1.3 times that in medium.
     func testTheChartsAndTheTableWindowFollowTheSheet() async throws {
         let cases: [(DuoState, DynamicTypeSize, CGFloat, CGFloat?)] = [
             (.outer, .large, 1, 360), (.innerSplit(bar: .trailing), .large, 1, 360),
             (.innerPortrait(), .large, 1.3, 297), (.innerLandscape(), .large, 1.3, 297), (.innerLandscape(bar: .leading), .large, 1.3, 297),
             (.outer, .accessibility3, 1, nil), (.innerLandscape(), .accessibility3, 1, nil),
         ]
-        let line = sheet(.hrv, data: try fixture("metric-hrv-month"))
         let bars = sheet(.steps, data: try fixture("metric-steps-week"), openPage: "Activity")
         let table = sheet(.hrv, data: try fixture("metric-hrv-month"), table: true)
-        var outer: [DynamicTypeSize: (line: CGFloat, bars: CGFloat)] = [:]
+        let month = try fixture("metric-hrv-month")
+        for (band, height) in [(DuoBand.compact, CGFloat(220)), (.medium, 280), (.wide, 280)] {
+            let chart = SheetTrendChart(points: month.points, format: SheetFormat(month), color: Palette.series1, label: "HRV", gapDays: 3, period: nil)
+                .environment(\.duoBand, band)
+            XCTAssertEqual(UIHostingController(rootView: chart).sizeThatFits(in: CGSize(width: 614, height: 2000)).height, height, accuracy: 0.5, "\(band)")
+        }
+        var outer: [DynamicTypeSize: CGFloat] = [:]
         for size: DynamicTypeSize in [.large, .accessibility3] {
-            outer[size] = (try await chartHeight(line, as: .outer, typeSize: size, label: "Heart rate variability, month"),
-                           try await chartHeight(bars, as: .outer, typeSize: size, label: "Steps, week"))
+            outer[size] = try await chartHeight(bars, as: .outer, typeSize: size, label: "Steps, week")
         }
         for (state, size, scale, window) in cases {
             let base = try XCTUnwrap(outer[size])
-            let drawnLine = try await chartHeight(line, as: state, typeSize: size, label: "Heart rate variability, month")
-            XCTAssertEqual(drawnLine - base.line, 200 * (scale - 1), accuracy: 0.5, "the line, \(state) at \(size)")
             let drawnBars = try await chartHeight(bars, as: state, typeSize: size, label: "Steps, week")
-            XCTAssertEqual(drawnBars - base.bars, 220 * (scale - 1), accuracy: 0.5, "bars, \(state) at \(size)")
+            XCTAssertEqual(drawnBars - base, 220 * (scale - 1), accuracy: 0.5, "bars, \(state) at \(size)")
             let host = try await DuoHost(table, as: state, typeSize: size)
             defer { host.close() }
             let inner = DuoScrollTests.verticalScrollViews(in: host.window).filter { $0.bounds.height <= 361 }
