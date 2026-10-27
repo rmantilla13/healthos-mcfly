@@ -186,17 +186,25 @@ private struct ProfileColumn: View {
     @Environment(Dashboard.self) private var dashboard
 
     var body: some View {
+        // One flat stack of rows with the same ids as the trailing pane's (ProfileRowID), so a fold hands the row at
+        // the top between this column and that pane (DuoPanes' handoff).
         VStack(alignment: .leading, spacing: 18) {
             // Never the last person's: only while someone's signed in (or a server without sign-in is connected).
             if dashboard.phase == .ready, let settings = dashboard.status?.settings {
                 ProfileYoursCard(settings: settings, password: password, open: open)
+                    .id(ProfileRowID.yours)
                 ProfileSettingsCard(settings: settings, open: open)
+                    .id(ProfileRowID.settings)
                 PeersSection()
+                    .id(ProfileRowID.peers)
                 // "Use a photo as is" (PhotoSection) is inside the portrait photos, not a card of its own here.
                 PortraitPhotosSection()
+                    .id(ProfileRowID.portraits)
             }
             ProfileThisIPhone(confirmSample: $confirmSample, confirmReupload: $confirmReupload)
+                .id(ProfileRowID.iPhone)
         }
+        .scrollTargetLayout()
         .padding(.vertical, 16)
     }
 }
@@ -270,33 +278,56 @@ private struct ProfileColumns: View {
     @Environment(Dashboard.self) private var dashboard
 
     var body: some View {
+        // One flat stack of rows, each heading with its grid as one, with the one column's ids (ProfileRowID): the fold's
+        // handoff finds the row at the top on both sides.
         VStack(alignment: .leading, spacing: 14) {
             if dashboard.phase == .ready, let settings = dashboard.status?.settings {
                 let yours = ProfileItem.yours(settings: settings, dashboard: dashboard).filter { $0 != .perspective }
                 if !yours.isEmpty {
-                    ProfilePaneHeading("Your profile")
-                    DuoGrid(yours, id: \.self, paneColumns: 2) { item in
-                        let card = ProfilePaneCard {
-                            ProfileYoursRow(item: item, settings: settings, password: password, divider: false, open: open)
+                    VStack(alignment: .leading, spacing: 14) {
+                        ProfilePaneHeading("Your profile")
+                        DuoGrid(yours, id: \.self, paneColumns: 2) { item in
+                            let card = ProfilePaneCard {
+                                ProfileYoursRow(item: item, settings: settings, password: password, divider: false, open: open)
+                            }
+                            if item == .account, password.open { card.duoSpans() } else { card }
                         }
-                        if item == .account, password.open { card.duoSpans() } else { card }
+                    }
+                    .id(ProfileRowID.yours)
+                }
+                VStack(alignment: .leading, spacing: 14) {
+                    ProfilePaneHeading("Your settings").padding(.top, 8)
+                    DuoGrid(ProfileItem.settings(settings: settings, dashboard: dashboard), id: \.self, paneColumns: 2) { item in
+                        ProfilePaneCard { ProfileSettingsRow(item: item, settings: settings, divider: false, open: open) }
                     }
                 }
-                ProfilePaneHeading("Your settings").padding(.top, 8)
-                DuoGrid(ProfileItem.settings(settings: settings, dashboard: dashboard), id: \.self, paneColumns: 2) { item in
-                    ProfilePaneCard { ProfileSettingsRow(item: item, settings: settings, divider: false, open: open) }
+                .id(ProfileRowID.settings)
+                PeersSection()
+                    .padding(.top, 4)
+                    .id(ProfileRowID.peers)
+                PortraitPhotosSection()
+                    .padding(.top, 4)
+                    .id(ProfileRowID.portraits)
+                VStack(alignment: .leading, spacing: 14) {
+                    ProfilePaneHeading("This iPhone").padding(.top, 8)
+                    ProfileThisIPhoneGrid(confirmSample: $confirmSample, confirmReupload: $confirmReupload)
                 }
-                Group {
-                    PeersSection()
-                    PortraitPhotosSection()
-                }
-                .padding(.top, 4)
-                ProfilePaneHeading("This iPhone").padding(.top, 8)
-                ProfileThisIPhoneGrid(confirmSample: $confirmSample, confirmReupload: $confirmReupload)
+                .id(ProfileRowID.iPhone)
             }
         }
+        .scrollTargetLayout()
         .padding(.vertical, 16)
     }
+}
+
+/// Profile's rows as the fold's scroll handoff knows them: the same row has the same id in the one column and in the
+/// open Duo's trailing pane, so unfolding (or folding) opens the other on the row that was at the top.
+enum ProfileRowID {
+    static let yours = "profile.yours"
+    static let settings = "profile.settings"
+    static let peers = "profile.peers"
+    static let portraits = "profile.portraits"
+    static let iPhone = "profile.iphone"
 }
 
 /// A heading over the open Duo's cards, as a Profile card's own title.

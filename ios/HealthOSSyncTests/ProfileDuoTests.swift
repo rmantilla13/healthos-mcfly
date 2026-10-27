@@ -175,6 +175,73 @@ final class ProfileDuoTests: XCTestCase {
         }
     }
 
+    /// Closing Change password forgets what was typed and what came of it, as closing the form always has on every
+    /// iPhone: the draft is the page's only so a fold doesn't close the open form.
+    func testClosingThePasswordFormForgetsWhatWasTyped() async throws {
+        let host = try await DuoHost(Self.page(try Self.sam()), as: .outer)
+        defer { host.close() }
+        try await tap("changePassword", in: host)
+        try await host.settle()
+        let field = try XCTUnwrap(Self.secureField("Current password", in: host.window))
+        field.becomeFirstResponder()
+        field.insertText("typed-then-closed")
+        field.resignFirstResponder()
+        try await host.settle()
+        try await tap("changePassword", in: host)
+        try await host.settle()
+        XCTAssertNil(Self.secureField("Current password", in: host.window), "closed")
+        try await tap("changePassword", in: host)
+        try await host.settle()
+        let again = try XCTUnwrap(Self.secureField("Current password", in: host.window), "open again")
+        XCTAssertEqual(again.text ?? "", "", "nothing kept from before it closed")
+    }
+
+    /// The draft itself: closing clears the three fields and the last line; opening keeps nothing from before.
+    func testThePasswordDraftClearsWhenClosed() {
+        let draft = ProfilePasswordDraft()
+        draft.toggle()
+        XCTAssertTrue(draft.open)
+        draft.current = "a"
+        draft.next = "b"
+        draft.confirm = "c"
+        draft.result = (false, "Your current password is wrong.")
+        draft.toggle()
+        XCTAssertFalse(draft.open)
+        draft.toggle()
+        XCTAssertTrue(draft.open)
+        XCTAssertEqual([draft.current, draft.next, draft.confirm], ["", "", ""])
+        XCTAssertNil(draft.result)
+    }
+
+    /// A fold keeps the reader's place (§4, G4(a)): scrolled down to This iPhone in one column, unfolding opens the
+    /// trailing pane on This iPhone (as far as the pane goes), and folding again brings the one column back down there,
+    /// not to its top. The same row has the same id on both sides (ProfileRowID).
+    func testAFoldKeepsThePlace() async throws {
+        let host = try await DuoHost(Self.page(try Self.sam()), as: .outer)
+        defer { host.close() }
+        let column = try XCTUnwrap(DuoScrollTests.verticalScrollView(in: host.window))
+        XCTAssertEqual(column.contentOffset.y + column.adjustedContentInset.top, 0, accuracy: 1, "opens at its top")
+        let heading = try await frame(of: "This iPhone", in: host)
+        // This iPhone's card a little above the top of the scroll view, so it's the row at the top.
+        DuoScrollTests.drag(column, by: heading.minY - column.convert(column.bounds, to: nil).minY - 40)
+        try await host.settle()
+        let past = try await frame(of: "Your profile", in: host)
+        XCTAssertLessThan(past.maxY, 0, "scrolled past Your profile")
+
+        try await host.set(.innerLandscape())
+        let pane = try XCTUnwrap(trailing(host).first, "the trailing pane scrolls")
+        XCTAssertGreaterThan(pane.contentOffset.y + pane.adjustedContentInset.top, 1, "the pane isn't at its top")
+        let paneFrame = pane.convert(pane.bounds, to: nil)
+        let inPane = try await frame(of: "This iPhone", in: host)
+        XCTAssertTrue(paneFrame.intersects(inPane), "This iPhone is in view in the trailing pane: \(inPane) in \(paneFrame)")
+
+        try await host.set(.outer)
+        let again = try XCTUnwrap(DuoScrollTests.verticalScrollView(in: host.window))
+        XCTAssertGreaterThan(again.contentOffset.y + again.adjustedContentInset.top, 1, "folded, the column isn't back at its top")
+        let above = try await frame(of: "Your profile", in: host)
+        XCTAssertLessThan(above.maxY, 0, "Your profile is still above")
+    }
+
     /// A sheet Profile opened stays up across a fold, the same sheet: it's the page's, above its panes (P4).
     func testASheetStaysUpAcrossAFold() async throws {
         let host = try await DuoHost(Self.page(try Self.sam()), as: .outer)
@@ -239,6 +306,14 @@ final class ProfileDuoTests: XCTestCase {
         let mid = host.window.bounds.midX
         let right = all.filter { $0.convert($0.bounds, to: host.window).minX > mid - 20 }
         return right.isEmpty ? all : right
+    }
+
+    /// Where the heading with this label is, in window points.
+    private func frame(of heading: String, in host: DuoHost) async throws -> CGRect {
+        let elements = try await host.elements()
+        let found = try XCTUnwrap(elements.first { $0.accessibilityLabel == heading && $0.accessibilityTraits.contains(.header) },
+                                  "\(heading) is a heading on the page")
+        return found.accessibilityFrame
     }
 
     /// Taps the button with this identifier as VoiceOver would.
