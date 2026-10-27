@@ -34,7 +34,19 @@ struct DuoSheetStack<Content: View>: View {
     /// Whether a sheet sits in the NavigationStack on this iOS (27.1 and later): only then can a bar of the sheet's own
     /// hold Close. Drawn tests run on iOS 27.0 with a bar edge injected, so there SheetScaffold keeps its round ×.
     static var stacks: Bool {
-        if #available(iOS 27.1, *) { true } else { false }
+        #if DEBUG
+        if UserDefaults.standard.string(forKey: "duoSheetStack") == "off" { return false }
+        #endif
+        if #available(iOS 27.1, *) { return true } else { return false }
+    }
+
+    /// Whether a sheet with a vertical bar of its own moves Close into that bar (O5): where it has the stack. Debug
+    /// builds launched with `-duoSheetClose round` keep the round × everywhere (O5's fallback), for G4(f)'s comparison.
+    static var closesInBar: Bool {
+        #if DEBUG
+        if UserDefaults.standard.string(forKey: "duoSheetClose") == "round" { return false }
+        #endif
+        return stacks
     }
 
     private let content: Content
@@ -44,7 +56,7 @@ struct DuoSheetStack<Content: View>: View {
     }
 
     var body: some View {
-        if #available(iOS 27.1, *) {
+        if #available(iOS 27.1, *), Self.stacks {
             NavigationStack { content.containerBackground(.clear, for: .navigation) }
         } else {
             content

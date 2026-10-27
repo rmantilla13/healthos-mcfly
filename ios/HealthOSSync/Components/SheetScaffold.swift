@@ -66,7 +66,7 @@ struct SheetScaffold<Content: View, Footer: View>: View {
         DuoSheetStack {
             DuoScope(.sheet(maxWidth: size.maxWidth, padding: Self.padding)) { scope in
                 // Close goes in the sheet's own bar only where there is one: a vertical bar, in the stack (27.1).
-                let inBar = scope.barEdge != nil && DuoSheetStack<Content>.stacks
+                let inBar = scope.barEdge != nil && DuoSheetStack<Content>.closesInBar
                 ScrollView { column(closeInBar: inBar, side: scope.margins.leading) }
                     .scrollDismissesKeyboard(.interactively)
                     .font(.app(.body))
