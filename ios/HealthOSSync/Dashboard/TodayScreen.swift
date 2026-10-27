@@ -71,6 +71,8 @@ struct TodayContent: View {
     @State private var figure = HomeFigureState()
     /// Today's nutrition's entries for the day, read here for the card.
     @State private var nutrition: [FoodEntry] = []
+    /// The timeline card's hourly readings, read here for the card (TodayPath).
+    @State private var dayLoad = DayLoad()
 
     /// Under a resting heart rate flag, in the luteal or menstrual phase. The summary never mentions the cycle.
     private static let cycleNote = "Temperature and resting heart rate often run a little higher in this part of your cycle."
@@ -110,6 +112,11 @@ struct TodayContent: View {
         }
         .task(id: "\(dashboard.generation)|\(scheme == .dark)") {
             await figure.retryCutout(dashboard.status?.photo, dark: scheme == .dark, reads: reads)
+        }
+        // The timeline's own day, which can be earlier than the summary's, only while its card shows.
+        .task(id: "\(summary.timeline?.date ?? "")|\(dashboard.generation)|\(shown.timeline)") {
+            guard shown.timeline, let date = summary.timeline?.date else { return }
+            await TodayPath.fetch(date, today: dashboard.summary?.today ?? Day.today(), dashboard: dashboard, into: $dayLoad)
         }
         // Only while its card shows.
         .task(id: "\(TodayNutritionCard.readKey(date: summary.date, today: summary.today, dashboard: dashboard))|\(lower.contains("home.nutrition"))") {
@@ -189,7 +196,7 @@ struct TodayContent: View {
         case HomeRows.day: if let day { DayCard(data: day, date: isToday ? nil : summary.date) }
         case HomeRows.cycle: if let cycle, let phase { CycleCard(cycle: cycle, phase: phase) }
         case HomeRows.optional: TodayGrid(summary: summary, ids: optional, goal: dashboard.stepGoal, food: food)
-        case HomeRows.timeline: if let timeline = summary.timeline { TodayPath(timeline: timeline, scrubbed: scrub) }
+        case HomeRows.timeline: if let timeline = summary.timeline { TodayPath(timeline: timeline, scrubbed: scrub, load: dayLoad) }
         case HomeRows.week: WeekCard(week: summary.week, stepGoal: dashboard.stepGoal)
         case HomeRows.insights: HomeInsightsCard(insights: summary.insights ?? [], today: summary.today)
         case HomeRows.allHidden: AllCardsHiddenNote(text: "All the cards on this page are hidden.")
