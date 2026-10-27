@@ -262,13 +262,9 @@ private struct PortraitTile: View {
                 if p.status == "failed" { state(PortraitWords.failure(p), bad: true) }
                 if let using { state(using) }
                 if let failed { state(failed, bad: true) }
-                // Its dialogs on the row of buttons (both of its candidates are the one place they show).
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 4) { actions(chosen: chosen, using: using != nil) }
-                    VStack(alignment: .leading, spacing: 4) { actions(chosen: chosen, using: using != nil) }
-                }
-                .modifier(DeleteDialog(asks: asks, model: model, p: p))
-                .modifier(ReplaceDialog(asks: asks, model: model, p: p))
+                // Side by side where they fit, else one above the other; built once, so each question sits on its own
+                // button (P10) with no second copy in a layout that isn't shown.
+                TileActionsLayout(spacing: 4) { actions(chosen: chosen, using: using != nil) }
             }
             .padding(.horizontal, 12)
             .padding(.top, 10)
@@ -287,12 +283,14 @@ private struct PortraitTile: View {
                 .buttonStyle(TilePillStyle())
                 .disabled(model.locked)
                 .accessibilityIdentifier("portraits.use.\(p.id)")
+                .modifier(ReplaceDialog(asks: asks, model: model, p: p))
         }
         Button(PortraitWords.delete) { delete(p) }
             .buttonStyle(QuietTextStyle(height: 30))
             .disabled(model.locked)
             .accessibilityLabel(PortraitWords.deletePortraitLabel(p))
             .accessibilityIdentifier("portraits.deletePortrait.\(p.id)")
+            .modifier(DeleteDialog(asks: asks, model: model, p: p))
     }
 
     /// The 2:3 picture: the portrait on the cream wash, the sheen while it's made, or the alert where it failed.
@@ -340,6 +338,47 @@ private struct PortraitTile: View {
             .foregroundStyle(bad ? ColorToken.badgeBadInk.color : Palette.ink2)
             .lineSpacing(2)
             .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// A tile's buttons: in a row, centred on each other, where their own widths fit (the HStack a ViewThatFits would pick
+/// first), else stacked on the leading edge, as the VStack it would fall back to. One copy of the buttons, so the
+/// questions attached to them have one anchor each.
+struct TileActionsLayout: Layout {
+    var spacing: CGFloat
+
+    func fitsInARow(_ subviews: Subviews, width: CGFloat?) -> Bool {
+        guard let width else { return true }
+        let ideal = subviews.map { $0.sizeThatFits(.unspecified).width }
+        return ideal.reduce(0, +) + spacing * CGFloat(max(0, subviews.count - 1)) <= width
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let gaps = spacing * CGFloat(max(0, subviews.count - 1))
+        if fitsInARow(subviews, width: proposal.width) {
+            let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
+            return CGSize(width: sizes.map(\.width).reduce(0, +) + gaps, height: sizes.map(\.height).max() ?? 0)
+        }
+        let sizes = subviews.map { $0.sizeThatFits(ProposedViewSize(width: proposal.width, height: nil)) }
+        return CGSize(width: sizes.map(\.width).max() ?? 0, height: sizes.map(\.height).reduce(0, +) + gaps)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        if fitsInARow(subviews, width: proposal.width) {
+            var x = bounds.minX
+            for subview in subviews {
+                let size = subview.sizeThatFits(.unspecified)
+                subview.place(at: CGPoint(x: x, y: bounds.midY), anchor: .leading, proposal: ProposedViewSize(size))
+                x += size.width + spacing
+            }
+        } else {
+            var y = bounds.minY
+            for subview in subviews {
+                let size = subview.sizeThatFits(ProposedViewSize(width: proposal.width, height: nil))
+                subview.place(at: CGPoint(x: bounds.minX, y: y), anchor: .topLeading, proposal: ProposedViewSize(size))
+                y += size.height + spacing
+            }
+        }
     }
 }
 
