@@ -5,6 +5,14 @@ import SwiftUI
 // healthOS mark top left, a link top right (Change server, Sign out, Back to Profile), a glass card, and the tagline
 // under it, on a warm page with a peach glow top right and a sage one bottom left. Full screen, as the web's phone shows
 // these pages: no tab bar and no navigation bar, except on a page pushed under More, which keeps its Back.
+//
+// On iPhone Duo (duo/design.md §7, decisions.md Q5): the outer display is the phone's layout, with the system's margins
+// beside its vertical bar. Opened upright (the medium band) it's the web at 669: the sign-in pages' card 520 wide in the
+// middle under the mark, the welcome's card across the page with every step's name. Opened in landscape the whole column
+// (the mark and its link, the card, the tagline) keeps to the leading side of the fold, in the phone's form, so no field
+// or button is ever on the fold, and the trailing side is the page's background (blocks.md: these pages have nothing
+// for a second side). The frame is one DuoPage and one DuoScroll whatever the band, so a fold never rebuilds a form:
+// what's typed, the focus and the place on the page all stay (P14).
 
 /// onboarding.css's own tokens, light and dark (its :root block and its dark block). WelcomeLookTests reads the CSS
 /// and checks each one, so change both together.
@@ -56,6 +64,9 @@ enum WelcomeLook {
 
     /// The tagline under every card.
     static let tagline = "Your health, in perspective. Only yours."
+    /// The cards' widest (.onb-card-narrow and .onb-card): every iPhone is narrower, so they bite only on the open Duo.
+    static let narrowCard: CGFloat = 520
+    static let card: CGFloat = 920
     /// The frame's top, where `scrollTop` goes back to.
     static let top = "welcome-top"
 }
@@ -103,43 +114,50 @@ struct WelcomeFrame<End: View, Content: View>: View {
     }
 
     private var frame: some View {
-        ScrollView {
-            VStack(spacing: 0) {
-                HStack(spacing: 12) {
-                    HStack(spacing: 10) {
-                        BrandMark().frame(width: 30, height: 30)
-                        Text("healthOS")
-                            .font(.app(size: 18, weight: .medium, relativeTo: .title3))
-                            .tracking(-0.18)
-                            .foregroundStyle(Palette.ink)
-                            .lineLimit(1)
-                    }
-                    .accessibilityElement(children: .combine)
-                    Spacer(minLength: 0)
-                    end
-                }
-                // As tall with a link as without, so the mark never moves between pages.
-                .frame(minHeight: 44)
-                // The mark and the link stop growing at xxLarge, so "healthOS" is never cut short; VoiceOver reads both.
-                .dynamicTypeSize(...DynamicTypeSize.xxLarge)
-                .id(WelcomeLook.top)
-                content.padding(.top, spacing)
-                Text(WelcomeLook.tagline)
-                    .font(.app(size: 12, relativeTo: .caption))
-                    .foregroundStyle(Palette.ink3)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 26)
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 16)
-            .padding(.bottom, 24)
+        // The page's margins are the Duo's (16 on every other iPhone, the system's beside a vertical bar), from the
+        // DuoScroll. In a split the page keeps to the leading side of the fold (its trailing margin grows to the fold,
+        // less the clearance) and its band is that side's, compact; unchanged otherwise. Nothing here branches on the
+        // band or the fold.
+        DuoPage(side: .leadingOfFold) { _ in
+            DuoScroll { column }
+                .scrollDismissesKeyboard(.interactively)
         }
-        .scrollDismissesKeyboard(.interactively)
         .background { GradientLayers(layers: WelcomeLook.background, base: ColorToken.page.value).ignoresSafeArea() }
         .modifier(WelcomeBars(hidden: !pushed))
         .font(.app(.body))
         .tint(Palette.tint)
+    }
+
+    private var column: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                HStack(spacing: 10) {
+                    BrandMark().frame(width: 30, height: 30)
+                    Text("healthOS")
+                        .font(.app(size: 18, weight: .medium, relativeTo: .title3))
+                        .tracking(-0.18)
+                        .foregroundStyle(Palette.ink)
+                        .lineLimit(1)
+                }
+                .accessibilityElement(children: .combine)
+                Spacer(minLength: 0)
+                end
+            }
+            // As tall with a link as without, so the mark never moves between pages.
+            .frame(minHeight: 44)
+            // The mark and the link stop growing at xxLarge, so "healthOS" is never cut short; VoiceOver reads both.
+            .dynamicTypeSize(...DynamicTypeSize.xxLarge)
+            .id(WelcomeLook.top)
+            content.padding(.top, spacing)
+            Text(WelcomeLook.tagline)
+                .font(.app(size: 12, relativeTo: .caption))
+                .foregroundStyle(Palette.ink3)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+                .padding(.top, 26)
+        }
+        .padding(.top, 16)
+        .padding(.bottom, 24)
     }
 
     /// Shown as a page pushed over another (signed out, a page opened from More asks for sign-in): its Back and the
@@ -187,6 +205,9 @@ struct WelcomeCard<Content: View>: View {
             .padding(.bottom, 20)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background { CardSurface(shape: RoundedRectangle(cornerRadius: Radius.card, style: .continuous)) }
+            // The web's widths, the card centred in the frame's column (the web at 669: the sign-in card in the middle
+            // under the mark). No iPhone is as wide, so only the open Duo upright shows it.
+            .frame(maxWidth: narrow ? WelcomeLook.narrowCard : WelcomeLook.card)
     }
 }
 
