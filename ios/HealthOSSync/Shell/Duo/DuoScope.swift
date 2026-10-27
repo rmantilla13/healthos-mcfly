@@ -3,7 +3,8 @@ import SwiftUI
 /// One scope (§3): a page, a pane or a sheet. A GeometryReader at its root measures it in the first layout pass, outside
 /// any scroll view. On iOS 27.1 it reads its own bar edge, the container margins and the `.division` region in its own
 /// coordinates; in drawn tests it converts the `duoDisplayOverride` with its frame(in: .global). It sets `duoBand`,
-/// `duoFold`, `duoMargins`, `duoBarEdge` and `duoContentWidth` for `content`, and hands `content` the same values.
+/// `duoFold`, `duoMargins`, `duoBarEdge`, `duoContentWidth`, `duoScopeHeight` and `duoInPane` for `content`, and hands
+/// `content` the same values; `content` is centred in the scope.
 /// Its structure never changes, so nothing under it is rebuilt when the band or the fold changes.
 struct DuoScope<Content: View>: View {
     enum Kind: Equatable {
@@ -45,6 +46,9 @@ struct DuoScope<Content: View>: View {
                     .environment(\.duoContentWidth, values.contentWidth)
                     .environment(\.duoScopeHeight, proxy.size.height)
                     .environment(\.duoInPane, kind.isPane)
+                    // Centred, as a page's body is without a scope: a scroll view fills the scope either way, and a view
+                    // that doesn't (a spinner, an empty state) stays where it was on every iPhone.
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
     }

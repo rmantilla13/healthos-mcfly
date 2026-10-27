@@ -285,6 +285,21 @@ final class DuoLayoutTests: XCTestCase {
         XCTAssertEqual(DuoSheetStack<EmptyView>.stacks, atLeast27_1)
     }
 
+    /// A view that doesn't fill its page (a spinner, an empty state) sits where it would as the page's body without
+    /// DuoPage: centred, not in the top-leading corner.
+    func testAPageCentresWhatDoesNotFillIt() async throws {
+        let probe = DuoProbe()
+        let page = DuoPage { _ in probe.view("dot").frame(width: 40, height: 40) }
+        let host = try await DuoHost(page.environment(probe), as: .innerPortrait())
+        defer { host.close() }
+        let plainProbe = DuoProbe()
+        let plain = try await DuoHost(plainProbe.view("dot").frame(width: 40, height: 40).environment(plainProbe), as: .innerPortrait())
+        defer { plain.close() }
+        let dot = try XCTUnwrap(probe.frames["dot"])
+        XCTAssertEqual(dot, plainProbe.frames["dot"])
+        XCTAssertEqual(dot.midX, 669 / 2, accuracy: 0.5)
+    }
+
     func testChartHeight() {
         XCTAssertEqual(DuoBand.compact.chartHeight(200), 200)
         XCTAssertEqual(DuoBand.medium.chartHeight(200), 260)
