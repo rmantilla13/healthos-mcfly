@@ -109,26 +109,41 @@ final class VoiceNote {
         if via == .press { stop() }
     }
 
-    /// What a held note says when it ended any way but the finger lifting: nothing of it was sent.
+    /// What a note says when a fold or unfold ended it: nothing of it was sent.
     static let stoppedWords = "Stopped when the screen changed. Hold to talk again."
+    /// What a held note says when the touch was taken away (a scroll took it, on any iPhone): nothing of it was sent.
+    static let touchTakenWords = "Stopped before you let go, so nothing was sent. Hold to talk again."
+
+    /// When a held note was last thrown away because its touch was taken: a fold that comes with it says so instead.
+    private var touchTakenAt: Date?
 
     /// A hold that ended without the finger lifting: the touch was taken away (a scroll, a fold, the button going with
     /// the panes it was in). A note being recorded is thrown away, never sent: only a normal release sends. Before the
     /// microphone was ready (its permission question takes the touch), it's as a release then: nothing is recorded.
     func holdCancelled() {
         guard via == .press else { return }
-        if state == .recording { discard() } else { release() }
+        if state == .recording {
+            discard(Self.touchTakenWords)
+            touchTakenAt = now()
+        } else {
+            release()
+        }
     }
 
     /// The screen changed under a note being started or recorded (a fold or unfold, the panes swapping): the microphone
     /// stops and the recording is thrown away, held or turned on from VoiceOver alike. A fold never sends half a note; a
-    /// finger lifting after it sends nothing. A note already being written down goes on.
+    /// finger lifting after it sends nothing. A note already being written down goes on. A fold that took the touch a
+    /// moment before (the touch's end can come first) says it was the screen.
     func screenChanged() {
-        if state == .starting || state == .recording { discard() }
+        if state == .starting || state == .recording {
+            discard(Self.stoppedWords)
+        } else if state == .idle, error == Self.touchTakenWords, let at = touchTakenAt, now().timeIntervalSince(at) < 1 {
+            error = Self.stoppedWords
+        }
     }
 
-    /// The recording goes without being sent (it never left memory), and the line says so.
-    private func discard() {
+    /// The recording goes without being sent (it never left memory), and the line says why.
+    private func discard(_ words: String) {
         note += 1
         released = true
         ticker?.cancel()
@@ -136,7 +151,7 @@ final class VoiceNote {
         recorder.cancel()
         state = .idle
         seconds = 0
-        error = Self.stoppedWords
+        error = words
     }
 
     /// VoiceOver's activate, Switch Control or a keyboard: starts, and again stops.
