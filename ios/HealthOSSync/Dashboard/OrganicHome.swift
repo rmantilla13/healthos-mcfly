@@ -393,7 +393,7 @@ struct PortraitFrame: Layout {
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let photo = photoWidth(for: proposal)
-        return CGSize(width: proposal.width ?? photo, height: (photo / max(0.01, aspect)).rounded(.down))
+        return CGSize(width: proposal.width ?? photo, height: photo / max(0.01, aspect))
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
