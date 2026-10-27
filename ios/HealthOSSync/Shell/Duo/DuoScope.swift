@@ -15,6 +15,11 @@ struct DuoScope<Content: View>: View {
         /// A sheet: never splits; its column is at most `maxWidth` wide (its padding included), padded `padding` on
         /// each side. Its margins are that padding plus half of whatever is wider than `maxWidth`.
         case sheet(maxWidth: CGFloat, padding: CGFloat)
+
+        /// One of DuoPanes' panes (`duoInPane` inside).
+        var isPane: Bool {
+            if case .pane = self { true } else { false }
+        }
     }
 
     private let kind: Kind
@@ -39,6 +44,7 @@ struct DuoScope<Content: View>: View {
                     .environment(\.duoBarEdge, values.barEdge)
                     .environment(\.duoContentWidth, values.contentWidth)
                     .environment(\.duoScopeHeight, proxy.size.height)
+                    .environment(\.duoInPane, kind.isPane)
             }
         }
     }

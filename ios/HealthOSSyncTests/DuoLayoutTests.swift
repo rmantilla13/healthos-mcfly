@@ -353,6 +353,124 @@ final class DuoLayoutTests: XCTestCase {
         XCTAssertEqual(inside, outside, accuracy: 0.5)
     }
 
+    // MARK: - decisions.md Q5: two columns inside a pane
+
+    func testPaneColumnsNeedTheMinimumAndNoAccessibilitySize() {
+        XCTAssertEqual(DuoPaneColumns.count(2, width: 379, typeSize: .large), 2, "the trailing pane: 182.5 each")
+        XCTAssertEqual(DuoPaneColumns.count(2, width: 443, typeSize: .large), 2, "the leading pane: 214.5 each")
+        XCTAssertEqual(DuoPaneColumns.count(2, width: 354, typeSize: .large), 2, "170 each, the minimum")
+        XCTAssertEqual(DuoPaneColumns.count(2, width: 353, typeSize: .large), 1, "169.5 each")
+        XCTAssertEqual(DuoPaneColumns.count(2, width: 300, typeSize: .large), 1)
+        XCTAssertEqual(DuoPaneColumns.count(2, width: 379, typeSize: .xxxLarge), 2, "xxxLarge isn't an accessibility size")
+        XCTAssertEqual(DuoPaneColumns.count(2, width: 443, typeSize: .accessibility1), 1)
+        XCTAssertEqual(DuoPaneColumns.count(2, width: 443, typeSize: .accessibility3), 1)
+        XCTAssertEqual(DuoPaneColumns.count(3, width: 443, typeSize: .large), 2, "three of 138 don't fit, two do")
+        XCTAssertEqual(DuoPaneColumns.count(1, width: 443, typeSize: .large), 1)
+        XCTAssertEqual(DuoPaneColumns.count(2, width: nil, typeSize: .large), 1, "outside any scope")
+    }
+
+    func testASpanningCellTakesARowOnlyWhereSpansCount() {
+        let pane = DuoColumnsLayout(columns: 2, spacing: 14, loneSpans: true, honoursSpans: true)
+        let rows = pane.rows(spans: [false, false, true, false, false, false], width: 379)
+        XCTAssertEqual(rows.map(\.count), [2, 1, 2, 1])
+        XCTAssertEqual(rows[0], [.init(x: 0, width: 182.5), .init(x: 196.5, width: 182.5)])
+        XCTAssertEqual(rows[1], [.init(x: 0, width: 379)], "the spanning card across the pane")
+        XCTAssertEqual(rows[3], [.init(x: 0, width: 379)], "a lone last card spans, as the web's fill-row")
+        // A span in the middle of a row ends that row short.
+        let middle = pane.rows(spans: [false, true, false, false], width: 379)
+        XCTAssertEqual(middle.map(\.count), [1, 1, 2])
+        XCTAssertEqual(middle[0], [.init(x: 0, width: 379)])
+        // Not honoured (every grid outside a pane): an ordinary cell, the rows as before.
+        let page = DuoColumnsLayout(columns: 2, spacing: 14, loneSpans: true)
+        XCTAssertEqual(page.rows(spans: [false, true, false], width: 637), page.rows(count: 3, width: 637))
+        // Never across a fold, even if asked: the short row stays in the leading column.
+        let split = DuoColumnsLayout(columns: 2, spacing: 14, fold: foldTrailingBar, loneSpans: true, honoursSpans: true)
+        let splitRows = split.rows(spans: [false, true, false], width: 847)
+        XCTAssertEqual(splitRows.map(\.count), [2, 1])
+        XCTAssertEqual(splitRows[1], [.init(x: 0, width: 443)])
+    }
+
+    /// Drawn: `paneColumns: 2` gives two columns inside the trailing pane (488–867) and a `.duoSpans()` card the pane's
+    /// width; one column at AX3. The same grid as the page's single column is exactly as a plain DuoGrid on the outer
+    /// display (one column) and upright (the web's 2-up, the span ignored), so no iPhone changes.
+    func testPaneColumnsOnlyInsideAPane() async throws {
+        let names = ["a", "b", "chart", "c"]
+        // First, a plain DuoGrid of the same cards as a page's only column, on the outer display and upright.
+        var plain: [String: [String: CGRect]] = [:]
+        let plainProbe = DuoProbe()
+        let plainPage = DuoPage { _ in DuoScroll { DuoGrid(names, id: \.self) { plainProbe.view($0) } } }
+        let plainHost = try await DuoHost(plainPage.environment(plainProbe), as: .outer)
+        for state: DuoState in [.outer, .innerPortrait()] {
+            try await plainHost.set(state)
+            plain["\(state)"] = plainProbe.frames
+        }
+        plainHost.close()
+
+        let probe = DuoProbe()
+        let grid = DuoGrid(names, id: \.self, paneColumns: 2) { name in
+            if name == "chart" { probe.view(name).duoSpans() } else { probe.view(name) }
+        }
+        let page = DuoPage { _ in DuoPanes { probe.view("picture") } secondary: { grid } single: { grid } }
+        let host = try await DuoHost(page.environment(probe), as: .innerLandscape())
+        defer { host.close() }
+        let a = try XCTUnwrap(probe.frames["a"]), b = try XCTUnwrap(probe.frames["b"])
+        let chart = try XCTUnwrap(probe.frames["chart"]), c = try XCTUnwrap(probe.frames["c"])
+        XCTAssertEqual(a.minX, 488)
+        XCTAssertEqual(a.width, 182.5)
+        XCTAssertEqual(b.minY, a.minY, "side by side")
+        XCTAssertEqual(b.maxX, 867)
+        XCTAssertEqual(chart.minX, 488)
+        XCTAssertEqual(chart.width, 379, "across the pane")
+        XCTAssertGreaterThan(chart.minY, a.maxY)
+        XCTAssertEqual(c.width, 379, "a lone last card spans the pane")
+        XCTAssertEqual(probe.bands["a"], .compact)
+        XCTAssertLessThanOrEqual(try XCTUnwrap(probe.frames["picture"]).maxX, 463, "the picture in the leading pane")
+        // The accessibility sizes: one column.
+        try await host.set(.innerLandscape(), typeSize: .accessibility3)
+        XCTAssertEqual(probe.frames["a"]?.width, 379)
+        XCTAssertGreaterThan(try XCTUnwrap(probe.frames["b"]).minY, try XCTUnwrap(probe.frames["a"]).maxY)
+        try await host.set(.innerLandscape(), typeSize: .large)
+        XCTAssertEqual(probe.frames["a"]?.width, 182.5)
+        // The page's single column: exactly the plain grid's.
+        for state: DuoState in [.outer, .innerPortrait()] {
+            try await host.set(state)
+            for name in names {
+                XCTAssertEqual(probe.frames[name], plain["\(state)"]?[name], "\(name) in \(state)")
+            }
+        }
+        XCTAssertEqual(probe.frames["chart"]?.width, (637 - 14) / 2, "upright, the span is an ordinary cell")
+    }
+
+    func testAPairGoesSideBySideInAPaneOnlyWhenAsked() async throws {
+        let probe = DuoProbe()
+        let page = DuoPage { _ in
+            DuoPanes {
+                DuoPair { probe.view("chart1") } second: { probe.view("chart2") }
+            } secondary: {
+                DuoPair(paneSideBySide: true) { probe.view("small1") } second: { probe.view("small2") }
+            } single: {
+                DuoPair(paneSideBySide: true) { probe.view("small1") } second: { probe.view("small2") }
+            }
+        }
+        let host = try await DuoHost(page.environment(probe), as: .innerLandscape())
+        defer { host.close() }
+        let s1 = try XCTUnwrap(probe.frames["small1"]), s2 = try XCTUnwrap(probe.frames["small2"])
+        XCTAssertEqual(s1.minY, s2.minY, "side by side in the pane")
+        XCTAssertEqual(s1.width, 182.5)
+        XCTAssertEqual(s2.maxX, 867)
+        XCTAssertEqual(probe.bands["small1"], .compact)
+        let c1 = try XCTUnwrap(probe.frames["chart1"]), c2 = try XCTUnwrap(probe.frames["chart2"])
+        XCTAssertGreaterThan(c2.minY, c1.maxY, "a plain pair stacks in a pane")
+        XCTAssertEqual(c1.width, 443)
+        // Stacked at AX3, and in the single column (the outer display).
+        try await host.set(.innerLandscape(), typeSize: .accessibility3)
+        XCTAssertGreaterThan(try XCTUnwrap(probe.frames["small2"]).minY, try XCTUnwrap(probe.frames["small1"]).maxY)
+        try await host.set(.innerLandscape(), typeSize: .large)
+        try await host.set(.outer)
+        XCTAssertGreaterThan(try XCTUnwrap(probe.frames["small2"]).minY, try XCTUnwrap(probe.frames["small1"]).maxY)
+        XCTAssertEqual(probe.frames["small1"]?.width, 362)
+    }
+
     /// Where a text view's first character sits, from the text view's own leading edge, on screen.
     private static func textOffset(in view: UIView) -> CGFloat? {
         if let text = view as? UITextView {

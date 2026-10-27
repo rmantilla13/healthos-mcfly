@@ -179,6 +179,7 @@ private struct DuoBarEdgeKey: EnvironmentKey { static let defaultValue: Horizont
 private struct DuoDisplayOverrideKey: EnvironmentKey { static let defaultValue: DuoDisplay? = nil }
 private struct DuoContentWidthKey: EnvironmentKey { static let defaultValue: CGFloat? = nil }
 private struct DuoScopeHeightKey: EnvironmentKey { static let defaultValue: CGFloat? = nil }
+private struct DuoInPaneKey: EnvironmentKey { static let defaultValue = false }
 
 extension EnvironmentValues {
     /// Set by each scope; default .compact.
@@ -228,4 +229,12 @@ extension EnvironmentValues {
     /// A long table's window height here: 360 in compact (every iPhone, the outer display), the smaller of 360 and 45%
     /// of the scope's height in medium and wide (§2.7). Read it with `@Environment(\.duoTableWindow)`.
     var duoTableWindow: CGFloat { duoBand.tableWindow(scopeHeight: duoScopeHeight) }
+
+    /// The content is one of DuoPanes' two panes, which show only when the page splits (never on an iPhone or the outer
+    /// display): where `DuoGrid(paneColumns:)` and `DuoPair(paneSideBySide:)` lay out the decisions' Q5 columns. Set by
+    /// each pane's scope, false in every other; DuoGrid and DuoPair clear it for what's inside them.
+    var duoInPane: Bool {
+        get { self[DuoInPaneKey.self] }
+        set { self[DuoInPaneKey.self] = newValue }
+    }
 }

@@ -2,10 +2,13 @@ import SwiftUI
 
 /// Two panes that each scroll, inside a DuoPage and in place of the page's DuoScroll. When duoFold splits:
 /// ArrangementView(.split.axes(.horizontal)) on 27.1, else (and if G5 fails) an HStack of two DuoScrolls split on
-/// the fold. Each pane is its own scope, compact. `single` (one DuoScroll) otherwise. Switching rebuilds what's
-/// inside, so the page keeps its state, sheets and loaders above this (P4). Give it the pane contents, not scroll views:
-/// DuoPanes scrolls each one. A `duoScrollAnchor` above it is kept by the `anchor` pane (the primary unless said; Home's
-/// cards, beside its figure, are its secondary) and by `single`; the other pane opens at its top.
+/// the fold. Each pane is its own scope, compact, and scrolls only when its content is taller than it. Inside a pane,
+/// `DuoGrid(paneColumns: 2)` and `DuoPair(paneSideBySide: true)` lay out the open Duo's two columns (decisions.md Q5:
+/// the page's picture or lead in the primary pane, the rest in two columns in the secondary). `single` (one DuoScroll)
+/// otherwise. Switching rebuilds what's inside, so the page keeps its state, sheets and loaders above this (P4). Give it
+/// the pane contents, not scroll views: DuoPanes scrolls each one. A `duoScrollAnchor` above it is kept by the `anchor`
+/// pane (the primary unless said; Home's cards, beside its figure, are its secondary) and by `single`; the other pane
+/// opens at its top.
 ///
 ///     DuoPage { _ in
 ///         DuoPanes {
@@ -65,14 +68,14 @@ struct DuoPanes<Primary: View, Secondary: View, Single: View>: View {
         let spans = Self.paneSpans(margins: margins, fold: span)
         return HStack(spacing: 0) {
             DuoScope(.pane(margins: DuoMargins(leading: margins.leading, trailing: gap))) { _ in
-                DuoScroll { primary }.duoAnchorKept(anchor == .primary)
+                DuoScroll { primary }.duoPaneScroll().duoAnchorKept(anchor == .primary)
             }
             .frame(width: spans.primaryWidth)
             Color.clear
                 .frame(width: spans.gap)
                 .accessibilityHidden(true)
             DuoScope(.pane(margins: DuoMargins(leading: gap, trailing: margins.trailing))) { _ in
-                DuoScroll { secondary }.duoAnchorKept(anchor == .secondary)
+                DuoScroll { secondary }.duoPaneScroll().duoAnchorKept(anchor == .secondary)
             }
             .frame(maxWidth: .infinity)
         }
@@ -100,9 +103,9 @@ private struct DuoArrangedPanes<Primary: View, Secondary: View, Stacked: View>: 
     var body: some View {
         if arranged {
             ArrangementView {
-                DuoScope(.pane(margins: nil)) { _ in DuoScroll { primary }.duoAnchorKept(anchorsPrimary) }
+                DuoScope(.pane(margins: nil)) { _ in DuoScroll { primary }.duoPaneScroll().duoAnchorKept(anchorsPrimary) }
             } secondary: {
-                DuoScope(.pane(margins: nil)) { _ in DuoScroll { secondary }.duoAnchorKept(!anchorsPrimary) }
+                DuoScope(.pane(margins: nil)) { _ in DuoScroll { secondary }.duoPaneScroll().duoAnchorKept(!anchorsPrimary) }
             }
             .arrangementViewStyle(.split.axes(.horizontal))
         } else {
@@ -112,6 +115,10 @@ private struct DuoArrangedPanes<Primary: View, Secondary: View, Stacked: View>: 
 }
 
 private extension View {
+    /// A pane's scroll view moves only when what's in it is taller than the pane: the leading pane's picture stays put
+    /// while the trailing pane scrolls (decisions.md Q5).
+    func duoPaneScroll() -> some View { scrollBounceBehavior(.basedOnSize, axes: .vertical) }
+
     /// The page's scroll anchor stays with this pane, or is taken off it (the other pane keeps it).
     @ViewBuilder func duoAnchorKept(_ kept: Bool) -> some View {
         if kept { self } else { environment(\.duoScrollAnchorPage, nil) }
