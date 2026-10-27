@@ -420,7 +420,7 @@ struct SheetTrendChart: View {
         .chartYScale(domain: plan.lo...plan.hi)
         .chartYAxis { yAxis(plan) }
         .chartXAxis { xAxis(plan) }
-        .chartXSelection(value: $selected)
+        .chartScrub($selected)
         // The latest value over the line's end, its right edge on the point, as the web anchors it. Drawn over the chart
         // rather than as a mark's annotation, which Swift Charts moves off the point.
         .chartOverlay { proxy in
@@ -574,7 +574,7 @@ struct SheetBarChart: View {
                 }
             }
         }
-        .chartXSelection(value: $selected)
+        .chartScrub($selected)
         .chartOverlay { proxy in
             if let picked {
                 // Kept clear of the top, as the web keeps it 20 points into the plot.
