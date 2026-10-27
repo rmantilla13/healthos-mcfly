@@ -35,6 +35,7 @@
 		206056E1E3804A49BEA9897A /* AccountLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = B84FCCF208C7F611230E7BD0 /* AccountLink.swift */; };
 		20FD5100A7DC6EE3D375FF9F /* nutrition-all.json in Resources */ = {isa = PBXBuildFile; fileRef = F7445CD36B063431BB3F1392 /* nutrition-all.json */; };
 		210ABB8E29C5855076CACC7C /* HomeNutritionLinkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4FC9B99D78D356233E0EEAF /* HomeNutritionLinkTests.swift */; };
+		21BBAF5342D031977F238A5D /* McFlyDuoTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 602751071C0F44060B3FFE0F /* McFlyDuoTests.swift */; };
 		21DE651678DE3E1DE4B462BE /* AccountLinkView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 785FC0FDF27C65DCC391FC98 /* AccountLinkView.swift */; };
 		22071AB6A2D3BDD20B4D8FBA /* ProfileSettingsSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = F278F77C9031AC107E56126F /* ProfileSettingsSheets.swift */; };
 		227321122C18691CE1D3BC33 /* NutritionViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB45FFDD1FA53CE0B2371012 /* NutritionViews.swift */; };
@@ -356,6 +357,7 @@
 		5CCBCB73C14C4BDBBCAA4A45 /* SharedTypesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedTypesTests.swift; sourceTree = "<group>"; };
 		5CFA61D4066EC193CD336BCD /* AIKeysAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIKeysAPI.swift; sourceTree = "<group>"; };
 		5DC3708654566A1255AD0A12 /* AppRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRoute.swift; sourceTree = "<group>"; };
+		602751071C0F44060B3FFE0F /* McFlyDuoTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = McFlyDuoTests.swift; sourceTree = "<group>"; };
 		607D1113C58E632F9CB90E87 /* OrganicHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrganicHome.swift; sourceTree = "<group>"; };
 		61EB2C7B76961D2FA7439ADA /* PortraitPhotosSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortraitPhotosSection.swift; sourceTree = "<group>"; };
 		63C3960DE078C3D0C9951540 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
@@ -666,6 +668,7 @@
 				6CF00FE6CAC4FB940559D6D2 /* HomeTests.swift */,
 				51CF2CFE98D1350F331B63C6 /* HostedAccessibility.swift */,
 				1D16ADB4EAC1CF6BB06E7F64 /* IngestTokenTests.swift */,
+				602751071C0F44060B3FFE0F /* McFlyDuoTests.swift */,
 				8BA4D84D468C4393AE68A6E5 /* McFlyTests.swift */,
 				017AEE75F3F4B0D196D562F2 /* MetricSheetLiveTests.swift */,
 				0AC071F9B84337D8CD588EAD /* MetricSheetSnapshotTests.swift */,
@@ -1194,6 +1197,7 @@
 				0F8A1DFE4BBDAE51D8777C27 /* HomeTests.swift in Sources */,
 				1A9878B7B2222CDD2A5B4654 /* HostedAccessibility.swift in Sources */,
 				C5CA6CFB2FC4BA7F33A6EDFA /* IngestTokenTests.swift in Sources */,
+				21BBAF5342D031977F238A5D /* McFlyDuoTests.swift in Sources */,
 				76A08B640A0A219B4371F7F1 /* McFlyTests.swift in Sources */,
 				A63719A71868FB8C8F9DF163 /* MetricSheetLiveTests.swift in Sources */,
 				94C07EFE5B6FA0D3C9AA9C22 /* MetricSheetSnapshotTests.swift in Sources */,

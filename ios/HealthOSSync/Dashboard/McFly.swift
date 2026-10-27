@@ -349,6 +349,9 @@ struct McFlyMessage: Identifiable, Equatable {
 @Observable
 final class McFlyChat {
     var messages: [McFlyMessage] = []
+    /// What's typed in the composer and not sent yet. Here rather than in the page, so it stays whatever the page
+    /// around it does (on iPhone Duo, a fold that lays the page out again). New chat keeps it; a sign-out doesn't.
+    var draft = ""
     /// GET /api/mcfly, read after every load and every answer. Availability sees it (`mcflyState`).
     var status: McFlyStatus?
     var streaming = false
@@ -412,6 +415,7 @@ final class McFlyChat {
         task?.cancel()
         task = nil
         messages = []
+        draft = ""
         status = nil
         streaming = false
         stopping = false
@@ -507,28 +511,43 @@ final class McFlyChat {
 /// Whether the thread keeps the newest words in view while an answer streams (the `following` ref in
 /// src/pages/McFly.tsx). Scrolling up to reread, or touching a chart, lets go; scrolling back to within 80pt of
 /// the bottom, or sending a question, takes hold again. The answer growing on its own never changes it, and neither
-/// does the thread's own scroll down to the newest words.
+/// does the thread's own scroll down to the newest words, nor the words flowing again when the thread changes size
+/// (on iPhone Duo, a fold or a turn; the keyboard): for half a second after that, the top edge moving is the reflow,
+/// not the reader.
 ///
 /// A plain class on purpose: it hears about every frame of scrolling, and nothing on screen depends on it, so
 /// changing it mustn't redraw the thread.
 final class McFlyFollow {
     static let nearBottom: CGFloat = 80
+    /// How long after the thread changes size its content moving is still the reflow.
+    static let reflow: TimeInterval = 0.5
 
     private(set) var following = true
     /// Where the visible thread ends (the top of the composer), in the same space as the content's edges.
     var viewportBottom: CGFloat = .infinity
     private var top: CGFloat?
+    private var resizedAt: Date?
+
+    /// The thread's visible area changed size: its words flow again, which moves their edges without anyone scrolling.
+    func resized(at time: Date = .now) { resizedAt = time }
 
     /// The thread's content moved or changed size; `top` and `bottom` are its edges.
-    func contentMoved(top newTop: CGFloat, bottom: CGFloat) {
+    func contentMoved(top newTop: CGFloat, bottom: CGFloat, at time: Date = .now) {
         defer { top = newTop }
         // Only the top edge moving means someone scrolled; words arriving at the bottom leave it where it is.
         guard let old = top, abs(newTop - old) > 0.5 else { return }
         if bottom - viewportBottom < Self.nearBottom {
             following = true
-        } else if newTop > old {
+        } else if newTop > old, !reflowing(at: time) {
             following = false // toward earlier messages
         }
+    }
+
+    /// Within half a second of a size change.
+    private func reflowing(at time: Date) -> Bool {
+        guard let resizedAt else { return false }
+        let since = time.timeIntervalSince(resizedAt)
+        return since >= 0 && since < Self.reflow
     }
 
     /// A finger is on a chart: it stays put under the finger until the reader scrolls back down or asks again.
@@ -539,15 +558,16 @@ final class McFlyFollow {
 
 /// Ask McFly over Home (the web's AskPill, src/components/shell/AskPill.tsx). The shell mounts it at the bottom of Home
 /// in every phase. Like the web's, it shows on Home whenever someone is signed in, whether or not McFly can answer
-/// here: the page it opens (More → Ask McFly) says why not, and how to connect a key of your own.
+/// here: the page it opens (More → Ask McFly) says why not, and how to connect a key of your own. It sits at the bottom
+/// trailing corner, as on the web; on iPhone Duo it moves to the leading corner only when the system's bar is on the
+/// leading edge, never to the middle, and keeps clear of an active fold and the camera (DuoFloatingRow).
 struct AskMcFlyEntry: View {
     @Environment(Dashboard.self) private var dashboard
 
     var body: some View {
         Group {
             if dashboard.phase == .ready {
-                HStack {
-                    Spacer(minLength: 0)
+                DuoFloatingRow {
                     AskMcFlyPill { dashboard.open(.mcfly) }
                 }
                 .padding(.horizontal, 16)

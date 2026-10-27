@@ -92,6 +92,17 @@ enum McFlyVisual: Equatable {
     /// The one line a chart leaves in the conversation McFly reads back next time (visualNote on the web).
     var note: String { "[Showed a chart: \(title)]" }
 
+    /// It needs a row's width to itself: a chart along the days, or more tiles than two. On the open iPhone Duo, where
+    /// what McFly showed sits beside the conversation in two columns, these take both columns and the rest (a
+    /// comparison, a list of sports, one or two tiles) go two to a row.
+    var wide: Bool {
+        switch self {
+        case .series, .stages: true
+        case .stats(let v): v.items.count > 2
+        case .compare, .sports: false
+        }
+    }
+
     /// The order and colours the stage charts use everywhere (STAGES in src/pages/Detail.tsx).
     static let stageKeys: [(key: String, label: String, color: Color)] = [
         ("sleep_deep", "Deep", Palette.stageDeep),
@@ -361,7 +372,7 @@ private struct SeriesCard: View {
                 Text(f.value(mean)).font(.app(.title2, weight: .semibold)).foregroundStyle(Palette.ink).monospacedDigit()
             }
             Text(series.note).font(.app(.caption)).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
-            chart(f).frame(height: 170).padding(.top, 6)
+            chart(f).duoChartHeight(170).padding(.top, 6)
         }
         .card()
         .accessibilityElement(children: .ignore)
@@ -669,7 +680,7 @@ private struct StagesCard: View {
                 }
             }
             .chartXAxis { dateAxis(monthly: false) }
-            .frame(height: 200)
+            .duoChartHeight(200)
             .padding(.top, 6)
         }
         .card()
