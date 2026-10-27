@@ -246,7 +246,8 @@ final class NutritionDuoTests: XCTestCase {
     }
 
     /// The Log's two panes (Q5) swap with one column on a fold: what's typed in the add card (the search, the way in
-    /// chosen, the amounts) and an entry being edited all stay, as P4 asks, and the Log isn't read again.
+    /// chosen, the amounts) and an entry being edited all stay, as P4 asks, the field typed in keeps the keyboard, and
+    /// the Log isn't read again.
     func testTheLogKeepsWhatsTypedAcrossAPaneSwap() async throws {
         let d = try dashboard(), r = try reads()
         let host = try await DuoHost(page(.log, d, r), as: .outer)
@@ -257,7 +258,9 @@ final class NutritionDuoTests: XCTestCase {
         for state: DuoState in [.innerLandscape(), .innerPortrait(), .innerLandscape(bar: .leading), .outer] {
             try await host.set(state)
             XCTAssertNotNil(Self.textField("lentil", in: host.window), "the search in \(state)")
-            XCTAssertNotNil(Self.textField("Greek yogurt plain", in: host.window), "the editor, open with its typing, in \(state)")
+            let name = Self.textField("Greek yogurt plain", in: host.window)
+            XCTAssertNotNil(name, "the editor, open with its typing, in \(state)")
+            XCTAssertTrue(name?.isFirstResponder == true, "the editor keeps the keyboard in \(state)")
         }
         // Amounts: the way in chosen and what's typed stay too.
         let ways = try XCTUnwrap(Self.segments(in: host.window), "the ways in")
@@ -269,7 +272,9 @@ final class NutritionDuoTests: XCTestCase {
         for state: DuoState in [.innerLandscape(), .outer, .innerLandscape()] {
             try await host.set(state)
             XCTAssertEqual(Self.segments(in: host.window)?.selectedSegmentIndex, quick, "Quick add still chosen in \(state)")
-            XCTAssertNotNil(Self.textField("toast", in: host.window), "the amounts' name in \(state)")
+            let name = Self.textField("toast", in: host.window)
+            XCTAssertNotNil(name, "the amounts' name in \(state)")
+            XCTAssertTrue(name?.isFirstResponder == true, "the amounts' name keeps the keyboard in \(state)")
         }
         XCTAssertEqual(r.log, 1, "the Log isn't read again")
         host.window.endEditing(true)
@@ -296,7 +301,9 @@ final class NutritionDuoTests: XCTestCase {
         try await type(" plain", into: try XCTUnwrap(Self.textField("Greek yogurt", in: host.window), "the entry's name"), host)
         for state: DuoState in [.innerLandscape(), .outer, .innerLandscape(bar: .leading), .innerPortrait()] {
             try await host.set(state)
-            XCTAssertNotNil(Self.textField("Greek yogurt plain", in: host.window), "the editor, open with its typing, in \(state)")
+            let name = Self.textField("Greek yogurt plain", in: host.window)
+            XCTAssertNotNil(name, "the editor, open with its typing, in \(state)")
+            XCTAssertTrue(name?.isFirstResponder == true, "the editor keeps the keyboard in \(state)")
         }
         XCTAssertEqual(r.day, 1)
         host.window.endEditing(true)

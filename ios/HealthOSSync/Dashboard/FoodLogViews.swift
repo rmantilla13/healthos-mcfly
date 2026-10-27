@@ -26,6 +26,7 @@ struct FoodLogTab<Header: View>: View {
     @State private var counted: NutritionData?
     @State private var add = FoodAddState()
     @State private var edits = FoodEntryEdits()
+    @State private var focus = FoodFocus()
 
     var body: some View {
         DuoPage { _ in
@@ -59,6 +60,7 @@ struct FoodLogTab<Header: View>: View {
             }
         }
         .environment(\.foodEntryEdits, edits)
+        .environment(\.foodFocus, focus)
         .mealPhotoPicker(pick: Bindable(add.estimate).pick) { add.estimate.photo = $0 } failed: {
             add.estimate.error = "That photo couldn't be opened here. Try a JPEG or PNG, or describe it instead."
         }
@@ -157,6 +159,51 @@ extension EnvironmentValues {
     var foodEntryEdits: FoodEntryEdits? {
         get { self[FoodEntryEditsKey.self] }
         set { self[FoodEntryEditsKey.self] = newValue }
+    }
+}
+
+/// Which of a page's food fields has the keyboard, held above the open Duo's panes (Today's journal, the Log) so the
+/// field a fold brings takes the keyboard back, as Today's composer does (§4).
+@MainActor @Observable
+final class FoodFocus {
+    var field: String?
+}
+
+private struct FoodFocusKey: EnvironmentKey {
+    static var defaultValue: FoodFocus? { nil }
+}
+
+extension EnvironmentValues {
+    /// The page's food field with the keyboard; nil where no page keeps it (a sheet, which a fold doesn't rebuild).
+    var foodFocus: FoodFocus? {
+        get { self[FoodFocusKey.self] }
+        set { self[FoodFocusKey.self] = newValue }
+    }
+}
+
+extension View {
+    /// This field's keyboard, kept in the page's `foodFocus` under `key`: taken back when the field appears after a fold.
+    /// Nothing changes where no page keeps one.
+    func keepsFoodFocus(_ key: String) -> some View { modifier(KeepsFoodFocus(key: key)) }
+}
+
+private struct KeepsFoodFocus: ViewModifier {
+    let key: String
+    @Environment(\.foodFocus) private var holder
+    @FocusState private var focused: Bool
+
+    func body(content: Content) -> some View {
+        if let holder {
+            content
+                .focused($focused)
+                .onAppear { if holder.field == key { focused = true } }
+                .onChange(of: focused) { _, on in
+                    if on { holder.field = key } else if holder.field == key { holder.field = nil }
+                }
+                .onChange(of: holder.field) { _, field in if focused != (field == key) { focused = field == key } }
+        } else {
+            content
+        }
     }
 }
 
@@ -541,17 +588,20 @@ struct FoodEntryEditor: View {
             FoodLabeled("Name") {
                 TextField("Name", text: $draft.name).foodInput().onChange(of: name) { _, v in if v.count > 100 { name = String(v.prefix(100)) } }
                     .accessibilityLabel("Name").accessibilityIdentifier("editName")
+                    .keepsFoodFocus("edit-\(entry.id)-name")
             }
             FoodFields {
                 FoodLabeled("Time") { FoodTimePicker(label: "Time", time: $draft.time) }
                 FoodLabeled("How many \(entry.portion.isEmpty ? "" : "(\(entry.portion))")") {
                     TextField("1", text: $draft.quantity).keyboardType(.decimalPad).foodInput()
                         .accessibilityLabel("How many").accessibilityIdentifier("editQuantity")
+                        .keepsFoodFocus("edit-\(entry.id)-quantity")
                 }
                 ForEach(fields) { f in
                     FoodLabeled("\(f.label) (\(f.unit(units)))") {
                         TextField("–", text: Binding(get: { typed[f.key] ?? "" }, set: { typed[f.key] = $0 })).keyboardType(.decimalPad).foodInput()
                             .accessibilityLabel("\(f.label) in \(f.unit(units))")
+                            .keepsFoodFocus("edit-\(entry.id)-\(f.key)")
                     }
                 }
             }
@@ -773,6 +823,7 @@ struct FoodSearchPanel: View {
                 .onChange(of: query) { _, v in if v.count > 100 { query = String(v.prefix(100)) } }
                 .accessibilityLabel("Search foods, or type a barcode")
                 .accessibilityIdentifier("foodQuery")
+                .keepsFoodFocus("search")
             let button = Button(action: search) { PillLabel(busy ? "Searching…" : "Search") }
                 .buttonStyle(.accentPill(size: .compact))
                 .disabled(busy || query.trimmingCharacters(in: .whitespaces).count < 2)
@@ -1044,6 +1095,7 @@ private struct FoodScanPanel: View {
             }
             HStack(spacing: 8) {
                 TextField("Barcode", text: Bindable(s).code).keyboardType(.numberPad).foodInput().accessibilityLabel("Barcode").accessibilityIdentifier("barcodeField")
+                    .keepsFoodFocus("barcode")
                 Button(action: lookUp) { PillLabel(busy ? "Looking up…" : "Look up") }
                     .buttonStyle(.accentPill(size: .compact))
                     .disabled(busy || code.filter(\.isNumber).count < 8)
@@ -1117,6 +1169,7 @@ private struct FoodEstimatePanel: View {
                 }
                 .accessibilityLabel("What did you have?")
                 .accessibilityIdentifier("estimateText")
+                .keepsFoodFocus("estimate")
             if let photo {
                 HStack(spacing: 10) {
                     Image(uiImage: photo.preview).resizable().scaledToFill().frame(width: 72, height: 72)
@@ -1267,6 +1320,7 @@ struct FoodQuickPanel: View {
                 TextField("Quick add", text: Bindable(s).name).foodInput()
                     .onChange(of: name) { _, v in if v.count > 100 { name = String(v.prefix(100)) } }
                     .accessibilityLabel("Name (optional)").accessibilityIdentifier("quickName")
+                    .keepsFoodFocus("quickName")
             }
             FoodFields {
                 ForEach(fields) { f in
@@ -1274,6 +1328,7 @@ struct FoodQuickPanel: View {
                         TextField("", text: Binding(get: { typed[f.key] ?? "" }, set: { typed[f.key] = $0 })).keyboardType(.decimalPad).foodInput()
                             .accessibilityLabel("\(f.label) in \(f.unit(units))")
                             .accessibilityIdentifier("quick-\(f.key)")
+                            .keepsFoodFocus("quick-\(f.key)")
                     }
                 }
             }

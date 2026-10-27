@@ -44,6 +44,8 @@ struct NutritionToday<Views: View>: View {
     @State private var voice: VoiceNote?
     /// The journal's entries being edited, with what's typed in them: here, so a fold that swaps the panes keeps them.
     @State private var edits = FoodEntryEdits()
+    /// Which of the journal's fields has the keyboard, so an editor a swap brings takes it back.
+    @State private var focus = FoodFocus()
 
     var body: some View {
         let today = day?.today ?? Day.today()
@@ -62,6 +64,7 @@ struct NutritionToday<Views: View>: View {
             .scrollDismissesKeyboard(.interactively)
         }
         .environment(\.foodEntryEdits, edits)
+        .environment(\.foodFocus, focus)
         // Another day's entries are other rows: the editors open on this one close, as they always have.
         .onChange(of: viewing) { edits.open = [:] }
         .background(Palette.page)
