@@ -259,6 +259,12 @@ final class NutritionThread {
     var photo: AttachedPhoto?
     /// McFly is estimating.
     var busy = false
+    /// The composer has the keyboard. Kept here, above the panes the open iPhone Duo swaps on a fold, so the composer a
+    /// swap brings takes the keyboard back (design §4); leaving Today sets it back, so a return never raises it.
+    var composerFocused = false
+    /// Each estimate's review as it's being checked (names, how many, the time), by its estimate and drafts, so a fold
+    /// that swaps the panes keeps what was typed in it.
+    @ObservationIgnored private var reviews: [String: EstimateReview] = [:]
 
     var isEmpty: Bool { turns.isEmpty }
 
@@ -335,6 +341,18 @@ final class NutritionThread {
         guard let i = turns.firstIndex(where: { $0.id == id }), var e = turns[i].estimate else { return }
         e.state = state
         turns[i].body = .estimate(e)
+    }
+
+    /// The review of an estimate's drafts: the one being checked, or a new one. Reviews of estimates no longer in the
+    /// conversation go.
+    func review(batch: String, drafts: [FoodEntry]) -> EstimateReview {
+        let key = "\(batch)|\(drafts.map(\.id).joined(separator: ","))"
+        if let kept = reviews[key] { return kept }
+        let batches = Set(turns.compactMap { $0.estimate?.batch })
+        reviews = reviews.filter { batches.contains(String($0.key.prefix { $0 != "|" })) }
+        let made = EstimateReview(drafts: drafts, batch: batch)
+        reviews[key] = made
+        return made
     }
 
     /// A small copy of a photo for the thread, drawn in memory, so the full one is never kept for it.

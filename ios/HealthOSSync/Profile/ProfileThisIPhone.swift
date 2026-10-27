@@ -3,36 +3,113 @@ import SwiftUI
 /// What only the iPhone has, under the web's Profile: the server it reads from (reachable before sign-in, so the
 /// address can be changed from the sign-in screen), the Apple Health sync and its ingest token, Health access and
 /// background sync, the weekly digest reminder, the simulator's sample data, and sending all history again. Drawn
-/// with Profile's own rows, in the web's ink.
+/// with Profile's own rows, in the web's ink. The two that ask first (sample data, sending everything again) ask from
+/// their own buttons, so on a wide screen the question points at what was tapped (design §2.7, P10).
 struct ProfileThisIPhone: View {
-    let confirmSample: () -> Void
-    let confirmReupload: () -> Void
-    @Environment(AppModel.self) private var model
+    @Binding var confirmSample: Bool
+    @Binding var confirmReupload: Bool
     @Environment(Dashboard.self) private var dashboard
 
     var body: some View {
+        let items = ProfileIPhoneItem.shown(dashboard)
         ProfileCard("This iPhone") {
-            ProfileServerRow()
-            ProfileSyncRow()
-            ProfileHealthRow()
-            if dashboard.phase == .ready || DigestNotifications.enabled { ProfileDigestRow() }
+            // The card's last row has no line under it.
+            ForEach(items, id: \.self) { item in
+                ProfileIPhoneRow(item: item, divider: item != items.last, confirmSample: $confirmSample, confirmReupload: $confirmReupload)
+            }
+        }
+    }
+}
+
+/// "This iPhone" on the open iPhone Duo's trailing side (decisions.md Q5): each row a card of its own; the server and the
+/// sync (fields and long lines) and the two with switches (their words beside the switch) across both columns, the
+/// sample data and sending everything again two to a row.
+struct ProfileThisIPhoneGrid: View {
+    @Binding var confirmSample: Bool
+    @Binding var confirmReupload: Bool
+    @Environment(Dashboard.self) private var dashboard
+
+    var body: some View {
+        DuoGrid(ProfileIPhoneItem.shown(dashboard), id: \.self, paneColumns: 2) { item in
+            let card = ProfilePaneCard {
+                ProfileIPhoneRow(item: item, divider: false, confirmSample: $confirmSample, confirmReupload: $confirmReupload)
+            }
+            if item.wide { card.duoSpans() } else { card }
+        }
+    }
+}
+
+/// The iPhone's rows, in order.
+enum ProfileIPhoneItem: String, Hashable, CaseIterable {
+    case server, sync, health, digest, simulator, upload
+
+    /// The rows this iPhone shows now: the weekly digest while someone's signed in (or while it's on), the sample data
+    /// only in the simulator.
+    @MainActor
+    static func shown(_ dashboard: Dashboard) -> [ProfileIPhoneItem] {
+        var items: [ProfileIPhoneItem] = [.server, .sync, .health]
+        if dashboard.phase == .ready || DigestNotifications.enabled { items.append(.digest) }
+        #if targetEnvironment(simulator)
+        items.append(.simulator)
+        #endif
+        items.append(.upload)
+        return items
+    }
+
+    /// Needs a row of its own in two columns: a text field and long lines, or a switch with its words beside it.
+    var wide: Bool { self != .simulator && self != .upload }
+}
+
+/// One of the iPhone's rows.
+private struct ProfileIPhoneRow: View {
+    let item: ProfileIPhoneItem
+    let divider: Bool
+    @Binding var confirmSample: Bool
+    @Binding var confirmReupload: Bool
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        switch item {
+        case .server: ProfileServerRow(divider: divider)
+        case .sync: ProfileSyncRow(divider: divider)
+        case .health: ProfileHealthRow(divider: divider)
+        case .digest: ProfileDigestRow(divider: divider)
+        case .simulator:
             #if targetEnvironment(simulator)
-            ProfileBlock("Simulator") {
+            ProfileBlock("Simulator", divider: divider) {
                 ProfileFine("Fake data for testing. Use a scratch server only, never your real dashboard.")
-                Button("Add sample Health data", action: confirmSample)
+                Button("Add sample Health data") { confirmSample = true }
                     .buttonStyle(ProfilePillStyle())
                     .disabled(model.working)
                     .accessibilityIdentifier("addSampleData")
+                    .confirmationDialog("Add fake Health data?", isPresented: $confirmSample, titleVisibility: .visible) {
+                        Button("Add sample data", role: .destructive) { Task { await model.addSampleData() } }
+                    } message: {
+                        Text(sampleWarning)
+                    }
             }
+            #else
+            EmptyView()
             #endif
-            ProfileBlock("Upload all history again", divider: false) {
+        case .upload:
+            ProfileBlock("Upload all history again", divider: divider) {
                 ProfileFine("Use this after clearing Apple Health data on the server, or after deleting old entries in Health.")
-                Button("Upload all history again", role: .destructive, action: confirmReupload)
+                Button("Upload all history again", role: .destructive) { confirmReupload = true }
                     .buttonStyle(ProfilePillStyle(.danger))
                     .disabled(model.syncing)
                     .accessibilityIdentifier("uploadAgain")
+                    .confirmationDialog("Upload all history again?", isPresented: $confirmReupload, titleVisibility: .visible) {
+                        Button("Upload all history") { Task { await model.uploadAllHistory() } }
+                    } message: {
+                        Text("Every day back to \"\(model.history.label)\" is read from Health and sent again. Nothing is deleted.")
+                    }
             }
         }
+    }
+
+    private var sampleWarning: String {
+        let target = Config.serverURL(model.serverText)?.absoluteString ?? "the server you set"
+        return "Two weeks of made-up data goes into this simulator's Health store, and the next sync uploads it to \(target) as real Apple Health data. Only continue if that's a scratch server."
     }
 }
 
@@ -66,12 +143,13 @@ struct ProfileBlock<Content: View>: View {
 }
 
 private struct ProfileServerRow: View {
+    var divider = true
     @Environment(AppModel.self) private var model
     @Environment(Dashboard.self) private var dashboard
 
     var body: some View {
         @Bindable var model = model
-        ProfileBlock("Server") {
+        ProfileBlock("Server", divider: divider) {
             TextField("https://health.mcfly.bot", text: $model.serverText)
                 .keyboardType(.URL)
                 .textContentType(.URL)
@@ -112,12 +190,13 @@ private struct ProfileServerRow: View {
 }
 
 private struct ProfileSyncRow: View {
+    var divider = true
     @Environment(AppModel.self) private var model
     @Environment(Dashboard.self) private var dashboard
 
     var body: some View {
         @Bindable var model = model
-        ProfileBlock("Sync") {
+        ProfileBlock("Sync", divider: divider) {
             // The token sends to one account (IngestTokenOwner): say why nothing goes up.
             if dashboard.ingestOwner.paused {
                 ProfileIconLine("pause.circle", "Signed out. This iPhone's Health data isn't sent until someone signs in.")
@@ -202,11 +281,12 @@ private struct ProfileLastSync: View {
 }
 
 private struct ProfileHealthRow: View {
+    var divider = true
     @Environment(AppModel.self) private var model
 
     var body: some View {
         @Bindable var model = model
-        ProfileBlock("Health data") {
+        ProfileBlock("Health data", divider: divider) {
             if !model.healthRequested {
                 Button("Allow Health access") { Task { await model.requestHealthAccess() } }
                     .buttonStyle(ProfilePillStyle(.accent))
@@ -242,6 +322,7 @@ private struct ProfileHealthRow: View {
 
 /// The Monday reminder for McFly's weekly digest (Insights under More).
 private struct ProfileDigestRow: View {
+    var divider = true
     @Environment(Dashboard.self) private var dashboard
     @Environment(\.openURL) private var openURL
     @State private var on = DigestNotifications.enabled
@@ -255,7 +336,7 @@ private struct ProfileDigestRow: View {
         case .available: true
         case .notSetUp, .off: false
         }
-        ProfileBlock("Notifications") {
+        ProfileBlock("Notifications", divider: divider) {
             ProfileSwitch("Weekly digest", text: footer(mcfly: mcfly), isOn: toggle)
                 .disabled(mcfly == false && !on)
                 .accessibilityIdentifier("weeklyDigest")

@@ -162,6 +162,9 @@ struct PortraitFigure: View {
     var onHeart: (() -> Void)?
     /// The photo couldn't be loaded (or its metadata has no dots): the caller shows the digital human instead.
     var onFailed: (() -> Void)?
+    /// Home's figure state, which keeps the cut-out once read, so a fold that rebuilds the figure (the open Duo's panes)
+    /// draws it again without reading it again; nil: read on every appearance, as before.
+    var kept: HomeFigureState?
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.homeReads) private var reads
@@ -294,11 +297,18 @@ struct PortraitFigure: View {
 
     private func loadPhoto() async {
         let key = photo.versionKey
+        let keptKey = "\(key)|\(scheme == .dark)"
+        if let cutout = kept?.cutout, cutout.key == keptKey {
+            image = cutout.image
+            revealed = true
+            return
+        }
         guard let img = await reads.readCutout(photo, scheme == .dark) else {
             image = nil
             onFailed?()
             return
         }
+        kept?.cutout = (keptKey, img)
         if reduceMotion || Self.played.contains(key) {
             image = img
             revealed = true
@@ -505,8 +515,9 @@ struct TodayPath: View {
     @Environment(Dashboard.self) private var dashboard
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The timeline day's hourly readings (GET /api/day), which day the server last answered for, and whether
-    /// asking failed; a failure never reads as "no readings".
-    @State private var load = DayLoad()
+    /// asking failed; a failure never reads as "no readings". Read and kept by Home's page (`TodayPath.fetch`), above
+    /// the column and the open Duo's panes, so a fold that swaps them doesn't start the card again (P4).
+    let load: DayLoad
 
     /// The minute the marker was moved to on this day; nil is live (now, or the end of a past day).
     private var scrub: Int? {
@@ -567,34 +578,30 @@ struct TodayPath: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("card-home.timeline")
-        .task(id: "\(timeline.date)|\(dashboard.generation)") { await fetchDay() }
         // A new day starts live, and the figure goes back to the resting rate with it.
         .onChange(of: timeline.date, initial: true) { scrubbed.show(timeline.date) }
         .onDisappear { scrubbed.hide() }
     }
 
-    /// Asks for the timeline day's hours. A 404 (a server without the Day view) is an answer: no hours. A real
-    /// failure (offline, a server error) keeps what's on screen for this day and tries again, less often each time,
-    /// while the card is on screen.
-    private func fetchDay() async {
-        let date = timeline.date
+    /// Asks for the timeline day's hours, into `load`. A 404 (a server without the Day view) is an answer: no hours. A
+    /// real failure (offline, a server error) keeps what's on screen for this day and tries again, less often each
+    /// time, while the card shows. Home's page runs it, keyed on the day, the load and whether the card shows.
+    static func fetch(_ date: String, today: String, dashboard: Dashboard, into load: Binding<DayLoad>) async {
         var wait = Duration.seconds(15)
         while !Task.isCancelled {
             do {
-                let fetched = try await dashboard.day(date: isTodayDate ? nil : date)
+                let fetched = try await dashboard.day(date: date == today ? nil : date)
                 guard !Task.isCancelled else { return }
-                load.received(fetched, for: date)
+                load.wrappedValue.received(fetched, for: date)
                 return
             } catch {
                 guard !Task.isCancelled else { return }
-                load.failed(for: date)
+                load.wrappedValue.failed(for: date)
             }
             try? await Task.sleep(for: wait)
             wait = min(wait * 2, .seconds(300))
         }
     }
-
-    private var isTodayDate: Bool { timeline.date == (dashboard.summary?.today ?? Day.today()) }
 
     /// The day's last four events (.tl-list): each one's colour, name and times, and Completed, In progress or
     /// Upcoming; the ones at the marker stand out.

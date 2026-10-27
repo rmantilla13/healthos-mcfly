@@ -5,7 +5,12 @@ import SwiftUI
 // last year. The day is read with POST /api/nutrition/log/day, so no date is ever in an address. The rules and words
 // are in NutritionChatModel.swift.
 
-/// Today: the intro (with the day viewed), the conversation, the balance and the journal.
+/// Today: the intro (with the day viewed), the conversation, the balance and the journal. On the open iPhone Duo, where
+/// the page splits on the fold, the intro runs above two panes, as the web's wide Today: the conversation on the leading
+/// side (its thread scrolling, the composer at its foot) and the day on the trailing side (design §7, decisions.md Q5).
+/// Everything a fold must keep lives here, above those panes (P4): the day and its read, the + menu and the sheets it
+/// opens, the meal photo's picker and camera, the voice note, the problem line and the journal's open editors. The
+/// composer's keyboard is the conversation's (`thread.composerFocused`), so the composer a swap brings takes it back.
 struct NutritionToday<Views: View>: View {
     let mode: NutritionMode
     let thread: NutritionThread
@@ -17,7 +22,9 @@ struct NutritionToday<Views: View>: View {
     let routeMissing: () -> Void
     @ViewBuilder let views: () -> Views
     @Environment(Dashboard.self) private var dashboard
+    @Environment(\.nutritionReads) private var reads
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
     @State private var day: FoodLogDay?
     /// When the day shown was asked for: an estimate that arrived after it isn't in it yet.
     @State private var askedAt: Date?
@@ -25,44 +32,91 @@ struct NutritionToday<Views: View>: View {
     @State private var loading = false
     /// The status was read again once for a 409 (Nutrition turned off elsewhere), so it never loops.
     @State private var reloadedForOff = false
+    /// + 's menu, what was chosen in it (opened once it has gone) and the sheet that opens.
+    @State private var menu = false
+    @State private var chosen: NutritionAddChoice?
+    @State private var sheet: NutritionAddSheet?
+    /// "Add a photo"'s question (on the composer's +), and what its answer opens (here).
+    @State private var choosingPhoto = false
+    @State private var photoPick: MealPhotoPick?
+    /// The line under the composer: a photo that couldn't be opened, or why voice notes are off.
+    @State private var problem: String?
+    @State private var voice: VoiceNote?
+    /// The journal's entries being edited, with what's typed in them: here, so a fold that swaps the panes keeps them.
+    @State private var edits = FoodEntryEdits()
+    /// Which of the journal's fields has the keyboard, so an editor a swap brings takes it back.
+    @State private var focus = FoodFocus()
 
     var body: some View {
         let today = day?.today ?? Day.today()
         let viewing = date ?? today
         ScrollViewReader { proxy in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    PageIntro(sub: "A conversation about what nourishes you.") {
-                        ViewingPicker(today: today, date: $date)
-                    } slot: {
-                        views()
-                    }
-                    if let error, day == nil {
-                        Text("Couldn't load your food log: \(error)")
-                            .font(.app(.footnote)).foregroundStyle(Palette.ink2)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .card()
-                    } else {
-                        NutritionChatCard(thread: thread, day: day, askedAt: askedAt, mode: mode, viewing: viewing, today: today, compose: $compose) {
-                            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) { proxy.scrollTo(NutritionChatCard.bottomID, anchor: .bottom) }
-                        }
-                        Group {
-                            DailyBalanceCard(day: day, mode: mode, units: dashboard.units)
-                            FoodJournalCard(day: day, viewing: viewing, today: today, mode: mode, units: dashboard.units)
-                        }
-                        .opacity(loading && day != nil ? 0.6 : 1)
-                        .animation(.easeOut(duration: 0.2), value: loading)
+            DuoPage { _ in
+                NutritionTodayLayout(day: day, mode: mode, units: dashboard.units, viewing: viewing, today: today, date: $date,
+                                     failed: day == nil ? error : nil, loading: loading, voice: voice, views: views) { pinnedHeight in
+                    NutritionChatCard(thread: thread, day: day, askedAt: askedAt, mode: mode, viewing: viewing, today: today,
+                                      compose: $compose, pinned: pinnedHeight != nil, paneHeight: pinnedHeight ?? 0, voice: voice, problem: $problem,
+                                      choosingPhoto: $choosingPhoto, photoPick: $photoPick, openMenu: { menu = true }) {
+                        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) { proxy.scrollTo(NutritionChatCard.bottomID, anchor: .bottom) }
                     }
                 }
-                .padding(16)
             }
             .scrollDismissesKeyboard(.interactively)
         }
+        .environment(\.foodEntryEdits, edits)
+        .environment(\.foodFocus, focus)
+        // Another day's entries are other rows: the editors open on this one close, as they always have.
+        .onChange(of: viewing) { edits.open = [:] }
         .background(Palette.page)
         .refreshable { await dashboard.load() }
         // Read again when anything changes (a save, an edit, the background version check) and when the person's
         // numbers setting does.
         .task(id: "\(dashboard.generation)|\(date ?? "today")|\(mode.rawValue)") { await read() }
+        .onAppear(perform: makeVoice)
+        // Leaving Today (another view, another tab) ends a note, and the keyboard isn't raised again on the way back.
+        .onDisappear {
+            voice?.cancel()
+            thread.composerFocused = false
+        }
+        // Only the background ends a note: the microphone's permission question (and Control Center) make the app
+        // inactive for a moment, and a note started from VoiceOver goes on through that.
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background { voice?.cancel() }
+        }
+        // The problem line is a status on the web (role="status"): VoiceOver hears it as it appears.
+        .onChange(of: problem ?? voice?.error) { _, shown in
+            if let shown { AccessibilityNotification.Announcement(shown).post() }
+        }
+        // Health's write question for drafts just saved in the conversation, with no sheet up to cover it.
+        .onChange(of: dashboard.foodHealthAskPending) { _, pending in
+            if pending, sheet == nil, !menu { askHealth() }
+        }
+        .sheet(isPresented: $menu, onDismiss: runChoice) {
+            NutritionAddMenu(canEstimate: NutritionChat.canEstimate(dayRead: day != nil, estimate: dashboard.availability.estimate), mode: mode) { choice in
+                chosen = choice
+                menu = false
+            }
+        }
+        .sheet(item: $sheet, onDismiss: askHealth) { s in addSheet(s, viewing: viewing, today: today) }
+        .mealPhotoPicker(pick: $photoPick) { photo in
+            problem = nil
+            thread.photo = photo
+            thread.composerFocused = true
+        } failed: {
+            problem = "That photo couldn't be opened here. Try a JPEG or PNG, or describe it instead."
+        }
+    }
+
+    private func makeVoice() {
+        if voice == nil {
+            voice = VoiceNote(recorder: MicrophoneRecorder(), transcribe: { [dashboard] in try await dashboard.transcribe($0) })
+        }
+        voice?.onText = { [thread] words in
+            let typed = thread.draft
+            thread.draft = typed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? words : "\(typed.trimmingTrailingSpace) \(words)"
+            thread.composerFocused = true
+            AccessibilityNotification.Announcement("Added to your message: \(words)").post()
+        }
     }
 
     private func read() async {
@@ -71,7 +125,7 @@ struct NutritionToday<Views: View>: View {
         loading = true
         defer { loading = false }
         do {
-            guard let d = try await dashboard.loadFoodLogDay(date: asked) else { return routeMissing() }
+            guard let d = try await reads.day(dashboard, asked) else { return routeMissing() }
             // A reply for a day that's no longer asked for (a quick change of date) is dropped.
             guard asked == date, !Task.isCancelled else { return }
             day = d
@@ -86,6 +140,147 @@ struct NutritionToday<Views: View>: View {
                 reloadedForOff = true
                 await dashboard.load()
             }
+        }
+    }
+
+    // MARK: +
+
+    private func runChoice() {
+        defer { chosen = nil }
+        switch chosen {
+        case .photo?: choosingPhoto = true
+        case .search?: sheet = .search
+        case .quick?: sheet = .quick
+        case .water?: sheet = .water
+        case nil: break
+        }
+    }
+
+    private func askHealth() {
+        Task { await dashboard.askFoodHealthIfPending() }
+    }
+
+    @ViewBuilder
+    private func addSheet(_ s: NutritionAddSheet, viewing: String, today: String) -> some View {
+        let words = NutritionChat.dayWords(viewing, today: today)
+        let units = dashboard.units
+        let when = { [viewing, today] in NutritionChat.when(viewing: viewing, today: today, zone: dashboard.timeZone) }
+        switch s {
+        case .search:
+            SheetScaffold(eyebrow: "Nutrition", title: "Search foods or a barcode") {
+                Text("Adds to \(words).").mutedSmall()
+                FoodSearchPanel(when: when, units: units, usda: dashboard.availability.foodCan?.usda == true, scan: true)
+            }
+        case .quick:
+            SheetScaffold(eyebrow: "Nutrition", title: "Type amounts") {
+                Text("From a label or another app, for \(words).").mutedSmall()
+                FoodQuickPanel(when: when, mode: mode, units: units)
+            }
+        case .water:
+            SheetScaffold(eyebrow: "Nutrition", title: "Water") {
+                Text("In one tap, for \(words). Any other amount goes in Type amounts.").mutedSmall()
+                FoodWaterButtons(when: when, units: units)
+            }
+        }
+    }
+}
+
+/// Today's two layouts (P14: a child of the page, so it reads the page's fold, and nothing around the panes changes on
+/// one). One column on a phone, the outer display and the inner display upright: the intro, the conversation, the
+/// balance and the journal, scrolling together as before. Split on the fold: the intro above both panes, its words and
+/// the views on the leading side and the day picker on the trailing side; the conversation in the leading pane, as tall
+/// as the pane (its thread scrolls, the composer stays at its foot); the balance and the journal in the trailing pane.
+/// Neither of those is a small card (the ring beside its rows, a journal's entries to edit), so they keep the pane's
+/// width rather than going two to a row. A fold that swaps the two hands the row at the top (the balance, the journal)
+/// to the trailing pane, and stops a voice note being recorded without sending it.
+private struct NutritionTodayLayout<Views: View, Chat: View>: View {
+    let day: FoodLogDay?
+    let mode: NutritionMode
+    let units: Units
+    let viewing: String
+    let today: String
+    @Binding var date: String?
+    /// The day couldn't be read: the note in the conversation's place.
+    let failed: String?
+    let loading: Bool
+    let voice: VoiceNote?
+    @ViewBuilder let views: () -> Views
+    /// The conversation card; `pinned`: as tall as its pane (the height given), the thread scrolling inside it.
+    @ViewBuilder let chat: (_ pinned: CGFloat?) -> Chat
+    @Environment(\.duoFold) private var fold
+    @Environment(\.duoContentWidth) private var width
+    @Environment(\.dynamicTypeSize) private var typeSize
+    /// The panes' height inside the safe area (the keyboard's included).
+    @State private var visible: CGFloat = 0
+
+    static var sub: String { "A conversation about what nourishes you." }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if let sides = fold.sides(width: width ?? 0) {
+                splitIntro(sides).duoPagePadding().padding(.top, 16)
+            }
+            DuoPanes(anchor: .secondary) {
+                // At the accessibility sizes the card's head and composer alone are about a pane tall, so it scrolls
+                // with its pane, as on a phone.
+                Group {
+                    if let failed { failedNote(failed) } else { chat(typeSize.isAccessibilitySize ? nil : visible) }
+                }
+                .padding(.vertical, 16)
+            } secondary: {
+                VStack(alignment: .leading, spacing: 16) {
+                    if failed == nil { dayCards }
+                }
+                .scrollTargetLayout()
+                .padding(.vertical, 16)
+            } single: {
+                VStack(alignment: .leading, spacing: 16) {
+                    PageIntro(sub: Self.sub) { ViewingPicker(today: today, date: $date) } slot: { views() }
+                        .id("nutrition.intro")
+                    if let failed {
+                        failedNote(failed).id("nutrition.conversation")
+                    } else {
+                        chat(nil).id("nutrition.conversation")
+                        dayCards
+                    }
+                }
+                .scrollTargetLayout()
+                .padding(.vertical, 16)
+            }
+            .onGeometryChange(for: CGFloat.self, of: { $0.size.height - $0.safeAreaInsets.top - $0.safeAreaInsets.bottom }) { visible = $0 }
+        }
+        // A fold or unfold mid-note: the recording goes, never sent (§4).
+        .onChange(of: fold.splits) { voice?.screenChanged() }
+        .onChange(of: width) { voice?.screenChanged() }
+    }
+
+    @ViewBuilder private var dayCards: some View {
+        DailyBalanceCard(day: day, mode: mode, units: units)
+            .opacity(loading && day != nil ? 0.6 : 1)
+            .animation(.easeOut(duration: 0.2), value: loading)
+            .id("nutrition.balance")
+        FoodJournalCard(day: day, viewing: viewing, today: today, mode: mode, units: units)
+            .opacity(loading && day != nil ? 0.6 : 1)
+            .animation(.easeOut(duration: 0.2), value: loading)
+            .id("nutrition.journal")
+    }
+
+    private func failedNote(_ error: String) -> some View {
+        Text("Couldn't load your food log: \(error)")
+            .font(.app(.footnote)).foregroundStyle(Palette.ink2)
+            .fixedSize(horizontal: false, vertical: true)
+            .card()
+    }
+
+    /// The intro above the panes: the words and the views on the leading side, the day picker at the end of the
+    /// trailing side, each within its side (D10).
+    private func splitIntro(_ sides: (leading: ClosedRange<CGFloat>, trailing: ClosedRange<CGFloat>)) -> some View {
+        HStack(alignment: .top, spacing: 0) {
+            PageIntro(sub: Self.sub, actions: { EmptyView() }) { views() }
+                .frame(width: sides.leading.upperBound - sides.leading.lowerBound, alignment: .leading)
+            Spacer(minLength: 0)
+            ViewingPicker(today: today, date: $date)
+                .frame(width: sides.trailing.upperBound - sides.trailing.lowerBound, alignment: .trailing)
         }
     }
 }
@@ -148,9 +343,15 @@ enum NutritionAddSheet: String, Identifiable {
     var id: String { rawValue }
 }
 
-/// The conversation card (NutritionChat): its head, the thread, the composer, and what reads an estimate.
+/// The conversation card (NutritionChat): its head, the thread, the composer, and what reads an estimate. What + opens,
+/// the voice note and the problem line are the page's (NutritionToday), so a fold that swaps the open Duo's panes keeps
+/// them; the card asks for them. `pinned`: as tall as its pane, the thread scrolling inside it above the composer, as
+/// the web's wide Today (the open Duo's leading pane).
 struct NutritionChatCard: View {
     static let bottomID = "nutritionChatBottom"
+    /// The shortest a pinned card gets (the keyboard up in a short pane): its head, the composer and a little thread. The
+    /// pane scrolls then, rather than the card squeezing.
+    static let pinnedFloor: CGFloat = 380
 
     let thread: NutritionThread
     let day: FoodLogDay?
@@ -161,18 +362,21 @@ struct NutritionChatCard: View {
     /// A link asked for the composer: focused once, then set back, so coming back to the page never raises the
     /// keyboard again (the web's ?compose=1 is in one address only).
     @Binding var compose: Bool
+    var pinned = false
+    /// The pane's visible height, for a pinned card.
+    var paneHeight: CGFloat = 0
+    let voice: VoiceNote?
+    @Binding var problem: String?
+    /// "Add a photo"'s question, on +.
+    @Binding var choosingPhoto: Bool
+    @Binding var photoPick: MealPhotoPick?
+    /// Opens + 's menu (the page presents it).
+    let openMenu: () -> Void
     /// Brings the newest line and the composer into view.
     let scrollToBottom: () -> Void
     @Environment(Dashboard.self) private var dashboard
     @Environment(\.dynamicTypeSize) private var typeSize
-    @Environment(\.scenePhase) private var scenePhase
     @FocusState private var focused: Bool
-    @State private var voice: VoiceNote?
-    @State private var menu = false
-    @State private var chosen: NutritionAddChoice?
-    @State private var sheet: NutritionAddSheet?
-    @State private var choosingPhoto = false
-    @State private var problem: String?
 
     /// McFly can estimate here, once the day is read (the web's day.can.estimate): until then a message could replace
     /// an estimate waiting from elsewhere that hasn't joined the conversation yet.
@@ -182,51 +386,46 @@ struct NutritionChatCard: View {
     private var open: (id: UUID, turn: EstimateTurn)? { thread.open(batch: day?.draftBatch) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            head
-            threadView.padding(.vertical, 20)
-            composer
-            if let shown = problem ?? voice?.error {
-                Group {
-                    if shown == voiceOff {
-                        Text(shown).font(.app(size: 12, relativeTo: .caption)).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
-                    } else {
-                        NoteBad(shown, size: 12)
+        Group {
+            if pinned {
+                // The pane's own padding (16 above and below) is outside the card.
+                VStack(alignment: .leading, spacing: 0) {
+                    head
+                    GeometryReader { g in
+                        ScrollView {
+                            VStack(spacing: 0) {
+                                threadView.padding(.vertical, 20)
+                                Color.clear.frame(height: 1).id(Self.bottomID)
+                            }
+                            .frame(maxWidth: .infinity, minHeight: g.size.height, alignment: thread.isEmpty && !thread.busy ? .center : .top)
+                        }
+                        .scrollBounceBehavior(.basedOnSize)
                     }
+                    composer
+                    under
                 }
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity)
-                .padding(.top, 10)
+                // The pane's visible height (inside the safe area), less the pane's padding (16 above and below) and a
+                // little room: measured, the pane's scroll view shows 3 pt less than the panes' own height there.
+                .frame(height: max(paneHeight - 36, Self.pinnedFloor))
+            } else {
+                VStack(alignment: .leading, spacing: 0) {
+                    head
+                    threadView.padding(.vertical, 20)
+                    composer
+                    under
+                    Color.clear.frame(height: 1).id(Self.bottomID)
+                }
             }
-            SetupLineView(line: NutritionChat.setupLine(can: dashboard.availability.foodCan, ai: dashboard.availability.ai.value, mode: mode))
-            Color.clear.frame(height: 1).id(Self.bottomID)
         }
         .padding(.horizontal, 18)
         .padding(.top, 22)
         .padding(.bottom, 16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background { CardSurface(shape: RoundedRectangle(cornerRadius: Radius.card, style: .continuous)) }
-        .onAppear {
-            if voice == nil {
-                voice = VoiceNote(recorder: MicrophoneRecorder(), transcribe: { [dashboard] in try await dashboard.transcribe($0) })
-            }
-            voice?.onText = { words in
-                let typed = thread.draft
-                thread.draft = typed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? words : "\(typed.trimmingTrailingSpace) \(words)"
-                focused = true
-                AccessibilityNotification.Announcement("Added to your message: \(words)").post()
-            }
-        }
-        .onDisappear { voice?.cancel() }
-        // Only the background ends a note: the microphone's permission question (and Control Center) make the app
-        // inactive for a moment, and a note started from VoiceOver goes on through that.
-        .onChange(of: scenePhase) { _, phase in
-            if phase == .background { voice?.cancel() }
-        }
-        // The problem line is a status on the web (role="status"): VoiceOver hears it as it appears.
-        .onChange(of: problem ?? voice?.error) { _, shown in
-            if let shown { AccessibilityNotification.Announcement(shown).post() }
-        }
+        // The keyboard is the conversation's, both ways, so a composer a fold brings takes it back.
+        .onAppear { if thread.composerFocused { focused = true } }
+        .onChange(of: focused) { _, f in if thread.composerFocused != f { thread.composerFocused = f } }
+        .onChange(of: thread.composerFocused) { _, f in if focused != f { focused = f } }
         .onChange(of: thread.turns.count) { old, new in if new > old { scrollToBottom() } }
         .onChange(of: thread.busy) { _, busy in if busy { scrollToBottom() } }
         .task(id: compose) {
@@ -241,24 +440,23 @@ struct NutritionChatCard: View {
             let capped = NutritionChat.prefix(v, utf16: NutritionChat.maxDescription)
             if capped != v { thread.draft = capped }
         }
-        // Health's write question for drafts just saved in the conversation, with no sheet up to cover it.
-        .onChange(of: dashboard.foodHealthAskPending) { _, pending in
-            if pending, sheet == nil, !menu { askHealth() }
-        }
-        .sheet(isPresented: $menu, onDismiss: runChoice) {
-            NutritionAddMenu(canEstimate: canEstimate, mode: mode) { choice in
-                chosen = choice
-                menu = false
+    }
+
+    /// Under the composer: the problem line, then what reads an estimate.
+    @ViewBuilder private var under: some View {
+        if let shown = problem ?? voice?.error {
+            Group {
+                if shown == voiceOff {
+                    Text(shown).font(.app(size: 12, relativeTo: .caption)).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
+                } else {
+                    NoteBad(shown, size: 12)
+                }
             }
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
+            .padding(.top, 10)
         }
-        .sheet(item: $sheet, onDismiss: askHealth) { s in addSheet(s) }
-        .mealPhotoSource(isPresented: $choosingPhoto) { photo in
-            problem = nil
-            thread.photo = photo
-            focused = true
-        } failed: {
-            problem = "That photo couldn't be opened here. Try a JPEG or PNG, or describe it instead."
-        }
+        SetupLineView(line: NutritionChat.setupLine(can: dashboard.availability.foodCan, ai: dashboard.availability.ai.value, mode: mode))
     }
 
     // MARK: Head
@@ -314,7 +512,8 @@ struct NutritionChatCard: View {
             }
             .multilineTextAlignment(.center)
             // The card is at least a short screen tall (min-height 460 on the web's phone), the invitation in its middle.
-            .frame(maxWidth: .infinity, minHeight: 268)
+            // Pinned in a pane, the thread's own scroll view centres it in whatever room there is.
+            .frame(maxWidth: .infinity, minHeight: pinned ? 0 : 268)
             .padding(.vertical, 24)
             .accessibilityElement(children: .combine)
         } else {
@@ -328,7 +527,7 @@ struct NutritionChatCard: View {
                         }
                     case .estimate(let e):
                         McFlyLine {
-                            EstimateLineView(id: turn.id, turn: e, day: day, askedAt: askedAt, fresh: thread.fresh[e.batch], today: today, mode: mode) { saved in
+                            EstimateLineView(id: turn.id, turn: e, thread: thread, day: day, askedAt: askedAt, fresh: thread.fresh[e.batch], today: today, mode: mode) { saved in
                                 thread.finish(turn.id, saved: saved)
                                 AccessibilityNotification.Announcement(saved == nil ? "Discarded. Nothing was saved." : "Saved to your food journal.").post()
                             }
@@ -406,7 +605,7 @@ struct NutritionChatCard: View {
     private var composerRow: some View {
         let ready = sendable
         return HStack(spacing: 8) {
-            Button { focused = false; menu = true } label: {
+            Button { focused = false; openMenu() } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(Palette.accentText)
@@ -418,6 +617,8 @@ struct NutritionChatCard: View {
             .buttonStyle(.plain)
             .accessibilityLabel("More ways to add food")
             .accessibilityIdentifier("nutritionPlus")
+            // Its "Add a photo" question is anchored here (a popover on + at regular width, P10); what it opens is the page's.
+            .mealPhotoChoice(isPresented: $choosingPhoto, pick: $photoPick)
             Spacer(minLength: 0)
             if !typeSize.isAccessibilitySize { voiceLabel }
             if let voice {
@@ -490,47 +691,6 @@ struct NutritionChatCard: View {
             }
         }
     }
-
-    // MARK: +
-
-    private func runChoice() {
-        defer { chosen = nil }
-        switch chosen {
-        case .photo?: choosingPhoto = true
-        case .search?: sheet = .search
-        case .quick?: sheet = .quick
-        case .water?: sheet = .water
-        case nil: break
-        }
-    }
-
-    private func askHealth() {
-        Task { await dashboard.askFoodHealthIfPending() }
-    }
-
-    @ViewBuilder
-    private func addSheet(_ s: NutritionAddSheet) -> some View {
-        let words = NutritionChat.dayWords(viewing, today: today)
-        let units = dashboard.units
-        let when = { [viewing, today] in NutritionChat.when(viewing: viewing, today: today, zone: dashboard.timeZone) }
-        switch s {
-        case .search:
-            SheetScaffold(eyebrow: "Nutrition", title: "Search foods or a barcode") {
-                Text("Adds to \(words).").mutedSmall()
-                FoodSearchPanel(when: when, units: units, usda: dashboard.availability.foodCan?.usda == true, scan: true)
-            }
-        case .quick:
-            SheetScaffold(eyebrow: "Nutrition", title: "Type amounts") {
-                Text("From a label or another app, for \(words).").mutedSmall()
-                FoodQuickPanel(when: when, mode: mode, units: units)
-            }
-        case .water:
-            SheetScaffold(eyebrow: "Nutrition", title: "Water") {
-                Text("In one tap, for \(words). Any other amount goes in Type amounts.").mutedSmall()
-                FoodWaterButtons(when: when, units: units)
-            }
-        }
-    }
 }
 
 /// Send's look as it is, enabled or not: the label draws its own fill (the gradient, or the web's --nutri-send-off).
@@ -597,6 +757,7 @@ private struct McFlyLine<Content: View>: View {
 private struct EstimateLineView: View {
     let id: UUID
     let turn: EstimateTurn
+    let thread: NutritionThread
     let day: FoodLogDay?
     let askedAt: Date?
     let fresh: [FoodEntry]?
@@ -609,7 +770,7 @@ private struct EstimateLineView: View {
         let shows = NutritionChat.shows(turn, day: day, dayAskedAt: askedAt, fresh: fresh)
         switch shows {
         case .review(let drafts):
-            ChatReview(turn: turn, drafts: drafts, today: today, mode: mode, units: dashboard.units, onDone: onDone)
+            ChatReview(turn: turn, review: thread.review(batch: turn.batch, drafts: drafts), today: today, mode: mode, units: dashboard.units, onDone: onDone)
                 .id(drafts.map(\.id).joined(separator: ","))
         case .saved:
             line(shows.text ?? "", Palette.ink, 14)
@@ -639,15 +800,16 @@ private struct ChatReview: View {
     @Environment(\.dynamicTypeSize) private var typeSize
     /// How many's column: 72 at the usual size, wider as the text grows, so "How many" stays on one line.
     @ScaledMetric(relativeTo: .caption) private var quantityWidth: CGFloat = 72
-    @State private var review: EstimateReview
+    /// The conversation's, so what's typed in it survives a fold that swaps the open Duo's panes.
+    @Bindable var review: EstimateReview
 
-    init(turn: EstimateTurn, drafts: [FoodEntry], today: String, mode: NutritionMode, units: Units, onDone: @escaping (Int?) -> Void) {
+    init(turn: EstimateTurn, review: EstimateReview, today: String, mode: NutritionMode, units: Units, onDone: @escaping (Int?) -> Void) {
         self.turn = turn
+        self.review = review
         self.today = today
         self.mode = mode
         self.units = units
         self.onDone = onDone
-        _review = State(initialValue: EstimateReview(drafts: drafts, batch: turn.batch))
     }
 
     var body: some View {
@@ -753,7 +915,7 @@ private struct VoiceButton: View {
     let blocked: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Held down. A gesture state goes back to false however the touch ends, cancelled included (the microphone's
-    /// permission question, a scroll taking the touch), so a recording never outlives the finger.
+    /// permission question, a scroll taking the touch, a fold), so a recording never outlives the finger.
     @GestureState private var held = false
 
     var body: some View {
@@ -767,12 +929,17 @@ private struct VoiceButton: View {
         .opacity(voiceOff != nil || disabled ? 0.45 : 1)
         .frame(width: 44, height: 44)
         .contentShape(Circle())
-        .gesture(DragGesture(minimumDistance: 0).updating($held) { _, state, _ in state = true }, including: disabled ? .none : .all)
+        // The finger lifting (the drag's normal end) is the one way a held note is sent (design §4: a fold never sends
+        // half a note). A hold that ends any other way is thrown away, with a line saying so: checked once this touch's
+        // events are all in, so a normal end has already sent it by then.
+        .gesture(DragGesture(minimumDistance: 0)
+            .updating($held) { _, state, _ in state = true }
+            .onEnded { _ in if on { voice.release() } }, including: disabled ? .none : .all)
         .onChange(of: held) { _, down in
             if down {
                 if on { voice.press() } else { blocked() }
             } else if on {
-                voice.release()
+                Task { @MainActor in voice.holdCancelled() }
             }
         }
         .sensoryFeedback(.impact(weight: .light), trigger: voice.state == .recording) { _, recording in recording }
@@ -872,7 +1039,8 @@ private struct NutritionAddMenu: View {
         }
         .scrollBounceBehavior(.basedOnSize)
         .font(.app(.body))
-        .presentationDetents([.height(height)])
+        // As tall as its rows; on the open Duo's inner display, a centred sheet fitted to them (§2.7).
+        .duoMenuSheet(height: height)
         .presentationCornerRadius(22)
         .presentationBackground { GradientFill(.menuBg) }
         .accessibilityElement(children: .contain)

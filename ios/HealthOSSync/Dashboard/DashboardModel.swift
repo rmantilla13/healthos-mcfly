@@ -103,6 +103,9 @@ final class Dashboard {
     var webPage: WebPage?
     /// The account menu ("Your workspace") is up, from any page's avatar (Shell/AccountMenu.swift).
     var accountMenuOpen = false
+    /// Search is up (Search/SearchScreen.swift), from the toolbar's Search item, which shows only once Search is built
+    /// (`SearchScreen.ready`).
+    var searchOpen = false
     /// A metric's detail sheet showing over the app (`showMetric`, Shell/MetricRequest.swift).
     var metricSheet: MetricRequest?
     /// The chart pages' range in days (RangeFilters), shared by Vitals, Body and Sleep as the web shares it in a

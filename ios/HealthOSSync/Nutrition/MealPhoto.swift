@@ -31,11 +31,34 @@ struct AttachedPhoto: Equatable {
     }
 }
 
+/// Where a meal photo comes from, once "Add a photo" is answered.
+enum MealPhotoPick: Equatable {
+    case camera, library
+
+    /// This iPhone has a camera; without one (the simulator) there's nothing to choose between, and it's Photos.
+    static var hasCamera: Bool { UIImagePickerController.isSourceTypeAvailable(.camera) }
+}
+
 extension View {
     /// "Add a photo": the camera or Photos, as a phone's browser offers for the web's photo field. Straight to Photos
     /// where there's no camera (the simulator). The photo comes back ready to send, or `failed` when it can't be opened.
+    /// The question and what it opens are on this one view (the Log's estimate). Today's conversation puts the question
+    /// on its button and what it opens on the page (`mealPhotoChoice` and `mealPhotoPicker`), so a fold that swaps its
+    /// panes never closes the camera.
     func mealPhotoSource(isPresented: Binding<Bool>, picked: @escaping (AttachedPhoto) -> Void, failed: @escaping () -> Void) -> some View {
         modifier(MealPhotoSource(asking: isPresented, picked: picked, failed: failed))
+    }
+
+    /// "Add a photo"'s question, on the control that asks it (a popover on it at regular width, P10): Take a photo or
+    /// Choose from your photos, into `pick`. Straight to Photos where there's no camera.
+    func mealPhotoChoice(isPresented: Binding<Bool>, pick: Binding<MealPhotoPick?>) -> some View {
+        modifier(MealPhotoChoice(asking: isPresented, pick: pick))
+    }
+
+    /// What the question opens, Photos or the camera, presented from here: the page, above anything a fold rebuilds (P4).
+    /// The photo comes back ready to send, or `failed` when it can't be opened.
+    func mealPhotoPicker(pick: Binding<MealPhotoPick?>, picked: @escaping (AttachedPhoto) -> Void, failed: @escaping () -> Void) -> some View {
+        modifier(MealPhotoPicker(pick: pick, picked: picked, failed: failed))
     }
 }
 
@@ -43,26 +66,45 @@ private struct MealPhotoSource: ViewModifier {
     @Binding var asking: Bool
     let picked: (AttachedPhoto) -> Void
     let failed: () -> Void
-    @State private var library = false
-    @State private var camera = false
-    @State private var item: PhotosPickerItem?
-
-    private var hasCamera: Bool { UIImagePickerController.isSourceTypeAvailable(.camera) }
+    @State private var pick: MealPhotoPick?
 
     func body(content: Content) -> some View {
         content
-            .onChange(of: asking) { _, on in
+            .mealPhotoChoice(isPresented: $asking, pick: $pick)
+            .mealPhotoPicker(pick: $pick, picked: picked, failed: failed)
+    }
+}
+
+private struct MealPhotoChoice: ViewModifier {
+    @Binding var asking: Bool
+    @Binding var pick: MealPhotoPick?
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: asking, initial: true) { _, on in
                 // Without a camera there's nothing to choose between.
-                if on, !hasCamera {
+                if on, !MealPhotoPick.hasCamera {
                     asking = false
-                    library = true
+                    pick = .library
                 }
             }
-            .confirmationDialog("Add a photo", isPresented: Binding(get: { asking && hasCamera }, set: { asking = $0 }), titleVisibility: .hidden) {
-                Button("Take a photo") { camera = true }
-                Button("Choose from your photos") { library = true }
+            .confirmationDialog("Add a photo", isPresented: Binding(get: { asking && MealPhotoPick.hasCamera }, set: { asking = $0 }), titleVisibility: .hidden) {
+                Button("Take a photo") { pick = .camera }
+                Button("Choose from your photos") { pick = .library }
             }
-            .photosPicker(isPresented: $library, selection: $item, matching: .images)
+    }
+}
+
+private struct MealPhotoPicker: ViewModifier {
+    @Binding var pick: MealPhotoPick?
+    let picked: (AttachedPhoto) -> Void
+    let failed: () -> Void
+    @State private var item: PhotosPickerItem?
+
+    func body(content: Content) -> some View {
+        content
+            .photosPicker(isPresented: Binding(get: { pick == .library }, set: { if !$0, pick == .library { pick = nil } }),
+                          selection: $item, matching: .images)
             .onChange(of: item) { _, new in
                 guard let new else { return }
                 item = nil
@@ -70,9 +112,9 @@ private struct MealPhotoSource: ViewModifier {
                     if let data = try? await new.loadTransferable(type: Data.self), let photo = AttachedPhoto(data: data) { picked(photo) } else { failed() }
                 }
             }
-            .fullScreenCover(isPresented: $camera) {
+            .fullScreenCover(isPresented: Binding(get: { pick == .camera }, set: { if !$0, pick == .camera { pick = nil } })) {
                 CameraPicker { image in
-                    camera = false
+                    pick = nil
                     guard let image else { return }
                     if let photo = AttachedPhoto(image: image) { picked(photo) } else { failed() }
                 }

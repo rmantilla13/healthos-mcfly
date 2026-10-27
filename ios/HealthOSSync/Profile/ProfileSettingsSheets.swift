@@ -230,11 +230,13 @@ struct ProfileNutritionSheet: View {
                 ProfileFine(!on ? ProfileWords.nutritionOff : dashboard.status?.hosted == true ? ProfileWords.nutritionHosted : ProfileWords.nutritionMac)
                 if let error { ProfileNote(text: error, good: false) }
             }
+            // Done over the targets' number pads, inside the sheet: from iOS 27.1 the sheet sits in a navigation stack
+            // (DuoSheetStack), and a keyboard toolbar from outside it doesn't reach these fields.
+            .keyboardDismissal()
             ProfileSheetPart("Delete nutrition data", text: ProfileWords.deleteNutrition, divided: true) {
                 ProfileDeleteLine(title: "Delete all nutrition data", id: "deleteNutrition", busy: deleting, done: deleted.map(ProfileWords.nutritionDeleted)) { confirmDelete = true }
             }
         }
-        .keyboardDismissal()
         .alert(ProfileWords.deleteNutritionAsk, isPresented: $confirmDelete) {
             Button("Delete all nutrition data", role: .destructive) { Task { await delete() } }
             Button("Cancel", role: .cancel) {}
@@ -298,6 +300,9 @@ private struct ProfileNutritionTargets: View {
                 // As many to a row as fit, as the web's .target-inputs wrap: two and one on a phone, one a row at the
                 // largest text sizes.
                 ProfileWrap { fields }
+                    // No return key on the number pads: on iPhone Duo (iOS 27.1) one Done for them sits after the
+                    // fields while one is focused, so the fields don't move along their rows as it comes and goes.
+                    .duoFieldDone(focus != nil, under: true)
                 if let error { ProfileNote(text: error, good: false) }
             }
         }

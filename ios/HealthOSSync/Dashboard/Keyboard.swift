@@ -9,10 +9,26 @@ func hideKeyboard() {
 extension View {
     /// Forms and scroll views: the keyboard follows a downward scroll away, and a Done button sits above
     /// keyboards (URL, number and code keyboards have no obvious way out). How Done sits there on iPhone Duo is
-    /// DuoKeyboardDone's (Shell/Duo/DuoKeyboard.swift).
+    /// DuoKeyboardDone's (Shell/Duo/DuoKeyboard.swift). On a sheet's view (outside its SheetScaffold) it also asks the
+    /// scaffold for the Done: on iPhone Duo the scaffold sits in a navigation stack of its own, which a keyboard toolbar
+    /// from outside doesn't reach, so the scaffold puts it inside (`duoKeyboardDoneAsked`).
     func keyboardDismissal() -> some View {
-        scrollDismissesKeyboard(.interactively)
-            .toolbar { DuoKeyboardDone(action: hideKeyboard) }
+        modifier(KeyboardDismissal())
+    }
+}
+
+private struct KeyboardDismissal: ViewModifier {
+    /// A SheetScaffold above already holds the Done inside its stack: none here as well.
+    @Environment(\.duoKeyboardDoneInSheet) private var inSheet
+
+    func body(content: Content) -> some View {
+        content
+            .scrollDismissesKeyboard(.interactively)
+            .toolbar {
+                // None at all where the bar holds no Done (iOS 27.1): number fields put theirs beside them (duoFieldDone).
+                if !inSheet, DuoKeyboardDone.current.inBar { DuoKeyboardDone(action: hideKeyboard) }
+            }
+            .environment(\.duoKeyboardDoneAsked, true)
     }
 }
 

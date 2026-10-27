@@ -176,6 +176,7 @@ struct ViewSwitch: View {
 struct SheetTableView: View {
     let table: SheetTable
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.duoTableWindow) private var tableWindow
 
     var body: some View {
         if typeSize.isAccessibilitySize {
@@ -221,16 +222,23 @@ struct SheetTableView: View {
         return zip(columns.dropFirst(), values).map { "\($0): \($1)" }
     }
 
-    /// A long table scrolls inside 360 points (.table-wrap's max-height), as the web's does; a short one is shown whole.
+    /// A long table scrolls inside its window (.table-wrap's max-height of 360), as the web's does; a short one is shown
+    /// whole. The window is the sheet's (`\.duoTableWindow`): 360 points on every iPhone and the iPhone Duo's outer
+    /// display, and the smaller of 360 and 45% of the sheet's height in the inner display's centred sheet, so the table
+    /// never takes most of a sheet that's wider than it is tall.
     @ViewBuilder private func window(@ViewBuilder _ content: () -> some View) -> some View {
-        if table.rows.count > 9 {
+        if table.rows.count > Self.rowsShownWhole(in: tableWindow) {
             ScrollView(.vertical) { content() }
-                .frame(height: 360)
+                .frame(height: tableWindow)
                 .scrollBounceBehavior(.basedOnSize, axes: .vertical)
         } else {
             content()
         }
     }
+
+    /// How many rows are shown whole, with no window: 9 in 360 points (about 40 a row), as always on the phone; fewer in a
+    /// shorter window.
+    static func rowsShownWhole(in window: CGFloat) -> Int { Int((window / 40).rounded(.down)) }
 
     private var grid: some View {
         SheetTableLayout(columns: table.columns.count) {
@@ -412,7 +420,7 @@ struct SheetTrendChart: View {
         .chartYScale(domain: plan.lo...plan.hi)
         .chartYAxis { yAxis(plan) }
         .chartXAxis { xAxis(plan) }
-        .chartXSelection(value: $selected)
+        .chartScrub($selected)
         // The latest value over the line's end, its right edge on the point, as the web anchors it. Drawn over the chart
         // rather than as a mark's annotation, which Swift Charts moves off the point.
         .chartOverlay { proxy in
@@ -425,11 +433,15 @@ struct SheetTrendChart: View {
                 }
             }
         }
-        // The web's top margin: room for the end label over a high last value.
-        .frame(height: 200)
+        // 1.3 times taller in the inner display's centred sheet (duoChartHeight). The web's top margin: room for the end
+        // label over a high last value.
+        .duoChartHeight(200)
         .padding(.top, 20)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         .onAppear { if let picks, points.indices.contains(picks) { selected = x(points[picks]) } }
+        // The pick stays when the finger lifts (chartScrub), and the chart is the same across ranges, so a new range's
+        // points drop it rather than move it to a day the person never picked.
+        .onChange(of: points.map(\.date)) { selected = nil }
         .accessibilityLabel(plan.median.map { "\(label), median \(format.value($0))" } ?? label)
     }
 
@@ -565,7 +577,7 @@ struct SheetBarChart: View {
                 }
             }
         }
-        .chartXSelection(value: $selected)
+        .chartScrub($selected)
         .chartOverlay { proxy in
             if let picked {
                 // Kept clear of the top, as the web keeps it 20 points into the plot.
@@ -574,9 +586,12 @@ struct SheetBarChart: View {
                 }
             }
         }
-        .frame(height: 220)
+        // 1.3 times taller in the inner display's centred sheet (duoChartHeight).
+        .duoChartHeight(220)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         .onAppear { if let picks, points.indices.contains(picks) { selected = points[picks].date } }
+        // As the line's: a new range's bars drop the pick, even where they hold the picked day.
+        .onChange(of: points.map(\.date)) { selected = nil }
         .accessibilityLabel(mid.map { "\(label), median \(format.value($0))" } ?? label)
     }
 }
@@ -584,24 +599,25 @@ struct SheetBarChart: View {
 // MARK: - The day by the hour
 
 /// One day's hours against the typical day: the Day view's own chart (HoursChart), or, with no hour drawn yet, the
-/// web's dashed empty box.
+/// web's dashed empty box, as tall as the chart would be (1.3 times taller in the inner display's centred sheet).
 private struct SheetDayChart: View {
     let hour: HourMetric
     let series: DaySeries
     let reading: DayReading
     let goal: Double?
     let label: String
+    @Environment(\.duoBand) private var band
 
     var body: some View {
         let drawn = reading.shown.contains { $0 != nil } || series.typical.contains { $0 != nil }
         if reading.through != nil, drawn {
             HoursChart(metric: hour, series: series, reading: reading, goal: goal, label: label)
-                .frame(height: 220)
+                .duoChartHeight(220)
         } else {
             Text(series.total != nil ? "No hourly readings on this day" : "No readings on this day")
                 .font(.app(.footnote))
                 .foregroundStyle(Palette.ink3)
-                .frame(maxWidth: .infinity, minHeight: 220)
+                .frame(maxWidth: .infinity, minHeight: band.chartHeight(220))
                 .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Palette.axis, style: StrokeStyle(lineWidth: 1, dash: [3, 3])))
         }
     }

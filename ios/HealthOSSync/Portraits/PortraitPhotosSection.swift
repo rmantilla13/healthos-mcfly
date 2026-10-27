@@ -9,11 +9,12 @@ import SwiftUI
 /// than portraits the studio is left out and "Use a photo as is" stays.
 struct PortraitPhotosSection: View {
     @Environment(Dashboard.self) private var dashboard
+    @Environment(\.profileCardsKeep) private var keep
 
     var body: some View {
         // Whose card it is: another server or another account starts from nothing.
         if let person = dashboard.signedInPerson {
-            PortraitPhotosCard().id(person)
+            PortraitPhotosCard(person: person, keep: keep).id(person)
         }
     }
 
@@ -28,25 +29,47 @@ struct PortraitPhotosSection: View {
 
 private struct PortraitPhotosCard: View {
     @Environment(Dashboard.self) private var dashboard
-    @State private var model = PortraitStudioModel()
+    @Environment(\.profileCardsKeep) private var keep
+    @State private var model: PortraitStudioModel
+
+    /// The page's kept model for `person` when it keeps one (above its panes, so a fold's swap finds it again), else
+    /// one of its own.
+    init(person: String, keep: ProfileCardsKeep? = nil) {
+        _model = State(initialValue: keep?.studio(for: person) ?? PortraitStudioModel())
+        self.person = person
+    }
+
+    private let person: String
 
     var body: some View {
-        Collapsible("Your portrait photos", meta: Self.meta(model), systemImage: "camera") {
-            if model.missing {
-                PhotoSection()
-            } else {
-                PortraitStudio(model: model)
-                PhotoSection()
-                    .padding(.top, 16)
-                    .overlay(alignment: .top) { Hairline() }
+        // Open again after a fold's swap if it was open (the keep follows its open body).
+        Collapsible("Your portrait photos", meta: Self.meta(model), systemImage: "camera", startsOpen: keep?.isOpen(.studio) ?? false) {
+            // One view for the open body (the card's own stack, its 14 pt), so it's marked once.
+            VStack(alignment: .leading, spacing: 14) {
+                if model.missing {
+                    PhotoSection()
+                } else {
+                    PortraitStudio(model: model)
+                    PhotoSection()
+                        .padding(.top, 16)
+                        .overlay(alignment: .top) { Hairline() }
+                }
             }
+            .opensWith(keep, .studio)
         }
-        .task(id: PortraitPhotosSection.readKey(generation: dashboard.generation, photo: dashboard.status?.photo?.versionKey,
-                                                welcomeOpen: dashboard.onboarding != nil,
-                                                ownOpenAIKey: dashboard.availability.ai.value?.key("openai") != nil)) {
+        .task(id: readKey) {
             if model.service == nil { model.service = .live(dashboard) }
+            // Built again by a fold (the page's panes swapped) with nothing new since the last read: no second read.
+            if let keep, keep.studioReadKey == readKey, keep.currentStudio(for: person) === model, model.list != nil || model.missing { return }
             await model.read()
+            keep?.studioReadKey = readKey
         }
+    }
+
+    private var readKey: String {
+        PortraitPhotosSection.readKey(generation: dashboard.generation, photo: dashboard.status?.photo?.versionKey,
+                                      welcomeOpen: dashboard.onboarding != nil,
+                                      ownOpenAIKey: dashboard.availability.ai.value?.key("openai") != nil)
     }
 
     /// "3 files", as the web counts them; nothing until the list is read, or on a server without portraits.

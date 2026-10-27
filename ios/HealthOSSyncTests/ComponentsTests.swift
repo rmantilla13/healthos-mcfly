@@ -7,11 +7,25 @@ import UIKit
 /// only when it has one.
 @MainActor
 final class ComponentsTests: XCTestCase {
+    private var drawn = 0
+
+    /// With TEST_RUNNER_COMPONENTS_SHOTS=<folder>, each picture these tests draw is also written there as a PNG (to
+    /// compare a change that reaches every iPhone, before and after). Otherwise nothing is written.
+    private func keep(_ image: CGImage, _ caller: String) {
+        guard let path = ProcessInfo.processInfo.environment["COMPONENTS_SHOTS"], !path.isEmpty else { return }
+        let folder = URL(fileURLWithPath: path)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        drawn += 1
+        let name = caller.replacingOccurrences(of: "()", with: "")
+        try? UIImage(cgImage: image).pngData()?.write(to: folder.appendingPathComponent("\(name)-\(drawn).png"))
+    }
+
     /// The view drawn at 1× in a colour scheme, as RGBA bytes.
-    private func pixels<V: View>(_ view: V, width: Int, height: Int, scheme: ColorScheme = .light) throws -> (Int, Int) -> [Int] {
+    private func pixels<V: View>(_ view: V, width: Int, height: Int, scheme: ColorScheme = .light, caller: String = #function) throws -> (Int, Int) -> [Int] {
         let renderer = ImageRenderer(content: view.frame(width: CGFloat(width), height: CGFloat(height)).environment(\.colorScheme, scheme))
         renderer.scale = 1
         let image = try XCTUnwrap(renderer.cgImage)
+        keep(image, caller)
         var data = [UInt8](repeating: 0, count: width * height * 4)
         let ctx = try XCTUnwrap(CGContext(data: &data, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
                                           space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
@@ -70,6 +84,7 @@ final class ComponentsTests: XCTestCase {
                 _ = window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
             }
             let cg = try XCTUnwrap(image.cgImage)
+            keep(cg, #function)
             let w = cg.width, h = cg.height
             var data = [UInt8](repeating: 0, count: w * h * 4)
             let ctx = try XCTUnwrap(CGContext(data: &data, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,

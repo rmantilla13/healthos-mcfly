@@ -8,19 +8,16 @@ struct InsightsScreen: View {
     @Environment(Dashboard.self) private var dashboard
 
     var body: some View {
-        PhaseGate {
-            ScrollView {
-                InsightsContent().padding(16)
-            }
-            .refreshable { await dashboard.load() }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Palette.page)
+        PhaseGate { InsightsLoader() }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Palette.page)
     }
 }
 
-/// Fetches for the cards: a card that hides itself (no digest, an older server) would never run its own task.
-private struct InsightsContent: View {
+/// Fetches for the cards: a card that hides itself (no digest, an older server) would never run its own task. What it
+/// read lives here, above the page's panes (P4), so a fold that swaps the open Duo's two panes for one column (or back)
+/// reads nothing again.
+private struct InsightsLoader: View {
     @Environment(Dashboard.self) private var dashboard
     @State private var digest: DigestReply?
     @State private var patterns: Patterns?
@@ -31,35 +28,85 @@ private struct InsightsContent: View {
     private static let metrics = ["steps", "sleep_hours", "recovery", "hrv_rmssd", "hrv_sdnn", "strain"]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            if let digest, DigestCard.shows(digest) { DigestCard(reply: digest) }
-            if let patterns { PatternsCard(patterns: patterns) }
-            if let trends {
-                let end = dashboard.summary?.today ?? Day.today()
-                SleepScatter(trends: trends, end: end)
-                HrvScatter(trends: trends, end: end)
-                YearHeatmapCard(trends: trends, end: end, stepGoal: dashboard.stepGoal)
-            } else if let trendsError {
-                Unavailable("Couldn't load your data", systemImage: "chart.dots.scatter", description: trendsError)
-            } else {
-                ProgressView().frame(maxWidth: .infinity, minHeight: 200)
+        InsightsPage(digest: digest, patterns: patterns, trends: trends, trendsError: trendsError,
+                     end: dashboard.summary?.today ?? Day.today(), stepGoal: dashboard.stepGoal)
+            .refreshable { await dashboard.load() }
+            // Separate tasks: writing a new digest can take McFly a few seconds, and the rest shouldn't wait for it.
+            // A failed refetch keeps what's on screen; nil (404) means the server doesn't have the feature.
+            .task(id: dashboard.generation) {
+                do { digest = try await dashboard.digest() } catch {}
+            }
+            .task(id: dashboard.generation) {
+                do { patterns = try await dashboard.patterns() } catch {}
+            }
+            .task(id: dashboard.generation) {
+                do {
+                    trends = try await dashboard.trends(Self.metrics, days: 365)
+                    trendsError = nil
+                } catch {
+                    if trends == nil, !Task.isCancelled { trendsError = error.localizedDescription }
+                }
+            }
+    }
+}
+
+/// Insights' page, from what InsightsLoader read (drawn tests draw it from fixtures). One column on every iPhone, the
+/// outer display and the inner display upright: the digest, patterns, the two scatter plots, then the year heatmap. On
+/// the open iPhone Duo held sideways (decisions.md Q5), the lead (McFly's weekly digest, or the patterns when there's
+/// no digest) on the leading side of the fold, staying put; the rest on the trailing side, each across that side's
+/// two columns, since charts and the heatmap need the width (the heatmap still scrolls sideways there).
+struct InsightsPage: View {
+    let digest: DigestReply?
+    let patterns: Patterns?
+    let trends: Trends?
+    let trendsError: String?
+    let end: String
+    let stepGoal: Double
+
+    var body: some View {
+        let digestShows = digest.map(DigestCard.shows) ?? false
+        DuoPage { _ in
+            DuoPanes(anchor: .secondary) {
+                VStack(alignment: .leading, spacing: 14) {
+                    if digestShows { digestCard } else { patternsCard }
+                }
+                .padding(.vertical, 16)
+            } secondary: {
+                VStack(alignment: .leading, spacing: 14) {
+                    if digestShows { patternsCard }
+                    charts
+                }
+                .scrollTargetLayout()
+                .padding(.vertical, 16)
+            } single: {
+                VStack(alignment: .leading, spacing: 14) {
+                    if digestShows { digestCard }
+                    patternsCard
+                    charts
+                }
+                .scrollTargetLayout()
+                .padding(.vertical, 16)
             }
         }
-        // Separate tasks: writing a new digest can take McFly a few seconds, and the rest shouldn't wait for it.
-        // A failed refetch keeps what's on screen; nil (404) means the server doesn't have the feature.
-        .task(id: dashboard.generation) {
-            do { digest = try await dashboard.digest() } catch {}
-        }
-        .task(id: dashboard.generation) {
-            do { patterns = try await dashboard.patterns() } catch {}
-        }
-        .task(id: dashboard.generation) {
-            do {
-                trends = try await dashboard.trends(Self.metrics, days: 365)
-                trendsError = nil
-            } catch {
-                if trends == nil, !Task.isCancelled { trendsError = error.localizedDescription }
-            }
+    }
+
+    @ViewBuilder private var digestCard: some View {
+        if let digest { DigestCard(reply: digest).id("insights.digest") }
+    }
+
+    @ViewBuilder private var patternsCard: some View {
+        if let patterns { PatternsCard(patterns: patterns).id("insights.patterns") }
+    }
+
+    @ViewBuilder private var charts: some View {
+        if let trends {
+            SleepScatter(trends: trends, end: end).id("insights.sleep")
+            HrvScatter(trends: trends, end: end).id("insights.hrv")
+            YearHeatmapCard(trends: trends, end: end, stepGoal: stepGoal).id("insights.heatmap")
+        } else if let trendsError {
+            Unavailable("Couldn't load your data", systemImage: "chart.dots.scatter", description: trendsError).id("insights.state")
+        } else {
+            ProgressView().frame(maxWidth: .infinity, minHeight: 200).id("insights.state")
         }
     }
 }
