@@ -63,6 +63,7 @@
 		3E8923E83AE7010EBDB2D34D /* ProfileThisIPhone.swift in Sources */ = {isa = PBXBuildFile; fileRef = C61D85386EBC784374D691B6 /* ProfileThisIPhone.swift */; };
 		3EAC26467CABEB15EB42547A /* TodayNutritionCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5431457033D8089843F213F1 /* TodayNutritionCard.swift */; };
 		3ED3502AFD6545094B506F89 /* DayAggregator.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBD579D9FB433BBE4FFDD20C /* DayAggregator.swift */; };
+		40C2BA8E491F5714BDCD414A /* ProfileCardsKeep.swift in Sources */ = {isa = PBXBuildFile; fileRef = E692C634E1D904F885ED3765 /* ProfileCardsKeep.swift */; };
 		40C7DA835A6CF7542609ACDD /* Keyboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 402B43C3EE24937825D62979 /* Keyboard.swift */; };
 		410148F5D004F614271E0489 /* DuoKeyboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB6E19D7D2BCE0CB4918F121 /* DuoKeyboard.swift */; };
 		421871CDE11297C1B6C2D4FE /* Cards.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A5376F5B4BE6F8CD5BF48E6 /* Cards.swift */; };
@@ -223,6 +224,7 @@
 		DC0FAA65D3BEED0556EABE62 /* ProfileControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B4BFD7FDE79D03EB21530CF /* ProfileControls.swift */; };
 		DC7A4C4DA4AEF4EB95432759 /* SearchScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = C32340899BCFE8441E97D735 /* SearchScreen.swift */; };
 		DD4881128FB147B418012026 /* metric-glucose-never.json in Resources */ = {isa = PBXBuildFile; fileRef = F14B655B21A08203BB85BBB6 /* metric-glucose-never.json */; };
+		DEB4D687C9FCCB78C2C5FCA7 /* PortraitsDuoTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10288037C9F9F857A4B87B48 /* PortraitsDuoTests.swift */; };
 		E09D830321CC4664C62EB0CE /* digest.json in Resources */ = {isa = PBXBuildFile; fileRef = FE9ED67C191FB0AA5D98EBEC /* digest.json */; };
 		E2A6CFE97D35EA965DFF9FA0 /* NutritionScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6B59C95F0280EE6C16251E7 /* NutritionScreen.swift */; };
 		E458C38386E018FE9BF7351E /* FoodHealth.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEF8D849614BED4B9274FE64 /* FoodHealth.swift */; };
@@ -236,6 +238,7 @@
 		E99DDB89F7B65C2D3F87F219 /* ProfileBasicsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 773D4B98FFDA6E083B7A7328 /* ProfileBasicsSheet.swift */; };
 		E9B626DB7BA8F05B0746ED5D /* AIParts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30D2692E7F1BAC716F541038 /* AIParts.swift */; };
 		EA8FBBE8EFF3A58E2815354E /* SleepScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02AFBC3BA30E53B1D38DA148 /* SleepScreen.swift */; };
+		EF0F17583EC26148877CE11F /* PortraitColumns.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52927B8CD23B5335322B2AF9 /* PortraitColumns.swift */; };
 		F053550686D2E5C8906783EC /* HomeReadsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CAB7FF036699F17248D0E2E /* HomeReadsTests.swift */; };
 		F10AFAACB592CD5494351B93 /* ai-own-key.json in Resources */ = {isa = PBXBuildFile; fileRef = 889D5CAF7334BA122500E98A /* ai-own-key.json */; };
 		F1EDAD19A3EFD218F02ADFDD /* MetricSheetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F9C794957687CC2342BEC61 /* MetricSheetTests.swift */; };
@@ -282,6 +285,7 @@
 		0ABCF383530FAA8EB3117E5E /* ProfileTargetsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileTargetsTests.swift; sourceTree = "<group>"; };
 		0AC071F9B84337D8CD588EAD /* MetricSheetSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricSheetSnapshotTests.swift; sourceTree = "<group>"; };
 		0F9FAF8818EF7B06C0F0F4F4 /* DigitalFigure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DigitalFigure.swift; sourceTree = "<group>"; };
+		10288037C9F9F857A4B87B48 /* PortraitsDuoTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortraitsDuoTests.swift; sourceTree = "<group>"; };
 		105DAA325ADAA76F13ED21C7 /* HeartRateMeasurement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeartRateMeasurement.swift; sourceTree = "<group>"; };
 		107C50B184F0F68F331D547F /* FigureVariant.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FigureVariant.swift; sourceTree = "<group>"; };
 		114AFEC340F38DAA3AC9E952 /* CycleViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CycleViews.swift; sourceTree = "<group>"; };
@@ -342,6 +346,7 @@
 		50E6297F40184DD996001DAA /* OnboardingFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingFlow.swift; sourceTree = "<group>"; };
 		51CF2CFE98D1350F331B63C6 /* HostedAccessibility.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostedAccessibility.swift; sourceTree = "<group>"; };
 		51DEBFAE5E0B09A0109EE558 /* SignInWords.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignInWords.swift; sourceTree = "<group>"; };
+		52927B8CD23B5335322B2AF9 /* PortraitColumns.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortraitColumns.swift; sourceTree = "<group>"; };
 		53180FBA0C9ADCF282A00B6B /* Format.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Format.swift; sourceTree = "<group>"; };
 		53251687CBD17661351787AD /* SyncEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncEngine.swift; sourceTree = "<group>"; };
 		5431457033D8089843F213F1 /* TodayNutritionCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayNutritionCard.swift; sourceTree = "<group>"; };
@@ -489,6 +494,7 @@
 		E358FB3B094C355EF5842496 /* AppShell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppShell.swift; sourceTree = "<group>"; };
 		E57D70AA436B77C04E6EB8CC /* MetricSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricSheetView.swift; sourceTree = "<group>"; };
 		E617E2FB9DFD894B406765C5 /* ChartLegend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartLegend.swift; sourceTree = "<group>"; };
+		E692C634E1D904F885ED3765 /* ProfileCardsKeep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileCardsKeep.swift; sourceTree = "<group>"; };
 		E7D29E2F5C2A8ECB3EB8C238 /* PeersSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeersSection.swift; sourceTree = "<group>"; };
 		E81F51B43C844A1A076A3218 /* HomeFigure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeFigure.swift; sourceTree = "<group>"; };
 		EB5DE60C8E0B9006F91BFBD1 /* MetricSheetModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricSheetModel.swift; sourceTree = "<group>"; };
@@ -676,6 +682,7 @@
 				36F87CB4D2C17E45DFA1F658 /* OnboardingTests.swift */,
 				F48EE7E87F902A5E1269B103 /* PeersTests.swift */,
 				DDD7BCE19CEBCB1FCBCFEEF8 /* PhotoPipelineTests.swift */,
+				10288037C9F9F857A4B87B48 /* PortraitsDuoTests.swift */,
 				379BE570B48C3FD510252BDC /* PortraitsTests.swift */,
 				AFFDD5DFDE94A19E371CA624 /* ProfileExportTests.swift */,
 				0ABCF383530FAA8EB3117E5E /* ProfileTargetsTests.swift */,
@@ -839,10 +846,12 @@
 			isa = PBXGroup;
 			children = (
 				4A30213197BAD249D34D98FF /* PhotoSection.swift */,
+				52927B8CD23B5335322B2AF9 /* PortraitColumns.swift */,
 				61EB2C7B76961D2FA7439ADA /* PortraitPhotosSection.swift */,
 				2C6553853766B0A4E7AB9B02 /* PortraitsAPI.swift */,
 				BC0098204B8E76B9971AE1CF /* PortraitStudio.swift */,
 				BDA25170B5998854C6C0E6E8 /* PortraitStudioModel.swift */,
+				E692C634E1D904F885ED3765 /* ProfileCardsKeep.swift */,
 			);
 			path = Portraits;
 			sourceTree = "<group>";
@@ -1204,6 +1213,7 @@
 				4CA818B2C2C30705C70A0D86 /* OnboardingTests.swift in Sources */,
 				FCD57918110889FF0CA3E71D /* PeersTests.swift in Sources */,
 				B3B7CEC6217127596464D2FC /* PhotoPipelineTests.swift in Sources */,
+				DEB4D687C9FCCB78C2C5FCA7 /* PortraitsDuoTests.swift in Sources */,
 				E4C7FF003FFE908184D38A2F /* PortraitsTests.swift in Sources */,
 				16D797BCCA4215A85E935089 /* ProfileExportTests.swift in Sources */,
 				3388E5336A1369CDA581FBCC /* ProfileTargetsTests.swift in Sources */,
@@ -1347,12 +1357,14 @@
 				9A87E75AA642B59ED0F0F7F4 /* PhotoCutout.swift in Sources */,
 				0B7BB09A64E6EE89835059FD /* PhotoPipeline.swift in Sources */,
 				3AE598C3E3E2FAFCD36DA1C0 /* PhotoSection.swift in Sources */,
+				EF0F17583EC26148877CE11F /* PortraitColumns.swift in Sources */,
 				631DA0178641180E06F9658B /* PortraitPhotosSection.swift in Sources */,
 				45DB7F37A39486498643AA0D /* PortraitStudio.swift in Sources */,
 				99E77FCC0B13CCC2BE9CD915 /* PortraitStudioModel.swift in Sources */,
 				A367DFE8461A64C732C556F5 /* PortraitsAPI.swift in Sources */,
 				67083C5F99B05A00EF5B71C0 /* ProfileAccount.swift in Sources */,
 				E99DDB89F7B65C2D3F87F219 /* ProfileBasicsSheet.swift in Sources */,
+				40C2BA8E491F5714BDCD414A /* ProfileCardsKeep.swift in Sources */,
 				2578216F805846611425475C /* ProfileCardsSheet.swift in Sources */,
 				DC0FAA65D3BEED0556EABE62 /* ProfileControls.swift in Sources */,
 				CA9A19B72DE981F08920A947 /* ProfileExport.swift in Sources */,
