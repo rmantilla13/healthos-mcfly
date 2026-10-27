@@ -73,8 +73,13 @@ final class MetricSheetDuoTests: XCTestCase {
         try await drawFour(try month, as: .innerPortrait(), name: "d")
     }
 
+    /// Also at AX5, the largest text, where the controls kept to one side of the sheet's middle (294 points) are at
+    /// their narrowest for their words.
     func testInnerLandscape() async throws {
         try await drawFour(try month, as: .innerLandscape(), name: "d")
+        for dark in [false, true] {
+            try await DuoSnapshot.draw(try month, as: .innerLandscape(), dark: dark, typeSize: .accessibility5, name: "d")
+        }
     }
 
     func testInnerLandscapeBarLeading() async throws {
@@ -101,7 +106,9 @@ final class MetricSheetDuoTests: XCTestCase {
                 try await drawScrolled(try month, as: state, dark: dark, name: "d-2")
             }
         }
-        try await DuoSnapshot.draw(try never, as: .innerLandscape(), typeSize: .accessibility3, name: "d-never")
+        for size: DynamicTypeSize in [.accessibility3, .accessibility5] {
+            try await DuoSnapshot.draw(try never, as: .innerLandscape(), typeSize: size, name: "d-never")
+        }
     }
 
     /// The sheet scrolled down by its height less 120 points (the web's references overlap 120 inside a sheet).
@@ -117,13 +124,13 @@ final class MetricSheetDuoTests: XCTestCase {
 
     // MARK: - Nothing tappable on the fold
 
-    /// Flat and active, with the bar trailing and leading, at the default text size and AX3, in every content state: the
+    /// Flat and active, with the bar trailing and leading, at the default text size, AX3 and AX5, in every content state: the
     /// range buttons, "Manage connections", the source's link and "Open Vitals" keep to the leading side of the sheet's
     /// middle, and the chart and table switch and Close to the trailing side.
     func testNothingTappableOnTheFold() async throws {
         for (name, view) in try everyState() {
             for state in DuoState.folded {
-                for size: DynamicTypeSize in [.large, .accessibility3] {
+                for size: DynamicTypeSize in [.large, .accessibility3, .accessibility5] {
                     let host = try await DuoHost(view, as: state, typeSize: size)
                     defer { host.close() }
                     let found = try await DuoFoldAssertions.offenders(in: host)
