@@ -258,8 +258,8 @@ private struct McFlyConversation: View {
             .coordinateSpace(.named("mcfly-scroll"))
             .scrollDismissesKeyboard(.interactively)
             .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(threadSpace)) } action: { [follow] frame in
-                // A new size (a fold, a turn, the keyboard) flows the words again: that's not the reader scrolling.
-                if viewport != .zero, frame.size != viewport { follow.resized() }
+                // A new width (a fold, a turn) flows the words again: that's not the reader scrolling.
+                if McFlyFollow.reflows(from: viewport, to: frame.size) { follow.resized() }
                 viewport = frame.size
                 follow.viewportBottom = frame.maxY
             }

@@ -327,7 +327,7 @@ final class McFlyDuoTests: XCTestCase {
     }
 }
 
-/// Ask McFly's follow across a reflow (§4): a size change (a fold, a turn, the keyboard) flows the words again, which
+/// Ask McFly's follow across a reflow (§4): a new width (a fold, a turn) flows the words again, which
 /// moves the content's top edge without anyone scrolling; within half a second of it that doesn't let go.
 final class McFlyFollowTests: XCTestCase {
     func testReflowKeepsFollowing() {
@@ -346,6 +346,18 @@ final class McFlyFollowTests: XCTestCase {
         // Back to within 80 pt of the bottom: following again, reflow or not.
         follow.contentMoved(top: -400, bottom: 560, at: t0.addingTimeInterval(2))
         XCTAssertTrue(follow.following)
+    }
+
+    /// Only a new width flows the words again: the keyboard coming or going, or the composer growing a line, changes
+    /// the height alone, so dragging up past it still lets go.
+    func testOnlyANewWidthIsAReflow() {
+        let phone = CGSize(width: 370, height: 600)
+        XCTAssertFalse(McFlyFollow.reflows(from: .zero, to: phone), "the first layout")
+        XCTAssertFalse(McFlyFollow.reflows(from: phone, to: phone))
+        XCTAssertFalse(McFlyFollow.reflows(from: phone, to: CGSize(width: 370, height: 320)), "the keyboard")
+        XCTAssertFalse(McFlyFollow.reflows(from: phone, to: CGSize(width: 370, height: 580)), "a line more in the composer")
+        XCTAssertTrue(McFlyFollow.reflows(from: phone, to: CGSize(width: 423, height: 600)), "a fold")
+        XCTAssertTrue(McFlyFollow.reflows(from: phone, to: CGSize(width: 780, height: 300)), "a turn")
     }
 
     func testScrollingUpStillLetsGoWithoutAReflow() {

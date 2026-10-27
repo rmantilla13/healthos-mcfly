@@ -507,9 +507,9 @@ final class McFlyChat {
 /// Whether the thread keeps the newest words in view while an answer streams (the `following` ref in
 /// src/pages/McFly.tsx). Scrolling up to reread, or touching a chart, lets go; scrolling back to within 80pt of
 /// the bottom, or sending a question, takes hold again. The answer growing on its own never changes it, and neither
-/// does the thread's own scroll down to the newest words, nor the words flowing again when the thread changes size
-/// (on iPhone Duo, a fold or a turn; the keyboard): for half a second after that, the top edge moving is the reflow,
-/// not the reader.
+/// does the thread's own scroll down to the newest words, nor the words flowing again when the thread changes width
+/// (on iPhone Duo, a fold or a turn): for half a second after that, the top edge moving is the reflow, not the reader.
+/// A change of height alone (the keyboard, the composer growing a line) flows nothing, so it isn't one.
 ///
 /// A plain class on purpose: it hears about every frame of scrolling, and nothing on screen depends on it, so
 /// changing it mustn't redraw the thread.
@@ -524,8 +524,14 @@ final class McFlyFollow {
     private var top: CGFloat?
     private var resizedAt: Date?
 
-    /// The thread's visible area changed size: its words flow again, which moves their edges without anyone scrolling.
+    /// The thread's visible area changed width: its words flow again, which moves their edges without anyone scrolling.
     func resized(at time: Date = .now) { resizedAt = time }
+
+    /// Whether the thread going from `old` to `new` flows its words again: only a new width does (a fold, a turn). The
+    /// keyboard and the composer change only its height, and a reader dragging up past them still lets go.
+    static func reflows(from old: CGSize, to new: CGSize) -> Bool {
+        old != .zero && new.width != old.width
+    }
 
     /// The thread's content moved or changed size; `top` and `bottom` are its edges.
     func contentMoved(top newTop: CGFloat, bottom: CGFloat, at time: Date = .now) {
