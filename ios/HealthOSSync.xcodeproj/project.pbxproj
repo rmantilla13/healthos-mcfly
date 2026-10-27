@@ -58,11 +58,13 @@
 		3B8FEA52C72885B343A40D8A /* FoodLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = D25B24AE8CECEA92F2E4C2BA /* FoodLog.swift */; };
 		3CA8B99A57428D827456A0F2 /* ComponentsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB191D78F6B17779F6ED3C1E /* ComponentsTests.swift */; };
 		3CF300822426F0829A2345D3 /* AISheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3014C561363943C743407A88 /* AISheets.swift */; };
+		3D6FA84EE54DCBC8C49B35B0 /* DuoKeyboardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F1F8B6B43C3F2F1E2321A09 /* DuoKeyboardTests.swift */; };
 		3DF848F155053705D2445E9E /* DuoValues.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1138DAEC77A326FF9C2D77B /* DuoValues.swift */; };
 		3E8923E83AE7010EBDB2D34D /* ProfileThisIPhone.swift in Sources */ = {isa = PBXBuildFile; fileRef = C61D85386EBC784374D691B6 /* ProfileThisIPhone.swift */; };
 		3EAC26467CABEB15EB42547A /* TodayNutritionCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5431457033D8089843F213F1 /* TodayNutritionCard.swift */; };
 		3ED3502AFD6545094B506F89 /* DayAggregator.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBD579D9FB433BBE4FFDD20C /* DayAggregator.swift */; };
 		40C7DA835A6CF7542609ACDD /* Keyboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 402B43C3EE24937825D62979 /* Keyboard.swift */; };
+		410148F5D004F614271E0489 /* DuoKeyboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB6E19D7D2BCE0CB4918F121 /* DuoKeyboard.swift */; };
 		421871CDE11297C1B6C2D4FE /* Cards.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A5376F5B4BE6F8CD5BF48E6 /* Cards.swift */; };
 		4235342A47A876C689995E06 /* NutritionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD2F0A99D2A54D83358903BC /* NutritionTests.swift */; };
 		42AC90F65C94430785534474 /* HomeReads.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9D8A1996D92634B72660F32 /* HomeReads.swift */; };
@@ -290,6 +292,7 @@
 		17423278837720B1416B6936 /* NutritionToday.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NutritionToday.swift; sourceTree = "<group>"; };
 		1D16ADB4EAC1CF6BB06E7F64 /* IngestTokenTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IngestTokenTests.swift; sourceTree = "<group>"; };
 		1D9BD0F2D418F925BBA11881 /* TimeZoneTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeZoneTests.swift; sourceTree = "<group>"; };
+		1F1F8B6B43C3F2F1E2321A09 /* DuoKeyboardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuoKeyboardTests.swift; sourceTree = "<group>"; };
 		20BEE2707E300C12DC3F24CC /* NutritionCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NutritionCards.swift; sourceTree = "<group>"; };
 		245BD87F6395DAEF7CA2D83D /* DuoLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuoLayoutTests.swift; sourceTree = "<group>"; };
 		2467D3DA7F3A0754100A23C3 /* patterns.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = patterns.json; sourceTree = "<group>"; };
@@ -431,6 +434,7 @@
 		A7E250115D08EBBAA0A6C1BF /* SampleData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleData.swift; sourceTree = "<group>"; };
 		A924DDC5C89C88A002CD3029 /* DuoScrollTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuoScrollTests.swift; sourceTree = "<group>"; };
 		AA0DE5D33B140C96BB524233 /* Welcome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Welcome.swift; sourceTree = "<group>"; };
+		AB6E19D7D2BCE0CB4918F121 /* DuoKeyboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuoKeyboard.swift; sourceTree = "<group>"; };
 		AFFDD5DFDE94A19E371CA624 /* ProfileExportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileExportTests.swift; sourceTree = "<group>"; };
 		B479E2FF3ECF8F9266A6F82C /* Config.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Config.swift; sourceTree = "<group>"; };
 		B4FC9B99D78D356233E0EEAF /* HomeNutritionLinkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeNutritionLinkTests.swift; sourceTree = "<group>"; };
@@ -646,6 +650,7 @@
 				A2F31692BC3B154539132A48 /* DashboardTests.swift */,
 				FF3AD1F8E32A8E71A82AA62D /* DayAggregatorTests.swift */,
 				C15907ED8158E7C1A6199B90 /* DuoFoldAssertions.swift */,
+				1F1F8B6B43C3F2F1E2321A09 /* DuoKeyboardTests.swift */,
 				245BD87F6395DAEF7CA2D83D /* DuoLayoutTests.swift */,
 				80CE2D7B5152C0B93CA5CECD /* DuoReaderTests.swift */,
 				A924DDC5C89C88A002CD3029 /* DuoScrollTests.swift */,
@@ -899,6 +904,7 @@
 				DDB91204D781C18E913F6AFA /* DuoDisplay.swift */,
 				B7CBE523D13B586A2996AE05 /* DuoFloatingRow.swift */,
 				E18A44ECB690B1C371A5C801 /* DuoGrid.swift */,
+				AB6E19D7D2BCE0CB4918F121 /* DuoKeyboard.swift */,
 				81FCEE53785F95FF5C36A0E4 /* DuoPage.swift */,
 				5C1AE174C5E455B678CD8558 /* DuoPair.swift */,
 				D9A84C53EBF286BB9281A10E /* DuoPanes.swift */,
@@ -1172,6 +1178,7 @@
 				463BE90AB15F967AAF2EAF68 /* DashboardTests.swift in Sources */,
 				0BDF60A216902A26A4A8FE46 /* DayAggregatorTests.swift in Sources */,
 				F21F83E282BA6A4A7EF16E9F /* DuoFoldAssertions.swift in Sources */,
+				3D6FA84EE54DCBC8C49B35B0 /* DuoKeyboardTests.swift in Sources */,
 				6E8186560C1B2FA71548779E /* DuoLayoutTests.swift in Sources */,
 				6576428E31E5EEA78C2B389C /* DuoReaderTests.swift in Sources */,
 				44697F18A5FD064ED5475E74 /* DuoScrollTests.swift in Sources */,
@@ -1260,6 +1267,7 @@
 				FB556006852C10C79FE02479 /* DuoDisplay.swift in Sources */,
 				2E26E53B101E9F1EC3364F1A /* DuoFloatingRow.swift in Sources */,
 				F8C4A1908BE0628DAA492E80 /* DuoGrid.swift in Sources */,
+				410148F5D004F614271E0489 /* DuoKeyboard.swift in Sources */,
 				E5278D3B05ED45E9589FA9D7 /* DuoPage.swift in Sources */,
 				B38CABF986EC980190F67F6B /* DuoPair.swift in Sources */,
 				69C45EAD448FF118E4333606 /* DuoPanes.swift in Sources */,
