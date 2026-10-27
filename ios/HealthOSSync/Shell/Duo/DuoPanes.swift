@@ -6,9 +6,9 @@ import SwiftUI
 /// `DuoGrid(paneColumns: 2)` and `DuoPair(paneSideBySide: true)` lay out the open Duo's two columns (decisions.md Q5:
 /// the page's picture or lead in the primary pane, the rest in two columns in the secondary). `single` (one DuoScroll)
 /// otherwise. Switching rebuilds what's inside, so the page keeps its state, sheets and loaders above this (P4). Give it
-/// the pane contents, not scroll views: DuoPanes scrolls each one. A `duoScrollAnchor` above it is kept by the `anchor`
-/// pane (the primary unless said; Home's cards, beside its figure, are its secondary) and by `single`; the other pane
-/// opens at its top.
+/// the pane contents, not scroll views: DuoPanes scrolls each one. A fold hands the row at the top (by its String id)
+/// between `single` and the `anchor` pane (the primary unless said; Home's cards, beside its figure, are its secondary);
+/// the other pane opens at its top.
 ///
 ///     DuoPage { _ in
 ///         DuoPanes {
@@ -34,6 +34,8 @@ struct DuoPanes<Primary: View, Secondary: View, Single: View>: View {
     @Environment(\.duoFold) private var fold
     @Environment(\.duoMargins) private var margins
     @Environment(\.duoDisplayOverride) private var display
+    /// The row a fold hands from one scroll view to the next: this page's own, so a new page starts at its top.
+    @State private var handoff = DuoScrollHandoff()
 
     /// The system's arrangement on iOS 27.1. Set to false if G5 finds it doesn't keep each pane on its own side of the
     /// fold at regular width: every DuoPanes page then takes the HStack path, and no page changes.
@@ -50,13 +52,13 @@ struct DuoPanes<Primary: View, Secondary: View, Single: View>: View {
     var body: some View {
         if let span = fold.span {
             if #available(iOS 27.1, *) {
-                DuoArrangedPanes(arranged: display == nil && Self.usesArrangement, anchorsPrimary: anchor == .primary, primary: primary,
-                                 secondary: secondary, stacked: stacked(span))
+                DuoArrangedPanes(arranged: display == nil && Self.usesArrangement, anchorsPrimary: anchor == .primary, handoff: handoff,
+                                 primary: primary, secondary: secondary, stacked: stacked(span))
             } else {
                 stacked(span)
             }
         } else {
-            DuoScroll { single }
+            DuoScroll { single }.environment(\.duoScrollHandoff, handoff)
         }
     }
 
@@ -68,14 +70,14 @@ struct DuoPanes<Primary: View, Secondary: View, Single: View>: View {
         let spans = Self.paneSpans(margins: margins, fold: span)
         return HStack(spacing: 0) {
             DuoScope(.pane(margins: DuoMargins(leading: margins.leading, trailing: gap))) { _ in
-                DuoScroll { primary }.duoPaneScroll().duoAnchorKept(anchor == .primary)
+                DuoScroll { primary }.duoPaneScroll().duoHandoff(anchor == .primary ? handoff : nil)
             }
             .frame(width: spans.primaryWidth)
             Color.clear
                 .frame(width: spans.gap)
                 .accessibilityHidden(true)
             DuoScope(.pane(margins: DuoMargins(leading: gap, trailing: margins.trailing))) { _ in
-                DuoScroll { secondary }.duoPaneScroll().duoAnchorKept(anchor == .secondary)
+                DuoScroll { secondary }.duoPaneScroll().duoHandoff(anchor == .secondary ? handoff : nil)
             }
             .frame(maxWidth: .infinity)
         }
@@ -96,6 +98,7 @@ struct DuoPanes<Primary: View, Secondary: View, Single: View>: View {
 private struct DuoArrangedPanes<Primary: View, Secondary: View, Stacked: View>: View {
     let arranged: Bool
     let anchorsPrimary: Bool
+    let handoff: DuoScrollHandoff
     let primary: Primary
     let secondary: Secondary
     let stacked: Stacked
@@ -103,9 +106,9 @@ private struct DuoArrangedPanes<Primary: View, Secondary: View, Stacked: View>: 
     var body: some View {
         if arranged {
             ArrangementView {
-                DuoScope(.pane(margins: nil)) { _ in DuoScroll { primary }.duoPaneScroll().duoAnchorKept(anchorsPrimary) }
+                DuoScope(.pane(margins: nil)) { _ in DuoScroll { primary }.duoPaneScroll().duoHandoff(anchorsPrimary ? handoff : nil) }
             } secondary: {
-                DuoScope(.pane(margins: nil)) { _ in DuoScroll { secondary }.duoPaneScroll().duoAnchorKept(!anchorsPrimary) }
+                DuoScope(.pane(margins: nil)) { _ in DuoScroll { secondary }.duoPaneScroll().duoHandoff(anchorsPrimary ? nil : handoff) }
             }
             .arrangementViewStyle(.split.axes(.horizontal))
         } else {
@@ -119,8 +122,6 @@ private extension View {
     /// while the trailing pane scrolls (decisions.md Q5).
     func duoPaneScroll() -> some View { scrollBounceBehavior(.basedOnSize, axes: .vertical) }
 
-    /// The page's scroll anchor stays with this pane, or is taken off it (the other pane keeps it).
-    @ViewBuilder func duoAnchorKept(_ kept: Bool) -> some View {
-        if kept { self } else { environment(\.duoScrollAnchorPage, nil) }
-    }
+    /// The pane's scroll view takes part in the fold's handoff (the anchored pane), or doesn't (nil: the other pane).
+    func duoHandoff(_ handoff: DuoScrollHandoff?) -> some View { environment(\.duoScrollHandoff, handoff) }
 }

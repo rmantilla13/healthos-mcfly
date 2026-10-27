@@ -1,45 +1,47 @@
 import SwiftUI
 
-// iPhone Duo (§4): a page keeps its place across a fold in `Dashboard.scrollAnchors`, in memory only, by the id of the
-// row at the top. A fold that rebuilds the scroll view (DuoPanes going between one column and two panes) comes back to
-// that row; an anchor only in the other pane falls back to the top.
+// iPhone Duo (§4): a DuoPanes page keeps its place across a fold. Going between one column and two panes is the one
+// thing a fold rebuilds (P14), so DuoPanes hands the row at the top of the scroll view going away, by its id, to the one
+// coming: the single column's, or the anchored pane's (`DuoPanes(anchor:)`). The row is DuoPanes' own state, so it goes
+// with the page: a page opened again, another day, another person, a tab reset to its root and a sign-out all start at
+// the top, as they always have. A plain DuoScroll page needs nothing: its scroll view persists across a fold. A row the
+// new scroll view doesn't have (one only in the other pane) leaves it at its top.
+//
+// The rows are one flat stack with String ids (a ForEach of String ids, or `.id("…")` on fixed rows), marked
+// `.scrollTargetLayout()`, in the anchored pane and the single column alike.
 
-extension View {
-    /// On a page's DuoScroll (on a DuoPanes page, the primary pane's): .scrollPosition(id:anchor: .top) bound to
-    /// Dashboard.scrollAnchors[page]. The content is one flat stack of rows with String ids (`.id("home.week")`),
-    /// marked .scrollTargetLayout(). Put it on the DuoScroll (or the DuoPanes); it reaches only that page's own scroll
-    /// view, never a scroll view nested inside it.
-    func duoScrollAnchor(_ page: AppPage) -> some View {
-        environment(\.duoScrollAnchorPage, page)
-    }
+/// The row at the top of a DuoPanes page's anchored scroll view, by its id, handed to the scroll view a fold brings.
+/// DuoPanes keeps one as its @State. Nothing redraws on it.
+@MainActor
+final class DuoScrollHandoff {
+    var row: String?
 }
 
-private struct DuoScrollAnchorPageKey: EnvironmentKey { static let defaultValue: AppPage? = nil }
+private struct DuoScrollHandoffKey: EnvironmentKey { static let defaultValue: DuoScrollHandoff? = nil }
 
 extension EnvironmentValues {
-    /// The page whose scroll anchor the next DuoScroll keeps (duoScrollAnchor); DuoScroll clears it for what's inside.
-    var duoScrollAnchorPage: AppPage? {
-        get { self[DuoScrollAnchorPageKey.self] }
-        set { self[DuoScrollAnchorPageKey.self] = newValue }
+    /// Set by DuoPanes on the scroll views that hand its row over (the single column's and the anchored pane's);
+    /// DuoScroll reads it, and clears it for what's inside, so a nested scroll view never takes it.
+    var duoScrollHandoff: DuoScrollHandoff? {
+        get { self[DuoScrollHandoffKey.self] }
+        set { self[DuoScrollHandoffKey.self] = newValue }
     }
 }
 
-/// DuoScroll's anchor: the scroll position by row id, kept in the Dashboard (nothing when there's no page or no
-/// Dashboard in the environment). The position is the scroll view's own state, brought back from the Dashboard once the
-/// scroll view is up: a VStack's scroll view ignores the position it starts with (only a lazy stack's honours it), so a
-/// new scroll view after a fold comes back to the row only this way. Each row it settles on is written back.
+/// DuoScroll's part: the scroll position by row id, written into the handoff as it settles on a row, and brought back
+/// from it once the scroll view is up (a VStack's scroll view ignores the position it starts with; only a lazy stack's
+/// honours it). Nothing without a handoff.
 struct DuoScrollAnchoring: ViewModifier {
-    let page: AppPage?
-    @Environment(Dashboard.self) private var dashboard: Dashboard?
+    let handoff: DuoScrollHandoff?
     @State private var position: String?
 
     func body(content: Content) -> some View {
-        if let page, let dashboard {
+        if let handoff {
             content
                 .scrollPosition(id: $position, anchor: .top)
-                .onAppear { position = dashboard.scrollAnchors[page] }
+                .onAppear { if let row = handoff.row { position = row } }
                 .onChange(of: position) { _, row in
-                    if let row, dashboard.scrollAnchors[page] != row { dashboard.scrollAnchors[page] = row }
+                    if let row { handoff.row = row }
                 }
         } else {
             content

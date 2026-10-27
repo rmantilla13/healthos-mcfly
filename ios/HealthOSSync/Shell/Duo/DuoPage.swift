@@ -33,11 +33,12 @@ struct DuoPage<Content: View>: View {
 /// content by duoMargins through `.contentMargins(_:_:for: .scrollContent)` (iOS 17), so the scroll view stays full
 /// width, card shadows aren't clipped, and the margin strip scrolls. Modifiers nearer a view override those above it
 /// (SDK doc), so nested scroll views would inherit the margins: DuoScroll resets them to 0 for everything inside it.
-/// With `duoScrollAnchor(_:)` above it, it keeps its place in `Dashboard.scrollAnchors`.
+/// Inside DuoPanes, the single column's and the anchored pane's DuoScroll hand their top row to each other when a fold
+/// swaps them (Shell/Duo/DuoScrollAnchor.swift); a page's own DuoScroll persists across a fold and needs nothing.
 struct DuoScroll<Content: View>: View {
     private let content: Content
     @Environment(\.duoMargins) private var margins
-    @Environment(\.duoScrollAnchorPage) private var anchor
+    @Environment(\.duoScrollHandoff) private var handoff
 
     init(@ViewBuilder content: () -> Content) {
         self.content = content()
@@ -47,10 +48,10 @@ struct DuoScroll<Content: View>: View {
         ScrollView {
             content
                 .contentMargins(.horizontal, 0, for: .scrollContent)
-                .environment(\.duoScrollAnchorPage, nil)
+                .environment(\.duoScrollHandoff, nil)
         }
         .contentMargins(.horizontal, margins.insets, for: .scrollContent)
-        .modifier(DuoScrollAnchoring(page: anchor))
+        .modifier(DuoScrollAnchoring(handoff: handoff))
     }
 }
 
