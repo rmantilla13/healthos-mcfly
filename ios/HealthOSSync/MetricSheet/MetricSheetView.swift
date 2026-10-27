@@ -85,6 +85,7 @@ struct MetricSheetContent: View {
         VStack(alignment: .leading, spacing: 18) {
             if measured, let offered = own?.ranges, offered.count > 1 {
                 SheetRangeButtons(ranges: offered, range: range, pick: pick)
+                    .sheetOneSide()
                     .padding(.top, -6)
             }
             Group {
@@ -116,12 +117,49 @@ struct MetricSheetContent: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .sheetOneSide()
                 .padding(.top, -6)
             }
         }
         .padding(.top, -2)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
+}
+
+/// Where the inner display's centred sheet may meet the iPhone Duo's fold (duo/design.md §2.7, D10). At regular width
+/// the system centres the sheet on the display (653 points wide at x 149–802, open in landscape), so while the device
+/// lies flat the fold runs down the sheet's middle; the system moves the sheet clear only of an active fold. The sheet
+/// is its own scope and never splits, so it has no fold to read (`duoFold` is none inside it). So in a sheet wider than
+/// any compact one, whatever can be tapped keeps to one side of the middle, clear of it by the fold's clearance: the
+/// range buttons, "Manage connections", the source's link and "Open {page}" on the leading side, the chart and table
+/// switch and Close on the trailing one. What's only read (the figures, the chart, the sentence) may cross it, as
+/// scrolling content may. Every iPhone's sheet and the outer display's are compact, and nothing in them moves.
+enum SheetMiddle {
+    /// The widest a control on one side of the sheet's middle may be: half the column, less the clearance and a point
+    /// more (so the screen's pixel rounding never brings an edge into the fold band), in a sheet whose column is wider
+    /// than the compact band's (the system's centred sheet: 614 wide, so 294); nil, no limit, in every other.
+    static func sideWidth(column: CGFloat?) -> CGFloat? {
+        guard let column, column > DuoBand.compactMax else { return nil }
+        return max(0, (column / 2 - DuoFold.clearance - 1).rounded(.down))
+    }
+}
+
+private struct SheetOneSide: ViewModifier {
+    @Environment(\.duoContentWidth) private var column
+
+    func body(content: Content) -> some View {
+        let width = SheetMiddle.sideWidth(column: column)
+        // In a compact sheet both frames are empty (no size of their own), so nothing moves.
+        content
+            .frame(maxWidth: width, alignment: .leading)
+            .frame(maxWidth: width == nil ? nil : .infinity, alignment: .leading)
+    }
+}
+
+extension View {
+    /// A control in the metric sheet that keeps to the leading side of the sheet's middle where the system centres the
+    /// sheet (SheetMiddle); unchanged in a compact sheet.
+    func sheetOneSide() -> some View { modifier(SheetOneSide()) }
 }
 
 /// The range buttons (.filters.msheet-ranges): the ranges in a soft pill-shaped well, the chosen one raised on white.
@@ -169,27 +207,32 @@ struct SheetRangeButtons: View {
     }
 }
 
-/// "No measurement yet.": never measured, so no ranges, source or chart.
+/// "No measurement yet.": never measured, so no ranges, source or chart. Centred, as the web's; in the inner display's
+/// centred sheet it starts at the leading edge instead, so "Manage connections" keeps to one side of the sheet's middle,
+/// where a fold may run (SheetMiddle), rather than sitting across it.
 private struct NeverMeasured: View {
     let key: MetricKey
     let manageConnections: () -> Void
+    @Environment(\.duoContentWidth) private var column
 
     var body: some View {
-        VStack(spacing: 6) {
+        let leading = SheetMiddle.sideWidth(column: column) != nil
+        VStack(alignment: leading ? .leading : .center, spacing: 6) {
             Text(SheetWords.neverTitle).font(.app(size: 14, weight: .semibold, relativeTo: .subheadline))
             Text(SheetWords.neverText).font(.app(size: 13, relativeTo: .footnote))
             if SheetWords.ownEntries.contains(key) {
                 Text(SheetWords.ownEntry).font(.app(size: 12, relativeTo: .caption)).foregroundStyle(Palette.ink3)
             }
             ManageConnectionsButton(action: manageConnections)
+                .sheetOneSide()
                 .padding(.top, 16)
         }
-        .multilineTextAlignment(.center)
+        .multilineTextAlignment(leading ? .leading : .center)
         .foregroundStyle(Palette.ink2)
         .fixedSize(horizontal: false, vertical: true)
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, alignment: leading ? .leading : .center)
         .padding(.top, 34)
-        .padding(.horizontal, 8)
+        .padding(.horizontal, leading ? 0 : 8)
         .padding(.bottom, 28)
     }
 }
@@ -474,6 +517,7 @@ private struct AboutMetric: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .sheetOneSide()
             .padding(.top, 8)
             .accessibilityHint("Opens the page in a browser")
         }
