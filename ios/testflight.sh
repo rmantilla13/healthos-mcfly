@@ -77,8 +77,20 @@ xcodebuild -project HealthOSSync.xcodeproj -scheme HealthOSSync -configuration R
   -allowProvisioningUpdates ${auth[@]+"${auth[@]}"} -quiet archive
 
 work=$(mktemp -d)
+# Xcode's own upload step can refuse an API key that App Store Connect accepts ("No Accounts with App Store
+# Connect Access", seen with Xcode 27.1). Then the build is exported to an .ipa with the same key and sent
+# with altool, which signs in with the key on its own.
+upload_with_altool() {
+  [[ ${#auth[@]} -gt 0 ]] || return 1
+  echo "Xcode's upload didn't sign in; exporting the .ipa and sending it with altool instead." >&2
+  sed 's#<string>upload</string>#<string>export</string>#' ExportOptions.plist > "$work/ExportOptions-local.plist"
+  xcodebuild -exportArchive -archivePath "$archive" -exportOptionsPlist "$work/ExportOptions-local.plist" \
+    -exportPath "$work/ipa" -allowProvisioningUpdates "${auth[@]}" -quiet &&
+    xcrun altool --upload-app -f "$work/ipa/HealthOSSync.ipa" -t ios --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
+}
 if ! xcodebuild -exportArchive -archivePath "$archive" \
-  -exportOptionsPlist ExportOptions.plist -exportPath "$work/export" -allowProvisioningUpdates ${auth[@]+"${auth[@]}"}; then
+  -exportOptionsPlist ExportOptions.plist -exportPath "$work/export" -allowProvisioningUpdates ${auth[@]+"${auth[@]}"} &&
+  ! upload_with_altool; then
   rm -rf "$work"
   echo "Upload failed. The archive is in Xcode > Window > Organizer as \"HealthOSSync $version ($next)\": Distribute App > App Store Connect > Upload." >&2
   echo "To retry from here, fix the sign-in and run: ./testflight.sh --same-build" >&2

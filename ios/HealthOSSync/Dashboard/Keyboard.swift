@@ -8,15 +8,11 @@ func hideKeyboard() {
 
 extension View {
     /// Forms and scroll views: the keyboard follows a downward scroll away, and a Done button sits above
-    /// keyboards (URL, number and code keyboards have no obvious way out).
+    /// keyboards (URL, number and code keyboards have no obvious way out). How Done sits there on iPhone Duo is
+    /// DuoKeyboardDone's (Shell/Duo/DuoKeyboard.swift).
     func keyboardDismissal() -> some View {
         scrollDismissesKeyboard(.interactively)
-            .toolbar {
-                ToolbarItemGroup(placement: .keyboard) {
-                    Spacer()
-                    Button("Done", action: hideKeyboard).bold()
-                }
-            }
+            .toolbar { DuoKeyboardDone(action: hideKeyboard) }
     }
 }
 
