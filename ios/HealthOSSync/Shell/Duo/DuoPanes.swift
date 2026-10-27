@@ -37,9 +37,11 @@ struct DuoPanes<Primary: View, Secondary: View, Single: View>: View {
     /// The row a fold hands from one scroll view to the next: this page's own, so a new page starts at its top.
     @State private var handoff = DuoScrollHandoff()
 
-    /// The system's arrangement on iOS 27.1. Set to false if G5 finds it doesn't keep each pane on its own side of the
-    /// fold at regular width: every DuoPanes page then takes the HStack path, and no page changes.
-    static var usesArrangement: Bool { true }
+    /// The system's arrangement on iOS 27.1: off. G5 (HOS Duo, open, the shell stage) found that at regular width
+    /// ArrangementView splits the page into equal halves (0–433.7 | 433.7–867 of an 867 pt page) and ignores the fold,
+    /// a 40 pt region at 435.5–475.5 there, so the secondary pane started on it. Every DuoPanes page takes the HStack
+    /// path, which splits on the fold read, and no page changes.
+    static var usesArrangement: Bool { false }
 
     init(anchor: Pane = .primary, @ViewBuilder primary: () -> Primary, @ViewBuilder secondary: () -> Secondary,
          @ViewBuilder single: () -> Single) {

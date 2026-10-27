@@ -66,10 +66,12 @@ final class DuoReaderTests: XCTestCase {
         let probe = DuoProbe()
         let window = try DuoLive.window()
         defer { window.isHidden = true }
+        // The page's own reading is taken inside its scope (a background of the panes): outside it, as a background of
+        // the DuoPage, the fold is still the default .none.
         let page = DuoPage { _ in
             DuoPanes { probe.view("primary") } secondary: { probe.view("secondary") } single: { probe.view("single") }
+                .background { probe.view("page") }
         }
-        .background { probe.view("page") }
         window.rootViewController = UIHostingController(rootView: page.environment(probe))
         window.makeKeyAndVisible()
         try await Task.sleep(for: .seconds(2))
