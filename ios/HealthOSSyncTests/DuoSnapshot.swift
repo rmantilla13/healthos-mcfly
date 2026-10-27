@@ -296,6 +296,46 @@ final class DuoKitTests: XCTestCase {
         XCTAssertEqual(offenders.count, 1, "\(offenders)")
     }
 
+    /// Page tabs that overflow the leading side scroll there (§2.4): a tab the row clips at the side's edge isn't on the
+    /// fold, because only what a sideways row shows counts. The review's two cases: AX3 with the bar trailing, and the
+    /// bar leading at default text; and the bar leading at AX3 with the fold active.
+    func testClippedPageTabsAreNotOnTheFold() async throws {
+        let tabs = ["Overview", "Metabolism", "Heart", "Activity", "Composition", "Recovery"].map { PageTab(id: $0, label: $0) }
+        let page = DuoPage { _ in
+            DuoScroll {
+                VStack(alignment: .leading, spacing: 14) {
+                    PageTabs(tabs: tabs, selection: .constant("Overview"), label: "Sections")
+                    Text("The page")
+                }
+                .padding(.vertical, 16)
+            }
+        }
+        let cases: [(DuoState, DynamicTypeSize)] = [(.innerLandscape(), .accessibility3), (.innerLandscape(bar: .leading), .large),
+                                                    (.innerLandscape(foldActive: true, bar: .leading), .accessibility3)]
+        for (state, size) in cases {
+            let host = try await DuoHost(page, as: state, typeSize: size)
+            defer { host.close() }
+            XCTAssertFalse(host.sidewaysScrollers().isEmpty, "the tabs overflow and scroll in \(state) at \(size)")
+            try await DuoFoldAssertions.assertNothingTappableOnTheFold(in: host)
+        }
+    }
+
+    /// A row that scrolls sideways and itself crosses the fold is exempt (D10), as before.
+    func testASidewaysRowAcrossTheFoldIsExempt() async throws {
+        let row = DuoPage { _ in
+            DuoScroll {
+                ScrollView(.horizontal) {
+                    HStack(spacing: 8) { ForEach(1...20, id: \.self) { n in Button("Day \(n)") {}.frame(width: 90, height: 44) } }
+                }
+            }
+        }
+        let host = try await DuoHost(row, as: .innerLandscape())
+        defer { host.close() }
+        XCTAssertFalse(host.sidewaysScrollers().isEmpty)
+        let offenders = try await DuoFoldAssertions.offenders(in: host)
+        XCTAssertEqual(offenders, [])
+    }
+
     /// The page persists across a band change: what's typed stays (P14), on the same hosted view.
     func testTheTestPageKeepsItsStateAcrossABandChange() async throws {
         let host = try await DuoHost(DuoTestContent(), as: .outer)
