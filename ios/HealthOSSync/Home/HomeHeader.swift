@@ -102,7 +102,9 @@ struct HomeHeader: View {
                 if demo { demoPill }
                 dayPicker
                 Spacer(minLength: 0)
-                actions
+                // On one line only where all of it fits (wider than any iPhone, as the iPhone Duo's inner display), so
+                // Refresh and Edit widgets keep their words on one line.
+                actions.fixedSize(horizontal: true, vertical: false)
             }
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 10) {

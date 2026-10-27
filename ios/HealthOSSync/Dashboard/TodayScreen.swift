@@ -176,9 +176,9 @@ struct TodayContent: View {
         case HomeRows.live: LiveHeartRateButton(state: figure)
         case HomeRows.signals: TodayGrid(summary: summary, ids: signals, goal: dashboard.stepGoal)
         case HomeRows.lower:
-            // Stacked on every iPhone and the Duo's inner display upright, as the web below 1080; two to a row in the
-            // open Duo's cards pane.
-            DuoGrid(lower, id: \.self, medium: 1, paneColumns: 2) { id in
+            // Stacked everywhere: on every iPhone and the Duo's inner display upright as the web below 1080, and in the
+            // open Duo's cards pane, whose columns are too narrow for the day's track and the journal's art.
+            DuoGrid(lower, id: \.self, medium: 1, paneColumns: 1) { id in
                 if id == "home.nutrition" {
                     TodayNutritionCard(date: summary.date, today: summary.today, read: nutrition)
                 } else {
@@ -193,7 +193,8 @@ struct TodayContent: View {
         case HomeRows.week: WeekCard(week: summary.week, stepGoal: dashboard.stepGoal)
         case HomeRows.insights: HomeInsightsCard(insights: summary.insights ?? [], today: summary.today)
         case HomeRows.allHidden: AllCardsHiddenNote(text: "All the cards on this page are hidden.")
-        case HomeRows.statsTagline: HomeTagline(compact: true)
+        // Centred in the column, as it was among the cards, where it's narrower than they are (its words over its link).
+        case HomeRows.statsTagline: HomeTagline(compact: true).frame(maxWidth: .infinity)
         case HomeRows.footer: HomeFooter()
         default: EmptyView()
         }

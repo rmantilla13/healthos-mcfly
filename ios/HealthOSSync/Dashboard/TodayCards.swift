@@ -272,7 +272,12 @@ struct LoadCard: View {
                        date: summary.date, spoken: "\(strain ? "Strain \(Fmt.number(v, 1)) of 21" : "Active energy \(Fmt.number(v)) kilocalories"), \(Self.band(l))") {
                 VStack(alignment: .leading, spacing: 6) {
                     MetricValue(value: strain ? Fmt.number(v, 1) : Fmt.number(v), unit: strain ? "of 21" : "kcal")
-                    HalfGauge(fraction: v / max).frame(width: 168, height: 92).frame(maxWidth: .infinity).padding(.top, -6)
+                    // 168 by 92, or smaller where that doesn't fit (two to a row in the open Duo's cards pane).
+                    ViewThatFits(in: .horizontal) {
+                        HalfGauge(fraction: v / max).frame(width: 168, height: 92)
+                        HalfGauge(fraction: v / max).frame(width: 126, height: 69)
+                    }
+                    .frame(maxWidth: .infinity).padding(.top, -6)
                     Spacer(minLength: 0)
                     SignalFootRow {
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
