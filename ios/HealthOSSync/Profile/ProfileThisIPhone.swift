@@ -215,7 +215,7 @@ private struct ProfileSyncRow: View {
             if model.syncingSources, !model.progress.isEmpty {
                 ProfileFine(model.progress)
             }
-            ProfileLastSync(status: model.sources, report: model.last)
+            ProfileLastSync(status: model.sources, report: model.last, server: dashboard.status, syncing: model.syncingSources || model.syncing)
             if model.backfillLeft > 0 {
                 ProfileIconLine("clock.arrow.circlepath", "Sending older history: \(model.backfillLeft) day\(model.backfillLeft == 1 ? "" : "s") left. Continues while the app is open.")
             }
@@ -237,46 +237,26 @@ private struct ProfileSyncRow: View {
     }
 }
 
-/// When it last synced and how it went: the last Sync this launch, or before one, the last Apple Health push (maybe
-/// from the background).
+/// When it last synced, with Home's dot (orange syncing, green within 24 hours, red after), then how the last Sync
+/// went: the last Sync this launch, or before one, the last Apple Health push (maybe from the background).
 private struct ProfileLastSync: View {
     let status: SourcesSyncStatus?
     let report: SyncReport?
+    let server: ServerStatus?
+    let syncing: Bool
 
     var body: some View {
+        let last = SyncFreshness.lastSynced(report: report, sources: status, status: server)
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            SyncFreshnessLine(freshness: .of(syncing: syncing, last: last, now: context.date), now: context.date)
+        }
         if let status {
-            when("Last sync", status.finishedAt)
             ProfileIconLine(status.ok ? "checkmark.circle" : "exclamationmark.triangle", status.summary, bad: !status.ok)
                 .accessibilityIdentifier("lastResult")
             ForEach(status.notes, id: \.self) { ProfileFine($0) }
         } else if let report {
-            when("Apple Health", report.finishedAt)
-            ProfileIconLine(report.ok ? "checkmark.circle" : "exclamationmark.triangle", report.message, bad: !report.ok)
-        } else {
-            pair(Text("Last sync"), Text("Never"))
+            ProfileIconLine(report.ok ? "checkmark.circle" : "exclamationmark.triangle", "Apple Health: \(report.message)", bad: !report.ok)
         }
-    }
-
-    private func when(_ title: String, _ date: Date) -> some View {
-        pair(Text(title), Text(date, format: .relative(presentation: .named)))
-    }
-
-    /// A name and its value: the value on the right, or under the name when they don't fit on one line.
-    private func pair(_ name: Text, _ value: Text) -> some View {
-        ViewThatFits(in: .horizontal) {
-            HStack {
-                name.fixedSize()
-                Spacer(minLength: 12)
-                value.foregroundStyle(Palette.ink3).fixedSize()
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                name
-                value.foregroundStyle(Palette.ink3)
-            }
-        }
-        .font(.app(.footnote))
-        .foregroundStyle(Palette.ink2)
-        .accessibilityElement(children: .combine)
     }
 }
 

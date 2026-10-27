@@ -289,35 +289,117 @@ struct RefreshPill: View {
     }
 }
 
-/// "Synced 2 min ago · Apple Health ✓ · WHOOP ✓" under the top bar, and problems in plain words: the iPhone's own Apple
-/// Health push, which the web doesn't have. Nothing until a sync has run or is running.
+/// How fresh this person's data is, for the sync line's dot: syncing now (orange), synced within the last 24 hours
+/// (green), or not for longer than that, or never (red).
+enum SyncFreshness: Equatable {
+    case syncing
+    case synced(Date)
+    case stale(Date?)
+
+    /// Longer than this since the last sync that went through, and the dot goes red.
+    static let staleAfter: TimeInterval = 24 * 60 * 60
+
+    static func of(syncing: Bool, last: Date?, now: Date) -> SyncFreshness {
+        if syncing { return .syncing }
+        guard let last, now.timeIntervalSince(last) <= staleAfter else { return .stale(last) }
+        return .synced(last)
+    }
+
+    /// The last sync that went through, from what's kept across launches as well as this launch's: this iPhone's last
+    /// Apple Health push (background ones too) when it worked, a Sync this launch where a source synced (one where every
+    /// source was skipped, signed out say, synced nothing), and the server's own last Apple Health and WHOOP syncs (another
+    /// device's, or the server's hourly WHOOP refresh).
+    static func lastSynced(report: SyncReport?, sources: SourcesSyncStatus?, status: ServerStatus?) -> Date? {
+        var dates: [Date] = []
+        if let report, report.ok { dates.append(report.finishedAt) }
+        if let sources, sources.apple == .ok || sources.whoop == .ok { dates.append(sources.finishedAt) }
+        if let s = status?.apple?.lastSync?.syncedAt, let d = ISO8601DateFormatter.flexible.flexibleDate(s) { dates.append(d) }
+        if status?.whoop?.connected == true, let s = status?.whoop?.lastSync, let d = ISO8601DateFormatter.flexible.flexibleDate(s) { dates.append(d) }
+        return dates.max()
+    }
+
+    var color: Color {
+        switch self {
+        case .syncing: Palette.warning
+        case .synced: Palette.good
+        case .stale: Palette.critical
+        }
+    }
+
+    /// "Syncing…", "Synced just now", "Synced 4 minutes ago", "Last synced 2 days ago", "Not synced yet".
+    func words(now: Date) -> String {
+        switch self {
+        case .syncing: return "Syncing…"
+        case .synced(let d): return now.timeIntervalSince(d) < 60 ? "Synced just now" : "Synced \(Self.ago(d, now))"
+        case .stale(let d?): return "Last synced \(Self.ago(d, now))"
+        case .stale(nil): return "Not synced yet"
+        }
+    }
+
+    private static func ago(_ d: Date, _ now: Date) -> String {
+        RelativeDateTimeFormatter.named.localizedString(for: min(d, now), relativeTo: now)
+    }
+}
+
+private extension RelativeDateTimeFormatter {
+    static let named: RelativeDateTimeFormatter = {
+        let f = RelativeDateTimeFormatter()
+        f.dateTimeStyle = .named
+        f.unitsStyle = .full
+        return f
+    }()
+}
+
+/// The sync's dot and its words under the top bar: "Syncing…" orange, "Synced 4 minutes ago" green, and red once it's
+/// been more than 24 hours. How each source went, and why one didn't, is in Profile → This iPhone. Nothing while no
+/// source is connected (the banner above says so).
 struct SyncStatusLine: View {
     @Environment(AppModel.self) private var sync
+    @Environment(Dashboard.self) private var dashboard
 
     var body: some View {
-        if sync.syncingSources || sync.sources != nil {
-            VStack(alignment: .leading, spacing: 4) {
-                // The mark beside the first line when the line wraps.
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    if sync.syncingSources {
-                        ProgressView().controlSize(.mini)
-                        Text(sync.progress.isEmpty ? "Syncing Apple Health and WHOOP…" : sync.progress)
-                    } else if let s = sync.sources {
-                        Image(systemName: s.ok ? "checkmark.circle" : "exclamationmark.circle")
-                            .foregroundStyle(s.ok ? Palette.good : Palette.serious)
-                        Text("Synced \(s.finishedAt.formatted(.relative(presentation: .named))) · \(s.summary)")
-                    }
-                }
-                .font(.app(.caption))
-                .foregroundStyle(Palette.ink3)
-                // In full at every text size: each source's state is in it.
-                .fixedSize(horizontal: false, vertical: true)
-                if !sync.syncingSources, let notes = sync.sources?.notes, !notes.isEmpty {
-                    ForEach(notes, id: \.self) { Text($0).font(.app(.caption)).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true) }
-                }
+        let status = dashboard.status
+        if !NoSourcesBanner.shows(status) {
+            let last = SyncFreshness.lastSynced(report: sync.last, sources: sync.sources, status: status)
+            // Once a minute, so "4 minutes ago" moves on and the dot turns red at 24 hours with the app open.
+            TimelineView(.periodic(from: .now, by: 60)) { context in
+                SyncFreshnessLine(freshness: .of(syncing: sync.syncingSources || sync.syncing, last: last, now: context.date), now: context.date)
             }
-            .accessibilityElement(children: .combine)
         }
+    }
+}
+
+/// The dot and the words, as on Home and in Profile.
+struct SyncFreshnessLine: View {
+    let freshness: SyncFreshness
+    let now: Date
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var pulse = false
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 7) {
+            Circle()
+                .fill(freshness.color)
+                .frame(width: 8, height: 8)
+                .opacity(freshness == .syncing && pulse ? 0.35 : 1)
+                .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 0.5 }
+                .accessibilityHidden(true)
+            Text(freshness.words(now: now))
+        }
+        .font(.app(.caption))
+        .foregroundStyle(Palette.ink3)
+        .fixedSize(horizontal: false, vertical: true)
+        .onAppear { startPulse() }
+        .onChange(of: freshness == .syncing) { startPulse() }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("syncStatus")
+    }
+
+    /// While syncing the dot breathes, unless Reduce Motion is on.
+    private func startPulse() {
+        guard freshness == .syncing, !reduceMotion else { return pulse = false }
+        pulse = false
+        withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) { pulse = true }
     }
 }
 

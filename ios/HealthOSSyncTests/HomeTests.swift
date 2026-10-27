@@ -296,10 +296,16 @@ final class HomeFigureCalloutTests: XCTestCase {
             func p(_ v: CGPoint) -> String { "[\(Self.js(v.x)), \(Self.js(v.y))]" }
             return "\(key): { dot: \(p(s.dot)), label: \(p(s.label)), line: \(p(s.line)), side: '\(s.left ? "left" : "right")' },"
         }
-        for (key, spot) in [("spo2", man.spots[.spo2]!), ("breathing", man.spots[.breathing]!), ("heart", man.spots[.heart]!),
+        for (key, spot) in [("spo2", man.spots[.spo2]!), ("breathing", man.spots[.breathing]!),
                             ("temp", man.spots[.temp]!), ("wrist", man.wrist)] {
             XCTAssertTrue(tsx.contains(row(key, spot)), row(key, spot))
         }
+        // The heart's dot is the web's; its label goes beside it on the right, under breathing's, not across the body.
+        let heart = try XCTUnwrap(man.spots[.heart])
+        XCTAssertTrue(tsx.contains("heart: { dot: [\(Self.js(heart.dot.x)), \(Self.js(heart.dot.y))]"))
+        XCTAssertFalse(heart.left)
+        XCTAssertGreaterThan(heart.label.x, heart.dot.x)
+        XCTAssertGreaterThan(heart.label.y, man.spots[.breathing]!.label.y)
         XCTAssertEqual(man.asset, "DigitalMan")
         XCTAssertNotNil(UIImage(named: "DigitalMan"))
         XCTAssertNotNil(UIImage(named: "JournalGut"))
@@ -318,11 +324,12 @@ final class HomeFigureCalloutTests: XCTestCase {
         let width: CGFloat = 343, height = width * 600 / 640
         let sizes: [CalloutKey: CGSize] = [.spo2: CGSize(width: 80, height: 50), .heart: CGSize(width: 70, height: 50), .breathing: CGSize(width: 76, height: 50)]
         let nudge = man.nudges(CalloutKey.home, sizes: sizes, width: width, wrist: false)
-        // Heart's label starts at 28% down; blood oxygen's, at 16.3%, is 50 tall: heart moves to 6pt below it.
+        // Heart's label starts at 28% down on the right; breathing's, at 15%, is 50 tall: heart moves to 6pt below it.
         XCTAssertEqual(nudge[.spo2]?.dy, 0)
-        XCTAssertEqual(nudge[.heart]?.dy ?? 0, 0.163 * height + 50 + 6 - 0.28 * height, accuracy: 1e-9)
-        // Breathing's label starts at 92% across: moved left so its right edge is the figure's.
+        XCTAssertEqual(nudge[.heart]?.dy ?? 0, 0.15 * height + 50 + 6 - 0.28 * height, accuracy: 1e-9)
+        // Breathing's and heart's labels start at 92% across: moved left so their right edges are the figure's.
         XCTAssertEqual(nudge[.breathing]?.dx ?? 0, width - (0.92 * width + 76), accuracy: 1e-9)
+        XCTAssertEqual(nudge[.heart]?.dx ?? 0, width - (0.92 * width + 70), accuracy: 1e-9)
         XCTAssertEqual(nudge[.spo2]?.dx, 0)
         // A label not measured yet isn't moved.
         XCTAssertNil(man.nudges(CalloutKey.home, sizes: [:], width: width, wrist: false)[.heart])
@@ -712,23 +719,61 @@ final class HomeFitsTests: XCTestCase {
         }
     }
 
-    /// The sync line is in full at every size: each source's state is in it.
+    /// The sync line is one line of words beside its dot, wrapped rather than cut off at the largest sizes.
     func testTheSyncLineWrapsRatherThanBeingCutOff() {
-        let sync = AppModel()
-        // Both synced: no notes under the line, so its height is the line's own.
-        let status = SourcesSyncStatus(finishedAt: Date(), apple: .ok, whoop: .ok, hint: nil)
-        XCTAssertTrue(status.notes.isEmpty)
-        sync.sources = status
-        let narrow: CGFloat = 160
-        for size in [DynamicTypeSize.accessibility3, .accessibility5] {
-            let line = UIHostingController(rootView: SyncStatusLine().environment(sync).environment(\.dynamicTypeSize, size))
-                .sizeThatFits(in: CGSize(width: narrow, height: .greatestFiniteMagnitude))
-            // Its words alone, given the line's whole width (more than they get beside the icon): a lower bound.
-            let words = Text("Synced \(status.finishedAt.formatted(.relative(presentation: .named))) · \(status.summary)")
-                .font(.app(.caption)).fixedSize(horizontal: false, vertical: true).environment(\.dynamicTypeSize, size)
-            let needed = UIHostingController(rootView: words).sizeThatFits(in: CGSize(width: narrow, height: .greatestFiniteMagnitude))
-            XCTAssertGreaterThanOrEqual(line.height, needed.height - 0.5, "the sync line is cut off at \(size)")
+        let now = Date()
+        let narrow: CGFloat = 120
+        for freshness in [SyncFreshness.syncing, .synced(now.addingTimeInterval(-300)), .stale(now.addingTimeInterval(-3 * 86_400)), .stale(nil)] {
+            for size in [DynamicTypeSize.large, .accessibility3, .accessibility5] {
+                let line = UIHostingController(rootView: SyncFreshnessLine(freshness: freshness, now: now).environment(\.dynamicTypeSize, size))
+                    .sizeThatFits(in: CGSize(width: narrow, height: .greatestFiniteMagnitude))
+                let words = Text(freshness.words(now: now)).font(.app(.caption)).fixedSize(horizontal: false, vertical: true).environment(\.dynamicTypeSize, size)
+                let needed = UIHostingController(rootView: words).sizeThatFits(in: CGSize(width: narrow, height: .greatestFiniteMagnitude))
+                XCTAssertGreaterThanOrEqual(line.height, needed.height - 0.5, "\(freshness.words(now: now)) is cut off at \(size)")
+            }
         }
+    }
+
+    /// Orange while syncing, green up to 24 hours after the last sync that went through, red after that or never.
+    func testTheSyncDotIsOrangeSyncingGreenWithin24HoursAndRedAfter() {
+        let now = Date()
+        XCTAssertEqual(SyncFreshness.of(syncing: true, last: now.addingTimeInterval(-90_000), now: now), .syncing)
+        XCTAssertEqual(SyncFreshness.of(syncing: false, last: now.addingTimeInterval(-60), now: now), .synced(now.addingTimeInterval(-60)))
+        XCTAssertEqual(SyncFreshness.of(syncing: false, last: now.addingTimeInterval(-86_400), now: now), .synced(now.addingTimeInterval(-86_400)), "exactly 24 hours is still green")
+        XCTAssertEqual(SyncFreshness.of(syncing: false, last: now.addingTimeInterval(-86_401), now: now), .stale(now.addingTimeInterval(-86_401)))
+        XCTAssertEqual(SyncFreshness.of(syncing: false, last: nil, now: now), .stale(nil))
+        XCTAssertEqual(SyncFreshness.syncing.color, Palette.warning)
+        XCTAssertEqual(SyncFreshness.synced(now).color, Palette.good)
+        XCTAssertEqual(SyncFreshness.stale(nil).color, Palette.critical)
+        XCTAssertEqual(SyncFreshness.syncing.words(now: now), "Syncing…")
+        XCTAssertEqual(SyncFreshness.synced(now.addingTimeInterval(-20)).words(now: now), "Synced just now")
+        XCTAssertEqual(SyncFreshness.stale(nil).words(now: now), "Not synced yet")
+        XCTAssertTrue(SyncFreshness.stale(now.addingTimeInterval(-2 * 86_400)).words(now: now).hasPrefix("Last synced "))
+    }
+
+    /// Only a sync that went through counts: a run where every source was skipped (signed out) or failed doesn't, nor a
+    /// failed Apple Health push; the server's last syncs, which outlast a relaunch, do, WHOOP's only while it's connected.
+    func testOnlyASyncThatWentThroughCounts() throws {
+        let now = Date()
+        let skipped = SourcesSyncStatus(finishedAt: now, apple: .skipped("Signed out."), whoop: .skipped("Sign in."), hint: nil)
+        XCTAssertNil(SyncFreshness.lastSynced(report: nil, sources: skipped, status: nil))
+        let failed = SourcesSyncStatus(finishedAt: now, apple: .failed("Offline"), whoop: .skipped("Not connected"), hint: nil)
+        XCTAssertNil(SyncFreshness.lastSynced(report: SyncReport(finishedAt: now, ok: false, message: "Offline"), sources: failed, status: nil))
+        let half = SourcesSyncStatus(finishedAt: now, apple: .ok, whoop: .failed("WHOOP is down"), hint: nil)
+        XCTAssertEqual(SyncFreshness.lastSynced(report: nil, sources: half, status: nil), now)
+        let pushed = now.addingTimeInterval(-3_600)
+        XCTAssertEqual(SyncFreshness.lastSynced(report: SyncReport(finishedAt: pushed, ok: true, message: "Up to date"), sources: skipped, status: nil), pushed)
+
+        func status(apple: String?, whoop: String?, connected: Bool) throws -> ServerStatus {
+            var json: [String: Any] = [:]
+            if let apple { json["apple"] = ["lastSync": ["syncedAt": apple]] }
+            if let whoop { json["whoop"] = ["connected": connected, "lastSync": whoop] }
+            return try JSONDecoder().decode(ServerStatus.self, from: JSONSerialization.data(withJSONObject: json))
+        }
+        let older = "2026-10-20T08:00:00.000Z", newer = "2026-10-21T09:30:00Z"
+        let fmt = ISO8601DateFormatter.flexible
+        XCTAssertEqual(SyncFreshness.lastSynced(report: nil, sources: nil, status: try status(apple: older, whoop: newer, connected: true)), fmt.flexibleDate(newer))
+        XCTAssertEqual(SyncFreshness.lastSynced(report: nil, sources: nil, status: try status(apple: older, whoop: newer, connected: false)), fmt.flexibleDate(older))
     }
 
     /// The quiet buttons (Every page's cards, Got it) wrap their words where they're narrow, never cutting them off.
