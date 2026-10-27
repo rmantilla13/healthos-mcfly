@@ -60,17 +60,12 @@ private struct VitalsTrendChart: View {
                     .accessibilityLabel(Fmt.day(p.date))
                     .accessibilityValue(trend.format(p.value))
             }
-            if let median, let first = points.first {
+            if let median {
+                // Dashed, with its label above the line's start, as the web writes it.
                 RuleMark(y: .value("Median", median))
                     .foregroundStyle(Palette.ink3)
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
-                    .accessibilityHidden(true)
-                // Its label above the line's start, as the web writes it: on an invisible point there, since a
-                // level rule's own annotation isn't always drawn.
-                PointMark(x: .value("Day", Fmt.chartDate(first.date)), y: .value("Median", median))
-                    .symbolSize(0)
-                    .annotation(position: .topTrailing, alignment: .leading, spacing: 1,
-                                overflowResolution: .init(x: .fit(to: .chart), y: .fit(to: .chart))) {
+                    .annotation(position: .top, alignment: .leading, spacing: 1) {
                         Text("Median \(trend.format(median))")
                             .font(.app(.caption2))
                             .foregroundStyle(Palette.ink2)
@@ -83,6 +78,13 @@ private struct VitalsTrendChart: View {
                 PointMark(x: .value("Day", Fmt.chartDate(last.date)), y: .value(trend.title, last.value))
                     .foregroundStyle(color)
                     .symbolSize(40)
+                    // The latest reading's value beside its dot, as the web labels it.
+                    .annotation(position: .top, alignment: .trailing, spacing: 4,
+                                overflowResolution: .init(x: .fit(to: .chart), y: .fit(to: .chart))) {
+                        Text(trend.format(last.value))
+                            .font(.app(.caption, weight: .semibold))
+                            .foregroundStyle(Palette.ink)
+                    }
                     .accessibilityHidden(true)
             }
             if let picked {
