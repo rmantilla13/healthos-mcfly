@@ -25,7 +25,8 @@ private struct KeyboardDismissal: ViewModifier {
         content
             .scrollDismissesKeyboard(.interactively)
             .toolbar {
-                if !inSheet { DuoKeyboardDone(action: hideKeyboard) }
+                // None at all where the bar holds no Done (iOS 27.1): number fields put theirs beside them (duoFieldDone).
+                if !inSheet, DuoKeyboardDone.current.inBar { DuoKeyboardDone(action: hideKeyboard) }
             }
             .environment(\.duoKeyboardDoneAsked, true)
     }

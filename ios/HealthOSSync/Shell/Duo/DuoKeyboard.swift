@@ -20,8 +20,15 @@ struct DuoKeyboardDone: ToolbarContent {
         /// Before iOS 27.1: a flexible space, then Done, at the trailing end of the bar over the keyboard. On 27.1 this is
         /// the group that hung (G0).
         case spacerThenDone
-        /// iOS 27.1 (F0, kept by the shell stage): Done alone, with no flexible space. The bar centres it. No hang.
+        /// F0's shape, kept for 27.1 until build 23's check: Done alone, with no flexible space. The bar centres it. No
+        /// hang, but centred is where the open Duo's fold is: flat, Done sat at x 401–466 against a fold at 455.5–495.5,
+        /// and half-open still inside the fold's 12 pt clearance (D10). Debug-only since (`-duoKeyboardShape doneAlone`).
         case doneAlone
+        /// iOS 27.1 (design §0.1, fix 2): no Done in the keyboard's bar at all, so nothing the system places can land on
+        /// the fold. Tap-to-dismiss (`KeyboardDismisser`) and the interactive scroll dismissal stay, every field with a
+        /// return key closes with it, and the number pads (no return key) put up a Done of their own beside the field
+        /// while it's focused (`duoFieldDone(_:)`), where the page lays it out, on the field's side of the fold.
+        case besideTheField
         /// iOS 26's own toolbar spacer (`ToolbarSpacer(.flexible, placement: .keyboard)`), then Done as an item of its own.
         /// G0: no hang, but the spacer collapses in the Duo's keyboard bar and Done stays centred.
         case toolbarSpacerThenDone
@@ -43,7 +50,7 @@ struct DuoKeyboardDone: ToolbarContent {
     /// The shape for an iOS release: the old group before 27.1; from 27.1, and anything after it (a later release that
     /// brings the Duo's bars to other iPhones shouldn't bring the hang back with them), the shape G0 kept.
     nonisolated static func shape(on version: OperatingSystemVersion) -> Shape {
-        (version.majorVersion, version.minorVersion) >= (27, 1) ? .doneAlone : .spacerThenDone
+        (version.majorVersion, version.minorVersion) >= (27, 1) ? .besideTheField : .spacerThenDone
     }
 
     /// This iPhone's. In Debug builds `-duoKeyboardShape <shape>` (a Shape's name) puts up another one, for G0's control
@@ -64,13 +71,18 @@ struct DuoKeyboardDone: ToolbarContent {
     }
 
     var body: some ToolbarContent {
+        if Self.current.inBar { bar }
+    }
+
+    @ToolbarContentBuilder private var bar: some ToolbarContent {
         switch Self.current {
         case .spacerThenDone:
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
                 done
             }
-        case .doneAlone:
+        case .doneAlone, .besideTheField:
+            // .besideTheField never gets here (body builds no bar for it).
             ToolbarItem(placement: .keyboard) { done }
         case .toolbarSpacerThenDone:
             if #available(iOS 26.0, *) {
@@ -130,6 +142,98 @@ struct DuoKeyboardDone: ToolbarContent {
     }
 }
 
+extension DuoKeyboardDone.Shape {
+    /// Whether this shape puts Done in the keyboard's bar. `keyboardDismissal()` and the sheet's stack build no keyboard
+    /// item when it doesn't: not even an empty one, since a bar item's host is where the hang was (G0).
+    nonisolated var inBar: Bool { self != .besideTheField }
+}
+
+// MARK: - Done beside a number field (iOS 27.1)
+
+extension EnvironmentValues {
+    /// Whether the keyboard's bar holds Done (`DuoKeyboardDone.current.inBar`): when it doesn't, `duoFieldDone(_:)` shows
+    /// a Done beside its field. It only follows the iOS release (never the fold), so nothing changes on a hinge move; drawn
+    /// tests, which run on 27.0, set it false to see the 27.1 Done.
+    var duoKeyboardDoneInBar: Bool {
+        get { self[DuoKeyboardDoneInBarKey.self] }
+        set { self[DuoKeyboardDoneInBarKey.self] = newValue }
+    }
+}
+
+private struct DuoKeyboardDoneInBarKey: EnvironmentKey {
+    static var defaultValue: Bool { DuoKeyboardDone.current.inBar }
+}
+
+extension View {
+    /// A number field's row (the field, and its unit if it has one): where the keyboard's bar has no Done (iOS 27.1,
+    /// `DuoKeyboardDone.Shape.besideTheField`), a Done that closes the keyboard, beside the row while `focused`, or on a
+    /// line of its own under it where the row leaves no room (the largest text sizes, the outer display). Elsewhere the
+    /// row exactly as it is. The row's views are the same either way, so the field keeps its focus and what's typed.
+    /// `under: true` always puts it on the line under, for a row that wraps (offered less width, it would rearrange).
+    func duoFieldDone(_ focused: Bool, under: Bool = false) -> some View {
+        modifier(DuoFieldDone(focused: focused, under: under))
+    }
+}
+
+private struct DuoFieldDone: ViewModifier {
+    let focused: Bool
+    let under: Bool
+    @Environment(\.duoKeyboardDoneInBar) private var inBar
+
+    func body(content: Content) -> some View {
+        DuoFieldDoneLayout(besideIfItFits: !under) {
+            content
+            if focused && !inBar {
+                Button("Done", action: hideKeyboard)
+                    .buttonStyle(.quietPill)
+                    .accessibilityHint("Closes the keyboard")
+                    .accessibilityIdentifier("fieldDone")
+            }
+        }
+    }
+}
+
+/// The row, then Done 12 pt after it on the same line if the row fits in what Done leaves of the width offered (a field
+/// that fills its width gives way to it), else Done under the row, leading.
+struct DuoFieldDoneLayout: Layout {
+    var spacing: CGFloat = 12
+    var besideIfItFits = true
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let (row, done, beside) = measure(proposal, subviews)
+        guard let done else { return row }
+        return beside
+            ? CGSize(width: row.width + spacing + done.width, height: max(row.height, done.height))
+            : CGSize(width: max(row.width, done.width), height: row.height + spacing + done.height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard let first = subviews.first else { return }
+        let (row, done, beside) = measure(proposal, subviews)
+        let height = done.map { beside ? max(row.height, $0.height) : row.height } ?? row.height
+        first.place(at: CGPoint(x: bounds.minX, y: bounds.minY + (height - row.height) / 2), proposal: ProposedViewSize(row))
+        guard let done, subviews.count > 1 else { return }
+        let origin = beside
+            ? CGPoint(x: bounds.minX + row.width + spacing, y: bounds.minY + (height - done.height) / 2)
+            : CGPoint(x: bounds.minX, y: bounds.minY + row.height + spacing)
+        subviews[1].place(at: origin, proposal: ProposedViewSize(done))
+    }
+
+    private func measure(_ proposal: ProposedViewSize, _ subviews: Subviews) -> (row: CGSize, done: CGSize?, beside: Bool) {
+        guard let first = subviews.first else { return (.zero, nil, true) }
+        guard subviews.count > 1 else { return (first.sizeThatFits(proposal), nil, true) }
+        let done = subviews[1].sizeThatFits(.unspecified)
+        let width = proposal.width ?? .infinity
+        // Beside: the row offered what's left after Done (a field that fills its width gives way), if it fits in that.
+        let left = width - spacing - done.width
+        if besideIfItFits, left > 0 {
+            let narrow = first.sizeThatFits(ProposedViewSize(width: left, height: proposal.height))
+            if narrow.width <= left + 0.5 { return (narrow, done, true) }
+        }
+        return (first.sizeThatFits(proposal), CGSize(width: min(done.width, width), height: done.height), false)
+    }
+}
+
 // MARK: - Inside a sheet's own NavigationStack
 
 extension EnvironmentValues {
@@ -168,7 +272,7 @@ private struct DuoSheetKeyboardDone: ViewModifier {
         if DuoSheetStack<EmptyView>.stacks {
             content
                 .toolbar {
-                    if asked { DuoKeyboardDone(action: hideKeyboard) }
+                    if asked, DuoKeyboardDone.current.inBar { DuoKeyboardDone(action: hideKeyboard) }
                 }
                 .environment(\.duoKeyboardDoneInSheet, asked)
                 .environment(\.duoKeyboardDoneAsked, false)

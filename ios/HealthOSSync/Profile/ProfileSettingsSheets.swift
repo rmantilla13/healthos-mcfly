@@ -300,6 +300,9 @@ private struct ProfileNutritionTargets: View {
                 // As many to a row as fit, as the web's .target-inputs wrap: two and one on a phone, one a row at the
                 // largest text sizes.
                 ProfileWrap { fields }
+                    // No return key on the number pads: on iPhone Duo (iOS 27.1) one Done for them sits after the
+                    // fields while one is focused, so the fields don't move along their rows as it comes and goes.
+                    .duoFieldDone(focus != nil, under: true)
                 if let error { ProfileNote(text: error, good: false) }
             }
         }

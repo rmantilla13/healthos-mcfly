@@ -150,4 +150,92 @@ final class WelcomeDuoTests: XCTestCase {
             XCTAssertTrue(SignInDuoTests.textFields(in: host.window).first?.isFirstResponder == true, "still focused in \(state)")
         }
     }
+
+    // MARK: The age's Done (iOS 27.1: none in the keyboard's bar)
+
+    /// Step 2 with the age field focused, as iOS 27.1 shows it (no Done in the keyboard's bar, so the field puts one
+    /// up beside it), and that Done's frame. Drawn tests run on 27.0, so the bar is turned off here as 27.1 has it.
+    private func focusedAge(_ state: DuoState, display: DuoDisplay? = nil, typeSize: DynamicTypeSize = .large,
+                            barHoldsDone: Bool = false) async throws -> (host: DuoHost, done: CGRect?, field: CGRect) {
+        var view = AnyView(await welcome(.about).environment(\.duoKeyboardDoneInBar, barHoldsDone))
+        if let display { view = AnyView(view.environment(\.duoDisplayOverride, display)) }
+        let host = try await DuoHost(view, as: state, typeSize: typeSize)
+        let age = try XCTUnwrap(SignInDuoTests.textFields(in: host.window).first)
+        age.becomeFirstResponder()
+        var done: CGRect?
+        for _ in 0..<20 where done == nil {
+            try await host.settle()
+            done = try await host.elements().first { ProfileDuoTests.identifier($0) == "fieldDone" }?.accessibilityFrame
+            if barHoldsDone { break }
+        }
+        let field = try await host.elements().first { ProfileDuoTests.identifier($0) == "age" }?.accessibilityFrame ?? .null
+        return (host, done, field)
+    }
+
+    /// Build 23's check: with the Duo open flat, the keyboard bar's centred Done sat on the fold (x 401–466 against the
+    /// fold at 455.5–495.5). The age's own Done stays clear of the measured fold and its 12 pt either side, flat and
+    /// active, the bar either side, at every text size, and nothing else tappable meets it.
+    func testTheAgesDoneIsClearOfTheMeasuredFold() async throws {
+        for bar: HorizontalEdge in [.trailing, .leading] {
+            for active in [false, true] {
+                for typeSize in SignInDuoTests.sizes {
+                    let (host, done, field) = try await focusedAge(.innerLandscape(foldActive: active, bar: bar),
+                                                                   display: SignInDuoTests.measuredFold(active: active, bar: bar),
+                                                                   typeSize: typeSize)
+                    let elements = try await host.elements()
+                    host.window.endEditing(true)
+                    host.close()
+                    let name = "bar \(bar), active \(active), at \(typeSize)"
+                    let frame = try XCTUnwrap(done, "the age's Done is up, \(name)")
+                    XCTAssertLessThanOrEqual(frame.maxX, SignInDuoTests.measuredBand.lowerBound, "Done \(frame), \(name)")
+                    XCTAssertTrue(frame.minX >= field.maxX || frame.minY >= field.maxY, "Done \(frame) is beside or under the field \(field), \(name)")
+                    for element in elements {
+                        let traits = element.accessibilityTraits
+                        guard traits.contains(.button) || element is UITextField else { continue }
+                        let f = element.accessibilityFrame
+                        XCTAssertFalse(f.maxX > SignInDuoTests.measuredBand.lowerBound && f.minX < SignInDuoTests.measuredBand.upperBound,
+                                       "\(element.accessibilityLabel ?? "?") \(f) on the measured fold, \(name)")
+                    }
+                }
+            }
+        }
+    }
+
+    /// The same against the shared presets' folds (DuoFoldAssertions), in every folded state.
+    func testTheAgesDoneIsClearOfThePresetFolds() async throws {
+        for state in DuoState.folded {
+            for typeSize in SignInDuoTests.sizes {
+                let (host, done, _) = try await focusedAge(state, typeSize: typeSize)
+                XCTAssertNotNil(done, "the age's Done is up in \(state) at \(typeSize)")
+                let found = try await DuoFoldAssertions.offenders(in: host)
+                host.window.endEditing(true)
+                host.close()
+                XCTAssert(found.isEmpty, "on the fold in \(state) at \(typeSize): \(found.joined(separator: "; "))")
+            }
+        }
+    }
+
+    /// Closed (the outer display), the keyboard bar's Done sat over "years" beside the field. The age's own Done comes
+    /// after the field and its unit, inside the window, at every text size.
+    func testTheAgesDoneLeavesItsUnitShowingClosed() async throws {
+        for typeSize in SignInDuoTests.sizes {
+            let (host, done, field) = try await focusedAge(.outer, typeSize: typeSize)
+            let width = host.window.bounds.width
+            host.window.endEditing(true)
+            host.close()
+            let frame = try XCTUnwrap(done, "the age's Done is up at \(typeSize)")
+            // Beside: after the field, 14 pt, "years" and 12 pt more; else on a line of its own under the field.
+            XCTAssertTrue(frame.minX >= field.maxX + 14 + 20 || frame.minY >= field.maxY, "Done \(frame), field \(field), at \(typeSize)")
+            XCTAssertLessThanOrEqual(frame.maxX, width, "Done \(frame) is inside the window at \(typeSize)")
+            XCTAssertGreaterThanOrEqual(frame.height, 44, "Done is a full-size target at \(typeSize)")
+        }
+    }
+
+    /// Where the keyboard's bar holds Done (every iOS before 27.1), the field puts up none of its own.
+    func testNoDoneBesideTheAgeWhileTheBarHasOne() async throws {
+        let (host, done, _) = try await focusedAge(.outer, barHoldsDone: true)
+        host.window.endEditing(true)
+        host.close()
+        XCTAssertNil(done)
+    }
 }

@@ -10,6 +10,7 @@ struct ProfileBasicsSheet: View {
     @Environment(Dashboard.self) private var dashboard
     @State private var name: String
     @State private var goal: String
+    @FocusState private var goalFocused: Bool
     @State private var saved = false
     @State private var flash: Task<Void, Never>?
     @State private var busy = false
@@ -39,9 +40,12 @@ struct ProfileBasicsSheet: View {
                 ProfileField("Daily step goal", hint: ProfileWords.stepGoalHint, hintIsBad: patch.goalOutOfRange) {
                     TextField("", text: $goal)
                         .keyboardType(.numberPad)
+                        .focused($goalFocused)
                         .profileInput()
                         .accessibilityLabel("Daily step goal")
                         .accessibilityIdentifier("stepGoal")
+                        // No return key on the number pad: on iPhone Duo (iOS 27.1) its Done sits beside the field.
+                        .duoFieldDone(goalFocused)
                 }
                 ProfileField("Units") {
                     ProfileSegments(label: "Units", options: [("metric", ProfileWords.metric), ("imperial", ProfileWords.imperial)],

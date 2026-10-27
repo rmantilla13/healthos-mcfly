@@ -255,6 +255,42 @@ final class ProfileDuoTests: XCTestCase {
         }
     }
 
+    /// Build 23's check: from iOS 27.1 the keyboard's bar holds no Done (centred, it sat on the open Duo's fold), so the
+    /// basics sheet's step goal (a number pad, no return key) puts its own Done beside the field while it's focused:
+    /// inside the sheet, clear of the field, a full-size target, and gone once the keyboard is. Drawn tests run on 27.0,
+    /// so the bar is turned off here as 27.1 has it.
+    func testTheStepGoalsDoneSitsBesideIt() async throws {
+        let d = try Self.sam()
+        for state: DuoState in [.outer, .innerPortrait()] {
+            for typeSize in SignInDuoTests.sizes {
+                let sheet = ProfileBasicsSheet(settings: d.status?.settings, close: {})
+                    .environment(d).environment(\.duoKeyboardDoneInBar, false)
+                let host = try await DuoHost(sheet, as: state, typeSize: typeSize)
+                let name = "\(state) at \(typeSize)"
+                let fields = SignInDuoTests.textFields(in: host.window)
+                XCTAssertEqual(fields.count, 2, "name and step goal, \(name)")
+                fields.last?.becomeFirstResponder()
+                var done: CGRect?, goal: CGRect?
+                for _ in 0..<20 where done == nil {
+                    try await host.settle()
+                    let elements = try await host.elements()
+                    done = elements.first { Self.identifier($0) == "fieldDone" }?.accessibilityFrame
+                    goal = elements.first { Self.identifier($0) == "stepGoal" }?.accessibilityFrame
+                }
+                let frame = try XCTUnwrap(done, "the goal's Done is up, \(name)")
+                let field = try XCTUnwrap(goal, name)
+                XCTAssertFalse(frame.intersects(field), "Done \(frame) clear of the field \(field), \(name)")
+                XCTAssertLessThanOrEqual(frame.maxX, host.window.bounds.width, "Done \(frame) inside the window, \(name)")
+                XCTAssertGreaterThanOrEqual(frame.height, 44, name)
+                host.window.endEditing(true)
+                try await host.settle()
+                let after = try await host.elements()
+                XCTAssertNil(after.first { Self.identifier($0) == "fieldDone" }, "Done goes with the keyboard, \(name)")
+                host.close()
+            }
+        }
+    }
+
     /// The portrait studio's photo picker, and its open card, stay up across a fold that swaps Profile's one column for
     /// its two panes: the page keeps them above the panes (ProfileCardsKeep, P4), so the swap rebuilds neither.
     func testThePortraitPickerAndCardStayAcrossAFold() async throws {

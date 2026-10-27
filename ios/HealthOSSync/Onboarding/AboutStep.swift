@@ -78,6 +78,8 @@ struct AboutStep: View {
                     .fixedSize()
                     .accessibilityHidden(true)
             }
+            // The number pad has no return key: on iPhone Duo (iOS 27.1) its Done sits here, beside the field.
+            .duoFieldDone(ageFocused)
             if model.ageError {
                 Text(OnboardingWords.ageError)
                     .font(.app(size: 12, relativeTo: .footnote))
