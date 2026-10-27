@@ -112,6 +112,9 @@ struct FoodTotalsCard: View {
 struct HomeFlowRow: Layout {
     var spacing: CGFloat = 8
     var lineSpacing: CGFloat = 8
+    /// `.trailing`: each line starts from the right (Home's wide header), its children centred on the line; `.leading`
+    /// (the default): from the left, each at the line's top.
+    var alignment: HorizontalAlignment = .leading
 
     private func lines(_ subviews: Subviews, width: CGFloat) -> [[(Int, CGSize)]] {
         var lines: [[(Int, CGSize)]] = [[]]
@@ -142,11 +145,14 @@ struct HomeFlowRow: Layout {
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         var y = bounds.minY
+        let trailing = alignment == .trailing
         for row in lines(subviews, width: bounds.width) {
-            var x = bounds.minX
+            let used = row.map(\.1.width).reduce(0, +) + spacing * CGFloat(max(0, row.count - 1))
+            var x = trailing ? bounds.maxX - used : bounds.minX
             let h = row.map(\.1.height).max() ?? 0
             for (i, size) in row {
-                subviews[i].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(width: size.width, height: size.height))
+                subviews[i].place(at: CGPoint(x: x, y: y + (trailing ? (h - size.height) / 2 : 0)),
+                                  proposal: ProposedViewSize(width: size.width, height: size.height))
                 x += size.width + spacing
             }
             y += h + lineSpacing

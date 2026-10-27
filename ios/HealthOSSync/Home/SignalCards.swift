@@ -283,13 +283,18 @@ struct SignalCard: View {
     }
 
     /// Home's card with a reading grows to fit its chart (at least 236pt); an empty one keeps the design's 1.55:1, and
-    /// a compact one 3.6:1, each with its floor (VitalCard's .vital-home and .vital-compact, home.css).
+    /// a compact one 3.6:1, each with its floor (VitalCard's .vital-home and .vital-compact, home.css). An empty card is
+    /// no taller than the widest iPhone's (the Pro Max's, 408pt wide), so one spanning the iPhone Duo's inner display
+    /// upright isn't 410pt tall (duo/design.md §2.6); no iPhone's card changes.
     static func minHeight(_ variant: MetricCardVariant, empty: Bool, width: CGFloat) -> CGFloat {
         switch variant {
-        case .home: empty ? max(210, width / 1.55) : 236
+        case .home: empty ? min(emptyCap, max(210, width / 1.55)) : 236
         case .compact: max(176, width / 3.6)
         }
     }
+
+    /// The tallest an empty home card gets: the Pro Max's (408 / 1.55, 263pt).
+    static let emptyCap: CGFloat = 408 / 1.55
 
     // MARK: Parts
 

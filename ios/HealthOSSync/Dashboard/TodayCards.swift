@@ -4,8 +4,10 @@ import SwiftUI
 // Home's cards from src/pages/Home.tsx: the grid of signal cards (Home/SignalCards.swift) and the optional ones (strain or
 // active energy, activity, food totals), the card frame they share with Vitals and Sleep, and Recent insights.
 
-/// Home's cards that show (hidden ones left out), one to a row, as the web's phone layout has them at every text size
-/// (styles.css: `.cards.fill-row { --cols: 1 }` at 560px and below).
+/// Home's cards that show (hidden ones left out), in a DuoGrid: one to a row, as the web's phone layout has them at
+/// every text size (styles.css: `.cards.fill-row { --cols: 1 }` at 560px and below), so on every iPhone; on the iPhone
+/// Duo's inner display upright, the web's count for the row (`medium`, a short last row spanning it); in the open Duo's
+/// cards pane, `paneColumns` to a row (decisions.md Q5).
 struct TodayGrid: View {
     let summary: Summary
     /// shared/cards.ts ids in order, hidden ones already removed.
@@ -13,13 +15,16 @@ struct TodayGrid: View {
     let goal: Double
     /// The food totals card's days, which Home reads (HomeReads); the card isn't drawn without them.
     var food: NutritionData? = nil
+    /// The most cards to a row on the inner display upright (the web's at 561–1080), and in the open Duo's cards pane.
+    var medium = 2
+    var paneColumns = 2
 
     var body: some View {
         // Every card hidden: nothing at all, not an empty stack, which a parent stack would still space around.
         if !ids.isEmpty {
-            VStack(spacing: 14) {
-                ForEach(ids, id: \.self) { card($0) }
-            }
+            DuoGrid(ids, id: \.self, medium: medium, paneColumns: paneColumns) { card($0) }
+                // Side by side, each card is as tall as its row.
+                .environment(\.cardFillsRow, true)
         }
     }
 
@@ -65,6 +70,7 @@ struct MetricCard<Content: View>: View {
     var spoken: String?
     @ViewBuilder let content: Content
     @Environment(Dashboard.self) private var dashboard
+    @Environment(\.cardFillsRow) private var fillsRow
 
     init(title: String, route: AppRoute, tint: CardTint = .plain, variant: MetricCardVariant = .home, metric: MetricKey? = nil,
          section: String = "Your signals", date: String? = nil, minHeight: CGFloat? = nil, spoken: String? = nil,
@@ -86,7 +92,8 @@ struct MetricCard<Content: View>: View {
             if let metric { dashboard.showMetric(metric, section: section, page: route, date: date) } else { dashboard.open(route) }
         } label: {
             // The web's min-height is the whole card's (border-box): the card's padding (20 top, 18 bottom) comes off.
-            CardMinHeight(min: (minHeight ?? variant.minHeight) - 38) {
+            // As tall as the row it's in, in Home's grid where cards sit side by side (the web's rows stretch).
+            CardMinHeight(min: (minHeight ?? variant.minHeight) - 38, fills: fillsRow) {
                 VStack(alignment: .leading, spacing: 6) {
                     CardHead(title: title)
                     content.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -139,18 +146,32 @@ struct CardPressStyle: ButtonStyle {
 }
 
 /// At least `min` tall, else as tall as its content, and the content is laid out in that height, so a Spacer in it
-/// pushes the foot to the bottom (the web's `margin-top: auto` in a card with a min-height).
+/// pushes the foot to the bottom (the web's `margin-top: auto` in a card with a min-height). With `fills`, a height it's
+/// offered (a row of cards side by side, DuoGrid) is taken too, as the web's rows stretch their cards; a scroll view's
+/// stack offers none, so one to a row nothing changes.
 struct CardMinHeight: Layout {
     var min: CGFloat
+    var fills = false
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         guard let child = subviews.first else { return .zero }
         let ideal = child.sizeThatFits(ProposedViewSize(width: proposal.width, height: nil))
-        return CGSize(width: proposal.width ?? ideal.width, height: Swift.max(min, ideal.height))
+        let offered = fills ? proposal.height.flatMap { $0.isFinite ? $0 : nil } ?? 0 : 0
+        return CGSize(width: proposal.width ?? ideal.width, height: Swift.max(min, ideal.height, offered))
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(width: bounds.width, height: bounds.height))
+    }
+}
+
+private struct CardFillsRowKey: EnvironmentKey { static let defaultValue = false }
+
+extension EnvironmentValues {
+    /// A MetricCard takes the height its row offers (Home's TodayGrid); elsewhere it keeps its own.
+    var cardFillsRow: Bool {
+        get { self[CardFillsRowKey.self] }
+        set { self[CardFillsRowKey.self] = newValue }
     }
 }
 

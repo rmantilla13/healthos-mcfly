@@ -36,7 +36,7 @@ struct JournalPromptCard: View {
     private func card(_ m: Model) -> some View {
         let shape = RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
         return Button { dashboard.open(AppRoute(.journal, query: ["new": "1"])) } label: {
-            CardMinHeight(min: 236 - 38) {
+            CardMinHeight(min: 236 - 38, fills: true) {
                 VStack(alignment: .leading, spacing: 0) {
                     words(m)
                         // The words keep to the left two thirds; the art takes the rest (home.css, 560px and below). At

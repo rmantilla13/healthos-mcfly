@@ -5,13 +5,18 @@ import SwiftUI
 // the day with previous and next, Refresh and Edit widgets. Then the banners above the page (App.tsx) and the
 // tagline under the figure (Home.tsx).
 
-/// The greeting and the top bar.
+/// The greeting and the top bar. On the open iPhone Duo's leading pane (`wide`, decisions.md Q5) it's the web's wide
+/// header (ShellHeader at 1081px and up): the greeting on the leading side and its controls as one group on the
+/// trailing side, wrapping from the right (the demo note, the day, Refresh, Edit widgets and your avatar), above the
+/// cards they act on; at the accessibility text sizes, the phone's, which wraps further.
 struct HomeHeader: View {
     let summary: Summary
     /// Edit widgets' sheet, which Home shows.
     @Binding var editing: Bool
+    var wide = false
     @Environment(Dashboard.self) private var dashboard
     @Environment(AppModel.self) private var sync
+    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var width: CGFloat = 343
 
     /// "Here's your health today.", or on a past day "Here's your health on Friday, October 23." (ShellHeader).
@@ -35,30 +40,51 @@ struct HomeHeader: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("Hello,").font(.app(size: 14, relativeTo: .subheadline)).foregroundStyle(Palette.ink2).padding(.bottom, 2)
-                    Text("\(Self.name(settings: dashboard.status?.settings?.name, summary: summary.name)).")
-                        .font(.app(size: 34, weight: .medium, relativeTo: .largeTitle))
-                        .tracking(-0.68)
-                        .foregroundStyle(Palette.ink)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityAddTraits(.isHeader)
-                    Text(Self.subtitle(date: summary.date, today: summary.today))
-                        .font(.app(.footnote)).foregroundStyle(Palette.ink2).padding(.top, 6)
-                        .fixedSize(horizontal: false, vertical: true)
+        if wide && !typeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 12) {
+                HomeHeaderRow(spacing: 16) {
+                    greeting
+                    HomeFlowRow(spacing: 10, lineSpacing: 6, alignment: .trailing) {
+                        if demo { demoPill }
+                        dayPicker
+                        refresh
+                        editButton
+                        AccountMenu(size: 34)
+                    }
                 }
-                .accessibilityElement(children: .combine)
-                Spacer(minLength: 0)
-                // Home hides its navigation bar, so your avatar and its account menu sit here, top right as on the
-                // other pages.
-                AccountMenu(size: 34)
+                SyncStatusLine()
             }
-            topBar
-            SyncStatusLine()
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+        } else {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top, spacing: 12) {
+                    greeting
+                    Spacer(minLength: 0)
+                    // Home hides its navigation bar, so your avatar and its account menu sit here, top right as on the
+                    // other pages.
+                    AccountMenu(size: 34)
+                }
+                topBar
+                SyncStatusLine()
+            }
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         }
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+    }
+
+    private var greeting: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Hello,").font(.app(size: 14, relativeTo: .subheadline)).foregroundStyle(Palette.ink2).padding(.bottom, 2)
+            Text("\(Self.name(settings: dashboard.status?.settings?.name, summary: summary.name)).")
+                .font(.app(size: 34, weight: .medium, relativeTo: .largeTitle))
+                .tracking(-0.68)
+                .foregroundStyle(Palette.ink)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
+            Text(Self.subtitle(date: summary.date, today: summary.today))
+                .font(.app(.footnote)).foregroundStyle(Palette.ink2).padding(.top, 6)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: The top bar
@@ -145,6 +171,35 @@ struct HomeHeader: View {
             .accessibilityHint("Choose what Home shows")
             .accessibilityIdentifier("editWidgets")
         }
+    }
+}
+
+/// The wide header's one row: the greeting on the leading side, as wide as its words up to two fifths of the row, and
+/// the controls in the rest, on the trailing side; as tall as the taller.
+struct HomeHeaderRow: Layout {
+    var spacing: CGFloat = 16
+
+    private func widths(_ subviews: Subviews, width: CGFloat) -> (greeting: CGFloat, controls: CGFloat) {
+        guard subviews.count == 2 else { return (width, 0) }
+        let greeting = min(subviews[0].sizeThatFits(.unspecified).width, width * 0.4)
+        return (greeting, max(0, width - greeting - spacing))
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? 400
+        let w = widths(subviews, width: width)
+        let heights = zip(subviews, [w.greeting, w.controls]).map { $0.sizeThatFits(ProposedViewSize(width: $1, height: nil)).height }
+        return CGSize(width: width, height: heights.max() ?? 0)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let w = widths(subviews, width: bounds.width)
+        guard subviews.count == 2 else {
+            subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(width: bounds.width, height: nil))
+            return
+        }
+        subviews[0].place(at: bounds.origin, proposal: ProposedViewSize(width: w.greeting, height: nil))
+        subviews[1].place(at: CGPoint(x: bounds.maxX - w.controls, y: bounds.minY), proposal: ProposedViewSize(width: w.controls, height: nil))
     }
 }
 

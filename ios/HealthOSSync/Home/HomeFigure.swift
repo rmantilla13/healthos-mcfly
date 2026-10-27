@@ -269,20 +269,43 @@ private struct LabelBacking: ViewModifier {
 
 // MARK: - Home's figure
 
+/// Live heart rate's sheet and a portrait whose cut-out couldn't be loaded, as Home keeps them on its page root (P4): on
+/// the open iPhone Duo a fold swaps Home between one column and two panes, which rebuilds the figure, and that must
+/// neither close the sheet nor read the photo again. A figure or button given none keeps its own.
+@MainActor @Observable
+final class HomeFigureState {
+    var liveOpen = false
+    /// The photo's version whose cut-out couldn't be loaded (offline, say): the digital human stands in for it until a
+    /// later load reads it.
+    var failedPhoto: Double?
+    /// The portrait's cut-out once read (by its version and the theme), so a figure a fold rebuilds draws it at once.
+    @ObservationIgnored var cutout: (key: String, image: UIImage)?
+
+    /// A cut-out that couldn't be loaded is tried again after every load (pull to refresh, coming back online), behind
+    /// the digital human, and the portrait comes back once it reads: the web loads its image again too.
+    func retryCutout(_ photo: PhotoMeta?, dark: Bool, reads: HomeReads) async {
+        guard let photo, let failed = failedPhoto, failed == photo.version else { return }
+        if await reads.readCutout(photo, dark) != nil, !Task.isCancelled, failedPhoto == failed { failedPhoto = nil }
+    }
+}
+
 /// Home's figure in the person's perspective, with the note about where a portrait comes from (Home.tsx home-figure):
 /// nothing for 'stats', the photo for a portrait with one (the digital human while it can't be loaded), and the digital
-/// human otherwise. The heart's callout opens live heart rate.
+/// human otherwise. The heart's callout opens live heart rate. The digital human is at most 420pt wide, centred, with the
+/// note under it (the web's figure column); the photo keeps its own 440.
 struct HomeFigure: View {
     let summary: Summary
     /// The timeline's marker, while it's moved on this same day.
     let scrub: HeartScrub?
+    /// Home's, on its page root, which presents live heart rate and tries a failed cut-out again; nil: the figure's own.
+    var state: HomeFigureState? = nil
     @Environment(Dashboard.self) private var dashboard
     @Environment(\.homeReads) private var reads
     @Environment(\.colorScheme) private var scheme
-    @State private var liveOpen = false
-    /// The photo's version whose cut-out couldn't be loaded (offline, say): the digital human stands in for it until a
-    /// later load reads it.
-    @State private var failedPhoto: Double?
+    @State private var own = HomeFigureState()
+
+    /// The digital human's widest (styles.css .figure: 420px).
+    static let maxWidth: CGFloat = 420
 
     enum Shown: Equatable { case none, portrait, digital }
 
@@ -295,29 +318,46 @@ struct HomeFigure: View {
     }
 
     var body: some View {
+        let figure = state ?? own
         let settings = dashboard.status?.settings
         let perspective = Perspective.of(settings)
         let photo = dashboard.status?.photo
-        let shown = Self.shown(perspective, photo: photo, failed: failedPhoto)
+        let shown = Self.shown(perspective, photo: photo, failed: figure.failedPhoto)
         if shown != .none {
             VStack(alignment: .leading, spacing: 14) {
                 if shown == .portrait, let photo {
                     PortraitFigure(vitals: summary.vitals, asOf: summary.date, photo: photo, units: dashboard.units, scrub: scrub,
-                                onHeart: { liveOpen = true }, onFailed: { failedPhoto = photo.version })
+                                onHeart: { figure.liveOpen = true }, onFailed: { figure.failedPhoto = photo.version }, kept: state)
                 } else {
                     DigitalFigure(vitals: summary.vitals, asOf: summary.date, variant: FigureVariant.of(settings).drawn, units: dashboard.units,
-                                  scrub: scrub, onHeart: { liveOpen = true })
+                                  scrub: scrub, onHeart: { figure.liveOpen = true })
                 }
                 // A portrait is made from photos in Profile; until then the digital human stands in.
                 if perspective == .portrait, photo == nil { PortraitNote() }
             }
-            .sheet(isPresented: $liveOpen) { LiveHeartRateView() }
-            // A cut-out that couldn't be loaded is tried again after every load (pull to refresh, coming back online),
-            // behind the digital human, and the portrait comes back once it reads: the web loads its image again too.
-            .task(id: "\(dashboard.generation)|\(scheme == .dark)") {
-                guard let photo, let failed = failedPhoto, failed == photo.version else { return }
-                if await reads.readCutout(photo, scheme == .dark) != nil, !Task.isCancelled, failedPhoto == failed { failedPhoto = nil }
-            }
+            // The digital human's column, centred; on a phone it's narrower than this anyway.
+            .frame(maxWidth: shown == .digital ? Self.maxWidth : nil)
+            .frame(maxWidth: shown == .digital ? .infinity : nil)
+            .modifier(HomeFigureOwn(state: state == nil ? own : nil, photo: photo, dark: scheme == .dark, generation: dashboard.generation, reads: reads))
+        }
+    }
+}
+
+/// A figure without Home's state presents its own live heart rate and tries its own failed cut-out again.
+private struct HomeFigureOwn: ViewModifier {
+    let state: HomeFigureState?
+    let photo: PhotoMeta?
+    let dark: Bool
+    let generation: Int
+    let reads: HomeReads
+
+    func body(content: Content) -> some View {
+        if let state {
+            content
+                .sheet(isPresented: Bindable(state).liveOpen) { LiveHeartRateView() }
+                .task(id: "\(generation)|\(dark)") { await state.retryCutout(photo, dark: dark, reads: reads) }
+        } else {
+            content
         }
     }
 }
@@ -325,10 +365,13 @@ struct HomeFigure: View {
 /// Live heart rate (only the iPhone has it) for "Just the statistics": with no figure there's no heart to tap, so it
 /// opens from here, a quiet line where the figure would be.
 struct LiveHeartRateButton: View {
-    @State private var open = false
+    /// Home's, on its page root, which presents the sheet; nil: the button's own.
+    var state: HomeFigureState? = nil
+    @State private var own = HomeFigureState()
 
     var body: some View {
-        Button { open = true } label: {
+        let figure = state ?? own
+        Button { figure.liveOpen = true } label: {
             HStack(spacing: 8) {
                 Image(systemName: "heart.fill").font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.vitalHeart).accessibilityHidden(true)
                 Text("Live heart rate")
@@ -342,7 +385,15 @@ struct LiveHeartRateButton: View {
         .padding(.horizontal, 4)
         .accessibilityHint("Measures your heart rate now")
         .accessibilityIdentifier("liveHeartRate")
-        .sheet(isPresented: $open) { LiveHeartRateView() }
+        .modifier(LiveOwnSheet(state: state == nil ? own : nil))
+    }
+}
+
+private struct LiveOwnSheet: ViewModifier {
+    let state: HomeFigureState?
+
+    func body(content: Content) -> some View {
+        if let state { content.sheet(isPresented: Bindable(state).liveOpen) { LiveHeartRateView() } } else { content }
     }
 }
 

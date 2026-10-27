@@ -162,6 +162,9 @@ struct PortraitFigure: View {
     var onHeart: (() -> Void)?
     /// The photo couldn't be loaded (or its metadata has no dots): the caller shows the digital human instead.
     var onFailed: (() -> Void)?
+    /// Home's figure state, which keeps the cut-out once read, so a fold that rebuilds the figure (the open Duo's panes)
+    /// draws it again without reading it again; nil: read on every appearance, as before.
+    var kept: HomeFigureState?
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.homeReads) private var reads
@@ -294,11 +297,18 @@ struct PortraitFigure: View {
 
     private func loadPhoto() async {
         let key = photo.versionKey
+        let keptKey = "\(key)|\(scheme == .dark)"
+        if let cutout = kept?.cutout, cutout.key == keptKey {
+            image = cutout.image
+            revealed = true
+            return
+        }
         guard let img = await reads.readCutout(photo, scheme == .dark) else {
             image = nil
             onFailed?()
             return
         }
+        kept?.cutout = (keptKey, img)
         if reduceMotion || Self.played.contains(key) {
             image = img
             revealed = true
