@@ -55,10 +55,12 @@
 		3B8FEA52C72885B343A40D8A /* FoodLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = D25B24AE8CECEA92F2E4C2BA /* FoodLog.swift */; };
 		3CA8B99A57428D827456A0F2 /* ComponentsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB191D78F6B17779F6ED3C1E /* ComponentsTests.swift */; };
 		3CF300822426F0829A2345D3 /* AISheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3014C561363943C743407A88 /* AISheets.swift */; };
+		3D6FA84EE54DCBC8C49B35B0 /* DuoKeyboardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F1F8B6B43C3F2F1E2321A09 /* DuoKeyboardTests.swift */; };
 		3E8923E83AE7010EBDB2D34D /* ProfileThisIPhone.swift in Sources */ = {isa = PBXBuildFile; fileRef = C61D85386EBC784374D691B6 /* ProfileThisIPhone.swift */; };
 		3EAC26467CABEB15EB42547A /* TodayNutritionCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5431457033D8089843F213F1 /* TodayNutritionCard.swift */; };
 		3ED3502AFD6545094B506F89 /* DayAggregator.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBD579D9FB433BBE4FFDD20C /* DayAggregator.swift */; };
 		40C7DA835A6CF7542609ACDD /* Keyboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 402B43C3EE24937825D62979 /* Keyboard.swift */; };
+		410148F5D004F614271E0489 /* DuoKeyboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB6E19D7D2BCE0CB4918F121 /* DuoKeyboard.swift */; };
 		421871CDE11297C1B6C2D4FE /* Cards.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A5376F5B4BE6F8CD5BF48E6 /* Cards.swift */; };
 		4235342A47A876C689995E06 /* NutritionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD2F0A99D2A54D83358903BC /* NutritionTests.swift */; };
 		42AC90F65C94430785534474 /* HomeReads.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9D8A1996D92634B72660F32 /* HomeReads.swift */; };
@@ -271,6 +273,7 @@
 		17423278837720B1416B6936 /* NutritionToday.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NutritionToday.swift; sourceTree = "<group>"; };
 		1D16ADB4EAC1CF6BB06E7F64 /* IngestTokenTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IngestTokenTests.swift; sourceTree = "<group>"; };
 		1D9BD0F2D418F925BBA11881 /* TimeZoneTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeZoneTests.swift; sourceTree = "<group>"; };
+		1F1F8B6B43C3F2F1E2321A09 /* DuoKeyboardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuoKeyboardTests.swift; sourceTree = "<group>"; };
 		20BEE2707E300C12DC3F24CC /* NutritionCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NutritionCards.swift; sourceTree = "<group>"; };
 		2467D3DA7F3A0754100A23C3 /* patterns.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = patterns.json; sourceTree = "<group>"; };
 		255D822DE60BD6CEBB1899F7 /* JournalPromptCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalPromptCard.swift; sourceTree = "<group>"; };
@@ -402,6 +405,7 @@
 		A6B59C95F0280EE6C16251E7 /* NutritionScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NutritionScreen.swift; sourceTree = "<group>"; };
 		A7E250115D08EBBAA0A6C1BF /* SampleData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleData.swift; sourceTree = "<group>"; };
 		AA0DE5D33B140C96BB524233 /* Welcome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Welcome.swift; sourceTree = "<group>"; };
+		AB6E19D7D2BCE0CB4918F121 /* DuoKeyboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuoKeyboard.swift; sourceTree = "<group>"; };
 		AFFDD5DFDE94A19E371CA624 /* ProfileExportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileExportTests.swift; sourceTree = "<group>"; };
 		B479E2FF3ECF8F9266A6F82C /* Config.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Config.swift; sourceTree = "<group>"; };
 		B4FC9B99D78D356233E0EEAF /* HomeNutritionLinkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeNutritionLinkTests.swift; sourceTree = "<group>"; };
@@ -520,6 +524,7 @@
 				D41A8AD9A4AD86ED9C50DB81 /* Navigation.swift */,
 				4568BDAE858AC5C02EB7A8F9 /* PhaseGate.swift */,
 				AA0DE5D33B140C96BB524233 /* Welcome.swift */,
+				BC0912A66D7F030A01FDC8B0 /* Duo */,
 			);
 			path = Shell;
 			sourceTree = "<group>";
@@ -605,6 +610,7 @@
 				CB191D78F6B17779F6ED3C1E /* ComponentsTests.swift */,
 				A2F31692BC3B154539132A48 /* DashboardTests.swift */,
 				FF3AD1F8E32A8E71A82AA62D /* DayAggregatorTests.swift */,
+				1F1F8B6B43C3F2F1E2321A09 /* DuoKeyboardTests.swift */,
 				2AF0E336EA4DB332150CFF8F /* EditPreferencesTests.swift */,
 				921D0C88BED0295B748107F6 /* FamilyTests.swift */,
 				D8457E60A4786255AE3EBB8F /* FoodLogTests.swift */,
@@ -845,6 +851,14 @@
 				E7D29E2F5C2A8ECB3EB8C238 /* PeersSection.swift */,
 			);
 			path = Peers;
+			sourceTree = "<group>";
+		};
+		BC0912A66D7F030A01FDC8B0 /* Duo */ = {
+			isa = PBXGroup;
+			children = (
+				AB6E19D7D2BCE0CB4918F121 /* DuoKeyboard.swift */,
+			);
+			path = Duo;
 			sourceTree = "<group>";
 		};
 		BEAFF2A9660963DAED0AEF3A /* FitbitImport */ = {
@@ -1098,6 +1112,7 @@
 				3CA8B99A57428D827456A0F2 /* ComponentsTests.swift in Sources */,
 				463BE90AB15F967AAF2EAF68 /* DashboardTests.swift in Sources */,
 				0BDF60A216902A26A4A8FE46 /* DayAggregatorTests.swift in Sources */,
+				3D6FA84EE54DCBC8C49B35B0 /* DuoKeyboardTests.swift in Sources */,
 				251CCE9EF02BD5F3CF4E3676 /* EditPreferencesTests.swift in Sources */,
 				6C6C7DCCE697784424F3E782 /* FamilyTests.swift in Sources */,
 				AD2FCA0181439C67F109F750 /* FoodLogTests.swift in Sources */,
@@ -1178,6 +1193,7 @@
 				461A1709DB433ABA8DF2B943 /* DayScreen.swift in Sources */,
 				B8624973B34C47A0B6DC3CCB /* DigestNotifications.swift in Sources */,
 				C0AE50E97BB5F33010FE6200 /* DigitalFigure.swift in Sources */,
+				410148F5D004F614271E0489 /* DuoKeyboard.swift in Sources */,
 				1FBD0E4BC99298B69D70AF2A /* EditWidgetsSheet.swift in Sources */,
 				4E8725066703D0C62125313B /* EstimateReview.swift in Sources */,
 				7FDD20C507BAC8317D1A2AF3 /* FamilyScreen.swift in Sources */,
