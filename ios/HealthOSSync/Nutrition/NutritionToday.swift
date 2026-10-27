@@ -1031,7 +1031,8 @@ private struct NutritionAddMenu: View {
         }
         .scrollBounceBehavior(.basedOnSize)
         .font(.app(.body))
-        .presentationDetents([.height(height)])
+        // As tall as its rows; on the open Duo's inner display, a centred sheet fitted to them (§2.7).
+        .duoMenuSheet(height: height)
         .presentationCornerRadius(22)
         .presentationBackground { GradientFill(.menuBg) }
         .accessibilityElement(children: .contain)
