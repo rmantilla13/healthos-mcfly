@@ -39,6 +39,7 @@
 		21DE651678DE3E1DE4B462BE /* AccountLinkView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 785FC0FDF27C65DCC391FC98 /* AccountLinkView.swift */; };
 		22071AB6A2D3BDD20B4D8FBA /* ProfileSettingsSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = F278F77C9031AC107E56126F /* ProfileSettingsSheets.swift */; };
 		227321122C18691CE1D3BC33 /* NutritionViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB45FFDD1FA53CE0B2371012 /* NutritionViews.swift */; };
+		229E39C7A7CF9C7394A4175B /* MetricSheetDuoTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D56D6DEB459F8595DCB339E3 /* MetricSheetDuoTests.swift */; };
 		23767F738B3924A8F673265C /* SignInView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD53F734E61FD82B3D256C06 /* SignInView.swift */; };
 		251CCE9EF02BD5F3CF4E3676 /* EditPreferencesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AF0E336EA4DB332150CFF8F /* EditPreferencesTests.swift */; };
 		2578216F805846611425475C /* ProfileCardsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A741F0E47E33A6BD3FEF6AF /* ProfileCardsSheet.swift */; };
@@ -481,6 +482,7 @@
 		D32EDE48EFEC42FFCB4C13F5 /* LocalTime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalTime.swift; sourceTree = "<group>"; };
 		D41A8AD9A4AD86ED9C50DB81 /* Navigation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Navigation.swift; sourceTree = "<group>"; };
 		D4E3C2CA58A4F6345F74E5A3 /* CardVisibilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardVisibilityTests.swift; sourceTree = "<group>"; };
+		D56D6DEB459F8595DCB339E3 /* MetricSheetDuoTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricSheetDuoTests.swift; sourceTree = "<group>"; };
 		D6883EB7A5D276A39FD95C65 /* AdminScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdminScreen.swift; sourceTree = "<group>"; };
 		D6C87B5E93B970D98B02681C /* status.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = status.json; sourceTree = "<group>"; };
 		D8457E60A4786255AE3EBB8F /* FoodLogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoodLogTests.swift; sourceTree = "<group>"; };
@@ -682,6 +684,7 @@
 				51CF2CFE98D1350F331B63C6 /* HostedAccessibility.swift */,
 				1D16ADB4EAC1CF6BB06E7F64 /* IngestTokenTests.swift */,
 				8BA4D84D468C4393AE68A6E5 /* McFlyTests.swift */,
+				D56D6DEB459F8595DCB339E3 /* MetricSheetDuoTests.swift */,
 				017AEE75F3F4B0D196D562F2 /* MetricSheetLiveTests.swift */,
 				0AC071F9B84337D8CD588EAD /* MetricSheetSnapshotTests.swift */,
 				7F9C794957687CC2342BEC61 /* MetricSheetTests.swift */,
@@ -1216,6 +1219,7 @@
 				1A9878B7B2222CDD2A5B4654 /* HostedAccessibility.swift in Sources */,
 				C5CA6CFB2FC4BA7F33A6EDFA /* IngestTokenTests.swift in Sources */,
 				76A08B640A0A219B4371F7F1 /* McFlyTests.swift in Sources */,
+				229E39C7A7CF9C7394A4175B /* MetricSheetDuoTests.swift in Sources */,
 				A63719A71868FB8C8F9DF163 /* MetricSheetLiveTests.swift in Sources */,
 				94C07EFE5B6FA0D3C9AA9C22 /* MetricSheetSnapshotTests.swift in Sources */,
 				F1EDAD19A3EFD218F02ADFDD /* MetricSheetTests.swift in Sources */,
