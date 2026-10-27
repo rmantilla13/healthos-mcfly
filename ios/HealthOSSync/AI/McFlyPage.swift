@@ -387,8 +387,8 @@ private struct McFlyConversation: View {
 
 /// What the conversation showed, on the trailing side of the open iPhone Duo (decisions.md Q5): McFly's charts, the
 /// newest answer's first, each answer's under the question it answered, two to a row where they're small and across
-/// both columns where they need the width (`McFlyVisual.wide`). Before there's any chart, the questions to start with,
-/// two to a row. It scrolls on its own, and only when it's taller than the screen. A finger on a chart here never stops
+/// both columns where they need the width (`McFlyVisual.wide`). Before anything's asked, the questions to start with,
+/// two to a row; after that, nothing until the first chart. It scrolls on its own, and only when it's taller than the screen. A finger on a chart here never stops
 /// the conversation following new words.
 private struct McFlyShown: View {
     let chat: McFlyChat
@@ -398,7 +398,9 @@ private struct McFlyShown: View {
         DuoScroll {
             VStack(alignment: .leading, spacing: 24) {
                 let answers = McFlyShownAnswer.all(chat.messages)
-                if answers.isEmpty {
+                // The questions to start with only while nothing's been asked, as in the thread on a phone and on the
+                // web; once the conversation has begun, this side waits for its first chart.
+                if chat.messages.isEmpty {
                     suggestions
                 } else {
                     ForEach(answers) { answer in

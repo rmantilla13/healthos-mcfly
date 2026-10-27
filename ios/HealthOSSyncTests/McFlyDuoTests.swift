@@ -155,6 +155,17 @@ final class McFlyDuoTests: XCTestCase {
         XCTAssertTrue(chips.allSatisfy { $0.accessibilityFrame.minX >= fold.upperBound })
         XCTAssertEqual(Set(chips.map { $0.accessibilityFrame.minX.rounded() }).count, 2, "two columns")
 
+        // Once something's been asked, the questions to start with go, as in the thread on a phone, even before a chart.
+        let started = try dashboard(.empty)
+        started.mcfly.messages = [McFlyMessage(role: .user, content: "How was my week?"),
+                                  McFlyMessage(role: .assistant, content: "A steady week, with more sleep than the one before.")]
+        let asked = try await DuoHost(page(started), as: .innerLandscape())
+        defer { asked.close() }
+        let askedElements = try await asked.elements()
+        XCTAssertTrue(askedElements.contains { $0.accessibilityLabel == "Your question" })
+        XCTAssertFalse(askedElements.contains { McFlyWords.suggestions.contains($0.accessibilityLabel ?? "") }, "no starters once asked")
+        XCTAssertFalse(askedElements.contains { $0.accessibilityLabel == McFlyWords.tryThese }, "nor their line")
+
         let unavailable = try await DuoHost(page(try dashboard(.unavailable)), as: .innerLandscape())
         defer { unavailable.close() }
         let all = try await unavailable.elements()
