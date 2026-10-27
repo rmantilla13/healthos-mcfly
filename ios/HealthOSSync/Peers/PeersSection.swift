@@ -33,6 +33,7 @@ struct PeersSection: View {
 
 private struct PeersCard: View {
     @Environment(Dashboard.self) private var dashboard
+    @Environment(\.profileCardsKeep) private var keep
     @State private var reader: PeerReader
 
     /// The page's kept reader (above its panes, so a fold's swap keeps the last answer on screen), else its own.
@@ -40,8 +41,10 @@ private struct PeersCard: View {
 
     var body: some View {
         if !reader.missing {
-            Collapsible(PeerWords.title, meta: PeerWords.meta, systemImage: "chart.bar") {
+            // Open again after a fold's swap if it was open (the keep follows its open body).
+            Collapsible(PeerWords.title, meta: PeerWords.meta, systemImage: "chart.bar", startsOpen: keep?.isOpen(.peers) ?? false) {
                 PeerBody(reader: reader, editLink: dashboard.status?.settings?.perspective != nil)
+                    .opensWith(keep, .peers)
             }
         }
     }
@@ -53,12 +56,17 @@ private struct PeerBody: View {
     let reader: PeerReader
     let editLink: Bool
     @Environment(Dashboard.self) private var dashboard
+    @Environment(\.profileCardsKeep) private var keep
 
     var body: some View {
         let settings = dashboard.status?.settings
+        let key = PeersSection.readKey(generation: dashboard.generation, peerComparison: settings?.peerComparison, age: settings?.age)
         PeerContent(data: reader.data, error: reader.error, editLink: editLink)
-            .task(id: PeersSection.readKey(generation: dashboard.generation, peerComparison: settings?.peerComparison, age: settings?.age)) {
+            .task(id: key) {
+                // Built again by a fold (the page's panes swapped) with an answer for this key on screen: no second read.
+                if keep?.skipsPeersRead(key: key, reader: reader) == true { return }
                 await reader.read { try await dashboard.peers() }
+                if reader.data != nil, reader.error == nil { keep?.peersReadKey = key }
             }
             .environment(\.openURL, OpenURLAction { url in dashboard.open(url: url) ? .handled : .systemAction })
     }

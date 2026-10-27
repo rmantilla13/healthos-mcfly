@@ -42,15 +42,20 @@ private struct PortraitPhotosCard: View {
     private let person: String
 
     var body: some View {
-        Collapsible("Your portrait photos", meta: Self.meta(model), systemImage: "camera") {
-            if model.missing {
-                PhotoSection()
-            } else {
-                PortraitStudio(model: model)
-                PhotoSection()
-                    .padding(.top, 16)
-                    .overlay(alignment: .top) { Hairline() }
+        // Open again after a fold's swap if it was open (the keep follows its open body).
+        Collapsible("Your portrait photos", meta: Self.meta(model), systemImage: "camera", startsOpen: keep?.isOpen(.studio) ?? false) {
+            // One view for the open body (the card's own stack, its 14 pt), so it's marked once.
+            VStack(alignment: .leading, spacing: 14) {
+                if model.missing {
+                    PhotoSection()
+                } else {
+                    PortraitStudio(model: model)
+                    PhotoSection()
+                        .padding(.top, 16)
+                        .overlay(alignment: .top) { Hairline() }
+                }
             }
+            .opensWith(keep, .studio)
         }
         .task(id: readKey) {
             if model.service == nil { model.service = .live(dashboard) }

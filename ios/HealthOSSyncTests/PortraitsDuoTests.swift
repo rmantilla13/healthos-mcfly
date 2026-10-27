@@ -4,8 +4,9 @@ import XCTest
 
 /// Profile's two open-in-place cards on iPhone Duo (duo/design.md §9c, slice F; decisions.md Q5): the portrait studio's
 /// tiles keep their own grid (two to a row on the phone, one at the accessibility sizes, as many 156 pt tiles as fit
-/// where wider, rounded down to an even count), the comparison goes two to a row in a pane of the open Duo, the studio's
-/// dialogs sit on the buttons that ask, and what the cards hold survives a fold.
+/// where wider, rounded down to an even count), the comparison goes two to a row in a pane of the open Duo with room for
+/// two 170 pt columns, the studio's dialogs sit on the buttons that ask, and what the cards hold (open or closed
+/// included) survives a fold.
 ///
 /// The drawn states host the cards the way Q5 places them on Profile: the chosen portrait in the leading pane, and the
 /// comparison and the studio, open, in the trailing one (one column everywhere else). PNGs go to TEST_RUNNER_DUO_SHOTS
@@ -297,6 +298,90 @@ final class PortraitsDuoTests: XCTestCase {
         keep.retain(only: nil)
         XCTAssertNil(keep.currentStudio(for: person))
         XCTAssertFalse(keep.peers(for: "other") === keep.peers(for: "other|x"))
+    }
+
+    /// Opened on the outer display, the studio is still open after the unfold swaps Profile's panes (and back, and with
+    /// the bar on the other side), with no second read; closed, it stays closed (P4: the open state is above the swap).
+    func testPaneSwapKeepsTheCardOpenOrClosed() async throws {
+        let dashboard = Dashboard()
+        dashboard.signedIn()
+        let person = try XCTUnwrap(dashboard.signedInPerson)
+        let keep = ProfileCardsKeep()
+        let reads = Reads()
+        keep.studio(for: person).service = service(reads, list: PortraitList(portraits: [], chosen: nil, canGenerate: false), image: Data())
+        let page = DuoPage { _ in
+            DuoPanes(anchor: .secondary) { Text("Lead") } secondary: { PortraitPhotosSection() } single: { PortraitPhotosSection() }
+        }
+        .profileCards(keep)
+        .environment(dashboard)
+        let host = try await DuoHost(page, as: .outer)
+        defer { host.close() }
+        func header() async throws -> NSObject {
+            let found = try await host.elements()
+            return try XCTUnwrap(found.first { ($0.accessibilityLabel ?? "").contains("Your portrait photos") })
+        }
+        func value() async throws -> String? { try await header().accessibilityValue }
+        func toggle() async throws {
+            let pressed = try await header().accessibilityActivate()
+            XCTAssertTrue(pressed, "the header answers")
+            try await host.settle()
+        }
+        do { let v = try await value(); XCTAssertEqual(v, "Closed") }
+        try await toggle()
+        do { let v = try await value(); XCTAssertEqual(v, "Open") }
+        XCTAssertTrue(keep.isOpen(.studio))
+        let readsOpen = reads.list
+        let swaps: [DuoState] = [.innerLandscape(), .outer, .innerLandscape(bar: .leading), .innerPortrait(), .innerLandscape()]
+        for state in swaps {
+            try await host.set(state)
+            do { let v = try await value(); XCTAssertEqual(v, "Open", "still open after \(state)") }
+            XCTAssertEqual(reads.list, readsOpen, "no read after \(state)")
+        }
+        try await toggle()
+        do { let v = try await value(); XCTAssertEqual(v, "Closed") }
+        for state in [DuoState.outer, .innerLandscape(bar: .leading)] {
+            try await host.set(state)
+            do { let v = try await value(); XCTAssertEqual(v, "Closed", "still closed after \(state)") }
+        }
+    }
+
+    /// The keep's side of it, for both cards: a body built for the new pane before the old one goes keeps the card
+    /// open, either order of the two; the comparison doesn't read again for an answer it holds; and nothing of it stays
+    /// for someone else.
+    func testTheKeepFollowsEachCardsOpenBody() throws {
+        let keep = ProfileCardsKeep()
+        let reader = keep.peers(for: "a|1")
+        let old = UUID(), new = UUID()
+        XCTAssertFalse(keep.isOpen(.peers))
+        keep.shown(.peers, token: old)
+        // The swap: the new pane's body appears, then the old one goes.
+        keep.shown(.peers, token: new)
+        keep.gone(.peers, token: old)
+        XCTAssertTrue(keep.isOpen(.peers))
+        // The other order: the old goes first; the new card was built (and asked) while the old was still shown.
+        keep.shown(.studio, token: old)
+        let startsOpen = keep.isOpen(.studio)
+        keep.gone(.studio, token: old)
+        keep.shown(.studio, token: new)
+        XCTAssertTrue(startsOpen)
+        XCTAssertTrue(keep.isOpen(.studio))
+        // Closing: its body goes.
+        keep.gone(.peers, token: new)
+        XCTAssertFalse(keep.isOpen(.peers))
+        XCTAssertTrue(keep.isOpen(.studio), "each card its own")
+        // The comparison's read: skipped only for the key it was read for, with that answer still there.
+        XCTAssertFalse(keep.skipsPeersRead(key: "k", reader: reader), "never read")
+        keep.peersReadKey = "k"
+        XCTAssertFalse(keep.skipsPeersRead(key: "k", reader: reader), "no answer on screen")
+        let answered = PeerReader(data: try peers())
+        XCTAssertTrue(keep.skipsPeersRead(key: "k", reader: answered))
+        XCTAssertFalse(keep.skipsPeersRead(key: "k2", reader: answered), "something changed: read again")
+        // Someone else: nothing open, nothing read.
+        keep.retain(only: "b|1")
+        XCTAssertFalse(keep.isOpen(.studio))
+        XCTAssertFalse(keep.skipsPeersRead(key: "k", reader: answered))
+        keep.gone(.studio, token: new)
+        XCTAssertFalse(keep.isOpen(.studio), "a late goodbye from the last person's body changes nothing")
     }
 
     /// The band changes under a plain page (no panes, P14): the open card stays open, its tiles stay, nothing is read

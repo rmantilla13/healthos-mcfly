@@ -3,8 +3,9 @@ import SwiftUI
 
 /// What Profile's two open-in-place cards (the age-group comparison and the portrait photos) hold, kept above a page's
 /// panes so a fold that swaps them (DuoPanes going between one column and two, duo/design.md §4, P4) doesn't start the
-/// cards afresh: the portrait list and its thumbnails, the comparison as last read, "Use a photo as is", and the studio's
-/// dialogs, photo picker and camera, which are presented from the page itself while it keeps them.
+/// cards afresh: whether each is open, the portrait list and its thumbnails, the comparison as last read, "Use a photo
+/// as is", and the studio's dialogs, photo picker and camera, which are presented from the page itself while it keeps
+/// them.
 ///
 /// The page makes one and puts it above its panes:
 ///
@@ -29,6 +30,29 @@ final class ProfileCardsKeep {
     /// The read key the portrait list was last read for (PortraitPhotosSection.readKey): a card built again after a pane
     /// swap with nothing new to read doesn't read again.
     var studioReadKey: String?
+    /// The same for the comparison (PeersSection.readKey), set once an answer is on screen.
+    var peersReadKey: String?
+
+    /// Whether the comparison's open body skips its read: it was last read for `key` and that answer is still on
+    /// screen in `reader` (a failure, or nothing yet, reads again).
+    func skipsPeersRead(key: String, reader: PeerReader) -> Bool {
+        peersReadKey == key && reader.data != nil && reader.error == nil
+    }
+
+    /// Which of the two cards. Whether one is open is the card's own (Collapsible keeps it, and a slice doesn't change
+    /// Components/), so the keep follows it from the open body: each body on screen holds a token here while it's
+    /// shown (`.opensWith(_:_:)`), and a card built again by a fold's swap starts open if any body still holds one.
+    /// A set of tokens, not a flag, because the new pane's card is built before the old one's body has gone: the old
+    /// token is still here when the new card asks, and taking it away afterwards leaves the new one's.
+    enum Card { case studio, peers }
+    private var openBodies: [Card: Set<UUID>] = [:]
+
+    /// Whether `card` was open when last seen: the `startsOpen` for a card built again.
+    func isOpen(_ card: Card) -> Bool { !(openBodies[card] ?? []).isEmpty }
+
+    func shown(_ card: Card, token: UUID) { openBodies[card, default: []].insert(token) }
+
+    func gone(_ card: Card, token: UUID) { openBodies[card]?.remove(token) }
 
     init() {}
 
@@ -70,6 +94,8 @@ final class ProfileCardsKeep {
         peerReader = nil
         photoModel = nil
         studioReadKey = nil
+        peersReadKey = nil
+        openBodies = [:]
         asks.clear()
     }
 
@@ -100,6 +126,30 @@ final class PortraitAsks {
         picked = nil
         deleting = nil
         replacing = nil
+    }
+}
+
+extension View {
+    /// Marks this as `card`'s open body for the page's keep (nil: nothing to mark), so a fold's swap builds the card
+    /// open again. Put it on one view that's shown exactly while the card is open.
+    func opensWith(_ keep: ProfileCardsKeep?, _ card: ProfileCardsKeep.Card) -> some View {
+        modifier(OpenBodyMark(keep: keep, card: card))
+    }
+}
+
+private struct OpenBodyMark: ViewModifier {
+    let keep: ProfileCardsKeep?
+    let card: ProfileCardsKeep.Card
+    @State private var token = UUID()
+
+    func body(content: Content) -> some View {
+        if let keep {
+            content
+                .onAppear { keep.shown(card, token: token) }
+                .onDisappear { keep.gone(card, token: token) }
+        } else {
+            content
+        }
     }
 }
 
