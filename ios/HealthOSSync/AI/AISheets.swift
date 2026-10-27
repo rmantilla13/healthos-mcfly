@@ -24,7 +24,8 @@ struct ChatbotSheet: View {
     @FocusState private var keyFocused: Bool
 
     var body: some View {
-        SheetScaffold(eyebrow: "Chatbot", title: "Manage chatbot AI", onClose: close) {
+        // The web's Sheet size="md": a centred sheet's content stays 650 wide at most on the open iPhone Duo.
+        SheetScaffold(eyebrow: "Chatbot", title: "Manage chatbot AI", size: .md, onClose: close) {
             if let status = model.status, form.pick != nil {
                 AIStatusLine(status: status)
                 if !status.byok {
@@ -188,7 +189,8 @@ struct OpenAIKeySheet: View {
     @FocusState private var keyFocused: Bool
 
     var body: some View {
-        SheetScaffold(eyebrow: "OpenAI · Nutrition & portraits", title: "Connect AI key", onClose: close) {
+        // The web's Sheet size="sm": 480 wide at most where the sheet is wider (the open iPhone Duo).
+        SheetScaffold(eyebrow: "OpenAI · Nutrition & portraits", title: "Connect AI key", size: .sm, onClose: close) {
             if let status = model.status {
                 if !status.byok {
                     AINotHere(detail: AIWords.instead(status))
