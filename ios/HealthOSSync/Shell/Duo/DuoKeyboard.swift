@@ -180,14 +180,36 @@ private struct DuoFieldDone: ViewModifier {
     let under: Bool
     @Environment(\.duoKeyboardDoneInBar) private var inBar
 
+    /// The row's scroll target: constant for the row's life.
+    @State private var anchor = UUID()
+    /// The row's foot (with its room under it) in the window, to tell whether the keyboard covers it.
+    @State private var rowBottom: CGFloat = 0
+
     func body(content: Content) -> some View {
-        DuoFieldDoneLayout(besideIfItFits: !under) {
-            content
-            if focused && !inBar {
-                Button("Done", action: hideKeyboard)
-                    .buttonStyle(.quietPill)
-                    .accessibilityHint("Closes the keyboard")
-                    .accessibilityIdentifier("fieldDone")
+        ScrollViewReader { scroll in
+            DuoFieldDoneLayout(besideIfItFits: !under) {
+                content
+                if focused && !inBar {
+                    Button("Done", action: hideKeyboard)
+                        .buttonStyle(.quietPill)
+                        .accessibilityHint("Closes the keyboard")
+                        .accessibilityIdentifier("fieldDone")
+                }
+            }
+            // Room under the row when it's scrolled up to the keyboard.
+            .padding(.bottom, focused && !inBar ? 12 : 0)
+            .background { GeometryReader { g in Color.clear.onAppear { rowBottom = g.frame(in: .global).maxY }
+                .onChange(of: g.frame(in: .global).maxY) { _, y in rowBottom = y } } }
+            .id(anchor)
+            // The keyboard's bar used to stand over the keyboard, and the system scrolled the field clear of it; with
+            // no bar it scrolls only the text's own line clear, leaving the field's foot under the keys. So once the
+            // keyboard is up (and again when a fold moves it), if the keys cover the row, the whole row and its Done go up above
+            // them.
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)) { note in
+                guard focused, !inBar,
+                      let keys = note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect,
+                      rowBottom > keys.minY else { return }
+                withAnimation(.easeOut(duration: 0.2)) { scroll.scrollTo(anchor, anchor: .bottom) }
             }
         }
     }
