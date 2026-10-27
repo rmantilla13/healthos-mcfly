@@ -45,11 +45,18 @@ struct TodayScreen: View {
 /// and the optional ones are off until turned on; hidden cards leave no gap. Two parts only the iPhone has stay: the day
 /// by hour (it opens the Day view) and, while cycle tracking is on, the cycle's phase. Live heart rate opens from the
 /// heart's callout, or with "Just the statistics" (no figure, so no heart) from its own button where the figure would be.
+///
+/// On the iPhone Duo (duo/design.md §7, decisions.md Q5) it's one page block (DuoPage) holding either one scrolling
+/// column, as on every iPhone, or, on the open Duo in landscape, two panes: the greeting and the figure on the leading
+/// side of the fold, staying put, and every card in two columns that scroll on the trailing side. Each part is a row with
+/// its own id, the same in the column and the cards pane, so a fold that swaps them keeps the row at the top. What has to
+/// outlast that swap (the reads, Edit widgets, live heart rate, the timeline's marker) is kept here, above it (P4).
 struct TodayContent: View {
     let summary: Summary
     @Environment(Dashboard.self) private var dashboard
     @Environment(AppModel.self) private var sync
     @Environment(\.homeReads) private var reads
+    @Environment(\.colorScheme) private var scheme
     /// The day by hour (GET /api/day) and the cycle (GET /api/cycle): nil hides their cards.
     @State private var day: DayData?
     @State private var cycle: CycleData?
@@ -60,55 +67,32 @@ struct TodayContent: View {
     /// The timeline's marker, shared with the figure: while it's moved, the figure's heart shows that hour.
     @State private var scrub = TodayScrub()
     @State private var editing = false
+    /// Live heart rate's sheet and a portrait whose cut-out couldn't be loaded, or was read.
+    @State private var figure = HomeFigureState()
+    /// Today's nutrition's entries for the day, read here for the card.
+    @State private var nutrition: [FoodEntry] = []
+    /// The timeline card's hourly readings, read here for the card (TodayPath).
+    @State private var dayLoad = DayLoad()
 
     /// Under a resting heart rate flag, in the luteal or menstrual phase. The summary never mentions the cycle.
     private static let cycleNote = "Temperature and resting heart rate often run a little higher in this part of your cycle."
 
     var body: some View {
-        let isToday = summary.date == summary.today
-        // The phase is about today, so it says nothing about a past day on screen.
-        let phase = isToday && dashboard.cycleTrackingOn ? cycle?.phase : nil
-        let off = dashboard.cardsOff
-        let stats = Perspective.of(dashboard.status?.settings) == .stats
-        // Food totals only for people with Nutrition on, and once its days have come.
-        let optionalRow = HomeCards.optionalRow.filter { $0 != "home.food" || (dashboard.nutritionOn && food != nil) }
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                HomeHeader(summary: summary, editing: $editing).padding(.bottom, 18)
-                banners(phase: phase)
-                VStack(alignment: .leading, spacing: 18) {
-                    if !stats {
-                        VStack(alignment: .leading, spacing: 14) {
-                            HomeFigure(summary: summary, scrub: summary.timeline?.date == summary.date ? scrub.heart(on: summary.date) : nil)
-                            HomeTagline()
-                        }
-                    } else {
-                        LiveHeartRateButton()
-                    }
-                    VStack(spacing: 14) {
-                        TodayGrid(summary: summary, ids: Cards.visible(HomeCards.signals, hidden: off), goal: dashboard.stepGoal)
-                        if !off.contains("home.nutrition") { TodayNutritionCard(date: summary.date, today: summary.today) }
-                        if !off.contains("home.journal"), journal.shows { JournalPromptCard(latest: journal.latest) }
-                        // Only the iPhone has these: the day by hour, which opens the Day view, and the cycle's phase.
-                        if let day, !day.metrics.isEmpty { DayCard(data: day, date: isToday ? nil : summary.date) }
-                        if let cycle, let phase { CycleCard(cycle: cycle, phase: phase) }
-                        TodayGrid(summary: summary, ids: Cards.visible(optionalRow, hidden: off), goal: dashboard.stepGoal, food: food)
-                        if let timeline = summary.timeline, !off.contains("home.timeline") { TodayPath(timeline: timeline, scrubbed: scrub) }
-                        if !off.contains("home.week") { WeekCard(week: summary.week, stepGoal: dashboard.stepGoal) }
-                        if !off.contains("home.insights") { HomeInsightsCard(insights: summary.insights ?? [], today: summary.today) }
-                        if Cards.allHidden(in: .home, hidden: off) { AllCardsHiddenNote(text: "All the cards on this page are hidden.") }
-                        if stats { HomeTagline(compact: true) }
-                    }
-                }
-                HomeFooter()
+        let shown = shown
+        DuoPage { _ in
+            DuoPanes(anchor: .secondary) {
+                HomeLead(summary: summary, editing: $editing, stats: shown.stats, scrub: heart, figure: figure)
+                    .modifier(HomeLoading(loading: dashboard.loading))
+            } secondary: {
+                rows(HomeRows.cards(shown))
+            } single: {
+                rows(HomeRows.single(shown))
             }
-            .padding(16)
-            .opacity(dashboard.loading ? 0.6 : 1)
-            .animation(.easeInOut(duration: 0.2), value: dashboard.loading)
         }
         .refreshable { await sync.syncAll(force: true) }
         // Ask McFly's pill floats over this, from the shell (Shell/AppShell.swift).
         .sheet(isPresented: $editing) { EditWidgetsSheet { dashboard.open(.profile) } }
+        .sheet(isPresented: $figure.liveOpen) { LiveHeartRateView() }
         // Newer endpoints: a server without them, or a failed fetch, just hides the card.
         .task(id: "\(summary.date)|\(dashboard.generation)") {
             day = try? await dashboard.day(date: summary.date == summary.today ? nil : summary.date)
@@ -116,8 +100,8 @@ struct TodayContent: View {
         .task(id: "\(dashboard.generation)|\(dashboard.cycleTrackingOn)") {
             cycle = try? await dashboard.cycle()
         }
-        // On the scroll view, which is always there: each read runs again after every load, and when its card is turned
-        // on, even while the card itself isn't drawn.
+        // On the page, which is always there: each read runs again after every load, and when its card is turned on,
+        // even while the card itself isn't drawn, and not again when a fold swaps the column for the panes.
         .task(id: "\(dashboard.generation)|\(foodWanted)|\(dashboard.nutritionMode?.rawValue ?? "off")") {
             let read = await reads.food(wanted: foodWanted, dashboard: dashboard)
             if !Task.isCancelled { food = read }
@@ -126,32 +110,128 @@ struct TodayContent: View {
             let read = await reads.journal(wanted: journalWanted, current: journal, dashboard: dashboard)
             if !Task.isCancelled { journal = read }
         }
+        .task(id: "\(dashboard.generation)|\(scheme == .dark)") {
+            await figure.retryCutout(dashboard.status?.photo, dark: scheme == .dark, reads: reads)
+        }
+        // The timeline's own day, which can be earlier than the summary's, only while its card shows.
+        .task(id: "\(summary.timeline?.date ?? "")|\(dashboard.generation)|\(shown.timeline)") {
+            guard shown.timeline, let date = summary.timeline?.date else { return }
+            await TodayPath.fetch(date, today: dashboard.summary?.today ?? Day.today(), dashboard: dashboard, into: $dayLoad)
+        }
+        // Only while its card shows.
+        .task(id: "\(TodayNutritionCard.readKey(date: summary.date, today: summary.today, dashboard: dashboard))|\(lower.contains("home.nutrition"))") {
+            guard lower.contains("home.nutrition") else { return }
+            if let read = await TodayNutritionCard.entries(date: summary.date, today: summary.today, dashboard: dashboard), !Task.isCancelled {
+                nutrition = read
+            }
+        }
     }
 
     /// Food totals are asked for only while they'd show: Nutrition on and Food ticked in Edit widgets.
     private var foodWanted: Bool { dashboard.nutritionOn && !dashboard.cardsOff.contains("home.food") }
     private var journalWanted: Bool { !dashboard.cardsOff.contains("home.journal") }
 
-    /// The lines above the page: a load that failed, nothing connected yet, the one-time family note, and the
-    /// summary's heads-ups (only the iPhone shows these).
+    private var isToday: Bool { summary.date == summary.today }
+    /// The phase is about today, so it says nothing about a past day on screen.
+    private var phase: CyclePhase? { isToday && dashboard.cycleTrackingOn ? cycle?.phase : nil }
+    private var stats: Bool { Perspective.of(dashboard.status?.settings) == .stats }
+    /// The figure's heart while the timeline's marker is moved on this same day.
+    private var heart: HeartScrub? { summary.timeline?.date == summary.date ? scrub.heart(on: summary.date) : nil }
+
+    private var signals: [String] { Cards.visible(HomeCards.signals, hidden: dashboard.cardsOff) }
+    /// Today's nutrition and Your health journal (`home-lower`), each where it shows.
+    private var lower: [String] {
+        let off = dashboard.cardsOff
+        return HomeCards.lower.filter { $0 == "home.nutrition" ? !off.contains($0) : !off.contains($0) && journal.shows }
+    }
+    /// Food totals only for people with Nutrition on, and once its days have come.
+    private var optional: [String] {
+        Cards.visible(HomeCards.optionalRow.filter { $0 != "home.food" || (dashboard.nutritionOn && food != nil) }, hidden: dashboard.cardsOff)
+    }
+
+    /// Which of Home's parts show.
+    private var shown: HomeRows.Shown {
+        let off = dashboard.cardsOff
+        return HomeRows.Shown(
+            banners: dashboard.error != nil || NoSourcesBanner.shows(dashboard.status) || dashboard.showsFamilyNotice || !summary.flags.isEmpty,
+            stats: stats, signals: !signals.isEmpty, lower: !lower.isEmpty,
+            day: day.map { !$0.metrics.isEmpty && ($0.steps != nil || $0.activeEnergy != nil || $0.heartRate != nil) } ?? false,
+            cycle: cycle != nil && phase != nil, optional: !optional.isEmpty,
+            timeline: summary.timeline != nil && !off.contains("home.timeline"), week: !off.contains("home.week"),
+            insights: !off.contains("home.insights"), allHidden: Cards.allHidden(in: .home, hidden: off))
+    }
+
+    /// A scrolling stack of rows, each a direct child with its id (the scroll position's), and the space above it.
+    private func rows(_ rows: [HomeRows.Row]) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(rows, id: \.id) { row in
+                self.row(row.id).padding(.top, row.top)
+            }
+        }
+        .scrollTargetLayout()
+        .padding(.vertical, 16)
+        .modifier(HomeLoading(loading: dashboard.loading))
+    }
+
     @ViewBuilder
-    private func banners(phase: CyclePhase?) -> some View {
-        let noSources = NoSourcesBanner.shows(dashboard.status)
-        let any = dashboard.error != nil || noSources || dashboard.showsFamilyNotice || !summary.flags.isEmpty
-        if any {
-            VStack(spacing: 10) {
-                if let error = dashboard.error {
-                    HomeBanner(icon: "wifi.exclamationmark", iconColor: Palette.bannerBadInk, background: Palette.bannerBadBg, ink: Palette.bannerBadInk,
-                               weight: .regular, text: Text(error)) { EmptyView() }
-                }
-                if noSources { NoSourcesBanner() }
-                if dashboard.showsFamilyNotice { FamilyNotice() }
-                ForEach(summary.flags) { flag in
-                    FlagBanner(flag: flag, note: flag.id.hasPrefix("rhr") && phase?.luteal == true ? Self.cycleNote : nil)
+    private func row(_ id: String) -> some View {
+        switch id {
+        case HomeRows.header: HomeHeader(summary: summary, editing: $editing)
+        case HomeRows.banners: banners
+        case HomeRows.figure: HomeFigure(summary: summary, scrub: heart, state: figure)
+        case HomeRows.tagline: HomeTagline()
+        case HomeRows.live: LiveHeartRateButton(state: figure)
+        case HomeRows.signals: TodayGrid(summary: summary, ids: signals, goal: dashboard.stepGoal)
+        case HomeRows.lower:
+            // Stacked everywhere: on every iPhone and the Duo's inner display upright as the web below 1080, and in the
+            // open Duo's cards pane, whose columns are too narrow for the day's track and the journal's art.
+            DuoGrid(lower, id: \.self, medium: 1, paneColumns: 1) { id in
+                if id == "home.nutrition" {
+                    TodayNutritionCard(date: summary.date, today: summary.today, read: nutrition)
+                } else {
+                    JournalPromptCard(latest: journal.latest)
                 }
             }
-            .padding(.bottom, 16)
+        // Only the iPhone has these: the day by hour, which opens the Day view, and the cycle's phase.
+        case HomeRows.day: if let day { DayCard(data: day, date: isToday ? nil : summary.date) }
+        case HomeRows.cycle: if let cycle, let phase { CycleCard(cycle: cycle, phase: phase) }
+        case HomeRows.optional: TodayGrid(summary: summary, ids: optional, goal: dashboard.stepGoal, food: food)
+        case HomeRows.timeline: if let timeline = summary.timeline { TodayPath(timeline: timeline, scrubbed: scrub, load: dayLoad) }
+        case HomeRows.week: WeekCard(week: summary.week, stepGoal: dashboard.stepGoal)
+        case HomeRows.insights: HomeInsightsCard(insights: summary.insights ?? [], today: summary.today)
+        case HomeRows.allHidden: AllCardsHiddenNote(text: "All the cards on this page are hidden.")
+        // Centred in the column, as it was among the cards, where it's narrower than they are (its words over its link).
+        case HomeRows.statsTagline: HomeTagline(compact: true).frame(maxWidth: .infinity)
+        case HomeRows.footer: HomeFooter()
+        default: EmptyView()
         }
+    }
+
+    /// The lines above the page: a load that failed, nothing connected yet, the one-time family note, and the
+    /// summary's heads-ups (only the iPhone shows these).
+    private var banners: some View {
+        VStack(spacing: 10) {
+            if let error = dashboard.error {
+                HomeBanner(icon: "wifi.exclamationmark", iconColor: Palette.bannerBadInk, background: Palette.bannerBadBg, ink: Palette.bannerBadInk,
+                           weight: .regular, text: Text(error)) { EmptyView() }
+            }
+            if NoSourcesBanner.shows(dashboard.status) { NoSourcesBanner() }
+            if dashboard.showsFamilyNotice { FamilyNotice() }
+            ForEach(summary.flags) { flag in
+                FlagBanner(flag: flag, note: flag.id.hasPrefix("rhr") && phase?.luteal == true ? Self.cycleNote : nil)
+            }
+        }
+    }
+}
+
+/// Home dimmed a little while it loads.
+private struct HomeLoading: ViewModifier {
+    let loading: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(loading ? 0.6 : 1)
+            .animation(.easeInOut(duration: 0.2), value: loading)
     }
 }
 

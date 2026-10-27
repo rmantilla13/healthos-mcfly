@@ -10,14 +10,39 @@ struct TodayNutritionCard: View {
     /// The day Home shows, and the person's today.
     let date: String
     let today: String
+    /// The day's entries as Home read them, on its page root (`TodayContent`), so a fold that swaps Home's column for
+    /// the open Duo's panes doesn't read the log again (P4); nil: the card reads its own.
+    var read: [FoodEntry]?
     @Environment(Dashboard.self) private var dashboard
     @State private var entries: [FoodEntry]
 
     /// `entries` is what shows before the log is read (tests and previews draw a day with them).
-    init(date: String, today: String, entries: [FoodEntry] = []) {
+    init(date: String, today: String, entries: [FoodEntry] = [], read: [FoodEntry]? = nil) {
         self.date = date
         self.today = today
+        self.read = read
         _entries = State(initialValue: entries)
+    }
+
+    /// What the read's `.task` is keyed by: the day, how far back it is, the mode and the load.
+    static func readKey(date: String, today: String, dashboard: Dashboard) -> String {
+        let mode = dashboard.nutritionMode
+        return "\(date)|\(daysBack(date: date, today: today, on: mode != nil))|\(mode?.rawValue ?? "off")|\(dashboard.generation)"
+    }
+
+    /// The day's entries: none while Nutrition is off or the day is older than the log keeps, nothing asked for then;
+    /// nil when the read failed (offline or a server error), and what's on screen stays until the next.
+    @MainActor static func entries(date: String, today: String, dashboard: Dashboard) async -> [FoodEntry]? {
+        let on = dashboard.nutritionMode != nil
+        let back = daysBack(date: date, today: today, on: on)
+        guard on, back + 1 <= logDays else { return [] }
+        do {
+            // nil: a server without the food log, so nothing logged to show.
+            let log = try await dashboard.loadFoodLog(days: back + 1)
+            return log?.enabled == true ? (log?.entries ?? []).filter { $0.date == date } : []
+        } catch {
+            return nil
+        }
     }
 
     // MARK: The web's numbers
@@ -127,8 +152,7 @@ struct TodayNutritionCard: View {
     var body: some View {
         let mode = dashboard.nutritionMode
         let on = mode != nil
-        let back = Self.daysBack(date: date, today: today, on: on)
-        let m = Model(entries: entries, date: date, today: today, mode: mode)
+        let m = Model(entries: read ?? entries, date: date, today: today, mode: mode)
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 12) {
                 Text(m.title).font(.app(.footnote, weight: .medium)).foregroundStyle(Palette.ink)
@@ -190,19 +214,11 @@ struct TodayNutritionCard: View {
         .modifier(LowerCard(tint: .cream))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("card-home.nutrition")
-        // Only with Nutrition on, and only within the 31 days the log keeps: nothing is asked for otherwise.
-        .task(id: "\(date)|\(back)|\(mode?.rawValue ?? "off")|\(dashboard.generation)") {
-            guard on, back + 1 <= Self.logDays else {
-                entries = []
-                return
-            }
-            do {
-                // nil: a server without the food log, so nothing logged to show.
-                let log = try await dashboard.loadFoodLog(days: back + 1)
-                entries = log?.enabled == true ? (log?.entries ?? []).filter { $0.date == date } : []
-            } catch {
-                // Offline or a server error: what's on screen stays until the next read.
-            }
+        // Only with Nutrition on, and only within the 31 days the log keeps: nothing is asked for otherwise. Home reads
+        // it for the card instead (`read`).
+        .task(id: read == nil ? Self.readKey(date: date, today: today, dashboard: dashboard) : "home") {
+            guard read == nil else { return }
+            if let read = await Self.entries(date: date, today: today, dashboard: dashboard) { entries = read }
         }
     }
 }
@@ -212,7 +228,7 @@ struct LowerCard: ViewModifier {
     let tint: CardTint
 
     func body(content: Content) -> some View {
-        CardMinHeight(min: 236 - 38) { content.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading) }
+        CardMinHeight(min: 236 - 38, fills: true) { content.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading) }
             .card(tint)
     }
 }
