@@ -9,6 +9,16 @@ import SwiftUI
 /// ?connect=openai or ?connect=chatbot opens that key sheet once, as the web's links do.
 struct ProfileScreen: View {
     var query: [String: String] = [:]
+    /// What the age-group comparison and the portrait photos hold (their models, open or closed, the studio's
+    /// questions, photo picker and camera): kept here, above the open Duo's panes, so a fold that swaps the page's one
+    /// column for its two panes doesn't start them afresh or close the camera (P4, ProfileCardsKeep).
+    @State private var cards: ProfileCardsKeep
+
+    @MainActor
+    init(query: [String: String] = [:], cards: ProfileCardsKeep? = nil) {
+        self.query = query
+        _cards = State(initialValue: cards ?? ProfileCardsKeep())
+    }
     @Environment(AppModel.self) private var model
     @Environment(Dashboard.self) private var dashboard
     @State private var confirmReupload = false
@@ -36,6 +46,7 @@ struct ProfileScreen: View {
                 ProfileColumn(password: password, confirmSample: $confirmSample, confirmReupload: $confirmReupload) { sheet = $0 }
             }
         }
+        .profileCards(cards)
         .background(Palette.page)
         .keyboardDismissal()
         .sheet(item: $sheet, onDismiss: closed) { sheet in

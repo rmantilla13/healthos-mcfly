@@ -44,8 +44,8 @@ final class ProfileDuoTests: XCTestCase {
     /// Profile as the shell shows it under More, without the navigation stack (DuoSnapshot draws pages so). In the app
     /// the navigation bar sits over the page's top, and iOS 26's soft edge at the top of a scroll view lies under it;
     /// drawn with no bar, that edge would blur the page's first heading, so the drawings leave it out.
-    static func page(_ d: Dashboard, query: [String: String] = [:], model: AppModel? = nil) -> some View {
-        ProfileScreen(query: query).environment(d).environment(model ?? AppModel()).modifier(NoTopScrollEdge())
+    static func page(_ d: Dashboard, query: [String: String] = [:], model: AppModel? = nil, cards: ProfileCardsKeep? = nil) -> some View {
+        ProfileScreen(query: query, cards: cards).environment(d).environment(model ?? AppModel()).modifier(NoTopScrollEdge())
     }
 
     private func page() throws -> some View { Self.page(try Self.sam()) }
@@ -253,6 +253,27 @@ final class ProfileDuoTests: XCTestCase {
             try await host.set(state)
             XCTAssertTrue(host.controller.presentedViewController === sheet, "the same sheet is still up in \(state)")
         }
+    }
+
+    /// The portrait studio's photo picker, and its open card, stay up across a fold that swaps Profile's one column for
+    /// its two panes: the page keeps them above the panes (ProfileCardsKeep, P4), so the swap rebuilds neither.
+    func testThePortraitPickerAndCardStayAcrossAFold() async throws {
+        let cards = ProfileCardsKeep()
+        let d = try Self.sam()
+        let host = try await DuoHost(Self.page(d, cards: cards), as: .outer)
+        defer { host.close() }
+        let person = try XCTUnwrap(d.signedInPerson)
+        let studio = cards.studio(for: person)
+        cards.asks.pickerShown = true
+        try await waitFor { host.controller.presentedViewController != nil }
+        let picker = try XCTUnwrap(host.controller.presentedViewController)
+        for state: DuoState in [.innerLandscape(), .outer, .innerLandscape(foldActive: true)] {
+            try await host.set(state)
+            XCTAssertTrue(host.controller.presentedViewController === picker, "the picker is still up in \(state)")
+            XCTAssertTrue(cards.currentStudio(for: person) === studio, "the same studio model in \(state)")
+        }
+        cards.asks.pickerShown = false
+        try await waitFor { host.controller.presentedViewController == nil }
     }
 
     /// A fold doesn't do the page's loading again: `?connect=chatbot` opens its sheet once, and a fold that swaps the
