@@ -45,7 +45,7 @@ private struct SensorCard: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Label(deviceName ?? "WHOOP", systemImage: "dot.radiowaves.left.and.right")
-                    .font(.subheadline.weight(.semibold))
+                    .font(.app(.subheadline, weight: .semibold))
                     .foregroundStyle(Palette.ink)
                     .lineLimit(1)
                 Spacer()
@@ -56,7 +56,7 @@ private struct SensorCard: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             Text("The strap's live readings stay on this iPhone. They aren't saved or sent to healthOS.")
-                .font(.caption)
+                .font(.app(.caption))
                 .foregroundStyle(Palette.ink3)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -95,7 +95,7 @@ private struct SensorCard: View {
                         HStack {
                             Text(strap.name).foregroundStyle(Palette.ink)
                             Spacer()
-                            Text(Self.whereIs(strap)).font(.footnote).foregroundStyle(Palette.ink3)
+                            Text(Self.whereIs(strap)).font(.app(.footnote)).foregroundStyle(Palette.ink3)
                         }
                         .contentShape(Rectangle())
                     }
@@ -143,14 +143,14 @@ private struct SensorCard: View {
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Heart rate \(beat.bpm) beats per minute")
-            Text("Live from \(name), about once a second.").font(.footnote).foregroundStyle(Palette.ink3)
+            Text("Live from \(name), about once a second.").font(.app(.footnote)).foregroundStyle(Palette.ink3)
         } else {
             Waiting(text: "Waiting for \(name)…")
             if quiet > Self.patience * 2 { BroadcastHelp() }
         }
         chart(now: now)
         if !live.demo {
-            Button("Choose another strap") { live.chooseAnother() }.font(.footnote)
+            Button("Choose another strap") { live.chooseAnother() }.font(.app(.footnote))
         }
     }
 
@@ -167,7 +167,7 @@ private struct SensorCard: View {
             Button("Try again") { live.tryAgain() }.buttonStyle(.bordered)
             Button("Choose another strap") { live.chooseAnother() }.buttonStyle(.bordered)
         }
-        .font(.footnote)
+        .font(.app(.footnote))
     }
 
     /// The last five minutes, on a fixed five-minute axis, with gaps left as gaps.
@@ -200,12 +200,12 @@ private struct SensorCard: View {
             .chartYAxis {
                 AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { _ in
                     AxisGridLine().foregroundStyle(Palette.grid)
-                    AxisValueLabel().foregroundStyle(Palette.ink3)
+                    AxisValueLabel().font(.axis).foregroundStyle(Palette.ink3)
                 }
             }
             .frame(height: 120)
             .accessibilityLabel("Heart rate over the last five minutes, from \(values.min() ?? 0) to \(values.max() ?? 0) beats per minute")
-            Text("Last \(Int(LiveHeartRate.window / 60)) minutes").font(.caption).foregroundStyle(Palette.ink3)
+            Text("Last \(Int(LiveHeartRate.window / 60)) minutes").font(.app(.caption)).foregroundStyle(Palette.ink3)
         }
     }
 }
@@ -225,11 +225,11 @@ private struct BroadcastHelp: View {
     var heading = "Turn on Heart Rate Broadcast"
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(heading).font(.subheadline.weight(.semibold)).foregroundStyle(Palette.ink)
+            Text(heading).font(.app(.subheadline, weight: .semibold)).foregroundStyle(Palette.ink)
             Text("In the WHOOP app, open your strap's device settings and turn on heart rate broadcasting. Keep the strap close to this iPhone.")
             Text("Any Bluetooth heart rate strap works too. Broadcasting uses a little more of the strap's battery.")
         }
-        .font(.footnote)
+        .font(.app(.footnote))
         .foregroundStyle(Palette.ink2)
         .fixedSize(horizontal: false, vertical: true)
     }
@@ -240,8 +240,8 @@ private struct Help: View {
     let text: String
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(Palette.ink)
-            Text(text).font(.footnote).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
+            Text(title).font(.app(.subheadline, weight: .semibold)).foregroundStyle(Palette.ink)
+            Text(text).font(.app(.footnote)).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
         }
     }
 }
@@ -256,20 +256,20 @@ private struct WatchCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Label("Apple Watch", systemImage: "applewatch")
-                .font(.subheadline.weight(.semibold))
+                .font(.app(.subheadline, weight: .semibold))
                 .foregroundStyle(Palette.ink)
             if let w = live.watch {
                 // Ages in place without waiting for the next reading.
                 TimelineView(.periodic(from: .now, by: 15)) { context in
                     VStack(alignment: .leading, spacing: 4) {
                         BigValue(value: "\(w.bpm)", unit: "bpm")
-                        Text("\(Self.age(of: w.at, now: context.date)) · from \(w.source)").font(.footnote).foregroundStyle(Palette.ink2)
+                        Text("\(Self.age(of: w.at, now: context.date)) · from \(w.source)").font(.app(.footnote)).foregroundStyle(Palette.ink2)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityElement(children: .combine)
                 }
                 Text("Your Watch sends heart rate to this iPhone every few minutes, so this is the newest reading, not a live one. New readings appear here as they arrive.")
-                    .font(.footnote)
+                    .font(.app(.footnote))
                     .foregroundStyle(Palette.ink3)
                     .fixedSize(horizontal: false, vertical: true)
             } else if live.watchNeedsAccess {

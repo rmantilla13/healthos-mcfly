@@ -1,13 +1,24 @@
 import SwiftUI
 
 // The dashboard cards a person can hide (shared/cards.ts), and where this app shows each one. Cards are hidden in
-// Settings → Cards, here or on the web, and the server keeps one list for both (settings.hiddenCards in GET
-// /api/status). Only layout: hiding a card changes what a screen shows, never what's stored.
+// Profile → Cards, here or on the web, and the server keeps the lists for both (settings.hiddenCards in GET
+// /api/status, and shownCards for the optional cards, which are off until turned on). Only layout: hiding a card
+// changes what a screen shows, never what's stored.
 
-/// The web dashboard's pages with cards to hide, named as its Settings names them.
+/// The web dashboard's pages with cards to hide, named as its Profile names them.
 enum CardPage: String, CaseIterable, Identifiable {
     case home, sleep, body, nutrition
     var id: String { rawValue }
+
+    /// The app's page of the same name.
+    var appPage: AppPage {
+        switch self {
+        case .home: .home
+        case .sleep: .sleep
+        case .body: .body
+        case .nutrition: .nutrition
+        }
+    }
 
     var label: String {
         switch self {
@@ -19,19 +30,28 @@ enum CardPage: String, CaseIterable, Identifiable {
     }
 }
 
-/// Where this app shows a card.
-enum CardPlace: Equatable {
-    case today
-    case trends(TrendsSection)
-    case nutrition
+/// Where this app shows a card: a page, and the tab of it the card is on (the web's ?tab=), as AppRoute names them.
+/// Each page says which of its cards it shows, in its own table (`Cards.place(of:)`).
+struct CardPlace: Hashable {
+    let page: AppPage
+    /// The page's tab ("overview", "activity"); nil for a page without tabs, or its only view.
+    var tab: String?
 
-    var label: String {
-        switch self {
-        case .today: "Today"
-        case .trends(let section): "Trends · \(section.rawValue)"
-        case .nutrition: "Nutrition · Overview"
-        }
+    init(_ page: AppPage, tab: String? = nil) {
+        self.page = page
+        self.tab = tab
     }
+
+    static let home = CardPlace(.home)
+    static let sleep = CardPlace(.sleep)
+    static let bodyActivity = CardPlace(.body, tab: "activity")
+    static let nutritionOverview = CardPlace(.nutrition, tab: "overview")
+
+    /// Where Profile → Cards says it shows: "Home", "Sleep", "Body · Activity", "Nutrition · Overview".
+    var label: String { tab.map { "\(page.title) · \($0.prefix(1).uppercased())\($0.dropFirst())" } ?? page.title }
+
+    /// The link to it.
+    var route: AppRoute { AppRoute(page, query: tab.map { ["tab": $0] } ?? [:]) }
 }
 
 /// One card from the registry.
@@ -41,11 +61,14 @@ struct DashboardCard: Identifiable, Equatable {
     let label: String
     /// Offered only to people with Nutrition on.
     var nutrition = false
-    /// Where this app shows it, and hides it; nil when only the web dashboard hides it.
-    var place: CardPlace?
+    /// Off until the person turns it on (defaultHidden in shared/cards.ts).
+    var optional = false
+
+    /// Where this app shows it, and hides it, from its page's table; nil when only the web dashboard shows it.
+    var place: CardPlace? { Cards.place(of: id) }
 }
 
-/// One page's cards in Settings.
+/// One page's cards in Profile.
 struct CardGroup: Identifiable {
     let page: CardPage
     let cards: [DashboardCard]
@@ -53,25 +76,36 @@ struct CardGroup: Identifiable {
 }
 
 enum Cards {
-    /// shared/cards.ts CARDS, in its order (a test checks them against that file). Each card the app shows has its
-    /// place; the rest still change the web dashboard. The Body overview's cards (heart, recovery, strain,
-    /// movement, the latest workout and lab results) have no counterpart here.
+    /// shared/cards.ts CARDS, in its order (a test checks them against that file). Where the app shows each is in its
+    /// page's table (`place(of:)`); the rest still change the web dashboard.
     static let all: [DashboardCard] = [
-        DashboardCard(id: "home.readiness", page: .home, label: "Recovery or cardio fitness", place: .today),
-        DashboardCard(id: "home.spo2", page: .home, label: "Blood oxygen", place: .today),
-        DashboardCard(id: "home.hrv", page: .home, label: "HRV", place: .today),
-        DashboardCard(id: "home.sleep", page: .home, label: "Sleep", place: .today),
-        DashboardCard(id: "home.load", page: .home, label: "Strain or active energy", place: .today),
-        DashboardCard(id: "home.activity", page: .home, label: "Activity", place: .today),
-        DashboardCard(id: "home.food", page: .home, label: "Food", nutrition: true),
-        DashboardCard(id: "home.timeline", page: .home, label: "Today's timeline", place: .today),
-        DashboardCard(id: "home.insights", page: .home, label: "Recent insights", place: .today),
-        DashboardCard(id: "sleep.score", page: .sleep, label: "Sleep score", place: .trends(.sleep)),
-        DashboardCard(id: "sleep.total", page: .sleep, label: "Total sleep", place: .trends(.sleep)),
+        DashboardCard(id: "home.rhr", page: .home, label: "Resting heart rate"),
+        DashboardCard(id: "home.spo2", page: .home, label: "Blood oxygen"),
+        DashboardCard(id: "home.hrv", page: .home, label: "HRV"),
+        DashboardCard(id: "home.sleep", page: .home, label: "Sleep"),
+        // Recovery here, or VO₂ max without WHOOP; the id predates the card's name.
+        DashboardCard(id: "home.readiness", page: .home, label: "Recovery"),
+        DashboardCard(id: "home.resp", page: .home, label: "Respiratory rate"),
+        DashboardCard(id: "home.nutrition", page: .home, label: "Today's nutrition"),
+        DashboardCard(id: "home.journal", page: .home, label: "Your health journal"),
+        DashboardCard(id: "home.week", page: .home, label: "Week so far", optional: true),
+        // Today's path, and with it the portrait's heart following its marker.
+        DashboardCard(id: "home.timeline", page: .home, label: "Today's timeline", optional: true),
+        DashboardCard(id: "home.insights", page: .home, label: "Recent insights", optional: true),
+        DashboardCard(id: "home.load", page: .home, label: "Strain or active energy", optional: true),
+        DashboardCard(id: "home.activity", page: .home, label: "Activity", optional: true),
+        DashboardCard(id: "home.food", page: .home, label: "Food totals", nutrition: true, optional: true),
+        DashboardCard(id: "sleep.total", page: .sleep, label: "Sleep"),
+        // WHOOP's sleep performance; efficiency has its own card.
+        DashboardCard(id: "sleep.score", page: .sleep, label: "Sleep performance"),
+        DashboardCard(id: "sleep.efficiency", page: .sleep, label: "Sleep efficiency"),
         DashboardCard(id: "sleep.rhr", page: .sleep, label: "Resting heart rate"),
-        DashboardCard(id: "sleep.stages", page: .sleep, label: "Sleep stages", place: .trends(.sleep)),
+        DashboardCard(id: "sleep.stages", page: .sleep, label: "Sleep stages"),
         DashboardCard(id: "sleep.insights", page: .sleep, label: "Sleep insights"),
         DashboardCard(id: "sleep.timeline", page: .sleep, label: "Sleep timeline"),
+        DashboardCard(id: "body.figure", page: .body, label: "Your figure"),
+        DashboardCard(id: "body.composition", page: .body, label: "Weight, body fat and lean mass"),
+        DashboardCard(id: "body.story", page: .body, label: "A picture of your progress"),
         DashboardCard(id: "body.rhr", page: .body, label: "Resting heart rate"),
         DashboardCard(id: "body.hrv", page: .body, label: "HRV"),
         DashboardCard(id: "body.strain", page: .body, label: "Strain"),
@@ -82,46 +116,104 @@ enum Cards {
         DashboardCard(id: "body.steps", page: .body, label: "Activity level"),
         DashboardCard(id: "body.workout", page: .body, label: "Latest workout"),
         DashboardCard(id: "body.glucose", page: .body, label: "Glucose"),
-        DashboardCard(id: "body.composition", page: .body, label: "Body composition"),
         DashboardCard(id: "body.biomarkers", page: .body, label: "Key biomarkers"),
-        DashboardCard(id: "nutrition.energy", page: .nutrition, label: "Energy", nutrition: true, place: .nutrition),
-        DashboardCard(id: "nutrition.protein", page: .nutrition, label: "Protein", nutrition: true, place: .nutrition),
-        DashboardCard(id: "nutrition.water", page: .nutrition, label: "Water", nutrition: true, place: .nutrition),
-        DashboardCard(id: "nutrition.logged", page: .nutrition, label: "Days logged", nutrition: true, place: .nutrition),
-        DashboardCard(id: "nutrition.macros", page: .nutrition, label: "Macro balance", nutrition: true, place: .nutrition),
-        DashboardCard(id: "nutrition.insights", page: .nutrition, label: "Food insights", nutrition: true, place: .nutrition),
+        DashboardCard(id: "nutrition.energy", page: .nutrition, label: "Energy", nutrition: true),
+        DashboardCard(id: "nutrition.protein", page: .nutrition, label: "Protein", nutrition: true),
+        DashboardCard(id: "nutrition.water", page: .nutrition, label: "Water", nutrition: true),
+        DashboardCard(id: "nutrition.logged", page: .nutrition, label: "Days logged", nutrition: true),
+        DashboardCard(id: "nutrition.macros", page: .nutrition, label: "Macro balance", nutrition: true),
+        DashboardCard(id: "nutrition.insights", page: .nutrition, label: "Food insights", nutrition: true),
     ]
+
+    /// The optional cards (shared/cards.ts OPTIONAL_CARDS): off until the person turns them on.
+    static let optional: Set<String> = Set(all.filter(\.optional).map(\.id))
+
+    /// The cards that came with the optional ones. A server older than optional cards (no shownCards, as on main)
+    /// doesn't know these ids and refuses a change to them, so Profile doesn't offer them there.
+    static let newerThanOlderServers: Set<String> = [
+        "home.rhr", "home.resp", "home.nutrition", "home.journal", "home.week", "sleep.efficiency", "body.figure", "body.story",
+    ]
+
+    /// Whether a card shows (shared/cards.ts cardShown): an optional card only once it's turned on, any other unless
+    /// it's hidden. `shown` is nil from a server older than optional cards: there every card shows unless it's hidden,
+    /// and sleep efficiency, which that server doesn't know, hides with the sleep score, as before it had its own card.
+    static func shows(_ id: String, hidden: [String], shown: [String]?) -> Bool {
+        if let shown, optional.contains(id) { return shown.contains(id) }
+        if shown == nil, id == "sleep.efficiency" { return !hidden.contains("sleep.score") }
+        return !hidden.contains(id)
+    }
+
+    /// The cards that don't show, for the screens to leave out: the hidden ones, and the optional ones not turned on.
+    /// An optional card turned on shows even while it's still in the hidden list, as on the web. Hidden ids this app
+    /// doesn't know (a newer server's) are kept.
+    static func off(hidden: [String], shown: [String]?) -> Set<String> {
+        let ids = all.map(\.id)
+        return Set(ids.filter { !shows($0, hidden: hidden, shown: shown) }).union(hidden.filter { !ids.contains($0) })
+    }
+
+    /// The hidden cards that are hidden from a default (shared/cards.ts hiddenDefaults). An optional card turned off is
+    /// in the hidden list too (for older iPhone builds) without being hidden from a default. With `optionalCards`
+    /// false (an older server, where no card is optional) every hidden card counts.
+    static func hiddenDefaults(_ hidden: [String], optionalCards: Bool) -> [String] {
+        optionalCards ? hidden.filter { !optional.contains($0) } : hidden
+    }
+
+    /// The hidden list Show all sends: every default card back on, the optional ones as they are. An optional card
+    /// that's off can be in the list, and stays there; an older server has no optional cards, so it gets none.
+    static func afterShowAll(_ hidden: [String], optionalCards: Bool) -> [String] {
+        optionalCards ? hidden.filter { optional.contains($0) } : []
+    }
 
     static func card(_ id: String) -> DashboardCard? { all.first { $0.id == id } }
 
-    /// Today's metric cards, in the grid's order (the first row of the web's Home page).
-    static let todayGrid = ["home.readiness", "home.spo2", "home.hrv", "home.sleep", "home.load", "home.activity"]
+    /// Where this app shows a card, from the table of the page it's on (shared/cards.ts `page`), each in that page's
+    /// own folder, so a page's cards change only there: Home/HomeCards.swift, Sleep/SleepCards.swift,
+    /// Body/BodyCards.swift and Nutrition/NutritionCards.swift. nil for a card in none, or one this app doesn't know.
+    static func place(of id: String) -> CardPlace? {
+        guard let card = card(id) else { return nil }
+        let table: [String: CardPlace] = switch card.page {
+        case .home: HomeCards.places
+        case .sleep: SleepCards.places
+        case .body: BodyCards.places
+        case .nutrition: NutritionCards.places
+        }
+        return table[id]
+    }
 
     /// The cards this app shows in one place, in the registry's order.
     static func ids(in place: CardPlace) -> [String] { all.filter { $0.place == place }.map(\.id) }
 
-    /// The ids that show, in the order given: every one does except those hidden.
+    /// The ids that show, in the order given: every one does except those off (`off(hidden:shown:)`).
     static func visible(_ ids: [String], hidden: Set<String>) -> [String] { ids.filter { !hidden.contains($0) } }
 
-    /// Every card this app shows in `place` is hidden, so the screen says where to bring them back.
-    static func allHidden(in place: CardPlace, hidden: Set<String>) -> Bool {
-        let ids = ids(in: place)
-        return !ids.isEmpty && visible(ids, hidden: hidden).isEmpty
-    }
+    /// Every card this app shows in `place` is off, so the screen says where to bring them back.
+    static func allHidden(in place: CardPlace, hidden: Set<String>) -> Bool { allHidden(ids(in: place), hidden: hidden) }
 
-    /// The cards Settings offers, by page: Nutrition's only to someone with it on, as on the web.
-    static func pages(nutrition: Bool) -> [CardGroup] {
+    /// Every one of these cards is off (and there is one).
+    static func allHidden(_ ids: [String], hidden: Set<String>) -> Bool { !ids.isEmpty && visible(ids, hidden: hidden).isEmpty }
+
+    /// The cards Profile offers, by page: Nutrition's only to someone with it on, as on the web. Without
+    /// `optionalCards` (a server older than them) only the cards that server knows.
+    static func pages(nutrition: Bool, optionalCards: Bool = true) -> [CardGroup] {
         CardPage.allCases.compactMap { page in
-            let cards = all.filter { $0.page == page && (nutrition || !$0.nutrition) }
+            let cards = all.filter { $0.page == page && (nutrition || !$0.nutrition) && (optionalCards || !newerThanOlderServers.contains($0.id)) }
             return cards.isEmpty ? nil : CardGroup(page: page, cards: cards)
         }
     }
 
-    /// The hidden cards Settings offers now, in the registry's order: no Nutrition card while Nutrition is off, and no
-    /// id this app doesn't know (a newer server's). The Cards row counts these and Show all appears only for them, so
-    /// the row never says "All shown" beside a Show all whose switches are all on.
-    static func hiddenOffered(_ hidden: Set<String>, nutrition: Bool) -> [String] {
-        pages(nutrition: nutrition).flatMap(\.cards).map(\.id).filter { hidden.contains($0) }
+    /// A card's name in Profile. On a server older than optional cards the sleep score hides sleep efficiency too,
+    /// so it keeps the name it has there.
+    static func label(_ card: DashboardCard, optionalCards: Bool) -> String {
+        !optionalCards && card.id == "sleep.score" ? "Sleep score" : card.label
+    }
+
+    /// The hidden cards Profile offers now, in the registry's order: no Nutrition card while Nutrition is off, no id
+    /// this app or the server doesn't know, and, with `optionalCards`, no optional card (off by default, not hidden).
+    /// The Cards row counts these and Show all appears only for them, so the row never says "All shown" beside a
+    /// Show all whose switches are all on.
+    static func hiddenOffered(_ hidden: Set<String>, nutrition: Bool, optionalCards: Bool = true) -> [String] {
+        pages(nutrition: nutrition, optionalCards: optionalCards).flatMap(\.cards).map(\.id)
+            .filter { hidden.contains($0) && !(optionalCards && optional.contains($0)) }
     }
 
     /// The Nutrition overview's cards one setting shows (src/pages/Nutrition.tsx Overview), hidden ones left out.
@@ -168,6 +260,13 @@ enum Cards {
     }
 }
 
+/// The two lists a person's cards are kept in: settings.hiddenCards, and shownCards for the optional ones.
+struct CardLists: Equatable {
+    var hidden: [String]
+    /// nil from a server older than optional cards.
+    var shown: [String]?
+}
+
 /// A change to the hidden cards, as PUT /api/settings takes it.
 enum CardChange: Equatable {
     /// One card shown or hidden. The server applies it to the list as stored then, so a change made elsewhere
@@ -193,6 +292,16 @@ enum CardChange: Equatable {
         }
     }
 
+    /// Both lists after this change, as the server's withCardToggled makes them: any card moves in or out of `hidden`,
+    /// and an optional one in or out of `shown` too (once the server has that list).
+    func applied(to lists: CardLists) -> CardLists {
+        var next = CardLists(hidden: applied(to: lists.hidden), shown: lists.shown)
+        if case .card(let id, let on) = self, let shown = lists.shown, Cards.optional.contains(id) {
+            next.shown = on ? (shown.contains(id) ? shown : shown + [id]) : shown.filter { $0 != id }
+        }
+        return next
+    }
+
     /// What to send again after the server answered with `stored`, its hidden list after this change. A server from
     /// before one-card changes ignores `cardShown` and answers with the list as it was: send the same change again
     /// as a whole list, built on the one it just answered with. nil when the change took (or there's nothing to retry).
@@ -204,7 +313,7 @@ enum CardChange: Equatable {
 
 /// Every card a screen can hide is hidden: say where to choose them again (the web's AllHiddenNote).
 struct AllCardsHiddenNote: View {
-    /// Today keeps cards that can't be hidden (the portrait, the day and the week), so it doesn't say "all the cards".
+    /// Today keeps cards that can't be hidden (the portrait and the day), so it doesn't say "all the cards".
     var text = "You've hidden every card you can choose here."
     @Environment(Dashboard.self) private var dashboard
 
@@ -213,8 +322,8 @@ struct AllCardsHiddenNote: View {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "rectangle.grid.2x2").font(.subheadline.weight(.semibold)).foregroundStyle(Palette.ink3)
                     .accessibilityHidden(true)
-                Text("\(text) Choose the ones to show in **Settings → Cards**.")
-                    .font(.footnote)
+                Text("\(text) Choose the ones to show with Edit widgets on Home, or in **your Profile**.")
+                    .font(.app(.footnote))
                     .foregroundStyle(Palette.ink2)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
@@ -226,6 +335,6 @@ struct AllCardsHiddenNote: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityHint("Opens Settings")
+        .accessibilityHint("Opens Profile")
     }
 }

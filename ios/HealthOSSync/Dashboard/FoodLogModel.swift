@@ -4,10 +4,21 @@ import Foundation
 /// Nutrition tabs show: healthOS's log is one of the apps a day's totals are picked from.
 extension Dashboard {
     /// The last `days` days of the log; nil from a server without it (the Log tab then hides).
+    /// An answer that lands once someone else is signed in (or after a Sign out, or on another server) is dropped,
+    /// so its `can` never says what the next person can do (`fetchForThisSession`).
     func loadFoodLog(days: Int = 14) async throws -> FoodLog? {
-        let log = try await fetch { try await $0.foodLog(days: days) }
+        let log = try await fetchForThisSession { try await $0.foodLog(days: days) }
         foodLogAvailable = log != nil
+        availability.heard(foodCan: log?.can)
         return log
+    }
+
+    /// One day of the log (nil date: today), for Nutrition's Today; nil from a server older than it, which shows the
+    /// Log tab's days instead (`loadFoodLog`).
+    func loadFoodLogDay(date: String?) async throws -> FoodLogDay? {
+        let day = try await fetchForThisSession { try await $0.foodLogDay(date: date) }
+        availability.heard(foodCan: day?.can)
+        return day
     }
 
     /// Asks once per server whether it has the food log, so the Log tab shows only where it works.
@@ -43,15 +54,24 @@ extension Dashboard {
         await refreshIfChanged(includeStatus: false)
     }
 
-    /// Saves McFly's reviewed drafts (the rest are discarded); they count, and go to Health, from now on.
-    func saveDrafts(batch: String, ids: [String]) async throws {
+    /// Saves McFly's reviewed drafts (the rest are discarded); they count, and go to Health, from now on. The entries
+    /// saved: none when the estimate went (a day old, or saved elsewhere).
+    @discardableResult
+    func saveDrafts(batch: String, ids: [String]) async throws -> [FoodEntry] {
         let saved = try await fetch { try await $0.saveDrafts(batch: batch, ids: ids) }
         await wroteHere(saved)
         await refreshIfChanged(includeStatus: false)
+        return saved
     }
 
     func discardDrafts(batch: String) async throws {
         try await fetch { try await $0.discardDrafts(batch: batch) }
+        await refreshIfChanged(includeStatus: false)
+    }
+
+    /// McFly's estimate came back (a draft, or nothing found): the server's data moved, so what's on screen reads again.
+    func estimated() async {
+        await refreshIfChanged(includeStatus: false)
     }
 
     func searchFoods(_ query: String) async throws -> FoodSearch { try await fetch { try await $0.searchFoods(query) } }

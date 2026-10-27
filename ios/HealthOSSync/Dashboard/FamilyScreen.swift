@@ -4,34 +4,17 @@ import UIKit
 
 /// The Family board (GET /api/family), as on the web: everyone who shares, at a glance, each against their own last
 /// 30 days and never against each other. Sharing is mutual, so turned off, you see no one and no one sees you.
+///
+/// Under More. A person's page is pushed over it (AppRoute.familyMember); the shell drops it whenever the board can't be
+/// shown (asked to sign in again, another server), so no one's page outlives the board it came from.
 struct FamilyScreen: View {
     @Environment(Dashboard.self) private var dashboard
     @Environment(\.scenePhase) private var scenePhase
-    /// The person page on screen, if any. Emptied whenever the board can't be shown (asked to sign in again, another
-    /// server), so no one's page outlives the board it came from.
-    @State private var path: [FamilyPersonRoute] = []
 
     var body: some View {
-        NavigationStack(path: $path) {
-            Group {
-                if dashboard.signInRequired {
-                    SignInView()
-                } else if dashboard.phase == .noServer {
-                    ContentUnavailableView("No server yet", systemImage: "server.rack", description: Text("Add your healthOS address in Settings."))
-                } else {
-                    FamilyContent()
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Palette.page)
-            .navigationTitle("Family")
-            .navigationBarTitleDisplayMode(.inline)
-            .settingsButton()
-            .navigationDestination(for: FamilyPersonRoute.self) { FamilyPersonScreen(id: $0.id) }
-        }
-        .onChange(of: dashboard.phase) { _, phase in
-            if phase != .ready { path = [] }
-        }
+        PhaseGate { FamilyContent() }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Palette.page)
         // Other people's changes don't move your data version, so the board re-reads itself: on opening the tab, on
         // returning to the app, after your own data reloads, then every five minutes while it's on screen. The task
         // ends when the tab is left or the app goes to the background.
@@ -61,19 +44,11 @@ private struct FamilyContent: View {
         case .missing:
             FamilyNote(text: "Family isn't available on this server yet.")
         case .failed(let error):
-            ContentUnavailableView {
-                Label("Couldn't load the family board", systemImage: "wifi.exclamationmark")
-            } description: {
-                Text(error)
-            } actions: {
+            Unavailable("Couldn't load the family board", systemImage: "wifi.exclamationmark", description: error) {
                 Button("Try again") { Task { await dashboard.loadFamily(force: true) } }
             }
         case .unavailable(let message):
-            ContentUnavailableView {
-                Label("Can't load the family board", systemImage: "wifi.exclamationmark")
-            } description: {
-                Text(message)
-            } actions: {
+            Unavailable("Can't load the family board", systemImage: "wifi.exclamationmark", description: message) {
                 Button("Try again") { Task { await dashboard.start() } }
             }
         case .loading:
@@ -93,7 +68,7 @@ private struct FamilyNote: View {
 
     var body: some View {
         Text(text)
-            .font(.callout)
+            .font(.app(.callout))
             .foregroundStyle(Palette.ink3)
             .multilineTextAlignment(.center)
             .padding(32)
@@ -111,9 +86,9 @@ struct FamilyBoardView: View {
         let others = board.members.filter { !$0.isYou }
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Your family, today.").font(.title.weight(.semibold)).foregroundStyle(Palette.ink)
+                Text("Your family, today.").font(.app(.title, weight: .semibold)).foregroundStyle(Palette.ink)
                 Text(FamilyText.groupLine(board.members) ?? "Each person against their own last 30 days.")
-                    .font(.subheadline)
+                    .font(.app(.subheadline))
                     .foregroundStyle(Palette.ink2)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -133,9 +108,9 @@ private struct FamilyEmpty: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("No one else is sharing yet.").font(.callout).foregroundStyle(Palette.ink2)
+            Text("No one else is sharing yet.").font(.app(.callout)).foregroundStyle(Palette.ink2)
             if admin {
-                Text("Invite someone from Admin on the web dashboard.").font(.footnote).foregroundStyle(Palette.ink3)
+                Text("Invite someone from Admin on the web dashboard.").font(.app(.footnote)).foregroundStyle(Palette.ink3)
             }
         }
         .padding(16)
@@ -149,14 +124,11 @@ private struct FamilyFoot: View {
     @Environment(Dashboard.self) private var dashboard
 
     var body: some View {
-        Text("Statuses compare each person with their own last 30 days. They're a nudge to check in, not medical advice. Change what you share in **[Settings](healthos://settings)**.")
-            .font(.footnote)
+        Text("Statuses compare each person with their own last 30 days. They're a nudge to check in, not medical advice. Change what you share in **[your Profile](healthos://profile)**.")
+            .font(.app(.footnote))
             .foregroundStyle(Palette.ink3)
             .fixedSize(horizontal: false, vertical: true)
-            .environment(\.openURL, OpenURLAction { _ in
-                dashboard.tab = .settings
-                return .handled
-            })
+            .environment(\.openURL, OpenURLAction { url in dashboard.open(url: url) ? .handled : .systemAction })
     }
 }
 
@@ -169,20 +141,20 @@ private struct SharingOff: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Family is off: you don't see anyone, and nobody sees you.")
-                .font(.callout)
+                .font(.app(.callout))
                 .foregroundStyle(Palette.ink2)
                 .fixedSize(horizontal: false, vertical: true)
             Button {
                 Task { await turnOn() }
             } label: {
                 HStack(spacing: 8) {
-                    if busy { ProgressView().controlSize(.small) }
+                    if busy { ProgressView().controlSize(.small).tint(Palette.accentInk) }
                     Text("Turn on sharing")
                 }
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.accentPill)
             .disabled(busy)
-            if let error { Text(error).font(.footnote).foregroundStyle(Palette.critical) }
+            if let error { Text(error).font(.app(.footnote)).foregroundStyle(Palette.critical) }
         }
         .card()
     }
@@ -203,7 +175,7 @@ private struct SharingOff: View {
 
 /// One person: photo or initial, name, devices, status, then last night's sleep, recovery or HRV, today's steps and
 /// resting heart rate, each against their own usual with its last 7 days below. Every tile opens that person's last
-/// 30 days. From a server older than that (no history): the three figures only, and your own tile opens Today.
+/// 30 days. From a server older than that (no history): the three figures only, and your own tile opens Home.
 struct FamilyTile: View {
     let member: FamilyMember
     /// The viewer's today: a member a day ahead or behind gets "their Sun".
@@ -213,15 +185,15 @@ struct FamilyTile: View {
     var body: some View {
         let label = FamilyText.accessibilitySummary(member, boardToday: boardToday)
         if member.history != nil {
-            NavigationLink(value: FamilyPersonRoute(id: member.id)) { card.contentShape(Rectangle()) }
+            NavigationLink(value: AppRoute.familyMember(member.id)) { card.contentShape(Rectangle()) }
                 .buttonStyle(.plain)
                 .accessibilityLabel(label)
                 .accessibilityHint(member.isYou ? "Opens your last 30 days" : "Opens their last 30 days")
         } else if member.isYou {
-            Button { dashboard.tab = .today } label: { card.contentShape(Rectangle()) }
+            Button { dashboard.open(.home) } label: { card.contentShape(Rectangle()) }
                 .buttonStyle(.plain)
                 .accessibilityLabel(label)
-                .accessibilityHint("Opens Today")
+                .accessibilityHint("Opens Home")
         } else {
             card
                 .accessibilityElement(children: .ignore)
@@ -234,7 +206,7 @@ struct FamilyTile: View {
         return VStack(alignment: .leading, spacing: 12) {
             FamilyTileHead(member: member, boardToday: boardToday)
             if let reasons = FamilyText.reasons(member) {
-                Text(reasons).font(.footnote).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
+                Text(reasons).font(.app(.footnote)).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
             }
             FamilySlots(member: member).opacity(quiet ? 0.6 : 1)
         }
@@ -257,7 +229,7 @@ struct FamilyTileHead: View {
                 // room at every text size.
                 FamilyWrap(spacing: 6, rowSpacing: 4) {
                     Text(FamilyText.title(member))
-                        .font(.headline)
+                        .font(.app(.headline))
                         .foregroundStyle(Palette.ink)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
@@ -265,7 +237,7 @@ struct FamilyTileHead: View {
                     if member.demo { FamilyPill(text: "Demo data", tone: .blue) }
                 }
                 Text(FamilyText.devicesLine(member, boardToday: boardToday))
-                    .font(.caption)
+                    .font(.app(.caption))
                     .foregroundStyle(Palette.ink3)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -285,7 +257,7 @@ private struct FamilyPill: View {
         // Not fixed width: at the largest text sizes a pill wider than the tile shortens instead of pushing the board
         // off screen.
         Text(text)
-            .font(.caption.weight(.medium))
+            .font(.app(.caption, weight: .medium))
             .lineLimit(1)
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
@@ -355,7 +327,7 @@ private struct FamilyStatusChip: View {
             }
             Text(text).lineLimit(2).fixedSize(horizontal: false, vertical: true)
         }
-        .font(.caption.weight(.medium))
+        .font(.app(.caption, weight: .medium))
         .foregroundStyle(status == "check" ? Palette.ink : Palette.ink2)
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
@@ -412,7 +384,7 @@ struct FamilySlot: View {
     var spark: FamilySparkData? = nil
 
     /// Scales with Dynamic Type, so the figure stays bigger than its caption at every text size.
-    static let valueFont = Font.system(.title3, design: .rounded, weight: .semibold)
+    static let valueFont = Font.app(.title3, weight: .semibold)
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -420,7 +392,7 @@ struct FamilySlot: View {
                 Image(systemName: icon)
                 Text(label)
             }
-            .font(.caption)
+            .font(.app(.caption))
             .foregroundStyle(Palette.ink3)
             .lineLimit(1)
             Text(value ?? "—")
@@ -433,7 +405,7 @@ struct FamilySlot: View {
                 .minimumScaleFactor(0.5)
                 .fixedSize(horizontal: false, vertical: true)
             Text(note)
-                .font(.caption2)
+                .font(.app(.caption2))
                 .foregroundStyle(Palette.ink3)
                 .fixedSize(horizontal: false, vertical: true)
             if let spark {
@@ -509,7 +481,7 @@ struct FamilyAvatar: View {
                 Image(uiImage: image).resizable().scaledToFill()
             } else {
                 RadialGradient(colors: [Color(UIColor(hex: 0xA58A73)), Color(UIColor(hex: 0x4C3B2F))], center: .topLeading, startRadius: 0, endRadius: size * 1.2)
-                Text(FamilyText.initial(member.name)).font(.system(size: size * 0.36, weight: .semibold)).foregroundStyle(.white)
+                Text(FamilyText.initial(member.name)).font(.app(fixedSize: size * 0.36, weight: .semibold)).foregroundStyle(.white)
             }
         }
         .frame(width: size, height: size)
@@ -531,14 +503,10 @@ struct FamilyAvatar: View {
 
 // MARK: - One person, bigger
 
-/// What the stack pushes: only an id. The page looks the person up on the board on screen, so it follows each
-/// re-read and is gone the moment they (or you) stop sharing, or the board can't be shown.
-struct FamilyPersonRoute: Hashable {
-    let id: String
-}
-
-/// A person's last 30 days, as on the web's #/family?member=<id>.
-private struct FamilyPersonScreen: View {
+/// A person's last 30 days, as on the web's #/family?member=<id>. Pushed with only an id: the page looks the person up
+/// on the board on screen, so it follows each re-read and is gone the moment they (or you) stop sharing, or the board
+/// can't be shown.
+struct FamilyPersonScreen: View {
     let id: String
     @Environment(Dashboard.self) private var dashboard
 
@@ -604,7 +572,7 @@ struct FamilyPersonPage: View {
                 VStack(alignment: .leading, spacing: 4) {
                     FamilyWrap(spacing: 6, rowSpacing: 4) {
                         Text(FamilyText.title(m))
-                            .font(.title2.weight(.semibold))
+                            .font(.app(.title2, weight: .semibold))
                             .foregroundStyle(Palette.ink)
                             .lineLimit(2)
                             .fixedSize(horizontal: false, vertical: true)
@@ -612,11 +580,11 @@ struct FamilyPersonPage: View {
                         if m.demo { FamilyPill(text: "Demo data", tone: .blue) }
                     }
                     Text(FamilyText.pageDevicesLine(m, boardToday: boardToday))
-                        .font(.caption)
+                        .font(.app(.caption))
                         .foregroundStyle(Palette.ink3)
                         .fixedSize(horizontal: false, vertical: true)
                     if let reasons = FamilyText.reasons(m) {
-                        Text(reasons).font(.footnote).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
+                        Text(reasons).font(.app(.footnote)).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
                     }
                     if let text = FamilyText.status(m) { FamilyStatusChip(status: m.status ?? "", text: text) }
                 }
@@ -633,13 +601,10 @@ struct FamilyPersonPage: View {
             }
 
             Text(FamilyText.pageFoot(m))
-                .font(.footnote)
+                .font(.app(.footnote))
                 .foregroundStyle(Palette.ink3)
                 .fixedSize(horizontal: false, vertical: true)
-                .environment(\.openURL, OpenURLAction { _ in
-                    dashboard.tab = .today
-                    return .handled
-                })
+                .environment(\.openURL, OpenURLAction { url in dashboard.open(url: url) ? .handled : .systemAction })
         }
     }
 }
@@ -654,11 +619,11 @@ private struct FamilyChartCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(chart.title).font(.subheadline.weight(.medium)).foregroundStyle(Palette.ink2)
-            Text(chart.value).font(.title2.weight(.semibold)).foregroundStyle(Palette.ink).monospacedDigit()
-            if let note = chart.note { Text(note).font(.caption).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true) }
+            Text(chart.title).font(.app(.subheadline, weight: .medium)).foregroundStyle(Palette.ink2)
+            Text(chart.value).font(.app(.title2, weight: .semibold)).foregroundStyle(Palette.ink).monospacedDigit()
+            if let note = chart.note { Text(note).font(.app(.caption)).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true) }
             if chart.points.isEmpty {
-                Text("Nothing in the last 30 days.").font(.footnote).foregroundStyle(Palette.ink3).padding(.top, 6)
+                Text("Nothing in the last 30 days.").font(.app(.footnote)).foregroundStyle(Palette.ink3).padding(.top, 6)
             } else {
                 plot.frame(height: 180).padding(.top, 6)
             }
@@ -740,8 +705,8 @@ private struct FamilyChartCard: View {
                     .foregroundStyle(Palette.ink3.opacity(0.4))
                     .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
                         VStack(spacing: 1) {
-                            Text(chart.format(picked.value)).font(.caption.weight(.semibold))
-                            Text(Fmt.day(picked.date, "EEEMMMd")).font(.caption2)
+                            Text(chart.format(picked.value)).font(.app(.caption, weight: .semibold))
+                            Text(Fmt.day(picked.date, "EEEMMMd")).font(.app(.caption2))
                         }
                         .padding(.horizontal, 8).padding(.vertical, 4)
                         .background(Palette.surface2, in: RoundedRectangle(cornerRadius: 8))
@@ -755,10 +720,10 @@ private struct FamilyChartCard: View {
         .chartXSelection(value: $selected)
         .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { v in
             AxisGridLine().foregroundStyle(Palette.grid)
-            AxisValueLabel { if let n = v.as(Double.self) { Text(chart.axis(n)).foregroundStyle(Palette.ink3) } }
+            AxisValueLabel { if let n = v.as(Double.self) { Text(chart.axis(n)).foregroundStyle(Palette.ink3) } }.font(.axis)
         } }
         .chartXAxis { AxisMarks(values: .automatic(desiredCount: 4)) { _ in
-            AxisValueLabel(format: .dateTime.month(.abbreviated).day()).foregroundStyle(Palette.ink3)
+            AxisValueLabel(format: .dateTime.month(.abbreviated).day()).font(.axis).foregroundStyle(Palette.ink3)
         } }
         .accessibilityLabel(chart.label)
     }
@@ -776,7 +741,7 @@ private struct FamilyChartTag: View {
 
     var body: some View {
         Text(text)
-            .font(.caption2)
+            .font(.app(.caption2))
             .foregroundStyle(color)
             .padding(.horizontal, 4)
             .padding(.vertical, 1)
@@ -974,7 +939,7 @@ enum FamilyText {
 
     static func pageFoot(_ m: FamilyMember) -> AttributedString {
         let lines = "Dashed lines are the median of these 30 days; “usual” lines are \(m.isYou ? "your" : "their") average of the 30 days before the latest reading. "
-        let more = m.isYou ? "**[Open your full dashboard](healthos://today)**" : "Only what they share is here."
+        let more = m.isYou ? "**[Open your full dashboard](healthos://home)**" : "Only what they share is here."
         return (try? AttributedString(markdown: lines + more)) ?? AttributedString(lines + more)
     }
 

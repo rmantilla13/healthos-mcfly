@@ -323,23 +323,23 @@ struct McFlyVisualView: View {
 private struct CardTitle: View {
     let text: String
     var body: some View {
-        Text(text).font(.subheadline.weight(.medium)).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
+        Text(text).font(.app(.subheadline, weight: .medium)).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
     }
 }
 
 private func yAxis(_ f: McFlyFormat) -> some AxisContent {
     AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { v in
         AxisGridLine().foregroundStyle(Palette.grid)
-        AxisValueLabel { if let n = v.as(Double.self) { Text(f.tick(n)).font(.caption2).foregroundStyle(Palette.ink3) } }
+        AxisValueLabel { if let n = v.as(Double.self) { Text(f.tick(n)).font(.axis).foregroundStyle(Palette.ink3) } }
     }
 }
 
 private func dateAxis(monthly: Bool) -> some AxisContent {
     AxisMarks(values: .automatic(desiredCount: 4)) { _ in
         if monthly {
-            AxisValueLabel(format: .dateTime.month(.abbreviated).year(.twoDigits)).foregroundStyle(Palette.ink3)
+            AxisValueLabel(format: .dateTime.month(.abbreviated).year(.twoDigits)).font(.axis).foregroundStyle(Palette.ink3)
         } else {
-            AxisValueLabel(format: .dateTime.month(.abbreviated).day()).foregroundStyle(Palette.ink3)
+            AxisValueLabel(format: .dateTime.month(.abbreviated).day()).font(.axis).foregroundStyle(Palette.ink3)
         }
     }
 }
@@ -358,9 +358,9 @@ private struct SeriesCard: View {
         VStack(alignment: .leading, spacing: 6) {
             CardTitle(text: series.title)
             if let mean = series.mean {
-                Text(f.value(mean)).font(.title2.weight(.semibold)).foregroundStyle(Palette.ink).monospacedDigit()
+                Text(f.value(mean)).font(.app(.title2, weight: .semibold)).foregroundStyle(Palette.ink).monospacedDigit()
             }
-            Text(series.note).font(.caption).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
+            Text(series.note).font(.app(.caption)).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
             chart(f).frame(height: 170).padding(.top, 6)
         }
         .card()
@@ -444,7 +444,7 @@ private struct SeriesCard: View {
                     .foregroundStyle(Palette.ink3)
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [2, 3]))
                     .annotation(position: .top, alignment: .leading, spacing: 2) {
-                        Text("Average").font(.caption2).foregroundStyle(Palette.ink3)
+                        Text("Average").font(.app(.caption2)).foregroundStyle(Palette.ink3)
                             .padding(.horizontal, 4)
                             .background(Palette.surface.opacity(0.85), in: Capsule())
                     }
@@ -454,7 +454,7 @@ private struct SeriesCard: View {
                     .foregroundStyle(Palette.good)
                     .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
                     .annotation(position: .top, alignment: .trailing, spacing: 2) {
-                        Text("Goal \(Fmt.compact(goal))").font(.caption2).foregroundStyle(Palette.goodText)
+                        Text("Goal \(Fmt.compact(goal))").font(.app(.caption2)).foregroundStyle(Palette.goodText)
                             .padding(.horizontal, 4)
                             .background(Palette.surface.opacity(0.85), in: Capsule())
                     }
@@ -464,8 +464,8 @@ private struct SeriesCard: View {
                     .foregroundStyle(Palette.ink3.opacity(0.5))
                     .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
                         VStack(spacing: 1) {
-                            Text(f.value(picked.value)).font(.caption.weight(.semibold))
-                            Text(series.periodLabel(picked.date) + (partial?.date == picked.date ? " · so far" : "")).font(.caption2)
+                            Text(f.value(picked.value)).font(.app(.caption, weight: .semibold))
+                            Text(series.periodLabel(picked.date) + (partial?.date == picked.date ? " · so far" : "")).font(.app(.caption2))
                         }
                         .padding(.horizontal, 8).padding(.vertical, 4)
                         .background(Palette.surface2, in: RoundedRectangle(cornerRadius: 8))
@@ -474,7 +474,8 @@ private struct SeriesCard: View {
             }
         }
         .chartYScale(domain: domain)
-        .chartXSelection(value: $selected)
+        // A tap or a sideways drag picks a day; up or down scrolls the conversation.
+        .chartScrub($selected)
         .chartYAxis { yAxis(f) }
         .chartXAxis { dateAxis(monthly: series.resolution == "month") }
         .chartLegend(.hidden)
@@ -522,12 +523,12 @@ private struct BarRow: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(label).font(.footnote.weight(.medium)).foregroundStyle(Palette.ink)
-                    Text(caption).font(.caption2).foregroundStyle(Palette.ink3)
+                    Text(label).font(.app(.footnote, weight: .medium)).foregroundStyle(Palette.ink)
+                    Text(caption).font(.app(.caption2)).foregroundStyle(Palette.ink3)
                 }
                 .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
-                Text(value).font(.subheadline.weight(.semibold)).monospacedDigit().foregroundStyle(Palette.ink)
+                Text(value).font(.app(.subheadline, weight: .semibold)).monospacedDigit().foregroundStyle(Palette.ink)
             }
             TrackBar(value: amount, max: max, color: color)
         }
@@ -567,7 +568,7 @@ private struct CompareCard: View {
         return AnyView(
             Label("\(n)%", systemImage: up ? "arrow.up.right" : "arrow.down.right")
                 .labelStyle(.titleAndIcon)
-                .font(.caption.weight(.semibold))
+                .font(.app(.caption, weight: .semibold))
                 .monospacedDigit()
                 .padding(.horizontal, 8).padding(.vertical, 3)
                 .background(Tone.neutral.background, in: Capsule())
@@ -608,10 +609,10 @@ private struct StatsCard: View {
                 ForEach(Array(stats.items.enumerated()), id: \.offset) { _, it in
                     let value = it.value.map { McFlyFormat(unit: it.unit, values: [$0]).value($0) } ?? "—"
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(it.label).font(.caption).foregroundStyle(Palette.ink2)
-                        Text(value).font(.title3.weight(.medium)).monospacedDigit().foregroundStyle(Palette.ink)
+                        Text(it.label).font(.app(.caption)).foregroundStyle(Palette.ink2)
+                        Text(value).font(.app(.title3, weight: .medium)).monospacedDigit().foregroundStyle(Palette.ink)
                             .lineLimit(1).minimumScaleFactor(0.7)
-                        Text(it.caption).font(.caption2).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
+                        Text(it.caption).font(.app(.caption2)).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .padding(.horizontal, 12).padding(.vertical, 10)
@@ -654,17 +655,17 @@ private struct StagesCard: View {
         let bars = stages.rows.flatMap { r in keys.map { Bar(date: r.date, stage: $0.label, hours: r.values[$0.key] ?? 0) } }
         VStack(alignment: .leading, spacing: 6) {
             CardTitle(text: stages.title)
-            Text(McFlyFormat.plural(stages.rows.count, "night", "nights")).font(.caption).foregroundStyle(Palette.ink3)
+            Text(McFlyFormat.plural(stages.rows.count, "night", "nights")).font(.app(.caption)).foregroundStyle(Palette.ink3)
             Chart(bars) { b in
                 BarMark(x: .value("Night", Fmt.chartDate(b.date), unit: .day), y: .value("Hours", b.hours))
                     .foregroundStyle(by: .value("Stage", b.stage))
             }
             .chartForegroundStyleScale(domain: keys.map(\.label), range: keys.map(\.color))
-            .chartLegend(position: .bottom, alignment: .leading)
+            .chartLegend(position: .bottom, alignment: .leading) { ChartLegend(keys.map { ($0.label, $0.color) }) }
             .chartYAxis {
                 AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { v in
                     AxisGridLine().foregroundStyle(Palette.grid)
-                    AxisValueLabel { if let h = v.as(Double.self) { Text("\(Fmt.number(h))h").font(.caption2).foregroundStyle(Palette.ink3) } }
+                    AxisValueLabel { if let h = v.as(Double.self) { Text("\(Fmt.number(h))h").font(.axis).foregroundStyle(Palette.ink3) } }
                 }
             }
             .chartXAxis { dateAxis(monthly: false) }

@@ -30,9 +30,37 @@ struct FoodEntry: Codable, Identifiable, Equatable {
 
 /// GET /api/nutrition/log: saved entries over the last few days, and McFly's estimate waiting for review.
 struct FoodLog: Codable {
-    struct Can: Codable {
-        let estimate: Bool
-        let usda: Bool
+    /// What this person can do here (shared/types.ts FoodLog['can']), read field by field: newer servers add who reads
+    /// an estimate and whether voice notes work, older ones send only the first two. The app's Availability keeps
+    /// the last one heard.
+    struct Can: Codable, Equatable {
+        /// McFly estimates: the person's own OpenAI, Claude or Gemini key, else the shared Claude key with a limit above 0.
+        var estimate = false
+        /// USDA search (the server has its key).
+        var usda = false
+        /// Who reads an estimate: "anthropic" | "openai" | "gemini"; nil when nobody can, and from older servers.
+        var estimateProvider: String?
+        /// "own" | "shared"; nil as above.
+        var estimateSource: String?
+        /// Voice notes can be written down (an OpenAI key); nil from older servers, which have none.
+        var voice: Bool?
+
+        private enum CodingKeys: String, CodingKey { case estimate, usda, estimateProvider, estimateSource, voice }
+
+        init(estimate: Bool = false, usda: Bool = false, estimateProvider: String? = nil, estimateSource: String? = nil, voice: Bool? = nil) {
+            self.estimate = estimate
+            self.usda = usda
+            self.estimateProvider = estimateProvider
+            self.estimateSource = estimateSource
+            self.voice = voice
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            func value<T: Decodable>(_ key: CodingKeys) -> T? { try? c.decodeIfPresent(T.self, forKey: key) }
+            self.init(estimate: value(.estimate) ?? false, usda: value(.usda) ?? false, estimateProvider: value(.estimateProvider),
+                      estimateSource: value(.estimateSource), voice: value(.voice))
+        }
     }
 
     let enabled: Bool
@@ -45,6 +73,32 @@ struct FoodLog: Codable {
     /// The estimate those drafts came from: saving or discarding names it, so a newer one (another device) is left alone.
     let draftBatch: String?
     let can: Can
+
+    var mode: NutritionMode { NutritionMode(rawValue: numbers ?? "") ?? .none }
+}
+
+/// One day of the food log (POST /api/nutrition/log/day {date}, shared/foodday.ts FoodDay): the Nutrition page's Today
+/// view, for any day in the last year. Named apart from FoodDay, which is one day of GET /api/nutrition's totals. The
+/// date goes in the body, never the address. nil from a server older than it (APIClient.foodLogDay): fall back to the
+/// Log tab's GET /api/nutrition/log.
+struct FoodLogDay: Codable {
+    /// "all" | "no_energy" | "none".
+    let numbers: String?
+    /// Today in the person's time zone: the latest day that can be viewed.
+    let today: String
+    /// The day shown.
+    let date: String
+    /// That day's saved entries, by time, each as the person's setting allows.
+    @LossyArray var entries: [FoodEntry]
+    /// McFly's estimate waiting for review, whichever day it's for (one waits at a time).
+    @LossyArray var drafts: [FoodEntry]
+    let draftBatch: String?
+    /// The day's saved entries added up, filtered like each entry: never energy in "no_energy", empty in "none".
+    @Lossy var balance: [String: Double]?
+    /// The app whose totals count for this day ("healthOS" for this log, or a Health app such as MyFitnessPal); nil when
+    /// nothing was logged anywhere. Apps are never added together.
+    let countedApp: String?
+    @Lossy var can: FoodLog.Can?
 
     var mode: NutritionMode { NutritionMode(rawValue: numbers ?? "") ?? .none }
 }
@@ -119,6 +173,11 @@ enum FoodText {
 
     static func portion(_ label: String, quantity: Double) -> String {
         quantity == 1 ? label : "\(quantityText(quantity)) × \(label.isEmpty ? "portion" : label)"
+    }
+
+    /// A typed number, either decimal separator ("1,5" is 1.5); nil when it isn't one.
+    static func number(_ raw: String) -> Double? {
+        Double(raw.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ",", with: "."))
     }
 
     /// 2 -> "2", 1.5 -> "1.5", 0.33333 -> "0.33".
@@ -299,7 +358,8 @@ extension Error {
     /// The server's own words for a refused request ("Turn on Nutrition to log food."), else the usual description.
     var foodMessage: String {
         switch self as? APIError {
-        case .server(_, let message)?, .misconfigured(let message)?: message
+        case .server(_, let message)? where !message.isEmpty: message
+        case .misconfigured(let message)?: message
         default: localizedDescription
         }
     }
@@ -312,16 +372,8 @@ extension Error {
 enum FoodPhoto {
     static let longEdge: CGFloat = 1280
 
+    /// Drawn upright, as every photo the app sends (PhotoPipeline).
     static func jpeg(from image: UIImage, quality: CGFloat = 0.85) -> Data? {
-        let size = image.size
-        guard size.width > 0, size.height > 0 else { return nil }
-        let scale = min(1, longEdge / max(size.width, size.height))
-        let target = CGSize(width: (size.width * scale).rounded(), height: (size.height * scale).rounded())
-        let format = UIGraphicsImageRendererFormat()
-        // Pixels, not points: the screen's scale would make 1,280 into 3,840.
-        format.scale = 1
-        format.opaque = true
-        let resized = UIGraphicsImageRenderer(size: target, format: format).image { _ in image.draw(in: CGRect(origin: .zero, size: target)) }
-        return resized.jpegData(compressionQuality: quality)
+        PhotoPipeline.prepare(image, longEdge: Int(longEdge), quality: quality)?.jpeg
     }
 }

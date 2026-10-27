@@ -2,12 +2,12 @@ import Foundation
 import UserNotifications
 
 extension Notification.Name {
-    /// Posted when the weekly digest notification is tapped, so the app opens the Insights tab.
+    /// Posted when the weekly digest notification is tapped, so the app opens Insights (under More).
     static let openWeeklyDigest = Notification.Name("openWeeklyDigest")
 }
 
 /// A local reminder every Monday at 09:00 that last week's digest is ready. The phone schedules it on its own;
-/// McFly writes the digest when the Insights tab opens, so nothing health-related is in the notification.
+/// McFly writes the digest when Insights opens, so nothing health-related is in the notification.
 enum DigestNotifications {
     static let id = "weekly-digest"
     private static let key = "digestNotification"

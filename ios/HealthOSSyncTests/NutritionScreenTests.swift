@@ -64,9 +64,8 @@ final class NutritionScreenTests: XCTestCase {
         XCTAssertEqual(d.nutritionMode, .noEnergy)
         XCTAssertTrue(d.nutritionAvailable)
         XCTAssertEqual(d.status?.settings?.nutritionTargets, NutritionTargets(energy_kcal: nil, protein_g: 120, water_ml: nil))
-        // Its own tab now: Trends has no Nutrition section, and a "nutrition" page isn't one of Trends'.
-        XCTAssertEqual(TrendsSection.visible(cycleTracking: true), [.vitals, .sleep, .activity, .body, .cycle])
-        XCTAssertNil(TrendsSection(page: "nutrition"))
+        // Its own tab: a link to the "nutrition" page opens it.
+        XCTAssertEqual(AppRoute(page: "nutrition")?.page.tab, .nutrition)
 
         // Turned off on the web: the tab offers to turn it on again.
         d.apply(status: try status(#"{"units":"metric","nutrition":false,"nutritionNumbers":"all"}"#))
@@ -82,18 +81,6 @@ final class NutritionScreenTests: XCTestCase {
         d.apply(status: try status(#"{"units":"metric"}"#))
         XCTAssertNil(d.nutritionMode)
         XCTAssertFalse(d.nutritionAvailable)
-    }
-
-    func testSettingsOpensOverTheTabThatAskedForIt() {
-        let d = Dashboard()
-        d.tab = .nutrition
-        d.tab = .settings
-        XCTAssertEqual(d.tab, .nutrition, "the tab underneath stays")
-        XCTAssertTrue(d.showingSettings)
-        d.showingSettings = false
-        d.tab = .trends
-        XCTAssertFalse(d.showingSettings)
-        XCTAssertEqual(d.tab, .trends)
     }
 
     func testTheChoicesAreTheWebsInItsOrder() {
@@ -166,19 +153,28 @@ final class NutritionScreenTests: XCTestCase {
         XCTAssertTrue(FoodMath.parts(FoodDay(date: "2026-10-19", app: "X", values: ["energy_kcal": 900], otherApps: [])).isEmpty)
     }
 
-    func testNoAmountsMeansOnlyTheOverviewAndTheLog() {
-        // The web's tabs: Overview, Log, Macros, Hydration; with no amounts, Overview and Log.
-        XCTAssertEqual(NutritionTab.visible(.none), [.overview, .log])
-        XCTAssertEqual(NutritionTab.visible(.noEnergy), [.overview, .log, .macros, .hydration])
-        XCTAssertEqual(NutritionTab.visible(.all), [.overview, .log, .macros, .hydration])
-        // A server without the food log (404): no Log tab.
-        XCTAssertEqual(NutritionTab.visible(.all, logging: false), [.overview, .macros, .hydration])
-        XCTAssertEqual(NutritionTab.visible(.none, logging: false), [.overview])
+    func testNoAmountsMeansNoMacrosOrHydration() {
+        // The web's views: Today, Trends, Macros, Hydration, Log; with no amounts, Today, Trends and Log.
+        XCTAssertEqual(NutritionTab.visible(.none), [.today, .trends, .log])
+        XCTAssertEqual(NutritionTab.visible(.noEnergy), [.today, .trends, .macros, .hydration, .log])
+        XCTAssertEqual(NutritionTab.visible(.all), [.today, .trends, .macros, .hydration, .log])
+        // A server without the food log (404): no Today or Log.
+        XCTAssertEqual(NutritionTab.visible(.all, logging: false), [.trends, .macros, .hydration])
+        XCTAssertEqual(NutritionTab.visible(.none, logging: false), [.trends])
     }
 
-    func testTargetRangesAreTheServers() {
-        // TARGET_RANGE in server/query.ts: a value outside is left as it was there, so the app refuses it first.
-        XCTAssertEqual(NutritionTargetField.all.map(\.key), ["energy_kcal", "protein_g", "water_ml"])
-        XCTAssertEqual(NutritionTargetField.all.map(\.range), [500...10_000, 10...500, 250...8_000])
+    func testTheAverageDayCountsOnlyTheDaysEachWasLogged() throws {
+        // AverageCard in src/pages/Nutrition.tsx: a day without a nutrient doesn't count as zero.
+        let days = [FoodDay(date: "2026-10-17", app: "X", values: ["protein_g": 100, "fiber_g": 20], otherApps: []),
+                    FoodDay(date: "2026-10-18", app: "X", values: ["protein_g": 120], otherApps: []),
+                    FoodDay(date: "2026-10-19", app: "X", values: ["protein_g": 110, "carbs_g": 200], otherApps: [])]
+        let avg = FoodAverageCard.averages(days)
+        XCTAssertEqual(avg["protein_g"], 110)
+        XCTAssertEqual(avg["fiber_g"], 20)
+        XCTAssertEqual(avg["carbs_g"], 200)
+        XCTAssertNil(avg["fat_g"])
+        let all = try fixture("nutrition-all")
+        XCTAssertEqual(FoodAverageCard.averages(all.days).keys.sorted(), FoodMath.order.filter { n in all.days.contains { $0.values[n] != nil } }.sorted())
+        XCTAssertNil(FoodAverageCard.averages(try fixture("nutrition-no-energy").days)["energy_kcal"], "never energy in no_energy")
     }
 }

@@ -312,6 +312,8 @@ actor SyncEngine {
         do {
             guard Health.shared.isAvailable else { throw SyncError("Health data isn't available on this device.") }
             guard let base = Config.serverURL() else { throw SyncError("Enter the healthOS server URL.") }
+            // Signed out: the token may be someone else's account now (IngestTokenOwner).
+            guard !Config.ingestOwner.paused else { throw SyncError("Signed out: this iPhone's Health data waits until someone signs in.") }
             let token = Config.token
             guard !token.isEmpty else { throw SyncError("Paste your ingest token from the dashboard: Integrations → iPhone app.") }
 
@@ -446,7 +448,8 @@ actor SyncEngine {
     /// Sends the next few weeks of the backfill queue, newest first. Returns whether more remain and it went fine.
     private func backfillPass() async -> Bool {
         var state = SyncState.load()
-        guard !state.backfill.isEmpty, let base = Config.serverURL(), !Config.token.isEmpty, state.server == base.absoluteString else { return false }
+        guard !state.backfill.isEmpty, let base = Config.serverURL(), !Config.token.isEmpty, !Config.ingestOwner.paused,
+              state.server == base.absoluteString else { return false }
         let foodBefore = state.foodNutrients.map(\.name)
         defer { if state.foodNutrients.map(\.name) != foodBefore { Task { await Background.reobserve() } } }
         let client = IngestClient(base: base, token: Config.token)
@@ -480,10 +483,19 @@ actor SyncEngine {
         return !state.backfill.isEmpty
     }
 
-    /// Every push goes through `SyncState.push`, which leaves out rows the server wouldn't take.
+    /// Every push goes through `SyncState.push`, which leaves out rows the server wouldn't take. A sync sends many
+    /// pushes; one about to go after a sign-out, or after its token was removed or replaced, stops it instead, and
+    /// the days left stay queued for the next sync.
     @discardableResult
     private func push(_ payload: IngestPayload, via client: IngestClient, state: inout SyncState) async throws -> (reply: IngestClient.Response, rows: Int) {
-        try await state.push(payload, send: client.send)
+        guard Self.maySend(with: client.token) else { throw SyncError("Stopped: signed out, or the ingest token changed, while this sync ran.") }
+        return try await state.push(payload, send: client.send)
+    }
+
+    /// A push may still go with `token`, the one its sync started with: the sync isn't paused (IngestTokenOwner), and
+    /// the token here is still that one.
+    static func maySend(with token: String, owner: IngestTokenOwner = Config.ingestOwner, current: String = Config.token) -> Bool {
+        !owner.paused && current == token
     }
 
     private static func describe(_ error: Error) -> String {

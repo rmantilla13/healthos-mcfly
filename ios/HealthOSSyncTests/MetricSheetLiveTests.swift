@@ -1,0 +1,102 @@
+import SwiftUI
+import XCTest
+@testable import HealthOSSync
+
+/// The sheet against a running server, presented as the shell presents it, for looking at by eye until Home's cards
+/// open it (slice B). Only when asked for: TEST_RUNNER_METRIC_SHEET_SERVER (a scratch server on this Mac, never the
+/// hosted one), TEST_RUNNER_METRIC_SHEET_SESSION_FILE (a file holding a session for it: a curl cookie jar, or the
+/// cookie's value alone; only its path is passed, so the session never lands in a test log) and
+/// TEST_RUNNER_METRIC_SHEET_SHOTS (where the PNGs go). Otherwise every test here is skipped. The session and the server
+/// address are put back as they were after.
+@MainActor
+final class MetricSheetLiveTests: XCTestCase {
+    private var folder: URL!
+    private var savedServer: String?
+
+    override func setUp() async throws {
+        let env = ProcessInfo.processInfo.environment
+        guard let server = env["METRIC_SHEET_SERVER"], let file = env["METRIC_SHEET_SESSION_FILE"], let shots = env["METRIC_SHEET_SHOTS"],
+              let url = URL(string: server), ["localhost", "127.0.0.1"].contains(url.host() ?? "") else {
+            throw XCTSkip("Set TEST_RUNNER_METRIC_SHEET_SERVER (a local server), _SESSION_FILE and _SHOTS to draw the sheet against it.")
+        }
+        let text = try String(contentsOfFile: file, encoding: .utf8)
+        // A curl cookie jar's line ends with the cookie's name and value; a file of its own is the value.
+        let jar = text.split(separator: "\n").map { $0.split(separator: "\t") }.first { $0.count >= 7 && $0[5] == SessionStore.name }
+        let session = jar.map { String($0[6]) } ?? text.trimmingCharacters(in: .whitespacesAndNewlines)
+        folder = URL(fileURLWithPath: shots)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        savedServer = UserDefaults.standard.string(forKey: "serverURL")
+        Config.serverText = server
+        let base = try XCTUnwrap(Config.serverURL())
+        SessionStore.update(from: "\(SessionStore.name)=\(session); Path=/; HttpOnly", url: base, base: base)
+        XCTAssertNotNil(SessionStore.cookie(for: base))
+    }
+
+    override func tearDown() async throws {
+        guard folder != nil else { return }
+        SessionStore.clear()
+        if let savedServer { Config.serverText = savedServer } else { UserDefaults.standard.removeObject(forKey: "serverURL") }
+    }
+
+    /// Presents the sheet over a page (`over`, Home unless said), as the shell does, waits for the server, and keeps a
+    /// picture of the screen.
+    private func show(_ request: MetricRequest, _ name: String, over: AppRoute? = nil, dark: Bool = false, size: DynamicTypeSize = .large,
+                      wait: Double = 3) async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let dashboard = Dashboard()
+        if let over { dashboard.open(over) }
+        let host = UIHostingController(rootView: AnyView(Presenter(request: request).environment(dashboard).environment(\.dynamicTypeSize, size)))
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 402, height: 874)
+        window.overrideUserInterfaceStyle = dark ? .dark : .light
+        // A sheet takes its text size from the window's traits, not from the presenting view's environment.
+        if size != .large { window.traitOverrides.preferredContentSizeCategory = UIContentSizeCategory(size) }
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        try await Task.sleep(for: .seconds(wait))
+        XCTAssertEqual(dashboard.phase == .signIn, false, "the session was taken")
+        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            _ = window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+        window.rootViewController?.dismiss(animated: false)
+        window.isHidden = true
+        try XCTUnwrap(image.pngData()).write(to: folder.appendingPathComponent("live-\(name)-\(dark ? "dark" : "light")\(size == .large ? "" : "-\(size)").png"))
+    }
+
+    private struct Presenter: View {
+        let request: MetricRequest
+        @State private var shown: MetricRequest?
+
+        var body: some View {
+            Palette.page.ignoresSafeArea()
+                .sheet(item: $shown) { MetricSheetView(request: $0) }
+                .onAppear { shown = request }
+        }
+    }
+
+    func testTheSheetsAgainstTheServer() async throws {
+        let cases: [(MetricRequest, String, AppRoute?)] = [
+            (MetricRequest(key: .hrv, section: "Your signals", page: .vitals), "hrv", nil),
+            (MetricRequest(key: .restingHr, section: "Your signals", page: .vitals, range: .week), "rhr-week", nil),
+            (MetricRequest(key: .steps, section: "Body", page: .activity, range: .day), "steps-day", .body),
+            (MetricRequest(key: .steps, section: "Your signals", page: .activity), "steps", nil),
+            (MetricRequest(key: .heartRate, section: "Body", page: .vitals), "heart-rate", nil),
+            (MetricRequest(key: .sleepHours, section: "Your signals", page: .sleep, range: .year), "sleep-year", nil),
+            (MetricRequest(key: .sleepEfficiency, section: "Sleep", page: AppRoute(.sleep, query: ["tab": "trends"])), "sleep-efficiency", nil),
+            (MetricRequest(key: .glucose, section: "Body", page: .body), "glucose", nil),
+            (MetricRequest(key: .leanMass, section: "Body", page: .body), "lean-mass", nil),
+            (MetricRequest(key: .vo2max, section: "Body", page: AppRoute(.body, query: ["tab": "cardiovascular"])), "vo2max", nil),
+            (MetricRequest(key: .recovery, section: "Your signals", page: AppRoute(.body, query: ["tab": "recovery"])), "recovery", nil),
+        ]
+        for (request, name, over) in cases {
+            try await show(request, name, over: over)
+            try await show(request, name, over: over, dark: true)
+        }
+    }
+
+    func testTheLargestTextSize() async throws {
+        try await show(MetricRequest(key: .hrv, section: "Your signals", page: .vitals), "hrv", size: .accessibility5)
+        try await show(MetricRequest(key: .steps, section: "Your signals", page: .activity), "steps", size: .accessibility5)
+        try await show(MetricRequest(key: .glucose, section: "Body", page: .body), "glucose", size: .accessibility5)
+    }
+}

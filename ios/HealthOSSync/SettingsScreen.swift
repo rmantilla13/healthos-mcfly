@@ -1,70 +1,128 @@
-import PhotosUI
 import SwiftUI
 
-/// Server, sign-in, and the Apple Health sync that feeds the dashboard.
-struct SettingsScreen: View {
+/// Profile (src/pages/Profile.tsx, the web's #/profile and #/settings), under More and in the account menu: a "Your
+/// profile" card of rows (how you're shown, your AI, account, sources, the export, privacy, signing out), a "Your
+/// settings" card whose rows each open a sheet (units and goal, cards, the Family board, cycle tracking, nutrition),
+/// then the two cards that open in place, your age-group comparison and your portrait photos. Under them, "This
+/// iPhone": the server, the Apple Health sync and the rest only the iPhone has. Shown in every phase, so the server
+/// address can be changed before sign-in; the person's own parts only while someone's signed in. `query` is the web's:
+/// ?connect=openai or ?connect=chatbot opens that key sheet once, as the web's links do.
+struct ProfileScreen: View {
+    var query: [String: String] = [:]
     @Environment(AppModel.self) private var model
     @Environment(Dashboard.self) private var dashboard
     @State private var confirmReupload = false
     @State private var confirmSample = false
+    @State private var sheet: ProfileSheet?
+    /// The sheet last shown, for what its closing does.
+    @State private var shown: ProfileSheet?
+    /// The link acted on (`linkRequest`): its sheet opens once, not each time Profile shows again, and again only when
+    /// the same link is opened anew.
+    @State private var linkHandled: Int?
 
     var body: some View {
-        NavigationStack {
-            // One section per view: a single Form builder this size is too slow for the Release type checker.
-            Form {
-                ServerSection()
-                if dashboard.phase == .ready { PhotoSection() }
-                // Servers with card hiding name the list (nil from older ones, where every card shows).
-                if dashboard.phase == .ready, dashboard.cardsAvailable { CardsSection() }
-                // Servers with the Family board name the setting; it needs sign-in, so each person has their own account.
-                if dashboard.phase == .ready, dashboard.status?.settings?.familySharing != nil, dashboard.authMode != "open" { FamilySection() }
-                if dashboard.phase == .ready, let mode = dashboard.nutritionMode, mode != .none { NutritionTargetsSection(mode: mode) }
-                SyncSection()
-                HealthSection()
-                if dashboard.phase == .ready || DigestNotifications.enabled { DigestSection() }
-                #if targetEnvironment(simulator)
-                Section {
-                    Button("Add sample Health data") { confirmSample = true }
-                        .disabled(model.working)
-                        .accessibilityIdentifier("addSampleData")
-                } header: {
-                    Text("Simulator")
-                } footer: {
-                    Text("Fake data for testing. Use a scratch server only, never your real dashboard.")
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                // Never the last person's: only while someone's signed in (or a server without sign-in is connected).
+                if dashboard.phase == .ready, let settings = dashboard.status?.settings {
+                    ProfileYoursCard(settings: settings) { sheet = $0 }
+                    ProfileSettingsCard(settings: settings) { sheet = $0 }
+                    PeersSection()
+                    // "Use a photo as is" (PhotoSection) is inside the portrait photos, not a card of its own here.
+                    PortraitPhotosSection()
                 }
-                #endif
-                Section {
-                    Button("Upload all history again", role: .destructive) { confirmReupload = true }
-                        .disabled(model.syncing)
-                } footer: {
-                    Text("Use this after clearing Apple Health data on the server, or after deleting old entries in Health.")
-                }
+                ProfileThisIPhone(confirmSample: { confirmSample = true }, confirmReupload: { confirmReupload = true })
             }
-            .navigationTitle("Settings")
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dashboard.showingSettings = false }
-                        .accessibilityIdentifier("settingsDone")
+            .padding(.horizontal, 16)
+            .padding(.vertical, 16)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Palette.page)
+        .keyboardDismissal()
+        .sheet(item: $sheet, onDismiss: closed) { sheet in
+            Group {
+                switch sheet {
+                case .chatbot: ChatbotSheet(onClose: close)
+                case .openai: OpenAIKeySheet(onClose: close)
+                case .basics: ProfileBasicsSheet(settings: dashboard.status?.settings, close: close)
+                case .cards: ProfileCardsSheet(close: close)
+                case .family: ProfileFamilySheet(close: close)
+                case .cycle: ProfileCycleSheet(close: close)
+                case .nutrition: ProfileNutritionSheet(close: close)
                 }
             }
-            .keyboardDismissal()
-            .alert(model.notice ?? "", isPresented: noticeShown) {
-                Button("OK", role: .cancel) {}
-            }
-            #if targetEnvironment(simulator)
-            .confirmationDialog("Add fake Health data?", isPresented: $confirmSample, titleVisibility: .visible) {
-                Button("Add sample data", role: .destructive) { Task { await model.addSampleData() } }
-            } message: {
-                Text(sampleWarning)
-            }
-            #endif
-            .confirmationDialog("Upload all history again?", isPresented: $confirmReupload, titleVisibility: .visible) {
-                Button("Upload all history") { Task { await model.uploadAllHistory() } }
-            } message: {
-                Text("Every day back to \"\(model.history.label)\" is read from Health and sent again. Nothing is deleted.")
-            }
+            .environment(model)
+            .environment(dashboard)
+        }
+        .onChange(of: sheet) { _, now in
+            if let now { shown = now }
+        }
+        // Signed out (Sign out, a 401) or the server gone: no sheet stays up on the last person's settings or keys.
+        // (An export on its way stops by itself, wherever the app is: ProfileExportJob.)
+        .onChange(of: dashboard.phase) { _, phase in
+            if phase != .ready { sheet = nil }
+        }
+        // Again once the settings come (the status can land after the phase is ready) and once the server has said
+        // whether it has keys at all.
+        .task(id: "\(dashboard.phase == .ready)|\(dashboard.status?.settings != nil)|\(ProfileSheet.aiKnown(dashboard.availability.ai))|\(linkRequest)") {
+            await openLinked()
+        }
+        .alert(model.notice ?? "", isPresented: noticeShown) {
+            Button("OK", role: .cancel) {}
+        }
+        #if targetEnvironment(simulator)
+        .confirmationDialog("Add fake Health data?", isPresented: $confirmSample, titleVisibility: .visible) {
+            Button("Add sample data", role: .destructive) { Task { await model.addSampleData() } }
+        } message: {
+            Text(sampleWarning)
+        }
+        #endif
+        .confirmationDialog("Upload all history again?", isPresented: $confirmReupload, titleVisibility: .visible) {
+            Button("Upload all history") { Task { await model.uploadAllHistory() } }
+        } message: {
+            Text("Every day back to \"\(model.history.label)\" is read from Health and sent again. Nothing is deleted.")
         }
         .onDisappear { Task { await dashboard.startIfNeeded() } }
+    }
+
+    private func close() { sheet = nil }
+
+    /// Which opening of this Profile's link this is: the link's own request (`Dashboard.open`), so the same link opened
+    /// again while Profile is still up (its path doesn't change) is a new one; 0 when Profile wasn't opened by a link.
+    private var linkRequest: Int {
+        guard let request = dashboard.request(for: .profile), request.route.query == query else { return 0 }
+        return request.id
+    }
+
+    /// A key sheet closed: what the person's AI uses is read again, as the web's closeAi.
+    private func closed() {
+        if shown == .chatbot || shown == .openai { Task { await dashboard.loadAI(force: true) } }
+        shown = nil
+    }
+
+    /// ?connect=openai (Nutrition's setup line) or ?connect=chatbot: that sheet, once, as soon as someone's signed in
+    /// and their settings are here, and not on a server too old for keys. Whether it has them is asked first
+    /// (GET /api/ai); a read that fails says nothing either way, so the sheet opens and says what it can.
+    private func openLinked() async {
+        let request = linkRequest
+        guard linkHandled != request, ProfileSheet.linked(query) != nil else { return }
+        let ready = dashboard.phase == .ready
+        let settings = dashboard.status?.settings != nil
+        var asked = false
+        if ready, settings, dashboard.availability.ai == .unknown {
+            await dashboard.loadAI()
+            // The answer changed what this task looks at: the next one decides.
+            if Task.isCancelled { return }
+            asked = true
+        }
+        switch ProfileSheet.link(query, ready: dashboard.phase == .ready, settings: dashboard.status?.settings != nil,
+                                 ai: dashboard.availability.ai, asked: asked) {
+        case .none, .wait: break
+        case .drop: linkHandled = request
+        case .open(let linked):
+            linkHandled = request
+            sheet = linked
+        }
     }
 
     private var noticeShown: Binding<Bool> {
@@ -77,577 +135,153 @@ struct SettingsScreen: View {
     }
 }
 
-private struct ServerSection: View {
-    @Environment(AppModel.self) private var model
+/// The sheets Profile opens.
+enum ProfileSheet: String, Identifiable {
+    case chatbot, openai, basics, cards, family, cycle, nutrition
+    var id: String { rawValue }
+
+    /// The sheets other pages open by link (the web's LINKED): #/profile?connect=openai or ?connect=chatbot.
+    static func linked(_ query: [String: String]) -> ProfileSheet? {
+        switch query["connect"] {
+        case "openai": .openai
+        case "chatbot": .chatbot
+        default: nil
+        }
+    }
+
+    /// What a ?connect= link does now.
+    enum Link: Equatable {
+        /// No link.
+        case none
+        /// Not yet: nobody's signed in, the settings haven't come, or whether the server has keys hasn't been asked.
+        case wait
+        /// Open its sheet, once.
+        case open(ProfileSheet)
+        /// Never: the server is older than own keys.
+        case drop
+    }
+
+    /// The link's sheet once someone's signed in with their settings here and the server has said it has keys, or a
+    /// read of that has been tried and failed (unknown isn't "not there"). A server that answered it has no keys
+    /// (GET /api/ai is a 404) never opens it.
+    static func link(_ query: [String: String], ready: Bool, settings: Bool, ai: Availability.Read<AiStatus>, asked: Bool) -> Link {
+        guard let linked = linked(query) else { return .none }
+        guard ready, settings else { return .wait }
+        switch ai {
+        case .missing: return .drop
+        case .known: return .open(linked)
+        case .unknown: return asked ? .open(linked) : .wait
+        }
+    }
+
+    /// For the task that decides: whether the server's answer about keys is in yet.
+    static func aiKnown(_ ai: Availability.Read<AiStatus>) -> String {
+        switch ai {
+        case .unknown: "unknown"
+        case .missing: "missing"
+        case .known: "known"
+        }
+    }
+}
+
+/// "Your profile": how you're shown, your AI, your account, your sources, the export, privacy, and signing out.
+private struct ProfileYoursCard: View {
+    let settings: ServerStatus.Settings
+    let open: (ProfileSheet) -> Void
     @Environment(Dashboard.self) private var dashboard
 
     var body: some View {
-        @Bindable var model = model
-        Section {
-            TextField("https://health.mcfly.bot", text: $model.serverText)
-                .keyboardType(.URL)
-                .textContentType(.URL)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .submitLabel(.done)
-                .onSubmit { Task { await dashboard.start() } }
-                .accessibilityIdentifier("serverURL")
-            LabeledContent("Dashboard", value: accountText)
-            if dashboard.phase == .signIn {
-                Button("Sign in") {
-                    dashboard.showingSettings = false
-                    dashboard.tab = .today
-                }
-            } else if dashboard.authMode == "required", dashboard.phase == .ready {
-                Button("Sign out", role: .destructive) { Task { await dashboard.signOut() } }
-            }
-        } header: {
-            Text("Server")
-        } footer: {
-            Text("The dashboard reads from your healthOS server, which merges Apple Health with WHOOP.")
-        }
-    }
-
-    private var accountText: String {
-        switch dashboard.phase {
-        case .starting: "Connecting…"
-        case .noServer: "No server"
-        case .signIn: "Signed out"
-        case .unavailable: "Unavailable"
-        case .ready:
-            // A server with sign-in off reports a placeholder owner with no email.
-            if dashboard.authMode == "required", let email = dashboard.account?.email, !email.isEmpty { "Signed in as \(email)" }
-            else { dashboard.authMode == "required" ? "Signed in" : "Connected" }
-        }
-    }
-}
-
-private struct SyncSection: View {
-    @Environment(AppModel.self) private var model
-
-    var body: some View {
-        @Bindable var model = model
-        Section {
-            Button {
-                Task { await model.syncAll(force: true) }
-            } label: {
-                HStack {
-                    Text("Sync now").bold()
-                    Spacer()
-                    if model.syncingSources { ProgressView() }
+        let availability = dashboard.availability
+        // A server older than own keys (no GET /api/ai) has no key sheets, and, from the same change, no export.
+        let keys = !availability.aiMissing
+        let signedIn = dashboard.signOutOffered
+        let openAIKey = availability.ai.value?.key("openai")
+        ProfileCard("Your profile") {
+            // Only where the status names how you're shown: an older server ignores what the welcome saves.
+            if settings.perspective != nil {
+                ProfileRow("Your profile & perspective") {
+                    Text(ProfileWords.perspective(settings, drawn: FigureVariant.of(settings).drawn))
+                    Text(ProfileWords.peers(settings))
+                } action: {
+                    Button("Edit preferences") { dashboard.open(.welcome) }
+                        .buttonStyle(ProfilePillStyle())
+                        .accessibilityIdentifier("editPreferences")
                 }
             }
-            .disabled(model.syncingSources || !model.serverValid)
-            .accessibilityIdentifier("syncNow")
-            if model.syncingSources, !model.progress.isEmpty {
-                Text(model.progress).font(.footnote).foregroundStyle(.secondary)
-            }
-            LastSyncRows(status: model.sources, report: model.last)
-            if model.backfillLeft > 0 {
-                Label("Sending older history: \(model.backfillLeft) day\(model.backfillLeft == 1 ? "" : "s") left. Continues while the app is open.", systemImage: "clock.arrow.circlepath")
-                    .font(.footnote).foregroundStyle(.secondary)
-            }
-            SecureField("Ingest token", text: $model.token)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .submitLabel(.done)
-                .accessibilityIdentifier("token")
-            Button("Test connection") { Task { await model.testConnection() } }
-                .disabled(!model.serverValid || model.token.isEmpty || model.working)
-        } header: {
-            Text("Sync")
-        } footer: {
-            Text("One tap syncs both: this iPhone's Apple Health data goes to your account, and the server refreshes WHOOP. It also runs when you open the app. Get your ingest token on the dashboard under Integrations → iPhone app.")
-        }
-    }
-}
-
-private struct LastSyncRows: View {
-    let status: SourcesSyncStatus?
-    let report: SyncReport?
-
-    var body: some View {
-        if let status {
-            LabeledContent("Last sync") {
-                Text(status.finishedAt, format: .relative(presentation: .named))
-            }
-            Label(status.summary, systemImage: status.ok ? "checkmark.circle" : "exclamationmark.triangle")
-                .foregroundStyle(status.ok ? Color.secondary : Color.red)
-                .font(.footnote)
-                .accessibilityIdentifier("lastResult")
-            ForEach(status.notes, id: \.self) { Text($0).font(.footnote).foregroundStyle(.secondary) }
-        } else if let report {
-            // Before the first combined sync this launch: the last Apple Health push (possibly from the background).
-            LabeledContent("Apple Health") {
-                Text(report.finishedAt, format: .relative(presentation: .named))
-            }
-            Label(report.message, systemImage: report.ok ? "checkmark.circle" : "exclamationmark.triangle")
-                .foregroundStyle(report.ok ? Color.secondary : Color.red)
-                .font(.footnote)
-        } else {
-            LabeledContent("Last sync", value: "Never")
-        }
-    }
-}
-
-private struct HealthSection: View {
-    @Environment(AppModel.self) private var model
-
-    var body: some View {
-        @Bindable var model = model
-        Section {
-            if !model.healthRequested {
-                Button("Allow Health access") { Task { await model.requestHealthAccess() } }
-            }
-            Toggle("Sync in the background", isOn: $model.backgroundSync)
-            Picker("First upload covers", selection: $model.history) {
-                ForEach(History.allCases) { Text($0.label).tag($0) }
-            }
-        } header: {
-            Text("Health data")
-        } footer: {
-            Text("Background sync runs when Health gets new data, as often as iOS allows (hourly for steps). Health data can't be read while the phone is locked.")
-        }
-    }
-}
-
-/// The person's own nutrition targets, each optional and blank by default, only while Nutrition is on with amounts
-/// shown (calories only when those are shown too). A target is a plain line on the charts, never a score.
-private struct NutritionTargetsSection: View {
-    let mode: NutritionMode
-    @Environment(Dashboard.self) private var dashboard
-    /// What's being typed, by key; nil shows the server's value.
-    @State private var drafts: [String: String] = [:]
-    @State private var error: String?
-    @FocusState private var focus: String?
-
-    var body: some View {
-        Section {
-            ForEach(NutritionTargetField.all.filter { $0.key != "energy_kcal" || mode == .all }) { f in
-                LabeledContent(f.label) {
-                    HStack(spacing: 6) {
-                        TextField("None", text: Binding(get: { drafts[f.key] ?? current(f.key) }, set: { drafts[f.key] = $0.filter(\.isNumber) }))
-                            .keyboardType(.numberPad)
-                            .multilineTextAlignment(.trailing)
-                            .focused($focus, equals: f.key)
-                            .frame(maxWidth: 110)
-                            .accessibilityLabel("\(f.label) target in \(f.unit)")
-                            .accessibilityIdentifier("target-\(f.key)")
-                        Text(f.unit).foregroundStyle(.secondary)
-                    }
+            if keys {
+                ProfileRow("Chatbot") {
+                    Text(ProfileWords.chatbot(byok: availability.byok))
+                    if let own = ProfileWords.ownChat(availability.ai.value) { Text(own) }
+                } action: {
+                    Button("Manage chatbot AI") { open(.chatbot) }
+                        .buttonStyle(ProfilePillStyle())
+                        .accessibilityIdentifier("manageChatbot")
                 }
             }
-            if let error { Text(error).font(.footnote).foregroundStyle(.red) }
-        } header: {
-            Text("Nutrition targets")
-        } footer: {
-            Text("Optional. Leave blank for none. A target you set shows as a plain line on your Nutrition charts, nothing more.")
-        }
-        // Saved when the field is left (or the keyboard's Done), like the web's on blur.
-        .onChange(of: focus) { old, _ in
-            if let old { commit(old) }
-        }
-    }
-
-    private func current(_ key: String) -> String {
-        let t = dashboard.status?.settings?.nutritionTargets
-        let v = key == "energy_kcal" ? t?.energy_kcal : key == "protein_g" ? t?.protein_g : t?.water_ml
-        return v.map { String(Int($0.rounded())) } ?? ""
-    }
-
-    private func commit(_ key: String) {
-        guard let draft = drafts[key], let field = NutritionTargetField.all.first(where: { $0.key == key }) else { return }
-        guard draft != current(key) else { drafts[key] = nil; return }
-        let value = draft.isEmpty ? nil : Double(draft)
-        // The server leaves a value out of range as it was, which would look saved: say so here instead.
-        if let value, !field.range.contains(value) {
-            error = "\(field.label): between \(Fmt.number(field.range.lowerBound)) and \(Fmt.number(field.range.upperBound)) \(field.unit), or blank for none."
-            return
-        }
-        error = nil
-        Task {
-            do {
-                try await dashboard.setNutritionTarget(key, value)
-                drafts[key] = nil
-            } catch {
-                self.error = "Couldn't save: \(error.localizedDescription)"
+            ProfileAccountRow()
+            if keys {
+                ProfileRow("OpenAI · Nutrition & portraits") {
+                    Text(ProfileWords.openAI(byok: availability.byok))
+                    if let openAIKey { Text(ProfileWords.openAIConnected(last4: openAIKey.last4)).foregroundStyle(Palette.accentText) }
+                } action: {
+                    Button(openAIKey == nil ? "Connect AI key" : "Manage AI key") { open(.openai) }
+                        .buttonStyle(ProfilePillStyle())
+                        .accessibilityIdentifier("manageOpenAI")
+                }
+            }
+            ProfileRow("Connected sources", lines: ["Manage what comes into your health profile."]) {
+                Button("Manage sources") { dashboard.open(.integrations) }
+                    .buttonStyle(ProfilePillStyle())
+                    .accessibilityIdentifier("manageSources")
+            }
+            if keys { ProfileExportRow() }
+            ProfileRow("Privacy & data use", lines: ["Understand how files, food descriptions and recordings are handled."], divider: signedIn) {
+                Button("Read details") { dashboard.showWeb("privacy.html") }
+                    .buttonStyle(ProfilePillStyle())
+                    .accessibilityHint("Opens the privacy page")
+                    .accessibilityIdentifier("privacyDetails")
+            }
+            if signedIn {
+                ProfileRow("End your session", lines: ["Sign out on this device."], divider: false) {
+                    Button("Sign out") { Task { await dashboard.signOut() } }
+                        .buttonStyle(ProfilePillStyle())
+                        .accessibilityIdentifier("profileSignOut")
+                }
             }
         }
     }
 }
 
-/// The targets the server takes, with its ranges (TARGET_RANGE in server/query.ts).
-struct NutritionTargetField: Identifiable {
-    let key: String
-    let label: String
-    let unit: String
-    let range: ClosedRange<Double>
-    var id: String { key }
-
-    static let all = [
-        NutritionTargetField(key: "energy_kcal", label: "Calories", unit: "kcal", range: 500...10_000),
-        NutritionTargetField(key: "protein_g", label: "Protein", unit: "g", range: 10...500),
-        NutritionTargetField(key: "water_ml", label: "Water", unit: "mL", range: 250...8_000),
-    ]
-}
-
-/// Which cards show, the web's Settings → Cards: one list for the app and the web dashboard.
-private struct CardsSection: View {
+/// "Your settings": each row says how it's set and opens its sheet. A row shows only where the server's status names
+/// its setting (an older server has no cards, Family board, cycle or nutrition to change), and the Family board only
+/// with sign-in, where each person has their own account.
+private struct ProfileSettingsCard: View {
+    let settings: ServerStatus.Settings
+    let open: (ProfileSheet) -> Void
     @Environment(Dashboard.self) private var dashboard
 
     var body: some View {
-        // Only the cards offered, as the Cards screen's Show all: one hidden while Nutrition was on isn't counted while it's off.
-        let hidden = Cards.hiddenOffered(dashboard.hiddenCardSet, nutrition: dashboard.status?.settings?.nutrition == true).count
-        Section {
-            NavigationLink {
-                CardsScreen()
-            } label: {
-                LabeledContent("Choose cards", value: hidden == 0 ? "All shown" : "\(hidden) hidden")
-            }
-            .accessibilityIdentifier("cards")
-        } header: {
-            Text("Cards")
-        } footer: {
-            Text("Choose the cards you see here and on the web dashboard. Hiding one only changes the page; your data stays.")
-        }
-    }
-}
-
-/// A switch per card, grouped by the web's pages as its Settings groups them (Nutrition's only with it on). Each
-/// switch moves at once and its change goes to the server on its own, after any still on their way; one the server
-/// refuses goes back. Under each card, where this app shows it, or that only the web dashboard hides it.
-struct CardsScreen: View {
-    @Environment(Dashboard.self) private var dashboard
-    @State private var error: String?
-
-    var body: some View {
-        let nutrition = dashboard.status?.settings?.nutrition == true
-        let hidden = dashboard.hiddenCardSet
-        // Show all only when a switch here is off, as the Settings row counts. It still clears the whole list, as on the
-        // web, so it also brings back cards not listed (Nutrition's while it's off, or a newer server's).
-        let offeredHidden = Cards.hiddenOffered(hidden, nutrition: nutrition)
-        Form {
-            Section {
-                Text("Choose the cards you see on Home, Sleep\(nutrition ? ", Body and Nutrition" : " and Body"). Hiding one only changes the page; your data stays, and an unhidden card comes back as it was. The web dashboard follows the same choices.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets(top: 4, leading: 4, bottom: 4, trailing: 4))
-                if let error {
-                    Text(error).font(.footnote).foregroundStyle(.red)
-                }
-            }
-            ForEach(Cards.pages(nutrition: nutrition)) { group in
-                Section(group.page.label) {
-                    ForEach(group.cards) { card in
-                        Toggle(isOn: Binding(get: { !hidden.contains(card.id) }, set: { set(card.id, shown: $0) })) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(card.label)
-                                Text(card.place?.label ?? "Changes the web dashboard only")
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        .accessibilityIdentifier("card-\(card.id)")
-                    }
-                }
-            }
-        }
-        .navigationTitle("Cards")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            if !offeredHidden.isEmpty {
-                ToolbarItem(placement: .primaryAction) {
-                    Button("Show all") { showAll() }
-                        .accessibilityHint(hidden.count > offeredHidden.count ? "Shows every card again, including ones not listed here" : "Shows every card again")
-                }
-            }
+        let cards = dashboard.cardsAvailable
+        let family = dashboard.signOutOffered && settings.familySharing != nil
+        let cycle = settings.cycleTracking != nil
+        let nutrition = dashboard.nutritionAvailable
+        // The card's last row has no line under it.
+        let last: ProfileSheet = nutrition ? .nutrition : cycle ? .cycle : family ? .family : cards ? .cards : .basics
+        ProfileCard("Your settings") {
+            row(.basics, "Units & daily goal", ProfileWords.units(settings), "Edit", last: last)
+            if cards { row(.cards, "Cards", ProfileWords.cardPages(nutrition: settings.nutrition == true), "Choose cards", last: last) }
+            if family { row(.family, "Family board", ProfileWords.family(sharing: settings.familySharing == true), "Manage", last: last) }
+            if cycle { row(.cycle, "Cycle tracking", ProfileWords.cycle(settings), "Manage", last: last) }
+            if nutrition { row(.nutrition, "Nutrition", ProfileWords.nutrition(settings), "Manage", last: last) }
         }
     }
 
-    private func set(_ id: String, shown: Bool) {
-        error = nil
-        Task {
-            do {
-                try await dashboard.setCard(id, shown: shown)
-            } catch is CancellationError {
-            } catch {
-                let name = Cards.card(id)?.label ?? "that card"
-                self.error = "Couldn't \(shown ? "show" : "hide") \(name). \(error.localizedDescription)"
-            }
-        }
-    }
-
-    private func showAll() {
-        error = nil
-        Task {
-            do {
-                try await dashboard.showAllCards()
-            } catch is CancellationError {
-            } catch {
-                self.error = "Couldn't show every card. \(error.localizedDescription)"
-            }
-        }
-    }
-}
-
-/// The Family board: sharing is mutual, and a cycle phase can go on your tile while tracking and sharing are on.
-/// The switches move at once and go back if the server says no.
-private struct FamilySection: View {
-    @Environment(Dashboard.self) private var dashboard
-    /// What a switch shows while its change is on the way; nil shows the server's setting.
-    @State private var pendingSharing: Bool?
-    @State private var pendingPhase: Bool?
-    @State private var error: String?
-
-    var body: some View {
-        let settings = dashboard.status?.settings
-        let sharing = pendingSharing ?? settings?.familySharing ?? false
-        Section {
-            Toggle(isOn: Binding(get: { sharing }, set: { setSharing($0) })) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Share with family")
-                    Text(sharingNote(on: sharing)).font(.footnote).foregroundStyle(.secondary)
-                }
-            }
-            .disabled(pendingSharing != nil)
-            .accessibilityIdentifier("familySharing")
-            if settings?.cycleTracking == true, sharing {
-                Toggle(isOn: Binding(get: { pendingPhase ?? settings?.shareCyclePhase ?? false }, set: { setPhase($0) })) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("Show my cycle phase to family")
-                        Text("One word on your Family board tile (period, follicular or luteal), never dates or logs. Hidden as your next period approaches. Members will know you track your cycle, and looking day after day shows roughly when your period starts.")
-                            .font(.footnote).foregroundStyle(.secondary)
-                    }
-                }
-                .disabled(pendingPhase != nil || pendingSharing != nil)
-                .accessibilityIdentifier("shareCyclePhase")
-            }
-            if let error { Text(error).font(.footnote).foregroundStyle(.red) }
-        } header: {
-            Text("Family")
-        } footer: {
-            Text("Your Family board tile: last night's sleep, recovery or HRV, today's steps, resting heart rate and training load, the last 30 days of each, and how they compare with your own usual.")
-        }
-        // For "Sharing with: …"; the board keeps itself fresh while the Family tab is open.
-        .task(id: settings?.familySharing == true) {
-            if settings?.familySharing == true { await dashboard.loadFamily() }
-        }
-    }
-
-    private func sharingNote(on: Bool) -> String {
-        var note = "Members who share see your tile and its last 30 days. Turn it off and you see no one, and no one sees you."
-        if on, let board = dashboard.familyBoard, board.sharing {
-            let others = board.members.filter { !$0.isYou }.map(FamilyText.name)
-            if !others.isEmpty { note += " Sharing with: \(others.joined(separator: ", "))." }
-        }
-        return note
-    }
-
-    private func setSharing(_ on: Bool) {
-        pendingSharing = on
-        error = nil
-        Task {
-            do {
-                try await dashboard.setFamilySharing(on)
-            } catch {
-                self.error = "Couldn't change sharing. \(error.localizedDescription)"
-            }
-            pendingSharing = nil
-        }
-    }
-
-    private func setPhase(_ on: Bool) {
-        pendingPhase = on
-        error = nil
-        Task {
-            do {
-                try await dashboard.setShareCyclePhase(on)
-            } catch {
-                self.error = "Couldn't change your cycle phase sharing. \(error.localizedDescription)"
-            }
-            pendingPhase = nil
-        }
-    }
-}
-
-/// The Monday reminder for McFly's weekly digest on the Insights tab.
-private struct DigestSection: View {
-    @Environment(Dashboard.self) private var dashboard
-    @Environment(\.openURL) private var openURL
-    @State private var on = DigestNotifications.enabled
-    /// Notifications are off for the app in iOS Settings.
-    @State private var denied = false
-    /// McFly is set up on the server (nil: not known yet).
-    @State private var mcfly: Bool?
-
-    var body: some View {
-        Section {
-            Toggle("Weekly digest", isOn: toggle)
-                .disabled(mcfly == false && !on)
-                .accessibilityIdentifier("weeklyDigest")
-                .task(id: dashboard.phase == .ready) { await check() }
-            if denied {
-                Button("Open notification settings") {
-                    if let url = URL(string: UIApplication.openNotificationSettingsURLString) { openURL(url) }
-                }
-            }
-        } header: {
-            Text("Notifications")
-        } footer: {
-            Text(footer)
-        }
-    }
-
-    private var toggle: Binding<Bool> {
-        Binding(get: { on }, set: { wanted in
-            on = wanted
-            denied = false
-            Task {
-                if wanted {
-                    // The permission prompt shows the first time; a no turns the toggle back off.
-                    let scheduled = await DigestNotifications.enable()
-                    on = scheduled
-                    denied = !scheduled
-                } else {
-                    DigestNotifications.disable()
-                }
-            }
-        })
-    }
-
-    private var footer: String {
-        if denied { return "Notifications are off for healthOS. Allow them in the Settings app, then turn this on again." }
-        if mcfly == false, !on { return "The weekly digest needs McFly set up on your healthOS server." }
-        return "A reminder every Monday at 9:00 to read McFly's short recap of last week on the Insights tab."
-    }
-
-    private func check() async {
-        // Turned off in iOS Settings since: show it off, with the way back.
-        if on, await DigestNotifications.denied() {
-            DigestNotifications.disable()
-            on = false
-            denied = true
-        }
-        // Only while signed in: a 401 here would drop the session.
-        if dashboard.phase == .ready, let client = APIClient.current(), let status = try? await client.mcflyStatus() {
-            mcfly = status.available
-        }
-    }
-}
-
-/// Change the profile photo from the phone: pick one, process it here with Vision, preview, then upload.
-private struct PhotoSection: View {
-    @Environment(Dashboard.self) private var dashboard
-    @State private var item: PhotosPickerItem?
-    @State private var processing = false
-    @State private var result: PhotoCutout?
-    @State private var error: String?
-
-    var body: some View {
-        let label = dashboard.status?.photo == nil ? "Add photo" : "Change photo"
-        Section {
-            HStack(spacing: 14) {
-                Avatar(photo: dashboard.status?.photo, name: dashboard.summary?.name, size: 48)
-                PhotosPicker(selection: $item, matching: .images, photoLibrary: .shared()) {
-                    Text(label)
-                }
-                .disabled(processing)
-                Spacer()
-                if processing { ProgressView() }
-            }
-            if let error { Text(error).font(.footnote).foregroundStyle(.red) }
-        } header: {
-            Text("Profile photo")
-        } footer: {
-            Text("A portrait with your face and shoulders works best. It's cut out on this iPhone; only the result is uploaded.")
-        }
-        .onChange(of: item) { _, picked in
-            guard let picked else { return }
-            Task { await process(picked) }
-        }
-        .sheet(item: Binding(get: { result.map(PreviewItem.init) }, set: { if $0 == nil { result = nil } })) { preview in
-            PhotoPreview(photo: preview.photo) {
-                result = nil
-                await dashboard.load()
-            }
-        }
-    }
-
-    private func process(_ picked: PhotosPickerItem) async {
-        processing = true
-        error = nil
-        defer {
-            processing = false
-            item = nil
-        }
-        do {
-            guard let data = try await picked.loadTransferable(type: Data.self) else { throw PhotoCutout.Failure(message: "Couldn't load that photo.") }
-            result = try await Task.detached(priority: .userInitiated) { try PhotoCutout.process(data) }.value
-        } catch {
-            self.error = error.localizedDescription
-        }
-    }
-
-    private struct PreviewItem: Identifiable {
-        let photo: PhotoCutout
-        let id = UUID()
-    }
-}
-
-/// The processed photo before it's saved, as on the web: Save uploads it, Cancel drops it.
-private struct PhotoPreview: View {
-    let photo: PhotoCutout
-    let saved: () async -> Void
-    @Environment(\.dismiss) private var dismiss
-    @State private var saving = false
-    @State private var error: String?
-
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 20) {
-                Image(uiImage: UIImage(cgImage: photo.cutout))
-                    .resizable()
-                    .scaledToFit()
-                    .frame(maxHeight: 420)
-                    .accessibilityLabel("Your cut-out photo")
-                Image(uiImage: UIImage(cgImage: photo.avatar))
-                    .resizable()
-                    .frame(width: 72, height: 72)
-                    .clipShape(Circle())
-                    .accessibilityLabel("Your avatar")
-                if let error { Text(error).font(.footnote).foregroundStyle(.red).multilineTextAlignment(.center) }
-                Spacer()
-            }
-            .padding()
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Palette.page)
-            .navigationTitle("New photo")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(saving) }
-                ToolbarItem(placement: .confirmationAction) {
-                    if saving { ProgressView() } else { Button("Save") { Task { await save() } }.bold() }
-                }
-            }
-            .interactiveDismissDisabled(saving)
-        }
-    }
-
-    private func save() async {
-        guard let client = APIClient.current() else { return }
-        saving = true
-        defer { saving = false }
-        do {
-            try await client.uploadPhoto(photo)
-            await saved()
-            dismiss()
-        } catch APIError.server(404, _) {
-            error = "This server can't take photos from the app yet. Update healthOS, or use the website."
-        } catch APIError.server(413, _) {
-            error = "That photo is too large to upload. Try another one."
-        } catch {
-            self.error = error.localizedDescription
+    private func row(_ sheet: ProfileSheet, _ title: String, _ line: String, _ action: String, last: ProfileSheet) -> some View {
+        ProfileRow(title, lines: [line], divider: sheet != last) {
+            Button(action) { open(sheet) }
+                .buttonStyle(ProfilePillStyle())
+                .accessibilityLabel("\(action), \(title)")
+                .accessibilityIdentifier(sheet == .cards ? "cards" : "settings-\(sheet.rawValue)")
         }
     }
 }

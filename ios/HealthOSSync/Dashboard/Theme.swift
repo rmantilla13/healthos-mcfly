@@ -1,53 +1,120 @@
 import SwiftUI
 import UIKit
 
-/// Color tokens from src/styles.css, light and dark.
+/// The web's colours (src/styles.css, light and dark), by the names the app uses. Each is a token in Tokens.swift,
+/// which ThemeTests checks against the CSS.
 enum Palette {
-    static let page = dynamic(0xF3F3F1, 0x0D0D0D)
-    static let pageGlow = dynamic(0xFCFCFB, 0x161615)
-    /// Vital callouts on the portrait (web: temp amber, heart pink).
+    static let page = ColorToken.page.color
+    static let pageGlow = ColorToken.pageGlow.color
+    static let sidebar = ColorToken.sidebar.color
+    static let sidebarEdge = ColorToken.sidebarEdge.color
+    /// Vital callouts on the portrait: temperature's amber, and the heart's pink (web --vital-pulse, styles.css 1991-2006).
     static let vitalTemp = dynamic(0xF2CF63, 0xF2CF63)
     static let vitalHeart = dynamic(0xE0567C, 0xF27798)
-    static let surface = dynamic(0xFFFFFF, 0x1A1A19)
-    static let surface2 = dynamic(0xF6F6F4, 0x222221)
-    static let border = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 1, alpha: 0.08) : UIColor(white: 0.04, alpha: 0.07) })
-    static let ink = dynamic(0x0B0B0B, 0xF0EFEC)
-    static let ink2 = dynamic(0x52514E, 0xC3C2B7)
-    static let ink3 = dynamic(0x898781, 0x898781)
-    static let grid = dynamic(0xECEBE6, 0x2C2C2A)
+    static let surface = ColorToken.surface.color
+    static let surface2 = ColorToken.surface2.color
+    static let surfaceHover = ColorToken.surfaceHover.color
+    static let border = ColorToken.border.color
+    /// Green-black ink, and two muted steps of it.
+    static let ink = ColorToken.ink.color
+    static let ink2 = ColorToken.ink2.color
+    static let ink3 = ColorToken.ink3.color
+    static let grid = ColorToken.grid.color
+    static let axis = ColorToken.axis.color
 
-    static let series1 = dynamic(0x2A78D6, 0x3987E5)
-    static let series2 = dynamic(0xEB6834, 0xD95926)
-    static let series3 = dynamic(0x1BAF7A, 0x199E70)
-    static let bar = dynamic(0x9EC5F4, 0x256ABF)
-    static let barNeutral = dynamic(0xD9D8D2, 0x3A3A37)
-    static let barNeutralAccent = dynamic(0x3B3A37, 0xE8E7E2)
+    static let series1 = ColorToken.series1.color
+    static let series2 = ColorToken.series2.color
+    static let series3 = ColorToken.series3.color
+    static let bar = ColorToken.bar.color
+    static let barAccent = ColorToken.barAccent.color
+    static let barNeutral = ColorToken.barNeutral.color
+    static let barNeutralAccent = ColorToken.barNeutralAccent.color
 
-    static let stageDeep = dynamic(0x0D366B, 0x9EC5F4)
-    static let stageLight = dynamic(0x1C5CAB, 0x5598E7)
-    static let stageRem = dynamic(0x3987E5, 0x2A78D6)
-    static let stageAwake = dynamic(0x86B6EF, 0x184F95)
+    static let stageDeep = ColorToken.stageDeep.color
+    static let stageLight = ColorToken.stageLight.color
+    static let stageRem = ColorToken.stageRem.color
+    static let stageAwake = ColorToken.stageAwake.color
 
-    static let good = dynamic(0x0CA30C, 0x0CA30C)
-    static let goodText = dynamic(0x006300, 0x0CA30C)
-    static let warning = dynamic(0xFAB219, 0xFAB219)
-    static let serious = dynamic(0xEC835A, 0xEC835A)
-    static let critical = dynamic(0xD03B3B, 0xD03B3B)
+    static let good = ColorToken.good.color
+    static let goodText = ColorToken.goodText.color
+    static let warning = ColorToken.warning.color
+    static let serious = ColorToken.serious.color
+    static let critical = ColorToken.critical.color
 
-    static let goalTrack = dynamic(0xD8F0D0, 0x1F3A1C)
-    static let gaugeTrack = dynamic(0xF3C3CF, 0x5A2A38)
-    static let gaugeFill = dynamic(0xD9537A, 0xE8668C)
+    /// The accent: a dark forest green for primary buttons, a pale sage for the avatar, sage text, and the focus ring.
+    static let accent = ColorToken.accent.color
+    static let accentInk = ColorToken.accentInk.color
+    static let accentText = ColorToken.accentText.color
+    static let accentSoft = ColorToken.accentSoft.color
+    static let accentSoftInk = ColorToken.accentSoftInk.color
+    static let focus = ColorToken.focus.color
+    static let navDot = ColorToken.navDot.color
+    /// The app's tint: the forest accent. In dark mode it's the accent's text step (--accent-text), as the web uses for
+    /// words: the dark accent itself (#4d6b5a) reads under 3:1 as button text on the dark surface. So it's for words and
+    /// marks only, never a fill: white on its dark-mode sage reads under 2:1. A filled button is `.accentPill` (the
+    /// accent gradient, white words) and a switch is green (`AppSwitchStyle`), as on the web.
+    static let tint = Themed(ColorToken.accent.value.light, ColorToken.accentText.value.dark).color
+
+    /// A chosen option (radio cards, chips): a sage edge over a faint green wash (GradientToken.choiceWash).
+    static let choiceBorder = ColorToken.choiceBorder.color
+    static let menuBorder = ColorToken.menuBorder.color
+    /// The light blurred veil behind a dialog.
+    static let veil = ColorToken.veil.color
+    /// A card's white (not dark) edge.
+    static let cardEdge = ColorToken.cardEdge.color
+
+    /// The figure's callouts: a gold dot in a thin gold ring, warm grey leader lines.
+    static let calloutDot = ColorToken.calloutDot.color
+    static let calloutRing = ColorToken.calloutRing.color
+    static let calloutLine = ColorToken.calloutLine.color
+    static let figureGlow = ColorToken.figureGlow.color
+    static let figure1 = ColorToken.figure1.color
+    static let figure2 = ColorToken.figure2.color
+    static let figure3 = ColorToken.figure3.color
+    static let figureShade = ColorToken.figureShade.color
+    static let figureShadow = ColorToken.figureShadow.color
+    static let figureHighlight = ColorToken.figureHighlight.color
+    static let halo = ColorToken.halo.color
+    static let haloRing = ColorToken.haloRing.color
+    static let ringOnCard = ColorToken.ringOnCard.color
+
+    /// McFly's orb (Orb.swift).
+    static let orbCore = ColorToken.orbCore.color
+    static let orbMid = ColorToken.orbMid.color
+    static let orbRim = ColorToken.orbRim.color
+
+    static let tooltip = ColorToken.tooltip.color
+    static let tooltipInk = ColorToken.tooltipInk.color
+    static let bannerGoodBg = ColorToken.bannerGoodBg.color
+    static let bannerBadBg = ColorToken.bannerBadBg.color
+    static let bannerBadInk = ColorToken.bannerBadInk.color
+
+    static let goalTrack = ColorToken.goalTrack.color
+    static let gaugeTrack = ColorToken.gaugeTrack.color
+    static let gaugeFill = ColorToken.gaugeFill.color
 
     /// Cycle: a one-hue blue ramp for the chance of conception (darker is higher), peach after ovulation.
-    static let fertileMedium = dynamic(0xDBE3FB, 0x2F3B72)
-    static let fertileHigh = dynamic(0xA9BAF3, 0x4A5EC4)
-    static let fertilePeak = dynamic(0x4A60C8, 0xA6B3F7)
-    static let cycleLuteal = dynamic(0xFBE0CF, 0x6A4230)
-    static let chip = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 1, alpha: 0.08) : UIColor(white: 1, alpha: 0.7) })
+    static let fertileMedium = ColorToken.fertileMedium.color
+    static let fertileHigh = ColorToken.fertileHigh.color
+    static let fertilePeak = ColorToken.fertilePeak.color
+    static let fertilePeakInk = ColorToken.fertilePeakInk.color
+    static let cycleLuteal = ColorToken.cycleLuteal.color
 
-    static func dynamic(_ light: UInt32, _ dark: UInt32) -> Color {
-        Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(hex: dark) : UIColor(hex: light) })
-    }
+    /// Sleep and Body: awake time in pink, time in bed a quiet grey; the score bar's lavender-to-green; green and orange bars.
+    static let hypAwake = ColorToken.hypAwake.color
+    static let hypInbed = ColorToken.hypInbed.color
+    static let scoreFrom = ColorToken.scoreFrom.color
+    static let scoreMid = ColorToken.scoreMid.color
+    static let scoreTo = ColorToken.scoreTo.color
+    static let barGreen = ColorToken.barGreen.color
+    static let barGreenAccent = ColorToken.barGreenAccent.color
+    static let barOrange = ColorToken.barOrange.color
+
+    /// A soft white chip, and the pale green one on metric cards.
+    static let chip = ColorToken.chip.color
+    static let chipGreen = ColorToken.chipGreen.color
+
+    static func dynamic(_ light: UInt32, _ dark: UInt32) -> Color { Themed(light, dark).color }
 }
 
 extension UIColor {
@@ -62,55 +129,72 @@ enum Tone {
 
     var background: Color {
         switch self {
-        case .green: Palette.dynamic(0xDFF3D8, 0x1D3A1B)
-        case .peach: Palette.dynamic(0xFFE4D4, 0x432617)
-        case .blue: Palette.dynamic(0xE1E7FB, 0x1F2747)
-        case .yellow: Palette.dynamic(0xFDF0CC, 0x3D3112)
-        case .pink: Palette.dynamic(0xFDE2E8, 0x3F1D28)
+        case .green: ColorToken.toneGreenBg.color
+        case .peach: ColorToken.tonePeachBg.color
+        case .blue: ColorToken.toneBlueBg.color
+        case .yellow: ColorToken.toneYellowBg.color
+        case .pink: ColorToken.tonePinkBg.color
         case .neutral: Palette.surface2
         }
     }
 
     var ink: Color {
         switch self {
-        case .green: Palette.dynamic(0x1F6B1F, 0x8FDC85)
-        case .peach: Palette.dynamic(0xA2471F, 0xF4A97F)
-        case .blue: Palette.dynamic(0x3A4FB0, 0xA7B4F3)
-        case .yellow: Palette.dynamic(0x8A6400, 0xF0C95A)
-        case .pink: Palette.dynamic(0xA33A57, 0xF19AB2)
+        case .green: ColorToken.toneGreenInk.color
+        case .peach: ColorToken.tonePeachInk.color
+        case .blue: ColorToken.toneBlueInk.color
+        case .yellow: ColorToken.toneYellowInk.color
+        case .pink: ColorToken.tonePinkInk.color
         case .neutral: Palette.ink2
         }
     }
 }
 
-/// The gradient washes behind the recovery, blood oxygen and strain cards.
-enum CardTint {
-    case plain, green, peach, pink
+/// A card's background: the white glass sheen, or the sheen under a colour wash strongest near the bottom
+/// (.metric-green … .metric-blue on the web).
+enum CardTint: CaseIterable {
+    case plain, green, peach, pink, lavender, mint, slate, cream, blush, blue
 
-    func background(_ scheme: ColorScheme) -> AnyShapeStyle {
-        let dark = scheme == .dark
-        let stops: [UInt32]
-        let center: UnitPoint
+    var gradient: GradientToken {
         switch self {
-        case .plain: return AnyShapeStyle(Palette.surface)
-        case .green: stops = dark ? [0x1F3A1C, 0x1B261A, 0x1A1A19] : [0xD4F0CB, 0xE9F6E3, 0xF9FCF7]; center = .topLeading
-        case .peach: stops = dark ? [0x4A2A1A, 0x2F201D, 0x1D1A1B] : [0xFFD6B8, 0xFFE6DC, 0xFDF0F2]; center = .topTrailing
-        case .pink: stops = dark ? [0x3D2028, 0x2A1D21, 0x1C1A1B] : [0xFDE0E6, 0xFDEDF0, 0xFEFAFB]; center = .top
+        case .plain: .sheen
+        case .green: .gradGreen
+        case .peach: .gradPeach
+        case .pink: .gradPink
+        case .lavender: .gradLavender
+        case .mint: .gradMint
+        case .slate: .gradSlate
+        case .cream: .gradCream
+        case .blush: .gradBlush
+        case .blue: .gradBlue
         }
-        return AnyShapeStyle(RadialGradient(colors: stops.map { Color(UIColor(hex: $0)) }, center: center, startRadius: 0, endRadius: 260))
+    }
+}
+
+/// A card's surface in any shape: its wash, the white edge and the soft card shadow (.card on the web).
+struct CardSurface<S: InsettableShape>: View {
+    var tint: CardTint = .plain
+    let shape: S
+
+    var body: some View {
+        GradientFill(tint.gradient)
+            .clipShape(shape)
+            .overlay(shape.strokeBorder(Palette.cardEdge))
+            .tokenShadow(.card, in: shape)
     }
 }
 
 struct CardStyle: ViewModifier {
     var tint: CardTint = .plain
-    @Environment(\.colorScheme) private var scheme
 
     func body(content: Content) -> some View {
+        // The web's .card padding, which its phone layout keeps.
         content
-            .padding(16)
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
+            .padding(.bottom, 18)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(tint.background(scheme), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(Palette.border))
+            .background { CardSurface(tint: tint, shape: RoundedRectangle(cornerRadius: Radius.card, style: .continuous)) }
     }
 }
 
@@ -118,7 +202,7 @@ extension View {
     func card(_ tint: CardTint = .plain) -> some View { modifier(CardStyle(tint: tint)) }
 }
 
-/// Big number with a small unit after it, the dashboard's main figure style.
+/// Big number with a small unit after it, the dashboard's main figure style (.metric-value: 500, drawn in tight).
 struct BigValue: View {
     let value: String
     let unit: String
@@ -126,8 +210,8 @@ struct BigValue: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 4) {
-            Text(value).font(.system(size: size, weight: .semibold, design: .rounded)).monospacedDigit()
-            Text(unit).font(.subheadline).foregroundStyle(Palette.ink3)
+            Text(value).font(.app(size: size, weight: .medium, relativeTo: .largeTitle)).tracking(-0.03 * size)
+            Text(unit).font(.app(.footnote)).foregroundStyle(Palette.ink2)
         }
         .foregroundStyle(Palette.ink)
         .lineLimit(1)
@@ -139,7 +223,7 @@ struct Chip: View {
     let text: String
     var body: some View {
         Text(text)
-            .font(.caption.weight(.medium))
+            .font(.app(.caption, weight: .medium))
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .background(Palette.chip, in: Capsule())

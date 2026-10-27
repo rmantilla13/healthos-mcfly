@@ -1,64 +1,65 @@
 import SwiftUI
 
-/// The home screen: the same cards as the web dashboard's Home page.
+/// The Home page, the web's (src/pages/Home.tsx under the shell's ShellHeader, as its phone layout shows it): the
+/// greeting and top bar, the banners above the page, your figure and its tagline, then the cards one to a row. Its
+/// header greets you and has your avatar, so the navigation bar is hidden here.
 struct TodayScreen: View {
     @Environment(Dashboard.self) private var dashboard
 
     var body: some View {
-        NavigationStack {
-            Group {
-                switch dashboard.phase {
-                case .starting:
-                    ProgressView()
-                case .noServer:
-                    ContentUnavailableView {
-                        Label("No server yet", systemImage: "server.rack")
-                    } description: {
-                        Text("Add your healthOS address in Settings.")
-                    } actions: {
-                        Button("Open Settings") { dashboard.tab = .settings }
-                    }
-                case .signIn:
-                    SignInView()
-                case .unavailable(let message):
-                    ContentUnavailableView {
-                        Label("Can't load your dashboard", systemImage: "wifi.exclamationmark")
-                    } description: {
-                        Text(message)
-                    } actions: {
-                        Button("Try again") { Task { await dashboard.start() } }
-                    }
-                case .ready:
-                    if let summary = dashboard.summary {
-                        TodayContent(summary: summary)
-                    } else {
-                        ProgressView()
-                    }
+        // No server, sign-in and a server whose sign-in isn't set up are the shell's (PhaseGate); the rest is Home's.
+        PhaseGate {
+            switch dashboard.phase {
+            case .unavailable(let message):
+                Unavailable("Can't load your dashboard", systemImage: "wifi.exclamationmark", description: message) {
+                    Button("Try again") { Task { await dashboard.start() } }
                 }
+            case .ready:
+                if let summary = dashboard.summary {
+                    // One person's, on one server, as Nutrition's page: after Change server or someone else's sign-in, the
+                    // day by hour, the cycle, the food totals and the journal's check-in start again from nothing.
+                    TodayContent(summary: summary).id(Self.identity(of: dashboard))
+                } else {
+                    ProgressView()
+                }
+            default:
+                ProgressView()
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Palette.page)
-            .toolbar(.hidden, for: .navigationBar)
-            .navigationDestination(for: DayScreen.Route.self) { DayScreen(date: $0.date) }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Palette.page)
+        .toolbar(.hidden, for: .navigationBar)
         .task { await dashboard.startIfNeeded() }
         .onReceive(NotificationCenter.default.publisher(for: .healthOSSynced)) { _ in
             Task { await dashboard.refreshIfChanged(includeStatus: false) }
         }
     }
+
+    /// Whose Home this is: the server and the person, as Nutrition's page (`NutritionScreen.identity`).
+    static func identity(of dashboard: Dashboard) -> String {
+        NutritionScreen.identity(server: Config.serverURL(), user: dashboard.status?.user?.id ?? dashboard.account?.id)
+    }
 }
 
-private struct TodayContent: View {
+/// What Home shows of one summary, in Home.tsx's order. Every card can be hidden in Edit widgets (or Profile → Cards),
+/// and the optional ones are off until turned on; hidden cards leave no gap. Two parts only the iPhone has stay: the day
+/// by hour (it opens the Day view) and, while cycle tracking is on, the cycle's phase. Live heart rate opens from the
+/// heart's callout, or with "Just the statistics" (no figure, so no heart) from its own button where the figure would be.
+struct TodayContent: View {
     let summary: Summary
     @Environment(Dashboard.self) private var dashboard
     @Environment(AppModel.self) private var sync
-    @State private var mcfly = McFlyChat()
-    @State private var chatOpen = false
+    @Environment(\.homeReads) private var reads
     /// The day by hour (GET /api/day) and the cycle (GET /api/cycle): nil hides their cards.
     @State private var day: DayData?
     @State private var cycle: CycleData?
-    /// Today's path's marker, shared with the portrait: while it's moved, the portrait's heart shows that hour.
+    /// The food totals card's 7 days (nil: not placed) and the journal card's check-in, read here rather than by the
+    /// cards (HomeReads says why).
+    @State private var food: NutritionData?
+    @State private var journal = HomeJournalRead.reading
+    /// The timeline's marker, shared with the figure: while it's moved, the figure's heart shows that hour.
     @State private var scrub = TodayScrub()
+    @State private var editing = false
 
     /// Under a resting heart rate flag, in the luteal or menstrual phase. The summary never mentions the cycle.
     private static let cycleNote = "Temperature and resting heart rate often run a little higher in this part of your cycle."
@@ -67,45 +68,47 @@ private struct TodayContent: View {
         let isToday = summary.date == summary.today
         // The phase is about today, so it says nothing about a past day on screen.
         let phase = isToday && dashboard.cycleTrackingOn ? cycle?.phase : nil
-        // Cards hidden in Settings → Cards (here or on the web) leave no gap; the rest move up.
-        let hidden = dashboard.hiddenCardSet
-        let gridIds = Cards.visible(Cards.todayGrid, hidden: hidden)
+        let off = dashboard.cardsOff
+        let stats = Perspective.of(dashboard.status?.settings) == .stats
+        // Food totals only for people with Nutrition on, and once its days have come.
+        let optionalRow = HomeCards.optionalRow.filter { $0 != "home.food" || (dashboard.nutritionOn && food != nil) }
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                OrganicHeader(summary: summary, name: summary.name ?? dashboard.status?.settings?.name)
-                if let error = dashboard.error { Banner(text: error, icon: "wifi.exclamationmark", tone: .peach) }
-                if summary.demo == true {
-                    Banner(text: "Showing demo data. Connect Apple Health or WHOOP to see your own.", icon: "sparkles", tone: .blue)
+            VStack(alignment: .leading, spacing: 0) {
+                HomeHeader(summary: summary, editing: $editing).padding(.bottom, 18)
+                banners(phase: phase)
+                VStack(alignment: .leading, spacing: 18) {
+                    if !stats {
+                        VStack(alignment: .leading, spacing: 14) {
+                            HomeFigure(summary: summary, scrub: summary.timeline?.date == summary.date ? scrub.heart(on: summary.date) : nil)
+                            HomeTagline()
+                        }
+                    } else {
+                        LiveHeartRateButton()
+                    }
+                    VStack(spacing: 14) {
+                        TodayGrid(summary: summary, ids: Cards.visible(HomeCards.signals, hidden: off), goal: dashboard.stepGoal)
+                        if !off.contains("home.nutrition") { TodayNutritionCard(date: summary.date, today: summary.today) }
+                        if !off.contains("home.journal"), journal.shows { JournalPromptCard(latest: journal.latest) }
+                        // Only the iPhone has these: the day by hour, which opens the Day view, and the cycle's phase.
+                        if let day, !day.metrics.isEmpty { DayCard(data: day, date: isToday ? nil : summary.date) }
+                        if let cycle, let phase { CycleCard(cycle: cycle, phase: phase) }
+                        TodayGrid(summary: summary, ids: Cards.visible(optionalRow, hidden: off), goal: dashboard.stepGoal, food: food)
+                        if let timeline = summary.timeline, !off.contains("home.timeline") { TodayPath(timeline: timeline, scrubbed: scrub) }
+                        if !off.contains("home.week") { WeekCard(week: summary.week, stepGoal: dashboard.stepGoal) }
+                        if !off.contains("home.insights") { HomeInsightsCard(insights: summary.insights ?? [], today: summary.today) }
+                        if Cards.allHidden(in: .home, hidden: off) { AllCardsHiddenNote(text: "All the cards on this page are hidden.") }
+                        if stats { HomeTagline(compact: true) }
+                    }
                 }
-                ForEach(summary.flags) { flag in
-                    let showNote = flag.id.hasPrefix("rhr") && phase?.luteal == true
-                    FlagBanner(flag: flag, note: showNote ? Self.cycleNote : nil)
-                }
-                if dashboard.showsFamilyNotice { FamilyNotice() }
-                OrganicPortrait(summary: summary, photo: dashboard.status?.photo, units: dashboard.units, stepGoal: dashboard.stepGoal, scrubbed: scrub)
-                if let timeline = summary.timeline, !hidden.contains("home.timeline") { TodayPath(timeline: timeline, scrubbed: scrub) }
-                if let cycle, let phase { CycleCard(cycle: cycle, phase: phase) }
-                if let day, !day.metrics.isEmpty { DayCard(data: day, date: isToday ? nil : summary.date) }
-                if let week = summary.week { WeekCard(week: week, stepGoal: dashboard.stepGoal) }
-                // Left out with all six hidden, so no extra gap is left where the grid was.
-                if !gridIds.isEmpty { TodayGrid(summary: summary, ids: gridIds, goal: dashboard.stepGoal) }
-                if !hidden.contains("home.insights") { InsightsCard(insights: summary.insights ?? [], today: summary.today) }
-                if Cards.allHidden(in: .today, hidden: hidden) { AllCardsHiddenNote() }
+                HomeFooter()
             }
             .padding(16)
             .opacity(dashboard.loading ? 0.6 : 1)
             .animation(.easeInOut(duration: 0.2), value: dashboard.loading)
         }
         .refreshable { await sync.syncAll(force: true) }
-        // In the safe area, so it floats above the tab bar instead of under it, with room to breathe; the inset also pads
-        // the scroll content, so the last card scrolls clear of it.
-        .safeAreaInset(edge: .bottom) {
-            if mcfly.status?.available == true {
-                AskMcFlyPill { chatOpen = true }.padding(.top, 8).padding(.bottom, 18)
-            }
-        }
-        .sheet(isPresented: $chatOpen) { McFlySheet(chat: mcfly) }
-        .task(id: dashboard.generation) { await mcfly.refreshStatus() }
+        // Ask McFly's pill floats over this, from the shell (Shell/AppShell.swift).
+        .sheet(isPresented: $editing) { EditWidgetsSheet { dashboard.open(.profile) } }
         // Newer endpoints: a server without them, or a failed fetch, just hides the card.
         .task(id: "\(summary.date)|\(dashboard.generation)") {
             day = try? await dashboard.day(date: summary.date == summary.today ? nil : summary.date)
@@ -113,80 +116,47 @@ private struct TodayContent: View {
         .task(id: "\(dashboard.generation)|\(dashboard.cycleTrackingOn)") {
             cycle = try? await dashboard.cycle()
         }
+        // On the scroll view, which is always there: each read runs again after every load, and when its card is turned
+        // on, even while the card itself isn't drawn.
+        .task(id: "\(dashboard.generation)|\(foodWanted)|\(dashboard.nutritionMode?.rawValue ?? "off")") {
+            let read = await reads.food(wanted: foodWanted, dashboard: dashboard)
+            if !Task.isCancelled { food = read }
+        }
+        .task(id: "\(dashboard.generation)|\(journalWanted)") {
+            let read = await reads.journal(wanted: journalWanted, current: journal, dashboard: dashboard)
+            if !Task.isCancelled { journal = read }
+        }
     }
-}
 
-// MARK: - Header
+    /// Food totals are asked for only while they'd show: Nutrition on and Food ticked in Edit widgets.
+    private var foodWanted: Bool { dashboard.nutritionOn && !dashboard.cardsOff.contains("home.food") }
+    private var journalWanted: Bool { !dashboard.cardsOff.contains("home.journal") }
 
-private struct Header: View {
-    let summary: Summary
-    let name: String?
-    @Environment(Dashboard.self) private var dashboard
-
-    var body: some View {
-        let isToday = summary.date == summary.today
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Hello,").font(.system(size: 26)).foregroundStyle(Palette.ink2)
-                    Text("\(name ?? "there").").font(.system(size: 40, weight: .bold)).foregroundStyle(Palette.ink)
-                        .lineLimit(1).minimumScaleFactor(0.6)
-                    Text(isToday ? "Here's your health today." : "Here's your health on \(Fmt.day(summary.date, "EEEEMMMMd")).")
-                        .font(.subheadline)
-                        .foregroundStyle(Palette.ink3)
+    /// The lines above the page: a load that failed, nothing connected yet, the one-time family note, and the
+    /// summary's heads-ups (only the iPhone shows these).
+    @ViewBuilder
+    private func banners(phase: CyclePhase?) -> some View {
+        let noSources = NoSourcesBanner.shows(dashboard.status)
+        let any = dashboard.error != nil || noSources || dashboard.showsFamilyNotice || !summary.flags.isEmpty
+        if any {
+            VStack(spacing: 10) {
+                if let error = dashboard.error {
+                    HomeBanner(icon: "wifi.exclamationmark", iconColor: Palette.bannerBadInk, background: Palette.bannerBadBg, ink: Palette.bannerBadInk,
+                               weight: .regular, text: Text(error)) { EmptyView() }
                 }
-                Spacer(minLength: 8)
-                Button { dashboard.tab = .settings } label: {
-                    Avatar(photo: dashboard.status?.photo, name: name)
-                }
-                .buttonStyle(.plain)
-                .accessibilityHint("Opens Settings")
-            }
-            HStack(spacing: 6) {
-                Button { Task { await dashboard.show(date: Day.add(summary.date, -1)) } } label: {
-                    Image(systemName: "chevron.left").frame(width: 34, height: 34)
-                }
-                .accessibilityLabel("Previous day")
-                Button { Task { await dashboard.show(date: nil) } } label: {
-                    Text(Fmt.day(summary.date, "EEEMMMdyyyy")).font(.subheadline.weight(.medium)).monospacedDigit()
-                }
-                .disabled(isToday)
-                .accessibilityHint("Back to today")
-                Button { Task { await dashboard.show(date: Day.add(summary.date, 1)) } } label: {
-                    Image(systemName: "chevron.right").frame(width: 34, height: 34)
-                }
-                .disabled(isToday)
-                .accessibilityLabel("Next day")
-                Spacer()
-                if let latest = summary.latestDataDate, latest < summary.date {
-                    Text("Latest data \(Fmt.day(latest))").font(.caption).foregroundStyle(Palette.ink3)
+                if noSources { NoSourcesBanner() }
+                if dashboard.showsFamilyNotice { FamilyNotice() }
+                ForEach(summary.flags) { flag in
+                    FlagBanner(flag: flag, note: flag.id.hasPrefix("rhr") && phase?.luteal == true ? Self.cycleNote : nil)
                 }
             }
-            .foregroundStyle(Palette.ink)
-            .buttonStyle(.plain)
-            .padding(4)
-            .background(Palette.surface, in: Capsule())
-            .overlay(Capsule().strokeBorder(Palette.border))
+            .padding(.bottom, 16)
         }
     }
 }
 
-private struct Banner: View {
-    let text: String
-    let icon: String
-    let tone: Tone
-
-    var body: some View {
-        Label(text, systemImage: icon)
-            .font(.footnote)
-            .foregroundStyle(tone.ink)
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(tone.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-    }
-}
-
-/// A gentle heads-up from the summary (resting heart rate up, maybe with a raised temperature). Opens Vitals.
+/// A gentle heads-up from the summary (resting heart rate up, maybe with a raised temperature), in the banner's look.
+/// Opens its page, Vitals unless it names another.
 private struct FlagBanner: View {
     let flag: Flag
     /// Cycle context the app adds itself.
@@ -195,173 +165,65 @@ private struct FlagBanner: View {
 
     var body: some View {
         let tone: Tone = flag.caution ? .peach : .blue
-        let section = flag.page.flatMap(TrendsSection.init(page:)) ?? .vitals
-        Button { dashboard.open(section) } label: {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: flag.caution ? "heart.text.square" : "waveform.path.ecg").font(.subheadline.weight(.semibold))
+        let route = flag.page.flatMap { AppRoute(page: $0) } ?? .vitals
+        Button { dashboard.open(route) } label: {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: flag.caution ? "heart.text.square" : "waveform.path.ecg").font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(tone.ink)
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(flag.title).font(.subheadline.weight(.semibold))
-                    Text(flag.text).font(.footnote)
-                    if let note { Text(note).font(.footnote).opacity(0.85).padding(.top, 3) }
+                    Text(flag.title).font(.app(size: 14, weight: .medium, relativeTo: .subheadline)).foregroundStyle(Palette.ink)
+                    Text(flag.text).font(.app(.footnote)).foregroundStyle(Palette.ink2)
+                    if let note { Text(note).font(.app(.footnote)).foregroundStyle(Palette.ink3).padding(.top, 3) }
                 }
                 .multilineTextAlignment(.leading)
                 .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
-                Image(systemName: "chevron.right").font(.caption.weight(.semibold)).opacity(0.6)
+                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.ink3)
             }
-            .foregroundStyle(tone.ink)
-            .padding(12)
+            .padding(.vertical, 10)
+            .padding(.horizontal, 14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(tone.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .background(Palette.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Palette.border))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .combine)
-        .accessibilityHint("Opens \(section.rawValue)")
+        .buttonStyle(CardPressStyle())
+        .accessibilityHint("Opens \(route.title)")
     }
 }
 
-/// Once, for everyone: sharing is on by default, so say so where people will see it.
-private struct FamilyNotice: View {
-    @Environment(Dashboard.self) private var dashboard
-
-    var body: some View {
-        let tone = Tone.blue
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "person.2").font(.subheadline.weight(.semibold)).accessibilityHidden(true)
-            Text("Your family can see your daily status and your last 30 days on the **[Family](healthos://family)** board. Change this in **[Settings](healthos://settings)**.")
-                .font(.footnote)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .environment(\.openURL, OpenURLAction { url in
-                    dashboard.tab = url.host == "settings" ? .settings : .family
-                    return .handled
-                })
-            Button("Got it") { Task { await dashboard.dismissFamilyNotice() } }
-                .font(.footnote.weight(.semibold))
-                .buttonStyle(.plain)
-                .accessibilityHint("Hides this note")
-        }
-        .foregroundStyle(tone.ink)
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(tone.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-    }
-}
-
-private struct WeekCard: View {
-    let week: WeekSummary
+/// The week so far, as a widget (Home.tsx WeekCard): the sentences that used to sit under the figure, each figure
+/// against the same days last week. A server without it says what Home compares.
+struct WeekCard: View {
+    let week: WeekSummary?
     let stepGoal: Double
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(WeekText.title(week)).font(.caption.weight(.semibold)).textCase(.uppercase).foregroundStyle(Palette.ink3)
-            Text(WeekText.body(week, stepGoal: stepGoal)).font(.callout).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
+    /// The sentences with their figures in ink and a little heavier (.week-summary b), the rest in ink-2.
+    static func text(_ week: WeekSummary, stepGoal: Double) -> AttributedString {
+        var s = WeekText.body(week, stepGoal: stepGoal)
+        for run in s.runs where run.inlinePresentationIntent?.contains(.stronglyEmphasized) == true {
+            s[run.range].inlinePresentationIntent = nil
+            s[run.range].font = .app(.subheadline, weight: .semibold)
+            s[run.range].foregroundColor = Palette.ink
         }
-        .card()
+        return s
     }
-}
-
-// MARK: - Vitals
-
-private struct VitalsRow: View {
-    let vitals: Summary.Vitals
-    let asOf: String
-    let units: Units
-
-    var body: some View {
-        HStack(spacing: 10) {
-            tile(vitals.heart, icon: "heart.fill", color: Palette.critical, title: "Heart") { (Fmt.number($0), "bpm") }
-            tile(vitals.breathing, icon: "lungs.fill", color: Palette.series1, title: "Breathing") { (Fmt.number($0, 1), "rpm") }
-            tile(vitals.temp, icon: "thermometer.medium", color: Palette.series2, title: (vitals.temp?.label ?? "").lowercased().contains("wrist") ? "Wrist temp" : "Temp") {
-                let m = units.temp($0)
-                return (Fmt.number(m.value, 1), m.unit)
-            }
-        }
-    }
-
-    /// Short titles: three tiles share a phone-width row. The server's longer label goes to VoiceOver.
-    private func tile(_ vital: Vital?, icon: String, color: Color, title: String, format: (Double) -> (String, String)) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Label(title, systemImage: icon)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(Palette.ink2)
-                .labelStyle(TintedIconLabel(color: color))
-                .lineLimit(1)
-            if let latest = vital?.latest {
-                let (value, unit) = format(latest.value)
-                BigValue(value: value, unit: unit, size: 24)
-                Text(latest.date == asOf ? Self.statusText(vital?.status) : Fmt.day(latest.date))
-                    .font(.caption2)
-                    .foregroundStyle(vital?.status == "normal" || latest.date != asOf ? Palette.ink3 : Palette.serious)
-            } else {
-                Text("—").font(.title2.weight(.semibold)).foregroundStyle(Palette.ink3)
-                Text("No reading").font(.caption2).foregroundStyle(Palette.ink3)
-            }
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(vital?.label ?? title)
-        .background(Palette.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Palette.border))
-    }
-
-    static func statusText(_ status: String?) -> String {
-        switch status {
-        case "low": "Below your range"
-        case "high": "Above your range"
-        case "normal": "Normal"
-        default: "Building your range"
-        }
-    }
-}
-
-struct TintedIconLabel: LabelStyle {
-    let color: Color
-    func makeBody(configuration: Configuration) -> some View {
-        HStack(spacing: 4) {
-            configuration.icon.foregroundStyle(color)
-            configuration.title
-        }
-    }
-}
-
-// MARK: - Sync status
-
-/// "Synced 2 min ago · Apple Health ✓ · WHOOP ✓", tap to sync again. Problems in plain words underneath.
-struct SyncStatusLine: View {
-    @Environment(AppModel.self) private var sync
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Button { Task { await sync.syncAll(force: true) } } label: {
-                HStack(spacing: 6) {
-                    if sync.syncingSources {
-                        ProgressView().controlSize(.small)
-                        Text(sync.progress.isEmpty ? "Syncing Apple Health and WHOOP…" : sync.progress)
-                    } else if let s = sync.sources {
-                        Image(systemName: s.ok ? "checkmark.circle" : "exclamationmark.circle")
-                            .foregroundStyle(s.ok ? Palette.good : Palette.serious)
-                        Text("Synced \(s.finishedAt.formatted(.relative(presentation: .named))) · \(s.summary)")
-                    } else {
-                        Image(systemName: "arrow.triangle.2.circlepath")
-                        Text("Sync Apple Health and WHOOP")
-                    }
-                    Spacer(minLength: 0)
-                }
-                .font(.footnote)
-                .foregroundStyle(Palette.ink2)
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
-            }
-            .buttonStyle(.plain)
-            .disabled(sync.syncingSources)
-            .accessibilityHint("Syncs again")
-            if !sync.syncingSources, let notes = sync.sources?.notes, !notes.isEmpty {
-                ForEach(notes, id: \.self) { Text($0).font(.caption).foregroundStyle(Palette.ink3) }
+            if let week {
+                Text(WeekText.title(week)).font(.app(.caption, weight: .semibold)).tracking(0.6).textCase(.uppercase).foregroundStyle(Palette.ink3)
+                Text(Self.text(week, stepGoal: stepGoal)).font(.app(.subheadline)).lineSpacing(5).foregroundStyle(Palette.ink2)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("Vitals from your latest night, compared with your own last 30 days.").font(.app(.subheadline)).foregroundStyle(Palette.ink2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
+        .accessibilityElement(children: .combine)
+        .card()
+        .accessibilityIdentifier("card-home.week")
     }
 }
 

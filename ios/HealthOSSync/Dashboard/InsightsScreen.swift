@@ -1,30 +1,21 @@
 import Charts
 import SwiftUI
 
-/// McFly's weekly digest, patterns from the person's own history, two scatter plots and a year heatmap.
+/// Insights, under More (only the iPhone has it): McFly's weekly digest, patterns from the person's own history, two
+/// scatter plots and a year heatmap.
 /// Everything here is correlational: "tends to", never "causes".
 struct InsightsScreen: View {
     @Environment(Dashboard.self) private var dashboard
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if dashboard.signInRequired {
-                    SignInView()
-                } else if dashboard.phase == .noServer {
-                    ContentUnavailableView("No server yet", systemImage: "server.rack", description: Text("Add your healthOS address in Settings."))
-                } else {
-                    ScrollView {
-                        InsightsContent().padding(16)
-                    }
-                    .refreshable { await dashboard.load() }
-                }
+        PhaseGate {
+            ScrollView {
+                InsightsContent().padding(16)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Palette.page)
-            .navigationTitle("Insights")
-            .settingsButton()
+            .refreshable { await dashboard.load() }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Palette.page)
     }
 }
 
@@ -49,7 +40,7 @@ private struct InsightsContent: View {
                 HrvScatter(trends: trends, end: end)
                 YearHeatmapCard(trends: trends, end: end, stepGoal: dashboard.stepGoal)
             } else if let trendsError {
-                ContentUnavailableView("Couldn't load your data", systemImage: "chart.dots.scatter", description: Text(trendsError))
+                Unavailable("Couldn't load your data", systemImage: "chart.dots.scatter", description: trendsError)
             } else {
                 ProgressView().frame(maxWidth: .infinity, minHeight: 200)
             }
@@ -103,21 +94,21 @@ private struct DigestCard: View {
                     .background(Tone.blue.background, in: Circle())
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Weekly digest").font(.headline).foregroundStyle(Palette.ink)
-                    Text(subtitle).font(.caption).foregroundStyle(Palette.ink3)
+                    Text("Weekly digest").font(.app(.headline)).foregroundStyle(Palette.ink)
+                    Text(subtitle).font(.app(.caption)).foregroundStyle(Palette.ink3)
                 }
             }
             if let digest = reply.digest {
                 LightMarkdown(text: digest.text)
-                    .font(.callout)
+                    .font(.app(.callout))
                     .foregroundStyle(Palette.ink2)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
                 if reply.reason == "limit" {
-                    Text("McFly is at today's limit, so this is the most recent digest it wrote.").font(.caption).foregroundStyle(Palette.ink3)
+                    Text("McFly is at today's limit, so this is the most recent digest it wrote.").font(.app(.caption)).foregroundStyle(Palette.ink3)
                 }
             } else {
-                Text(note).font(.footnote).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
+                Text(note).font(.app(.footnote)).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
             }
         }
         .card()
@@ -143,18 +134,18 @@ private struct PatternsCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Patterns").font(.headline).foregroundStyle(Palette.ink)
+                Text("Patterns").font(.app(.headline)).foregroundStyle(Palette.ink)
                 if let range = dayRange(patterns.start, patterns.end) {
-                    Text(range).font(.caption).foregroundStyle(Palette.ink3)
+                    Text(range).font(.app(.caption)).foregroundStyle(Palette.ink3)
                 }
             }
             if patterns.patterns.isEmpty {
                 Text("Patterns appear after a few weeks of data. They compare your own days with each other, like nights after active days and nights after quieter ones.")
-                    .font(.footnote).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
+                    .font(.app(.footnote)).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
             } else {
                 ForEach(patterns.patterns) { PatternRow(pattern: $0) }
                 Text("These show what tends to go together in your own days, not what causes what.")
-                    .font(.caption).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
+                    .font(.app(.caption)).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
             }
         }
         .card()
@@ -166,8 +157,8 @@ private struct PatternRow: View {
     @Environment(Dashboard.self) private var dashboard
 
     var body: some View {
-        if let section = pattern.page.flatMap(TrendsSection.init(page:)) {
-            Button { dashboard.open(section) } label: { row(chevron: true) }
+        if let route = pattern.page.flatMap({ AppRoute(page: $0) }) {
+            Button { dashboard.open(route) } label: { row(chevron: true) }
                 .buttonStyle(.plain)
         } else {
             row(chevron: false)
@@ -175,7 +166,7 @@ private struct PatternRow: View {
     }
 
     private func row(chevron: Bool) -> some View {
-        let (symbol, tone) = InsightsCard.style(pattern.icon ?? "")
+        let (symbol, tone) = HomeInsightsCard.style(pattern.icon ?? "")
         return HStack(spacing: 12) {
             Image(systemName: symbol)
                 .font(.subheadline.weight(.semibold))
@@ -184,9 +175,9 @@ private struct PatternRow: View {
                 .background(tone.background, in: Circle())
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                Text(pattern.text).font(.subheadline).foregroundStyle(Palette.ink).multilineTextAlignment(.leading)
+                Text(pattern.text).font(.app(.subheadline)).foregroundStyle(Palette.ink).multilineTextAlignment(.leading)
                 if let detail = pattern.detail, !detail.isEmpty {
-                    Text(detail).font(.caption).foregroundStyle(Palette.ink3).multilineTextAlignment(.leading)
+                    Text(detail).font(.app(.caption)).foregroundStyle(Palette.ink3).multilineTextAlignment(.leading)
                 }
             }
             .fixedSize(horizontal: false, vertical: true)
@@ -339,18 +330,18 @@ private struct ScatterCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
-                Text(title).font(.subheadline.weight(.medium)).foregroundStyle(Palette.ink2)
+                Text(title).font(.app(.subheadline, weight: .medium)).foregroundStyle(Palette.ink2)
                 Spacer(minLength: 8)
                 if !data.pairs.isEmpty { Chip(text: "n = \(data.pairs.count)") }
             }
             if data.enough {
-                Text(caption).font(.callout).foregroundStyle(Palette.ink).fixedSize(horizontal: false, vertical: true)
+                Text(caption).font(.app(.callout)).foregroundStyle(Palette.ink).fixedSize(horizontal: false, vertical: true)
                 chart.frame(height: 210).padding(.top, 6)
                 Text("One dot for each of \(data.pairs.count) \(unit) in the last 90 days; the line is a simple straight-line fit.")
-                    .font(.caption).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
+                    .font(.app(.caption)).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
             } else {
                 Text("Not enough \(unit) yet. This needs at least \(ScatterPairs.needed) with both readings, and there \(data.pairs.count == 1 ? "is" : "are") \(data.pairs.count) in the last 90 days.")
-                    .font(.footnote).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
+                    .font(.app(.footnote)).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
             }
         }
         .card()
@@ -383,14 +374,14 @@ private struct ScatterCard: View {
         .chartYScale(domain: Self.padded(ys))
         .chartXAxis { AxisMarks(values: .automatic(desiredCount: 4)) { value in
             AxisGridLine().foregroundStyle(Palette.grid)
-            AxisValueLabel { if let v = value.as(Double.self) { Text(xText(v)) } }.foregroundStyle(Palette.ink3)
+            AxisValueLabel { if let v = value.as(Double.self) { Text(xText(v)) } }.font(.axis).foregroundStyle(Palette.ink3)
         } }
         .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { _ in
             AxisGridLine().foregroundStyle(Palette.grid)
-            AxisValueLabel().foregroundStyle(Palette.ink3)
+            AxisValueLabel().font(.axis).foregroundStyle(Palette.ink3)
         } }
-        .chartXAxisLabel(position: .bottom, alignment: .center) { Text(xLabel).font(.caption2).foregroundStyle(Palette.ink3) }
-        .chartYAxisLabel(position: .leading, alignment: .center) { Text(yLabel).font(.caption2).foregroundStyle(Palette.ink3) }
+        .chartXAxisLabel(position: .bottom, alignment: .center) { Text(xLabel).font(.app(.caption2)).foregroundStyle(Palette.ink3) }
+        .chartYAxisLabel(position: .leading, alignment: .center) { Text(yLabel).font(.app(.caption2)).foregroundStyle(Palette.ink3) }
         .accessibilityLabel("\(title): \(yLabel) against \(xLabel), \(data.pairs.count) \(unit)")
         .accessibilityValue(caption)
     }
@@ -490,7 +481,7 @@ private struct YearHeatmapCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("Past year").font(.subheadline.weight(.medium)).foregroundStyle(Palette.ink2)
+                Text("Past year").font(.app(.subheadline, weight: .medium)).foregroundStyle(Palette.ink2)
                 Spacer(minLength: 8)
                 Picker("Metric", selection: $metric) {
                     ForEach(HeatmapMetric.allCases) { Text($0.title).tag($0) }
@@ -508,12 +499,12 @@ private struct YearHeatmapCard: View {
                 }
                 Text("More")
             }
-            .font(.caption2)
+            .font(.app(.caption2))
             .foregroundStyle(Palette.ink3)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Color scale. \(metric.scale(goal: stepGoal))")
             Text("\(metric.scale(goal: stepGoal)) Tap a day, or press and slide, to read it.")
-                .font(.caption).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
+                .font(.app(.caption)).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
                 .accessibilityHidden(true)
         }
         .card()
@@ -536,7 +527,7 @@ private struct HeatmapGrid: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(readout)
-                .font(.footnote.weight(.medium))
+                .font(.app(.footnote, weight: .medium))
                 .foregroundStyle(Palette.ink2)
                 .monospacedDigit()
                 .lineLimit(1)
@@ -558,7 +549,7 @@ private struct HeatmapGrid: View {
         return VStack(alignment: .leading, spacing: gap) {
             ForEach(0..<7, id: \.self) { row in
                 Text(row == 0 || row == 2 || row == 4 ? symbols[(row + 1) % 7] : " ")
-                    .font(.caption2)
+                    .font(.app(.caption2))
                     .foregroundStyle(Palette.ink3)
                     .frame(height: cell)
             }
@@ -572,7 +563,7 @@ private struct HeatmapGrid: View {
         let levels = grid.values.map { metric.level($0, goal: stepGoal) }
         return Canvas { ctx, _ in
             for month in grid.months {
-                ctx.draw(Text(month.label).font(.caption2).foregroundStyle(Palette.ink3), at: CGPoint(x: CGFloat(month.column) * step, y: 0), anchor: .topLeading)
+                ctx.draw(Text(month.label).font(.app(.caption2)).foregroundStyle(Palette.ink3), at: CGPoint(x: CGFloat(month.column) * step, y: 0), anchor: .topLeading)
             }
             for i in grid.first...grid.last {
                 let rect = CGRect(x: CGFloat(i / 7) * step, y: top + CGFloat(i % 7) * step, width: cell, height: cell)

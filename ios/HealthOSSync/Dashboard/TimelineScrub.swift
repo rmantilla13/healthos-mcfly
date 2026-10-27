@@ -411,7 +411,7 @@ struct TimelineScrubber: View {
             readout
                 .accessibilityHidden(true) // the track speaks all of it, as its value
             track
-            if let note = notes { Text(note).font(.caption).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true) }
+            if let note = notes { Text(note).font(.app(.caption)).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true) }
         }
     }
 
@@ -425,7 +425,7 @@ struct TimelineScrubber: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 12) {
                 Text(live ? liveName : TimelineScrub.clock(moment.minute))
-                    .font(.system(.title2, design: .rounded).weight(.semibold)).monospacedDigit()
+                    .font(.app(.title2, weight: .semibold)).monospacedDigit()
                     .foregroundStyle(Palette.ink)
                     .lineLimit(1)
                     .fixedSize()
@@ -436,13 +436,13 @@ struct TimelineScrubber: View {
                     }
                     ForEach(moment.events) { e in
                         HStack(spacing: 5) {
-                            Circle().fill(TimelineCard.color(e.kind)).frame(width: 8, height: 8)
+                            Circle().fill(HomeTimelineCard.color(e.kind)).frame(width: 8, height: 8)
                             Text(TimelineScrub.doing(e)).foregroundStyle(Palette.ink)
-                            Text("\(Fmt.clock(e.start))–\(Fmt.clock(e.end))").font(.caption).monospacedDigit().foregroundStyle(Palette.ink3)
+                            Text("\(Fmt.clock(e.start))–\(Fmt.clock(e.end))").font(.app(.caption)).monospacedDigit().foregroundStyle(Palette.ink3)
                         }
                     }
                 }
-                .font(.footnote.weight(.medium))
+                .font(.app(.footnote, weight: .medium))
                 .lineLimit(1)
             }
             if moment.hasFigures {
@@ -493,7 +493,7 @@ struct TimelineScrubber: View {
                     .offset(y: Self.trackTop)
                 ForEach(events) { e in
                     let s = TimelineScrub.span(e, date: date)
-                    Capsule().fill(TimelineCard.color(e.kind))
+                    Capsule().fill(HomeTimelineCard.color(e.kind))
                         .frame(width: max(6, x(s.drawnTo - s.from) - 2), height: Self.trackHeight - 4)
                         .offset(x: x(s.from), y: Self.trackTop + 2)
                 }
@@ -510,7 +510,7 @@ struct TimelineScrubber: View {
                     .offset(x: x(minute) - 0.75, y: 18)
                 // The pill slides from left-aligned at 00:00 to right-aligned at 24:00, so it never leaves the card.
                 Text(TimelineScrub.clock(minute))
-                    .font(.caption2.weight(.semibold)).monospacedDigit()
+                    .font(.app(.caption2, weight: .semibold)).monospacedDigit()
                     .foregroundStyle(Palette.surface)
                     .padding(.horizontal, 7).padding(.vertical, 3)
                     .background(Palette.ink, in: Capsule())
@@ -556,7 +556,7 @@ struct TimelineScrubber: View {
         ZStack(alignment: .topLeading) {
             ForEach([0, 6, 12, 18, 24], id: \.self) { h in
                 Text(TimelineScrub.hourClock(h))
-                    .font(.caption2).monospacedDigit().foregroundStyle(Palette.ink3)
+                    .font(.app(.caption2)).monospacedDigit().foregroundStyle(Palette.ink3)
                     .fixedSize()
                     .frame(width: w, alignment: h == 0 ? .leading : h == 24 ? .trailing : .center)
                     .offset(x: h == 0 || h == 24 ? 0 : w * (CGFloat(h) / 24 - 0.5))
@@ -652,13 +652,13 @@ private struct ScrubStatTile: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text(name).font(.caption).foregroundStyle(Palette.ink2).lineLimit(1).minimumScaleFactor(0.8)
+            Text(name).font(.app(.caption)).foregroundStyle(Palette.ink2).lineLimit(1).minimumScaleFactor(0.8)
             HStack(alignment: .firstTextBaseline, spacing: 3) {
                 Text(value ?? "—")
-                    .font(.system(.headline, design: .rounded)).monospacedDigit()
+                    .font(.app(.headline)).monospacedDigit()
                     .foregroundStyle(value == nil ? Palette.ink3 : Palette.ink)
                 if value != nil, !unit.isEmpty {
-                    Text(unit).font(.caption2.weight(.medium)).foregroundStyle(Palette.ink3)
+                    Text(unit).font(.app(.caption2, weight: .medium)).foregroundStyle(Palette.ink3)
                 }
             }
             .lineLimit(1)
@@ -666,7 +666,7 @@ private struct ScrubStatTile: View {
             .padding(.vertical, 1)
             ForEach(0..<2, id: \.self) { i in
                 Text(i < lines.count ? lines[i] : " ")
-                    .font(.caption2).monospacedDigit().foregroundStyle(Palette.ink3)
+                    .font(.app(.caption2)).monospacedDigit().foregroundStyle(Palette.ink3)
                     .lineLimit(1).minimumScaleFactor(0.75)
             }
         }

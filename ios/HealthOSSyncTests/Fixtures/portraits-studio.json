@@ -1,0 +1,14 @@
+{
+  "portraits": [
+    {"id": "ref-a", "kind": "reference", "status": "ready", "mime": "image/jpeg", "width": 1200, "height": 1600, "bytes": 412000, "referenceId": null, "error": "", "createdAt": 1761300000000},
+    {"id": "ref-b", "kind": "reference", "status": "ready", "mime": "image/jpeg", "width": 900, "height": 1200, "bytes": 212000, "referenceId": null, "error": "", "createdAt": 1761390000000},
+    {"id": "made-ready", "kind": "generated", "status": "ready", "mime": "image/webp", "width": 1024, "height": 1536, "bytes": 2100000, "referenceId": "ref-a", "error": "", "createdAt": 1761301000000},
+    {"id": "made-chosen", "kind": "generated", "status": "ready", "mime": "image/webp", "width": 1024, "height": 1536, "bytes": 2000000, "referenceId": "ref-a", "error": "", "createdAt": 1761302000000},
+    {"id": "made-failed", "kind": "generated", "status": "failed", "mime": "image/webp", "width": null, "height": null, "bytes": 0, "referenceId": "ref-a", "error": "OpenAI is busy right now. Try again in a minute.", "createdAt": 1761303000000},
+    {"id": "made-failed-quiet", "kind": "generated", "status": "failed", "mime": "image/webp", "width": null, "height": null, "bytes": 0, "referenceId": "ref-b", "error": "", "createdAt": 1761391000000},
+    {"id": "made-pending", "kind": "generated", "status": "pending", "mime": "image/webp", "width": null, "height": null, "bytes": 0, "referenceId": "ref-b", "error": "", "createdAt": 1761392000000},
+    {"id": "made-orphan", "kind": "generated", "status": "ready", "mime": "image/webp", "width": 1024, "height": 1536, "bytes": 1900000, "referenceId": "ref-gone", "error": "", "createdAt": 1761200000000}
+  ],
+  "chosen": "made-chosen",
+  "canGenerate": true
+}

@@ -1,0 +1,10 @@
+{
+  "portraits": [
+    {"id": "r1", "kind": "reference", "status": "ready", "mime": "image/jpeg", "width": 1200, "height": 1600, "bytes": 412000, "referenceId": null, "error": "", "createdAt": 1761300000000},
+    {"id": "g1", "kind": "generated", "status": "failed", "mime": "image/png", "width": null, "height": null, "bytes": 0, "referenceId": "r1", "error": "OpenAI declined to make a portrait from this photo. Try another photo of just you.", "createdAt": 1761300500000},
+    {"id": "g2", "kind": "generated", "status": "ready", "mime": "image/png", "width": 1024, "height": 1536, "bytes": 2100000, "referenceId": "r1", "error": "", "createdAt": 1761301000000},
+    {"kind": "generated"}
+  ],
+  "chosen": "g2",
+  "canGenerate": true
+}

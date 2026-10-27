@@ -1,0 +1,15 @@
+{
+  "numbers": "no_energy",
+  "today": "2026-10-24",
+  "date": "2026-10-23",
+  "entries": [
+    {"id": "e1", "date": "2026-10-23", "time": "08:10", "name": "Greek yogurt", "portion": "1 cup (245 g)", "quantity": 1, "values": {"protein_g": 20, "carbs_g": 9, "fat_g": 0.9}, "method": "barcode", "ref": "off:5201054017371", "version": 1, "origin": "iphone"},
+    {"id": "e2", "date": "2026-10-23", "time": "12:30", "name": "Lentil soup", "portion": "1 bowl", "quantity": 1.5, "values": {"protein_g": 18, "carbs_g": 45, "fat_g": 6}, "method": "estimate", "ref": null, "version": 2, "origin": "web"},
+    {"id": "broken"}
+  ],
+  "drafts": [],
+  "draftBatch": null,
+  "balance": {"protein_g": 38, "carbs_g": 54, "fat_g": 6.9},
+  "countedApp": "healthOS",
+  "can": {"estimate": true, "usda": false, "estimateProvider": "anthropic", "estimateSource": "shared", "voice": false}
+}

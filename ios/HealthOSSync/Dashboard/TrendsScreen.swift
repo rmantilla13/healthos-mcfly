@@ -1,59 +1,66 @@
 import Charts
 import SwiftUI
 
-/// Vitals, Sleep, Activity and Body over 7 days, 30 days, 90 days or a year (src/pages/Detail.tsx), and Cycle while tracking is on.
-struct TrendsScreen: View {
+/// Charts over 7 days, 30 days, 90 days or a year (src/pages/Detail.tsx): what the Vitals, Body, Sleep and Cycle pages
+/// show until each is built here. One section, or Body's two (Body and Activity) as chips.
+struct TrendsPage: View {
+    let sections: [TrendsSection]
+    @Binding var selection: TrendsSection
     @Environment(Dashboard.self) private var dashboard
     @AppStorage("trendsDays") private var days = 30
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    /// One section, no chips.
+    init(_ section: TrendsSection) {
+        sections = [section]
+        _selection = .constant(section)
+    }
+
+    init(sections: [TrendsSection], selection: Binding<TrendsSection>) {
+        self.sections = sections
+        _selection = selection
+    }
 
     var body: some View {
-        @Bindable var dashboard = dashboard
-        NavigationStack {
-            Group {
-                if dashboard.signInRequired {
-                    SignInView()
-                } else if dashboard.phase == .noServer {
-                    ContentUnavailableView("No server yet", systemImage: "server.rack", description: Text("Add your healthOS address in Settings."))
-                } else {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 14) {
-                            TrendsSectionChips(selection: $dashboard.trendsSection, sections: TrendsSection.visible(cycleTracking: dashboard.cycleTrackingOn))
-                            HStack {
-                                Text(subtitle).font(.footnote).foregroundStyle(Palette.ink3)
-                                Spacer()
-                                // The cycle view has its own span.
-                                if dashboard.trendsSection != .cycle {
-                                    Picker("Range", selection: $days) {
-                                        Text("7 days").tag(7)
-                                        Text("30 days").tag(30)
-                                        Text("90 days").tag(90)
-                                        Text("1 year").tag(365)
-                                    }
-                                    .pickerStyle(.menu)
-                                }
+        PhaseGate {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    if sections.count > 1 { TrendsSectionChips(selection: $selection, sections: sections) }
+                    // At the accessibility text sizes the range goes under the line, so "30 days" never breaks.
+                    let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4)) : AnyLayout(HStackLayout())
+                    layout {
+                        Text(subtitle).font(.app(.footnote)).foregroundStyle(Palette.ink3)
+                        if !typeSize.isAccessibilitySize { Spacer() }
+                        // The cycle view has its own span.
+                        if selection != .cycle {
+                            Picker("Range", selection: $days) {
+                                Text("7 days").tag(7)
+                                Text("30 days").tag(30)
+                                Text("90 days").tag(90)
+                                Text("1 year").tag(365)
                             }
-                            switch dashboard.trendsSection {
-                            case .vitals: VitalsTrends(days: days)
-                            case .sleep: SleepTrends(days: days)
-                            case .activity: ActivityTrends(days: days)
-                            case .body: BodyTrends(days: days)
-                            case .cycle: CycleTrends()
-                            }
+                            .pickerStyle(.menu)
+                            .fixedSize()
                         }
-                        .padding(16)
                     }
-                    .refreshable { await dashboard.load() }
+                    switch selection {
+                    case .vitals: VitalsTrends(days: days)
+                    case .sleep: SleepTrends(days: days)
+                    case .activity: ActivityTrends(days: days)
+                    case .body: BodyTrends(days: days)
+                    case .cycle: CycleTrends()
+                    }
                 }
+                .padding(16)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Palette.page)
-            .navigationTitle("Trends")
-            .settingsButton()
+            .refreshable { await dashboard.load() }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Palette.page)
     }
 
     private var subtitle: String {
-        switch dashboard.trendsSection {
+        switch selection {
         case .vitals: "Overnight readings from WHOOP and Apple Watch."
         case .sleep: "Each night counts on the day you wake up."
         case .activity: "Movement from iPhone and Apple Watch, strain from WHOOP."
@@ -63,7 +70,7 @@ struct TrendsScreen: View {
     }
 }
 
-/// The sections as a row of chips that scrolls sideways, so a fifth (Cycle) still fits at phone width.
+/// The sections as a row of chips that scrolls sideways, so more of them would still fit at phone width.
 private struct TrendsSectionChips: View {
     @Binding var selection: TrendsSection
     let sections: [TrendsSection]
@@ -76,7 +83,7 @@ private struct TrendsSectionChips: View {
                         let on = s == selection
                         Button { selection = s } label: {
                             Text(s.rawValue)
-                                .font(.subheadline.weight(.medium))
+                                .font(.app(.subheadline, weight: .medium))
                                 .padding(.horizontal, 16)
                                 .padding(.vertical, 8)
                                 .foregroundStyle(on ? Palette.surface : Palette.ink2)
@@ -99,7 +106,7 @@ private struct TrendsSectionChips: View {
 }
 
 /// Loads one set of trend metrics for the chosen range and hands them to `content`.
-private struct TrendsLoader<Content: View>: View {
+struct TrendsLoader<Content: View>: View {
     let metrics: [String]
     let days: Int
     @ViewBuilder let content: (Trends) -> Content
@@ -112,7 +119,7 @@ private struct TrendsLoader<Content: View>: View {
             if let trends {
                 content(trends)
             } else if let error {
-                ContentUnavailableView("Couldn't load trends", systemImage: "chart.line.downtrend.xyaxis", description: Text(error))
+                Unavailable("Couldn't load trends", systemImage: "chart.line.downtrend.xyaxis", description: error)
             } else {
                 ProgressView().frame(maxWidth: .infinity, minHeight: 200)
             }
@@ -161,7 +168,7 @@ private struct VitalsTrends: View {
             if has("wrist_temp") { TrendCard(title: "Wrist temperature", points: t["wrist_temp"]!, format: temp, note: "Apple Watch, during sleep") }
             if has("skin_temp") { TrendCard(title: "Skin temperature", points: t["skin_temp"]!, format: temp, note: "WHOOP") }
             BloodPressureCard(systolic: t["blood_pressure_systolic"] ?? [], diastolic: t["blood_pressure_diastolic"] ?? [])
-            GlucoseCard(points: t["glucose"] ?? [])
+            TrendsGlucoseCard(points: t["glucose"] ?? [])
             BreathingDisturbancesCard(points: t["breathing_disturbances"] ?? [])
         }
         .task(id: "\(days)|\(dashboard.generation)") {
@@ -186,21 +193,23 @@ private struct SleepTrends: View {
     var body: some View {
         TrendsLoader(metrics: ["sleep_hours", "sleep_deep", "sleep_light", "sleep_rem", "sleep_awake", "sleep_performance", "sleep_efficiency"], days: days) { t in
             let hours = t["sleep_hours"] ?? []
-            // The web Sleep overview's cards hidden in Settings → Cards (shared/cards.ts) are left out here too.
-            let hidden = dashboard.hiddenCardSet
+            // The web Sleep overview's cards hidden in Profile → Cards (shared/cards.ts) are left out here too.
+            let hidden = dashboard.cardsOff
+            let performance = t["sleep_performance"] ?? []
+            // Sleep performance is WHOOP's alone: without any, its card has nothing to show, so it doesn't count below.
+            let cards = Cards.ids(in: .sleep).filter { $0 != "sleep.score" || !performance.isEmpty }
             if !hidden.contains("sleep.stages") { StagesCard(trends: t, days: days, average: hours.average) }
             if let timing { SleepConsistencyCard(timing: timing) }
             if !hidden.contains("sleep.total") { TrendCard(title: "Time asleep", points: hours, format: Fmt.hoursMinutes) }
-            // The sleep score is WHOOP's performance, else Apple Watch's efficiency (the web's ScoreCard).
-            if !hidden.contains("sleep.score") {
-                if !(t["sleep_performance"]?.isEmpty ?? true) {
-                    TrendCard(title: "Sleep performance", points: t["sleep_performance"]!, format: { "\(Fmt.number($0))%" }, note: "WHOOP: sleep vs sleep needed", color: Palette.series3)
-                } else {
-                    TrendCard(title: "Sleep efficiency", points: t["sleep_efficiency"] ?? [], format: { "\(Fmt.number($0))%" }, color: Palette.series3)
-                }
+            // Each its own card, as on the web: hiding one leaves the other.
+            if !hidden.contains("sleep.score"), !performance.isEmpty {
+                TrendCard(title: "Sleep performance", points: performance, format: { "\(Fmt.number($0))%" }, note: "WHOOP: sleep vs sleep needed", color: Palette.series3)
             }
-            if Cards.allHidden(in: .trends(.sleep), hidden: hidden) {
-                AllCardsHiddenNote(text: timing == nil ? "All the cards on this page are hidden." : "Your sleep score, total sleep and stages cards are hidden.")
+            if !hidden.contains("sleep.efficiency") {
+                TrendCard(title: "Sleep efficiency", points: t["sleep_efficiency"] ?? [], format: { "\(Fmt.number($0))%" }, note: "time asleep ÷ time in bed", color: Palette.series3)
+            }
+            if Cards.allHidden(cards, hidden: hidden) {
+                AllCardsHiddenNote(text: timing == nil ? "All the cards on this page are hidden." : "Your stages, total sleep, performance and efficiency cards are hidden.")
             }
         }
         .task(id: "\(days)|\(dashboard.generation)") {
@@ -223,21 +232,21 @@ private struct SleepTrends: View {
         var body: some View {
             let bars = SleepTrends.stages.flatMap { s in (trends[s.key] ?? []).weekly(days: days).map { Bar(date: $0.date, stage: s.label, hours: $0.value) } }
             VStack(alignment: .leading, spacing: 10) {
-                Text(days > 90 ? "Sleep stages, weekly average" : "Sleep stages").font(.subheadline.weight(.medium)).foregroundStyle(Palette.ink2)
-                Text(average.map(Fmt.hoursMinutes) ?? "—").font(.title2.weight(.semibold)).monospacedDigit()
-                Text("average time asleep").font(.caption).foregroundStyle(Palette.ink3)
+                Text(days > 90 ? "Sleep stages, weekly average" : "Sleep stages").font(.app(.subheadline, weight: .medium)).foregroundStyle(Palette.ink2)
+                Text(average.map(Fmt.hoursMinutes) ?? "—").font(.app(.title2, weight: .semibold)).monospacedDigit()
+                Text("average time asleep").font(.app(.caption)).foregroundStyle(Palette.ink3)
                 if bars.isEmpty {
-                    Text("No sleep stages in this range.").font(.footnote).foregroundStyle(Palette.ink3)
+                    Text("No sleep stages in this range.").font(.app(.footnote)).foregroundStyle(Palette.ink3)
                 } else {
                     Chart(bars) { b in
                         BarMark(x: .value("Night", Fmt.chartDate(b.date), unit: days > 90 ? .weekOfYear : .day), y: .value("Hours", b.hours))
                             .foregroundStyle(by: .value("Stage", b.stage))
                     }
                     .chartForegroundStyleScale(domain: SleepTrends.stages.map(\.label), range: SleepTrends.stages.map(\.color))
-                    .chartLegend(position: .bottom, alignment: .leading)
+                    .chartLegend(position: .bottom, alignment: .leading) { ChartLegend(SleepTrends.stages.map { ($0.label, $0.color) }) }
                     .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { v in
                         AxisGridLine().foregroundStyle(Palette.grid)
-                        AxisValueLabel { if let h = v.as(Double.self) { Text("\(Fmt.number(h))h") } }
+                        AxisValueLabel { if let h = v.as(Double.self) { Text("\(Fmt.number(h))h") } }.font(.axis)
                     } }
                     .chartXAxis { dateAxis() }
                     .frame(height: 200)
@@ -284,9 +293,9 @@ private struct ActivityTrends: View {
         var body: some View {
             let bars = points.weekly(days: days)
             VStack(alignment: .leading, spacing: 10) {
-                Text(days > 90 ? "Steps, weekly daily average" : "Steps").font(.subheadline.weight(.medium)).foregroundStyle(Palette.ink2)
-                Text(points.average.map { "\(Fmt.number($0)) / day" } ?? "—").font(.title2.weight(.semibold)).monospacedDigit()
-                Text("goal \(Fmt.number(goal))").font(.caption).foregroundStyle(Palette.ink3)
+                Text(days > 90 ? "Steps, weekly daily average" : "Steps").font(.app(.subheadline, weight: .medium)).foregroundStyle(Palette.ink2)
+                Text(points.average.map { "\(Fmt.number($0)) / day" } ?? "—").font(.app(.title2, weight: .semibold)).monospacedDigit()
+                Text("goal \(Fmt.number(goal))").font(.app(.caption)).foregroundStyle(Palette.ink3)
                 if !bars.isEmpty {
                     Chart {
                         ForEach(bars) { p in
@@ -297,12 +306,12 @@ private struct ActivityTrends: View {
                             .foregroundStyle(Palette.good)
                             .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
                             .annotation(position: .top, alignment: .trailing) {
-                                Text("Goal \(Fmt.compact(goal))").font(.caption2).foregroundStyle(Palette.goodText)
+                                Text("Goal \(Fmt.compact(goal))").font(.app(.caption2)).foregroundStyle(Palette.goodText)
                             }
                     }
                     .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { v in
                         AxisGridLine().foregroundStyle(Palette.grid)
-                        AxisValueLabel { if let n = v.as(Double.self) { Text(Fmt.compact(n)) } }
+                        AxisValueLabel { if let n = v.as(Double.self) { Text(Fmt.compact(n)) } }.font(.axis)
                     } }
                     .chartXAxis { dateAxis() }
                     .frame(height: 200)
@@ -313,7 +322,8 @@ private struct ActivityTrends: View {
     }
 }
 
-private struct WorkoutsCard: View {
+/// The range's workouts, newest first (the web's Body · Activity list).
+struct WorkoutsCard: View {
     let days: Int
     @Environment(Dashboard.self) private var dashboard
     @State private var workouts: [Workout]?
@@ -321,12 +331,12 @@ private struct WorkoutsCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Workouts").font(.headline).foregroundStyle(Palette.ink)
+                Text("Workouts").font(.app(.headline)).foregroundStyle(Palette.ink)
                 Spacer()
-                if let workouts { Text("\(workouts.count) in this range").font(.caption).foregroundStyle(Palette.ink3) }
+                if let workouts { Text("\(workouts.count) in this range").font(.app(.caption)).foregroundStyle(Palette.ink3) }
             }
             if let workouts {
-                if workouts.isEmpty { Text("No workouts in this range.").font(.footnote).foregroundStyle(Palette.ink3) }
+                if workouts.isEmpty { Text("No workouts in this range.").font(.app(.footnote)).foregroundStyle(Palette.ink3) }
                 ForEach(workouts.prefix(60)) { w in
                     WorkoutListRow(workout: w, units: dashboard.units)
                     if w.id != workouts.prefix(60).last?.id { Divider().overlay(Palette.border) }
@@ -340,7 +350,8 @@ private struct WorkoutsCard: View {
     }
 }
 
-private struct WorkoutListRow: View {
+/// One workout: its sport, when, how long and how hard, and where it came from.
+struct WorkoutListRow: View {
     let workout: Workout
     let units: Units
 
@@ -353,12 +364,12 @@ private struct WorkoutListRow: View {
                 .background(Tone.peach.background, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
             VStack(alignment: .leading, spacing: 3) {
                 HStack {
-                    Text(workout.sport).font(.subheadline.weight(.medium)).foregroundStyle(Palette.ink)
+                    Text(workout.sport).font(.app(.subheadline, weight: .medium)).foregroundStyle(Palette.ink)
                     Spacer()
-                    Text(Fmt.day(workout.date, "EEEMMMd")).font(.caption).foregroundStyle(Palette.ink3)
+                    Text(Fmt.day(workout.date, "EEEMMMd")).font(.app(.caption)).foregroundStyle(Palette.ink3)
                 }
-                Text(details).font(.caption).foregroundStyle(Palette.ink2).monospacedDigit()
-                Text(source).font(.caption2).foregroundStyle(Palette.ink3)
+                Text(details).font(.app(.caption)).foregroundStyle(Palette.ink2).monospacedDigit()
+                Text(source).font(.app(.caption2)).foregroundStyle(Palette.ink3)
             }
         }
         .accessibilityElement(children: .combine)
@@ -373,12 +384,17 @@ private struct WorkoutListRow: View {
         return parts.joined(separator: " · ")
     }
 
-    private var source: String {
-        switch workout.source {
+    private var source: String { Self.sourceName(workout.source) }
+
+    /// Where a workout came from, in the web's words (WorkoutCard.tsx, MeasurementCard.tsx SOURCE_NAME).
+    static func sourceName(_ source: String) -> String {
+        switch source {
         case "apple": "Apple Health"
         case "whoop": "WHOOP"
+        case "apple+whoop": "Apple Health and WHOOP"
+        case "fitbit": "Fitbit"
         case "demo": "Demo"
-        default: workout.source
+        default: source
         }
     }
 
@@ -447,9 +463,9 @@ struct TrendCard: View {
         let last = points.last
         let avg = points.average
         VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.subheadline.weight(.medium)).foregroundStyle(Palette.ink2)
-            Text(last.map { format($0.value) } ?? "—").font(.title2.weight(.semibold)).foregroundStyle(Palette.ink).monospacedDigit()
-            Text(noteText(last: last, avg: avg)).font(.caption).foregroundStyle(Palette.ink3)
+            Text(title).font(.app(.subheadline, weight: .medium)).foregroundStyle(Palette.ink2)
+            Text(last.map { format($0.value) } ?? "—").font(.app(.title2, weight: .semibold)).foregroundStyle(Palette.ink).monospacedDigit()
+            Text(noteText(last: last, avg: avg)).font(.app(.caption)).foregroundStyle(Palette.ink3)
             if !points.isEmpty { chart.frame(height: 150).padding(.top, 6) }
         }
         .card()
@@ -501,8 +517,8 @@ struct TrendCard: View {
                     .foregroundStyle(Palette.ink3.opacity(0.5))
                     .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
                         VStack(spacing: 1) {
-                            Text(format(picked.value)).font(.caption.weight(.semibold))
-                            Text(Fmt.day(picked.date)).font(.caption2)
+                            Text(format(picked.value)).font(.app(.caption, weight: .semibold))
+                            Text(Fmt.day(picked.date)).font(.app(.caption2))
                         }
                         .padding(.horizontal, 8).padding(.vertical, 4)
                         .background(Palette.surface2, in: RoundedRectangle(cornerRadius: 8))
@@ -515,7 +531,7 @@ struct TrendCard: View {
         .chartXSelection(value: $selected)
         .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { _ in
             AxisGridLine().foregroundStyle(Palette.grid)
-            AxisValueLabel().foregroundStyle(Palette.ink3)
+            AxisValueLabel().font(.axis).foregroundStyle(Palette.ink3)
         } }
         .chartXAxis { dateAxis() }
         .accessibilityLabel(smoothed == nil ? "\(title) trend" : "\(title) trend, each reading with a 7-day average line")
@@ -524,6 +540,6 @@ struct TrendCard: View {
 
 private func dateAxis() -> some AxisContent {
     AxisMarks(values: .automatic(desiredCount: 4)) { _ in
-        AxisValueLabel(format: .dateTime.month(.abbreviated).day()).foregroundStyle(Palette.ink3)
+        AxisValueLabel(format: .dateTime.month(.abbreviated).day()).font(.axis).foregroundStyle(Palette.ink3)
     }
 }

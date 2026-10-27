@@ -61,9 +61,9 @@ struct TempDeviationCard: View {
             let bars = picked.nights.map { Point(date: $0.date, value: units.tempDelta($0.deviation).value) }.weekly(days: days)
             let limit = Swift.max((bars.map { abs($0.value) }.max() ?? 0) * 1.2, units == .imperial ? 0.9 : 0.5)
             VStack(alignment: .leading, spacing: 6) {
-                Text("Nightly temperature").font(.subheadline.weight(.medium)).foregroundStyle(Palette.ink2)
-                Text(units.tempDelta(latest.deviation).signed(1)).font(.title2.weight(.semibold)).foregroundStyle(Palette.ink).monospacedDigit()
-                Text("vs your usual · \(Fmt.day(latest.date)) · \(Self.notes[picked.metric] ?? "")").font(.caption).foregroundStyle(Palette.ink3)
+                Text("Nightly temperature").font(.app(.subheadline, weight: .medium)).foregroundStyle(Palette.ink2)
+                Text(units.tempDelta(latest.deviation).signed(1)).font(.app(.title2, weight: .semibold)).foregroundStyle(Palette.ink).monospacedDigit()
+                Text("vs your usual · \(Fmt.day(latest.date)) · \(Self.notes[picked.metric] ?? "")").font(.app(.caption)).foregroundStyle(Palette.ink3)
                 Chart {
                     ForEach(bars) { p in
                         BarMark(x: .value("Night", Fmt.chartDate(p.date), unit: days > 90 ? .weekOfYear : .day), y: .value("Difference", p.value))
@@ -76,14 +76,14 @@ struct TempDeviationCard: View {
                 .chartYScale(domain: -limit...limit)
                 .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 5)) { v in
                     AxisGridLine().foregroundStyle(Palette.grid)
-                    AxisValueLabel { if let d = v.as(Double.self) { Text(Fmt.signed(d, 1)).foregroundStyle(Palette.ink3) } }
+                    AxisValueLabel { if let d = v.as(Double.self) { Text(Fmt.signed(d, 1)).foregroundStyle(Palette.ink3) } }.font(.axis)
                 } }
                 .chartXAxis { extrasDateAxis() }
                 .frame(height: 150)
                 .padding(.top, 6)
                 .accessibilityLabel("Nightly temperature vs your usual, latest \(units.tempDelta(latest.deviation).signed(1))")
                 Text(days > 90 ? "Weekly averages, \(unit). Above the line is warmer than usual, below is cooler." : "Above the line is warmer than usual, below is cooler.")
-                    .font(.caption2).foregroundStyle(Palette.ink3)
+                    .font(.app(.caption2)).foregroundStyle(Palette.ink3)
             }
             .card()
         }
@@ -109,9 +109,9 @@ struct BloodPressureCard: View {
             let values = readings.map(\.value)
             let lo = (values.min() ?? 70) - 8, hi = (values.max() ?? 130) + 8
             VStack(alignment: .leading, spacing: 6) {
-                Text("Blood pressure").font(.subheadline.weight(.medium)).foregroundStyle(Palette.ink2)
-                Text(headline(lower)).font(.title2.weight(.semibold)).foregroundStyle(Palette.ink).monospacedDigit()
-                Text(note).font(.caption).foregroundStyle(Palette.ink3)
+                Text("Blood pressure").font(.app(.subheadline, weight: .medium)).foregroundStyle(Palette.ink2)
+                Text(headline(lower)).font(.app(.title2, weight: .semibold)).foregroundStyle(Palette.ink).monospacedDigit()
+                Text(note).font(.app(.caption)).foregroundStyle(Palette.ink3)
                 Chart(readings) { r in
                     LineMark(x: .value("Day", Fmt.chartDate(r.date)), y: .value("mmHg", r.value), series: .value("Reading", r.kind))
                         .foregroundStyle(by: .value("Reading", r.kind))
@@ -124,11 +124,11 @@ struct BloodPressureCard: View {
                         .accessibilityValue("\(Fmt.number(r.value)) mmHg")
                 }
                 .chartForegroundStyleScale(domain: ["Systolic", "Diastolic"], range: [Palette.series2, Palette.series1])
-                .chartLegend(position: .bottom, alignment: .leading)
+                .chartLegend(position: .bottom, alignment: .leading) { ChartLegend([("Systolic", Palette.series2), ("Diastolic", Palette.series1)]) }
                 .chartYScale(domain: lo...hi)
                 .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { _ in
                     AxisGridLine().foregroundStyle(Palette.grid)
-                    AxisValueLabel().foregroundStyle(Palette.ink3)
+                    AxisValueLabel().font(.axis).foregroundStyle(Palette.ink3)
                 } }
                 .chartXAxis { extrasDateAxis() }
                 .frame(height: 180)
@@ -154,7 +154,7 @@ struct BloodPressureCard: View {
     }
 }
 
-struct GlucoseCard: View {
+struct TrendsGlucoseCard: View {
     let points: [Point]
 
     var body: some View {
@@ -194,9 +194,9 @@ struct SleepConsistencyCard: View {
             let hi = Swift.max((bottom / step).rounded(.up) * step, lo + step)
             let width = Swift.max(1, Swift.min(8, 180 / Double(nights.count)))
             VStack(alignment: .leading, spacing: 6) {
-                Text("Sleep schedule").font(.subheadline.weight(.medium)).foregroundStyle(Palette.ink2)
-                Text(usual(stats)).font(.title2.weight(.semibold)).foregroundStyle(Palette.ink).monospacedDigit()
-                Text("usual bedtime and wake time · \(nights.count) night\(nights.count == 1 ? "" : "s")").font(.caption).foregroundStyle(Palette.ink3)
+                Text("Sleep schedule").font(.app(.subheadline, weight: .medium)).foregroundStyle(Palette.ink2)
+                Text(usual(stats)).font(.app(.title2, weight: .semibold)).foregroundStyle(Palette.ink).monospacedDigit()
+                Text("usual bedtime and wake time · \(nights.count) night\(nights.count == 1 ? "" : "s")").font(.app(.caption)).foregroundStyle(Palette.ink3)
                 Chart {
                     ForEach(nights) { n in
                         RuleMark(x: .value("Night", Fmt.chartDate(n.date)), yStart: .value("Bedtime", -n.bedMin), yEnd: .value("Wake time", -(n.wakeMin + 360)))
@@ -217,11 +217,11 @@ struct SleepConsistencyCard: View {
                     }
                 }
                 .chartForegroundStyleScale(domain: ["Weekdays", "Weekends"], range: [Palette.series1, Palette.series2])
-                .chartLegend(position: .bottom, alignment: .leading)
+                .chartLegend(position: .bottom, alignment: .leading) { ChartLegend([("Weekdays", Palette.series1), ("Weekends", Palette.series2)]) }
                 .chartYScale(domain: -hi...(-lo))
                 .chartYAxis { AxisMarks(position: .leading, values: Array(stride(from: -hi, through: -lo, by: step))) { v in
                     AxisGridLine().foregroundStyle(Palette.grid)
-                    AxisValueLabel { if let m = v.as(Double.self) { Text(Fmt.eveningClock(minutesAfter18: -m)).foregroundStyle(Palette.ink3) } }
+                    AxisValueLabel { if let m = v.as(Double.self) { Text(Fmt.eveningClock(minutesAfter18: -m)).foregroundStyle(Palette.ink3) } }.font(.axis)
                 } }
                 .chartXAxis { extrasDateAxis() }
                 .frame(height: 210)
@@ -286,7 +286,7 @@ private struct ScheduleFact: View {
         } icon: {
             Image(systemName: icon).foregroundStyle(Palette.ink3)
         }
-        .font(.footnote)
+        .font(.app(.footnote))
     }
 }
 
@@ -366,12 +366,12 @@ struct WeeklyLoadCard: View {
             let status = Self.status(total: last?.total ?? 0, usual: last?.usual)
             let format: (Double) -> String = isStrain ? { Fmt.number($0, 1) } : { "\(Fmt.number($0)) kcal" }
             VStack(alignment: .leading, spacing: 6) {
-                Text("Weekly load").font(.subheadline.weight(.medium)).foregroundStyle(Palette.ink2)
-                Text(last.map { format($0.total) } ?? "—").font(.title2.weight(.semibold)).foregroundStyle(Palette.ink).monospacedDigit()
-                Text(isStrain ? "last full week · WHOOP strain, added up" : "last full week · active energy, added up").font(.caption).foregroundStyle(Palette.ink3)
+                Text("Weekly load").font(.app(.subheadline, weight: .medium)).foregroundStyle(Palette.ink2)
+                Text(last.map { format($0.total) } ?? "—").font(.app(.title2, weight: .semibold)).foregroundStyle(Palette.ink).monospacedDigit()
+                Text(isStrain ? "last full week · WHOOP strain, added up" : "last full week · active energy, added up").font(.app(.caption)).foregroundStyle(Palette.ink3)
                 HStack(spacing: 8) {
                     LoadStatusChip(text: status.rawValue, tone: status.tone)
-                    Text(last?.usual.map { "4-week average \(format($0))" } ?? "your usual forms after 4 full weeks").font(.caption).foregroundStyle(Palette.ink3)
+                    Text(last?.usual.map { "4-week average \(format($0))" } ?? "your usual forms after 4 full weeks").font(.app(.caption)).foregroundStyle(Palette.ink3)
                 }
                 .padding(.top, 2)
                 Chart {
@@ -393,7 +393,7 @@ struct WeeklyLoadCard: View {
                 }
                 .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { v in
                     AxisGridLine().foregroundStyle(Palette.grid)
-                    AxisValueLabel { if let n = v.as(Double.self) { Text(Fmt.compact(n)).foregroundStyle(Palette.ink3) } }
+                    AxisValueLabel { if let n = v.as(Double.self) { Text(Fmt.compact(n)).foregroundStyle(Palette.ink3) } }.font(.axis)
                 } }
                 .chartXAxis { extrasDateAxis() }
                 .frame(height: 170)
@@ -404,7 +404,7 @@ struct WeeklyLoadCard: View {
                     HStack(spacing: 12) { legend(average: weeks.contains { $0.usual != nil }) }
                     VStack(alignment: .leading, spacing: 4) { legend(average: weeks.contains { $0.usual != nil }) }
                 }
-                .font(.caption2)
+                .font(.app(.caption2))
                 .foregroundStyle(Palette.ink3)
                 .accessibilityHidden(true)
             }
@@ -425,7 +425,7 @@ private struct LoadStatusChip: View {
 
     var body: some View {
         Text(text)
-            .font(.caption.weight(.medium))
+            .font(.app(.caption, weight: .medium))
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .background(tone.background, in: Capsule())
@@ -447,9 +447,9 @@ struct MobilityCard: View {
         if !speed.isEmpty || !steadiness.isEmpty || !asymmetry.isEmpty {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
-                    Text("Mobility").font(.headline).foregroundStyle(Palette.ink)
+                    Text("Mobility").font(.app(.headline)).foregroundStyle(Palette.ink)
                     Spacer()
-                    Text("iPhone and Apple Watch").font(.caption).foregroundStyle(Palette.ink3)
+                    Text("iPhone and Apple Watch").font(.app(.caption)).foregroundStyle(Palette.ink3)
                 }
                 if !speed.isEmpty {
                     MobilityRow(label: "Walking speed", points: speed, format: { units == .imperial ? "\(Fmt.number($0 / 1.609344, 1)) mph" : "\(Fmt.number($0, 1)) km/h" }, color: Palette.series1)
@@ -471,9 +471,9 @@ private struct MobilityRow: View {
     var body: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(label).font(.subheadline.weight(.medium)).foregroundStyle(Palette.ink2)
-                Text(points.last.map { format($0.value) } ?? "—").font(.title3.weight(.semibold)).foregroundStyle(Palette.ink).monospacedDigit()
-                Text(caption).font(.caption).foregroundStyle(Palette.ink3).lineLimit(1).minimumScaleFactor(0.8)
+                Text(label).font(.app(.subheadline, weight: .medium)).foregroundStyle(Palette.ink2)
+                Text(points.last.map { format($0.value) } ?? "—").font(.app(.title3, weight: .semibold)).foregroundStyle(Palette.ink).monospacedDigit()
+                Text(caption).font(.app(.caption)).foregroundStyle(Palette.ink3).lineLimit(1).minimumScaleFactor(0.8)
             }
             Spacer(minLength: 8)
             if points.count > 1 { MiniLine(points: points, color: color).frame(width: 110, height: 44) }
@@ -568,9 +568,9 @@ private struct DailyBarsBlock: View {
     var body: some View {
         let bars = points.weekly(days: days)
         VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.subheadline.weight(.medium)).foregroundStyle(Palette.ink2)
-            Text(points.average.map { "\(format($0)) a day" } ?? "—").font(.title2.weight(.semibold)).foregroundStyle(Palette.ink).monospacedDigit()
-            Text(caption).font(.caption).foregroundStyle(Palette.ink3)
+            Text(title).font(.app(.subheadline, weight: .medium)).foregroundStyle(Palette.ink2)
+            Text(points.average.map { "\(format($0)) a day" } ?? "—").font(.app(.title2, weight: .semibold)).foregroundStyle(Palette.ink).monospacedDigit()
+            Text(caption).font(.app(.caption)).foregroundStyle(Palette.ink3)
             Chart(bars) { p in
                 BarMark(x: .value("Day", Fmt.chartDate(p.date), unit: days > 90 ? .weekOfYear : .day), y: .value(title, p.value))
                     .foregroundStyle(color)
@@ -579,7 +579,7 @@ private struct DailyBarsBlock: View {
             }
             .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { v in
                 AxisGridLine().foregroundStyle(Palette.grid)
-                AxisValueLabel { if let n = v.as(Double.self) { Text(n >= 1000 ? Fmt.compact(n) : n.formatted()).foregroundStyle(Palette.ink3) } }
+                AxisValueLabel { if let n = v.as(Double.self) { Text(n >= 1000 ? Fmt.compact(n) : n.formatted()).foregroundStyle(Palette.ink3) } }.font(.axis)
             } }
             .chartXAxis { extrasDateAxis() }
             .frame(height: 140)
@@ -607,6 +607,6 @@ private enum ExtrasFormat {
 
 private func extrasDateAxis() -> some AxisContent {
     AxisMarks(values: .automatic(desiredCount: 4)) { _ in
-        AxisValueLabel(format: .dateTime.month(.abbreviated).day()).foregroundStyle(Palette.ink3)
+        AxisValueLabel(format: .dateTime.month(.abbreviated).day()).font(.axis).foregroundStyle(Palette.ink3)
     }
 }

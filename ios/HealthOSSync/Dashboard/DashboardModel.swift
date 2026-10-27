@@ -1,31 +1,13 @@
 import Foundation
 import Observation
+import SwiftUI
 import UIKit
 
-/// The tab bar's tabs. `settings` isn't one: asking for it opens Settings as a sheet over the tab showing (the gear on
-/// each tab, Today's avatar, every "Open Settings").
-enum AppTab: Hashable { case today, family, trends, nutrition, insights, settings }
-
+/// The charts of the pages not built in the app yet (TrendsPage, src/pages/Detail.tsx): Vitals, Sleep and Cycle show
+/// one each, Body shows Body and Activity.
 enum TrendsSection: String, CaseIterable, Identifiable {
     case vitals = "Vitals", sleep = "Sleep", activity = "Activity", body = "Body", cycle = "Cycle"
     var id: String { rawValue }
-
-    /// Web pages an insight can link to.
-    init?(page: String) {
-        switch page {
-        case "vitals": self = .vitals
-        case "sleep": self = .sleep
-        case "activity": self = .activity
-        case "body": self = .body
-        case "cycle": self = .cycle
-        default: return nil
-        }
-    }
-
-    /// The sections to offer: Cycle only while cycle tracking is on.
-    static func visible(cycleTracking: Bool) -> [TrendsSection] {
-        cycleTracking ? allCases : allCases.filter { $0 != .cycle }
-    }
 }
 
 extension Notification.Name {
@@ -43,11 +25,55 @@ final class Dashboard {
         case starting
         case noServer
         case signIn
+        /// The server has sign-in but it isn't set up (its /auth/me says "misconfigured"): the web's Login says sign-in
+        /// isn't available right now (PhaseGate shows it).
+        case misconfigured
+        /// Can't load: offline with nothing kept on the phone.
         case unavailable(String)
         case ready
     }
 
-    var phase: Phase = .starting
+    var phase: Phase = .starting {
+        didSet {
+            // Signed out without Sign out (a session that ran out or was ended elsewhere, none at launch): a token
+            // nobody can be told the owner of waits for a sign-in; one whose owner is known goes on (IngestTokenOwner).
+            if phase == .signIn, oldValue != .signIn {
+                ingestSessionEnded()
+                // Asked to sign in, however it came (Sign out, a session that ran out or was ended elsewhere, none at
+                // launch): nothing of the last person stays in memory for whoever holds the phone, as the web clears
+                // what it loaded on a 401. Their summary, settings, Family board, McFly conversation and photo go;
+                // the summary kept on disk stays for their next launch (Sign out removes that too).
+                forgetSignedOut()
+            }
+            // Signed out, or the server can't be reached: no page stays open on what it showed, and no answer to a
+            // request made before lands on what shows next (`session`).
+            if phase != .ready, oldValue == .ready {
+                dropPages()
+                sessionCount += 1
+            }
+        }
+    }
+
+    /// Whom a request's answer is for: the server it went to, the person signed in, and how many times the app has
+    /// forgotten a person (`sessionCount`). A request takes one before it goes; an answer that lands under another one
+    /// is dropped, so one person's data never shows, or is saved, for another (`read`, `save`).
+    struct Session: Equatable {
+        let server: String
+        let person: String?
+        let count: Int
+    }
+
+    /// The session now (see `Session`).
+    var session: Session {
+        Session(server: Config.serverURL()?.absoluteString ?? "", person: account?.id ?? status?.user?.id, count: sessionCount)
+    }
+
+    /// The answer to a request made under `session` is still for whoever is here now.
+    func stillCurrent(_ session: Session) -> Bool { session == self.session }
+
+    /// Goes up whenever the app forgets a person (Sign out, a 401, another sign-in, another server) and whenever the
+    /// phase leaves `.ready`: what was asked for before is nobody's now.
+    @ObservationIgnored private(set) var sessionCount = 0
     var summary: Summary?
     var status: ServerStatus?
     /// nil means today.
@@ -55,18 +81,41 @@ final class Dashboard {
     var loading = false
     /// Shown above the content, e.g. while offline with a cached summary on screen.
     var error: String?
-    var tab: AppTab = .today {
+    // Navigation (Shell/Navigation.swift).
+    /// The tab showing. Asking for `.settings` opens Profile under More, as the web's #/settings does.
+    var tab: AppTab = .home {
         didSet {
-            // Settings opens over the tab that asked for it, which stays selected underneath.
             if tab == .settings {
-                tab = oldValue == .settings ? .today : oldValue
-                showingSettings = true
+                tab = .more
+                paths[.more] = [.profile]
             }
         }
     }
-    /// The Settings sheet is up.
-    var showingSettings = false
-    var trendsSection: TrendsSection = .vitals
+    /// The pages each tab has pushed over its own, the top one last.
+    var paths: [AppTab: [AppRoute]] = [:]
+    /// Goes up for a tab whenever its pushed pages are taken away other than by Back (`resetNavigation`, `dropPages`,
+    /// `dropMissingPages`): that tab's navigation starts again from nothing (Shell/AppShell.swift).
+    var navigationResets: [AppTab: Int] = [:]
+    /// The last link to each page, for its query (Body's tab=activity, Profile's ?connect=).
+    var requests: [AppPage: RouteRequest] = [:]
+    var requestCount = 0
+    /// A page of the server's website showing over the app, until it's closed.
+    var webPage: WebPage?
+    /// The account menu ("Your workspace") is up, from any page's avatar (Shell/AccountMenu.swift).
+    var accountMenuOpen = false
+    /// A metric's detail sheet showing over the app (`showMetric`, Shell/MetricRequest.swift).
+    var metricSheet: MetricRequest?
+    /// The chart pages' range in days (RangeFilters), shared by Vitals, Body and Sleep as the web shares it in a
+    /// session (useRange): 30 to start with; 1 is Day. Memory only.
+    var rangeDays = 30
+    /// The welcome flow asked for again (#/welcome: Profile's Edit preferences), until it's closed (Shell/Welcome.swift).
+    var welcomeEditing = false
+    /// Ask McFly's conversation, for the Home pill's sheet and the page under More alike. In memory only, and gone with
+    /// a sign-out, another person's sign-in or another server.
+    let mcfly: McFlyChat
+    /// What this server can do for the person signed in (Shell/Availability.swift): own AI keys, estimates, voice
+    /// notes, portraits, reading lab reports, Ask McFly. Gone with them too.
+    let availability: Availability
     /// "open" (no sign-in, e.g. a local server) or "required" (the hosted dashboard).
     var authMode: String?
     /// The server signs in with email and password (per-person accounts), not a password alone.
@@ -111,9 +160,24 @@ final class Dashboard {
     /// Counts board reads, so a slower, older one can't replace a newer one (or land after a sign-out).
     private var familyRequest = 0
 
+    /// Whose account the ingest token sends to, and whether the sync waits for a sign-in, as Profile shows it.
+    private(set) var ingestOwner: IngestTokenOwner
+    /// Where the token and its owner are kept: the app passes the Keychain's.
+    private let tokenStore: IngestTokenStore
+    /// The time zone sent this session, so a server that keeps another one isn't sent it on every load.
+    private var timeZoneSent: String?
+
+    init(tokenStore: IngestTokenStore = MemoryTokenStore()) {
+        self.tokenStore = tokenStore
+        ingestOwner = tokenStore.owner
+        let chat = McFlyChat()
+        mcfly = chat
+        availability = Availability(chat: chat)
+    }
+
     var units: Units { Units(rawValue: status?.settings?.units ?? "") ?? .metric }
     var stepGoal: Double { summary?.stepGoal ?? status?.settings?.stepGoal ?? 10_000 }
-    /// Cycle tracking is on (set on the web or in Settings): the Cycle card, the Cycle trends section and GET /api/cycle.
+    /// Cycle tracking is on (set on the web or in Profile): the Cycle card, the Cycle page and GET /api/cycle.
     var cycleTrackingOn: Bool { status?.settings?.cycleTracking == true }
     /// What the person chose to see of their nutrition, or nil while Nutrition is off (or the server has none).
     var nutritionMode: NutritionMode? {
@@ -126,7 +190,7 @@ final class Dashboard {
     /// The server has the Family board: its status names the setting, or the board itself was read.
     var familyAvailable: Bool { status?.settings?.familySharing != nil || familyBoard != nil }
     /// Show the one-time "your family can see your status" note on Today. Not without sign-in: no one else is on
-    /// the board there, and Settings has no Family section to change.
+    /// the board there, and Profile has no Family section to change.
     var showsFamilyNotice: Bool {
         status?.settings?.familySharing == true && status?.settings?.familyNoticeSeen == false && !familyNoticeDismissed && authMode != "open"
     }
@@ -148,6 +212,9 @@ final class Dashboard {
             return
         }
         if server != client.base {
+            // Another server, not the first connect at launch (which a tapped notification's page may already be
+            // waiting for): nothing pushed stays open on what the last one showed.
+            if server != nil { dropPages() }
             server = client.base
             clearData()
             if let cached = SummaryCache.load(for: client.base) {
@@ -158,15 +225,7 @@ final class Dashboard {
             }
         }
         do {
-            let auth = try await client.authState()
-            authMode = auth.mode
-            usesAccounts = auth.usesAccounts
-            account = auth.user
-            switch auth.mode {
-            case "open": phase = .ready
-            case "required": phase = auth.authenticated ? .ready : .signIn
-            default: phase = .unavailable("Sign-in isn't set up on \(client.base.host ?? "the server") yet.")
-            }
+            apply(auth: try await client.authState(), host: client.base.host)
         } catch is CancellationError {
             return
         } catch {
@@ -178,17 +237,42 @@ final class Dashboard {
         if phase == .ready { await refreshIfChanged(includeStatus: true) }
     }
 
+    /// What /auth/me said at the start: the sign-in mode, who's signed in, and so the phase.
+    func apply(auth: AuthState, host: String?) {
+        authMode = auth.mode
+        usesAccounts = auth.usesAccounts
+        account = auth.user
+        switch auth.mode {
+        case "open": phase = .ready
+        case "required":
+            phase = auth.authenticated ? .ready : .signIn
+            // Every time, not only on the way into .signIn: the sign-in screen may be up already from a 401 that came
+            // while the sign-in mode wasn't known (offline at launch), when the token's owner wasn't looked at. And
+            // already up, it may have a summary cached for this server put in memory just now (an address changed while
+            // signed out): nobody's signed in to see it.
+            if !auth.authenticated {
+                ingestSessionEnded()
+                forgetSignedOut()
+            }
+        default: phase = .misconfigured
+        }
+        // Signed in at launch (the first launch after an update included): a token with no known owner is theirs.
+        checkIngestToken(signedInAs: account)
+    }
+
     /// Reloads only when the server's data changed since what's on screen, or the day rolled over. Runs on open, on
     /// return to the app, after syncs and every minute while the app is open. `includeStatus` also refreshes
     /// settings and the photo, which the data version doesn't cover (not on the minute timer).
     func refreshIfChanged(includeStatus: Bool) async {
         guard phase == .ready, !loading, let client = APIClient.current() else { return }
         guard UIApplication.shared.applicationState == .active else { return }
+        let asked = session
         let version: String?
         do {
             version = try await client.dataVersion()
         } catch APIError.signInRequired {
-            phase = .signIn
+            // Only for the session it was asked under, as `fetch`.
+            if stillCurrent(asked) { phase = .signIn }
             return
         } catch {
             // Offline: keep what's on screen; the next check tries again.
@@ -200,15 +284,34 @@ final class Dashboard {
         if version == nil, !includeStatus, !rolledOver, summary != nil { return }
         if summary == nil || version == nil || version != dataVersion || rolledOver {
             await load(knownVersion: version)
-        } else if includeStatus, let status = try? await client.status() {
+        } else if includeStatus, case let asked = session, let status = try? await client.status() {
+            // Signed out, or someone else signed in, while it was on its way: it's nobody's now.
+            guard stillCurrent(asked) else { return }
             apply(status: status)
             if date == nil, let summary { SummaryCache.save(summary: summary, status: status, version: dataVersion, loadedOn: loadedOn, for: client.base) }
+            if await statusRead() { await load() }
         }
     }
 
     /// Downloads the summary and status. Pull to refresh and changing day call it directly.
     func load(knownVersion: String?? = .none) async {
-        guard let client = APIClient.current() else { return }
+        guard await download(knownVersion: knownVersion) else { return }
+        // The server's "today" moved with the time zone sent: read the day again, once (a zone is sent once).
+        if await statusRead() { await download(knownVersion: .none) }
+    }
+
+    /// One read of the summary and status; true when it came.
+    @discardableResult
+    private func download(knownVersion: String??) async -> Bool { await read(knownVersion: knownVersion) == .loaded }
+
+    /// How a read of the summary and status went.
+    private enum Read { case loaded, signInRequired, failed }
+
+    /// One read of the summary and status. One that lands after a Sign out, a 401, another person's sign-in or another
+    /// server is nobody's, so nothing of it is shown or kept: not the summary, not the status, not on disk.
+    private func read(knownVersion: String??) async -> Read {
+        guard let client = APIClient.current() else { return .failed }
+        let asked = session
         loading = true
         defer { loading = false }
         do {
@@ -218,11 +321,13 @@ final class Dashboard {
             let version: String?
             if let knownVersion { version = knownVersion } else { version = try? await client.dataVersion() }
             let (summary, status) = try await (s, st)
+            guard stillCurrent(asked) else { return .failed }
             self.summary = summary
             apply(status: status)
             error = nil
             if case .unavailable = phase { phase = .ready }
             clearCaches()
+            availability.loadedAgain()
             // Your own tile changed with your data: read the board again next time, keeping it on screen until then.
             familyReadAt = nil
             generation += 1
@@ -231,53 +336,131 @@ final class Dashboard {
                 loadedOn = Day.today()
                 SummaryCache.save(summary: summary, status: status, version: version, loadedOn: loadedOn, for: client.base)
             }
+            return .loaded
         } catch APIError.signInRequired {
+            // Only for the session it was asked under: the last person's request, refused after their Sign out, never
+            // signs out whoever signed in since.
+            guard stillCurrent(asked) else { return .failed }
             phase = .signIn
+            return .signInRequired
         } catch is CancellationError {
             // Interrupted, not failed: what's on screen stays, and the next check loads it.
         } catch {
-            self.error = error.localizedDescription
+            if stillCurrent(asked) { self.error = error.localizedDescription }
         }
+        return .failed
+    }
+
+    /// After every status read, never a settings change's own answer: who's signed in against the ingest token's
+    /// owner, then the time zone. True when the server's "today" moved, so the caller reads the day again.
+    private func statusRead() async -> Bool {
+        checkIngestToken(signedInAs: status?.user?.id != nil ? status?.user : account)
+        return await followTimeZone()
     }
 
 
     func signIn(email: String, password: String) async throws {
-        guard let client = APIClient.current() else { throw APIError.network("Enter the server address in Settings.") }
+        guard let client = APIClient.current() else { throw APIError.network("Enter the server address in Profile.") }
         try await client.signIn(email: email, password: password)
-        Config.lastEmail = email
-        if let auth = try? await client.authState() {
-            authMode = auth.mode
-            usesAccounts = auth.usesAccounts
-            account = auth.user
-        }
-        signedIn()
-        await load()
+        await sessionStarted(email: email)
     }
 
     func join(code: String, name: String, email: String, password: String) async throws {
-        guard let client = APIClient.current() else { throw APIError.network("Enter the server address in Settings.") }
+        guard let client = APIClient.current() else { throw APIError.network("Enter the server address in Profile.") }
         try await client.acceptInvite(code: code, email: email, name: name, password: password)
-        Config.lastEmail = email
-        account = (try? await client.authState())?.user
-        signedIn()
-        await load()
+        await sessionStarted(email: email, newAccount: true)
     }
 
-    /// A new session (sign-in or a new account from an invite), maybe as someone else after the last one expired:
-    /// nothing of the last person's Family board, photos or dismissed notice carries over.
-    func signedIn() {
-        resetFamily()
-        phase = .ready
+    /// The server just sent a session cookie for `email`: a sign-in, a new account from an invite, or a new password
+    /// from a reset link (POST /auth/reset, slice A). Who it is and the sign-in mode are read again, the ingest token is
+    /// checked against them, and the dashboard loads as theirs.
+    ///
+    /// Nothing of the dashboard shows until this person's own status and summary are read, as the web's App renders
+    /// nothing until the status is known: a new account goes straight to the welcome, with no Home before it, and no
+    /// status from before (the last person's, or a save of theirs that landed late) is ever shown or saved for them. The
+    /// sign-in screen stays up meanwhile, still signing in. A 401 there keeps it up; any other failure (offline, a
+    /// server error) opens the dashboard as before, saying why it couldn't load.
+    func sessionStarted(email: String, newAccount: Bool = false) async {
+        let auth = try? await APIClient.current()?.authState()
+        if let auth {
+            authMode = auth.mode
+            usesAccounts = auth.usesAccounts
+        }
+        // Before the email is replaced: an older build's token not looked at yet (the sign-in screen came up before
+        // the sign-in mode was known) is the email signed in with before this one's. A new account never keeps the
+        // token here (IngestTokenOwner), so it needs no look.
+        if !newAccount { ingestSessionEnded(signingIn: true) }
+        tokenStore.lastEmail = email
+        // Never the last person's, when the server can't say just now: the first status read says who it is.
+        account = auth?.user
+        beginSession()
+        if await read(knownVersion: .none) == .signInRequired { return }
+        enterSession(newAccount: newAccount)
+        // The server's "today" moved with the time zone sent: read the day again, once (as `load`).
+        if await statusRead() { await download(knownVersion: .none) }
+    }
+
+    #if DEBUG
+    /// Tests only: the two halves of `sessionStarted` (`beginSession`, `enterSession`) with no server, so no status or
+    /// summary is read and the dashboard opens at once. The app never calls it; every sign-in (a password, an invite, a
+    /// reset link) goes through `sessionStarted`, which reads who it is and their status and summary in between, so a
+    /// test of how a sign-in goes drives that one against a stub server (SessionTests). As there, nothing of the last
+    /// person's status, summary, Family board, photos or dismissed notice carries over, and the ingest token is checked
+    /// against who it is.
+    func signedIn(newAccount: Bool = false) {
+        beginSession()
+        enterSession(newAccount: newAccount)
+    }
+    #endif
+
+    /// The first half of a new session: everything of whoever was here before goes from memory (what's on disk stays,
+    /// for the server's next launch), and an answer to anything they asked for is dropped when it lands (`session`).
+    private func beginSession() {
+        clearData()
+        forgetPerson()
+        timeZoneSent = nil
+    }
+
+    /// The second half: the dashboard opens as theirs. With no animation, so a new account's welcome is there at once
+    /// rather than sliding up over Home.
+    private func enterSession(newAccount: Bool) {
+        var opening = Transaction()
+        opening.disablesAnimations = true
+        withTransaction(opening) { phase = .ready }
+        checkIngestToken(signedInAs: account, newAccount: newAccount)
     }
 
     func signOut() async {
+        ingestSignedOut()
         if let client = APIClient.current() {
             await client.signOut()
             SummaryCache.clear(for: client.base)
         }
         clearData()
+        forgetPerson()
         account = nil
         phase = .signIn
+        // Back to Home with nothing open, as the web reloads to its sign-in page.
+        resetNavigation()
+    }
+
+    /// What the app keeps of the person signed in beyond their data: the McFly conversation, what the server can do
+    /// for them, the profile photo kept in Caches, and what's open over the app for them (a metric, the welcome).
+    /// Nobody's signed in: what was loaded for the last person goes from memory (the disk's summary stays).
+    private func forgetSignedOut() {
+        clearData()
+        forgetPerson()
+    }
+
+    private func forgetPerson() {
+        sessionCount += 1
+        mcfly.forget()
+        availability.forget()
+        ProfileImages.clear()
+        // A voice note's recording a crash left behind is theirs too (it's deleted once sent, or when the note stops).
+        MicrophoneRecorder.removeLeftovers()
+        metricSheet = nil
+        welcomeEditing = false
     }
 
     func show(date newDate: String?) async {
@@ -285,29 +468,21 @@ final class Dashboard {
         await load()
     }
 
-    func open(_ section: TrendsSection) {
-        trendsSection = section == .cycle && !cycleTrackingOn ? .vitals : section
-        tab = .trends
-    }
+    // The reads below keep what came for this person (cleared with their data), so each goes through
+    // `fetchForThisSession`: one that lands after a Sign out, a 401, someone else's sign-in or another server is dropped
+    // with a CancellationError, never kept or shown for whoever is here now.
 
     func trends(_ metrics: [String], days: Int) async throws -> Trends {
         let key = "\(metrics.joined(separator: ","))|\(days)"
         if let hit = trendCache[key] { return hit }
-        guard let client = APIClient.current() else { throw APIError.network("No server configured.") }
-        do {
-            let t = try await client.trends(metrics, days: days)
-            trendCache[key] = t
-            return t
-        } catch APIError.signInRequired {
-            phase = .signIn
-            throw APIError.signInRequired
-        }
+        let t = try await fetchForThisSession { try await $0.trends(metrics, days: days) }
+        trendCache[key] = t
+        return t
     }
 
     func workouts(days: Int) async throws -> [Workout] {
         if let hit = workoutCache[days] { return hit }
-        guard let client = APIClient.current() else { throw APIError.network("No server configured.") }
-        let w = try await client.workouts(days: days)
+        let w = try await fetchForThisSession { try await $0.workouts(days: days) }
         workoutCache[days] = w
         return w
     }
@@ -319,7 +494,7 @@ final class Dashboard {
     func day(date: String?) async throws -> DayData? {
         let key = date ?? "today"
         if let hit = dayCache[key] { return hit }
-        let d = try await fetch { try await $0.day(date: date) }
+        let d = try await fetchForThisSession { try await $0.day(date: date) }
         dayCache[key] = d
         return d
     }
@@ -328,7 +503,7 @@ final class Dashboard {
     func cycle(days: Int = 120) async throws -> CycleData? {
         guard cycleTrackingOn else { return nil }
         if let hit = cycleCache[days] { return hit }
-        let c = try await fetch { try await $0.cycle(days: days) }
+        let c = try await fetchForThisSession { try await $0.cycle(days: days) }
         let shown = c?.enabled == true ? c : nil
         cycleCache[days] = shown
         return shown
@@ -339,7 +514,7 @@ final class Dashboard {
         guard let mode = nutritionMode else { return nil }
         let key = "\(days)|\(insights)|\(mode.rawValue)"
         if let hit = nutritionCache[key] { return hit }
-        let n = try await fetch { try await $0.nutrition(days: days, insights: insights) }
+        let n = try await fetchForThisSession { try await $0.nutrition(days: days, insights: insights) }
         let shown = n?.enabled == true ? n : nil
         nutritionCache[key] = shown
         return shown
@@ -359,24 +534,24 @@ final class Dashboard {
     /// Turns Nutrition on with what the person chose to see (the web's opt-in): the server refuses it without a choice.
     /// The phone starts reading food once a sync hears it's on.
     func turnOnNutrition(_ mode: NutritionMode) async throws {
-        try await updateSettings(["nutrition": true, "nutritionNumbers": mode.rawValue])
+        try await save(settings: ["nutrition": true, "nutritionNumbers": mode.rawValue])
     }
 
     /// Sets or clears (nil) one of the person's own targets: "energy_kcal", "protein_g" or "water_ml".
     func setNutritionTarget(_ key: String, _ value: Double?) async throws {
-        try await updateSettings(["nutritionTargets": [key: value.map { $0 as Any } ?? NSNull()]])
+        try await save(settings: ["nutritionTargets": [key: value.map { $0 as Any } ?? NSNull()]])
     }
 
     func sleepTiming(days: Int) async throws -> SleepTiming? {
         if let hit = sleepCache[days] { return hit }
-        let s = try await fetch { try await $0.sleepTiming(days: days) }
+        let s = try await fetchForThisSession { try await $0.sleepTiming(days: days) }
         sleepCache[days] = s
         return s
     }
 
     func patterns() async throws -> Patterns? {
         if let hit = patternsCache { return hit }
-        let p = try await fetch { try await $0.patterns() }
+        let p = try await fetchForThisSession { try await $0.patterns() }
         patternsCache = .some(p)
         return p
     }
@@ -384,7 +559,7 @@ final class Dashboard {
     /// The weekly digest reply; check `configured` and `digest` before showing it.
     func digest() async throws -> DigestReply? {
         if let hit = digestCache { return hit }
-        let d = try await fetch { try await $0.digest() }
+        let d = try await fetchForThisSession { try await $0.digest() }
         digestCache = .some(d)
         return d
     }
@@ -463,13 +638,13 @@ final class Dashboard {
     /// The status the server answers with drops the board from before at once (see `apply(status:)`), so a read
     /// that fails afterwards can't leave everyone on screen.
     func setFamilySharing(_ on: Bool) async throws {
-        try await updateSettings(["familySharing": on])
+        try await save(settings: ["familySharing": on])
         await loadFamily(force: true)
     }
 
     /// Shows or hides your cycle phase on your tile; the server keeps it off unless tracking and sharing are on.
     func setShareCyclePhase(_ on: Bool) async throws {
-        try await updateSettings(["shareCyclePhase": on])
+        try await save(settings: ["shareCyclePhase": on])
         if familyBoard?.sharing == true { await loadFamily(force: true) }
     }
 
@@ -477,7 +652,7 @@ final class Dashboard {
     func dismissFamilyNotice() async {
         hideFamilyNotice()
         do {
-            try await updateSettings(["familyNoticeSeen": true])
+            try await save(settings: ["familyNoticeSeen": true])
         } catch {
             familyNoticeDismissed = false
         }
@@ -485,58 +660,218 @@ final class Dashboard {
 
     func hideFamilyNotice() { familyNoticeDismissed = true }
 
+    // MARK: Time zone
+
+    /// The hosted server runs in UTC: tell it this phone's time zone, so its "today" is the person's (src/App.tsx does it
+    /// on every load). After a status read only, and a zone is sent once: a server that took the request and kept its
+    /// own zone, or refused it (a 4xx), isn't asked again this session. One that couldn't be reached or failed (a 5xx,
+    /// a cold start) is asked on the next read. True when the server now has `zone`. `send` is PUT /api/settings; tests
+    /// pass their own.
+    func followTimeZone(_ zone: String = TimeZone.current.identifier, send: (@MainActor ([String: Any]) async throws -> ServerStatus)? = nil) async -> Bool {
+        guard phase == .ready, let settings = status?.settings, settings.timeZone != zone, timeZoneSent != zone else { return false }
+        let send = send ?? { fields in try await self.fetchForThisSession { try await $0.updateSettings(fields) } }
+        timeZoneSent = zone
+        let asked = session
+        do {
+            let status = try await send(["timeZone": zone])
+            // Signed out or someone else's now: not shown, and the next session sends its own.
+            guard stillCurrent(asked) else { return false }
+            showChanged(status)
+        } catch {
+            if Self.worthRetrying(error) { timeZoneSent = nil }
+            return false
+        }
+        return status?.settings?.timeZone == zone
+    }
+
+    /// The request didn't reach a server that could answer it: offline, cancelled, or a server error (5xx, and the 503
+    /// that maps to `misconfigured`). Asking again later may work.
+    private static func worthRetrying(_ error: Error) -> Bool {
+        if APIClient.isCancellation(error) { return true }
+        switch error as? APIError {
+        case .network?, .misconfigured?: return true
+        case .server(let code, _)?: return code >= 500
+        default: return false
+        }
+    }
+
+    // MARK: Ingest token
+
+    /// The account signed in now, as the token's owner is kept.
+    private func ingestAccount(_ user: AuthState.User?) -> IngestTokenOwner.Account? {
+        user?.id.map { IngestTokenOwner.Account(server: server?.absoluteString ?? "", id: $0, email: user?.email) }
+    }
+
+    /// Who's signed in by what the app knows now: the sign-in's answer, or the last status read's.
+    private var signedInUser: AuthState.User? { account?.id != nil ? account : status?.user }
+
+    private func updateIngestOwner(_ change: (inout IngestTokenOwner, Bool) -> Bool) {
+        var owner = tokenStore.owner
+        let remove = change(&owner, tokenStore.hasToken)
+        tokenStore.owner = owner
+        if remove { tokenStore.removeToken() }
+        ingestOwner = owner
+    }
+
+    /// Someone is signed in as `user` (a sign-in, a new account, or a status read): the same account as the token's
+    /// resumes the sync, anyone else's removes the token. On a server with accounts and no id yet, nothing changes
+    /// until a read says who it is. A server without sign-in doesn't pause, unless the token is another server's.
+    func checkIngestToken(signedInAs user: AuthState.User?, newAccount: Bool = false) {
+        guard phase == .ready else { return }
+        switch authMode {
+        case "open":
+            let here = server?.absoluteString ?? ""
+            updateIngestOwner { owner, _ in
+                owner.noSignIn(on: here)
+                return false
+            }
+        case "required":
+            if usesAccounts, user?.id == nil, !newAccount { return }
+            updateIngestOwner { $0.signedIn(ingestAccount(user), hasToken: $1, newAccount: newAccount) }
+        default:
+            break
+        }
+    }
+
+    /// Signing out with the button (offered only while signed in): nothing of this phone's Health data goes up until
+    /// someone signs in.
+    func ingestSignedOut() {
+        guard authMode == "required" else { return }
+        let who = ingestAccount(signedInUser)
+        let lastEmail = tokenStore.lastEmail
+        updateIngestOwner { owner, hasToken in
+            owner.signedOut(who, hasToken: hasToken, lastEmail: lastEmail)
+            return false
+        }
+    }
+
+    /// The server with sign-in says there's no session, and Sign out wasn't tapped (IngestTokenOwner.sessionEnded).
+    /// `signingIn`: a sign-in just went through, so the server has sign-in even if its mode wasn't known yet.
+    func ingestSessionEnded(signingIn: Bool = false) {
+        guard authMode == "required" || signingIn else { return }
+        let lastEmail = tokenStore.lastEmail
+        updateIngestOwner { owner, hasToken in
+            owner.sessionEnded(hasToken: hasToken, lastEmail: lastEmail)
+            return false
+        }
+    }
+
+    /// The token was typed, pasted or removed in Profile: it's the signed-in account's, if anyone's.
+    func ingestTokenChanged() {
+        let who = authMode == "required" && phase == .ready ? ingestAccount(signedInUser) : nil
+        updateIngestOwner { owner, hasToken in
+            owner.tokenChanged(hasToken: hasToken, signedIn: who)
+            return false
+        }
+    }
+
+    /// The sign-in screen says why this iPhone's Health data isn't going up: the sync waits for a sign-in, with a token.
+    var ingestWaitsForSignIn: Bool { ingestOwner.paused && tokenStore.hasToken }
+
     // MARK: Cards
 
-    /// The hidden cards while changes are on their way to the server; nil shows the server's list.
-    private(set) var pendingHiddenCards: [String]?
+    /// Both card lists while changes are on their way to the server; nil shows the server's lists.
+    private(set) var pendingCards: CardLists?
     /// Card changes sent and not answered yet.
     private var cardChanges = 0
     /// The last card change sent. Each waits for the one before, so they reach the server in the order they were made.
     private var cardQueue: Task<Void, Never>?
+    /// Goes up when one person's card changes are forgotten (`clearData`): a change of theirs still on its way then
+    /// leaves the count and the lists shown alone.
+    private var cardEpoch = 0
 
-    /// The server can hide cards (its status names the list). Older servers can't: every card shows, and Settings
+    /// The server can hide cards (its status names the list). Older servers can't: every card shows, and Profile
     /// has no Cards section.
     var cardsAvailable: Bool { status?.settings?.hiddenCards != nil }
-    /// The cards hidden now (shared/cards.ts ids), changes on their way included.
-    var hiddenCards: [String] { pendingHiddenCards ?? status?.settings?.hiddenCards ?? [] }
-    var hiddenCardSet: Set<String> { Set(hiddenCards) }
-    func cardShown(_ id: String) -> Bool { !hiddenCards.contains(id) }
+    /// The cards hidden now (shared/cards.ts ids), changes on their way included. An optional card turned off can be
+    /// in it too.
+    var hiddenCards: [String] { pendingCards?.hidden ?? status?.settings?.hiddenCards ?? [] }
+    /// The optional cards turned on, changes on their way included; nil from a server older than optional cards.
+    var shownCards: [String]? { pendingCards.map(\.shown) ?? status?.settings?.shownCards }
+    /// The server has optional cards (its status names the list): they're off until turned on. On an older server
+    /// they're ordinary cards, on unless hidden.
+    var optionalCards: Bool { shownCards != nil }
+    /// The cards that don't show now, for the screens to leave out: hidden ones, and optional ones not turned on.
+    var cardsOff: Set<String> { Cards.off(hidden: hiddenCards, shown: shownCards) }
+    func cardShown(_ id: String) -> Bool { Cards.shows(id, hidden: hiddenCards, shown: shownCards) }
 
-    /// Shows or hides one card (Settings → Cards). Throws when the server refuses, after the switch went back.
+    /// Shows or hides one card (Profile → Cards). Throws when the server refuses, after the switch went back.
     func setCard(_ id: String, shown: Bool) async throws { try await changeCards(.card(id, shown: shown)) }
 
-    func showAllCards() async throws { try await changeCards(.list([])) }
+    /// Every default card back on (the web's Show all). The optional cards stay as they are: the list sent keeps the
+    /// ones that are off.
+    func showAllCards() async throws { try await changeCards(.list(Cards.afterShowAll(hiddenCards, optionalCards: optionalCards))) }
 
     /// Shows a change at once, then sends it after any still on their way (the web's useCardEditor). When the last
-    /// one is answered the screens follow the server's list, so a refused change goes back. `send` is PUT
+    /// one is answered the screens follow the server's lists, so a refused change goes back. `send` is PUT
     /// /api/settings; tests pass their own.
     func changeCards(_ change: CardChange, send: (@MainActor ([String: Any]) async throws -> ServerStatus)? = nil) async throws {
-        let send = send ?? { fields in try await self.fetch { try await $0.updateSettings(fields) } }
-        pendingHiddenCards = change.applied(to: hiddenCards)
+        let send = send ?? { fields in try await self.fetchForThisSession { try await $0.updateSettings(fields) } }
+        let epoch = cardEpoch
+        pendingCards = change.applied(to: CardLists(hidden: hiddenCards, shown: shownCards))
         cardChanges += 1
         defer {
-            cardChanges -= 1
-            if cardChanges == 0 { pendingHiddenCards = nil }
+            if epoch == cardEpoch {
+                cardChanges -= 1
+                if cardChanges == 0 { pendingCards = nil }
+            }
         }
         let previous = cardQueue
+        let asked = session
         let work = Task { @MainActor in
             await previous?.value
+            // The session ended while the ones before it were on their way: it's never sent, as whoever is here now.
+            try self.keep(answeredUnder: asked)
             var status = try await send(change.body)
+            try self.keep(answeredUnder: asked)
             // A server from before one-card changes ignored it: the same change again, as the whole list.
-            if let retry = change.retry(stored: status.settings?.hiddenCards) { status = try await send(retry.body) }
-            show(settings: status)
+            if let retry = change.retry(stored: status.settings?.hiddenCards) {
+                status = try await send(retry.body)
+                try self.keep(answeredUnder: asked)
+            }
+            self.showChanged(status)
         }
         cardQueue = Task { _ = try? await work.value }
         try await work.value
     }
 
-    /// PUT /api/settings, then shows the status it answers with.
-    private func updateSettings(_ fields: [String: Any]) async throws {
-        show(settings: try await fetch { try await $0.updateSettings(fields) })
+    // MARK: Settings
+
+    /// Saves settings the way every page does (PUT /api/settings), e.g. ["perspective": "portrait"] or ["units":
+    /// "imperial", "stepGoal": 8000]: the status the server answers with shows at once, and is kept with today's
+    /// summary for the next launch. Throws the server's refusal ("Choose what to show before turning nutrition on."),
+    /// with nothing saved. An older server ignores keys it doesn't know and still answers with its status, so check the
+    /// answer, never that the save went through: a feature shows only where the status names its setting (onboarding
+    /// and "Edit preferences" only where settings.perspective is present).
+    ///
+    /// `reload`: the change moves what the data shows (units, name, step goal, demo data), so the summary is read again.
+    /// Card changes go through `changeCards`, which keeps them in order. `send` is the request; tests pass their own.
+    ///
+    /// An answer that lands after the phase has left `.ready` (Sign out, a 401, offline), or once someone else is signed
+    /// in or another server is set, is dropped with a CancellationError: it's one person's settings, never shown or
+    /// kept behind a sign-in screen or for whoever is here now (pages stay quiet about a CancellationError).
+    @discardableResult
+    func save(settings fields: [String: Any], reload: Bool = false,
+              send: (@MainActor ([String: Any]) async throws -> ServerStatus)? = nil) async throws -> ServerStatus {
+        let send = send ?? { fields in try await self.fetchForThisSession { try await $0.updateSettings(fields) } }
+        let asked = session
+        let status = try await send(fields)
+        try keep(answeredUnder: asked)
+        showChanged(status)
+        if reload { await load() }
+        return status
     }
 
-    /// Shows the status a settings change answered with, and keeps it with today's summary for the next launch.
-    private func show(settings status: ServerStatus) {
+    /// Throws CancellationError unless an answer to a request made under `asked` is still for whoever is here
+    /// (`session`: the same server and person, with no sign-out, 401 or other sign-in since and the phase not left
+    /// `.ready`).
+    private func keep(answeredUnder asked: Session) throws {
+        guard stillCurrent(asked) else { throw CancellationError() }
+    }
+
+    /// Shows a status the server answered a change with (PUT /api/settings, or another write that answers with the
+    /// status), and keeps it with today's summary for the next launch. Not after a plain read: that's `apply(status:)`.
+    func showChanged(_ status: ServerStatus) {
         apply(status: status)
         if date == nil, let summary, let client = APIClient.current() {
             SummaryCache.save(summary: summary, status: status, version: dataVersion, loadedOn: loadedOn, for: client.base)
@@ -554,20 +889,46 @@ final class Dashboard {
         }
         // Cycle tracking turned on (on the web): the next Sync asks Health for those types, then sends their history.
         if let on = status.settings?.cycleTracking { Config.cycleTracking = on }
-        if !cycleTrackingOn, trendsSection == .cycle { trendsSection = .vitals }
         // Sharing changed (here, on the web or on another phone) since the board was read: that board, and the photos
         // on it, go at once, so turned off nobody stays on screen, offline or not. The next look reads it again.
         if let on = status.settings?.familySharing, let board = familyBoard, board.sharing != on { dropFamilyBoard() }
     }
 
+    /// One request to the server; a 401 asks for sign-in. Only for the session it was asked under (`session`): the last
+    /// person's request, refused after their Sign out or once someone else signed in, throws a CancellationError and
+    /// signs nobody out.
     func fetch<T>(_ request: (APIClient) async throws -> T) async throws -> T {
+        let asked = session
         guard let client = APIClient.current() else { throw APIError.network("No server configured.") }
         do {
             return try await request(client)
         } catch APIError.signInRequired {
+            try keep(answeredUnder: asked)
             phase = .signIn
             throw APIError.signInRequired
         }
+    }
+
+    /// `fetch`, for an answer that only means something for the person who asked: one that lands after a Sign out, a
+    /// 401, someone else's sign-in or a change of server (`session`) is dropped with a CancellationError, so it's never
+    /// shown to, or kept for, whoever is here now. What the server can do for them (GET /api/ai, the lab reader, a food
+    /// log's `can`), their portraits and their reference photos go through it.
+    ///
+    /// Its 401 asks for sign-in only for the session it was asked under: the last person's request, refused after their
+    /// Sign out, never signs out whoever signed in since.
+    func fetchForThisSession<T>(_ request: (APIClient) async throws -> T) async throws -> T {
+        let asked = session
+        guard let client = APIClient.current() else { throw APIError.network("No server configured.") }
+        let answer: T
+        do {
+            answer = try await request(client)
+        } catch APIError.signInRequired {
+            try keep(answeredUnder: asked)
+            phase = .signIn
+            throw APIError.signInRequired
+        }
+        try keep(answeredUnder: asked)
+        return answer
     }
 
     private func clearCaches() {
@@ -582,6 +943,7 @@ final class Dashboard {
     }
 
     private func clearData() {
+        sessionCount += 1
         summary = nil
         status = nil
         date = nil
@@ -589,8 +951,18 @@ final class Dashboard {
         dataVersion = nil
         loadedOn = nil
         foodLogAvailable = nil
+        timeZoneSent = nil
+        // Card changes still on their way are the last person's: their lists don't show for whoever is next, and the
+        // ones queued behind are never sent (`changeCards`).
+        pendingCards = nil
+        cardChanges = 0
+        cardQueue = nil
+        cardEpoch += 1
         clearCaches()
         resetFamily()
+        // Another server's conversation, or nobody's yet: it doesn't carry over, and nor does what it could do.
+        mcfly.forget()
+        availability.forget()
     }
 
     /// Forgets the board and its photos; a read already on its way is dropped when it lands.
@@ -643,24 +1015,38 @@ enum FamilyDisplay {
 enum SummaryCache {
     private struct Entry: Codable {
         let summary: Summary
-        let status: ServerStatus?
+        var status: ServerStatus?
         var version: String?
         var loadedOn: String?
+        /// Which build wrote it (`format`); nil from builds before it was kept.
+        var format: Int?
     }
 
-    private static func file(for base: URL) -> URL {
+    /// 2: settings.shownCards is kept, so a cached status without it is from a server older than optional cards.
+    private static let format = 2
+
+    /// Where one server's is kept; tests write an older build's there.
+    static func file(for base: URL) -> URL {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent("summary-\(hashId(base.absoluteString)).json")
     }
 
     static func load(for base: URL) -> (summary: Summary, status: ServerStatus?, version: String?, loadedOn: String?)? {
-        guard let data = try? Data(contentsOf: file(for: base)), let e = try? JSONDecoder().decode(Entry.self, from: data) else { return nil }
+        guard let data = try? Data(contentsOf: file(for: base)), var e = try? JSONDecoder().decode(Entry.self, from: data) else { return nil }
+        // Cached by a build that never kept shownCards, so it can't say whether the server has optional cards. The
+        // hosted one has them: take it that they're off there until the first status read says, or they'd show on the
+        // first launch after the update, then go (or stay, offline). Any other server (a Mac or LAN one) may be older
+        // than optional cards, so it keeps the older rule, every card on unless hidden, as before the update.
+        if e.format == nil, e.status?.hosted == true, e.status?.settings?.hiddenCards != nil, e.status?.settings?.shownCards == nil {
+            e.status?.settings?.shownCards = []
+        }
         return (e.summary, e.status, e.version, e.loadedOn)
     }
 
     static func save(summary: Summary, status: ServerStatus?, version: String?, loadedOn: String?, for base: URL) {
-        try? JSONEncoder().encode(Entry(summary: summary, status: status, version: version, loadedOn: loadedOn)).write(to: file(for: base), options: [.atomic, .completeFileProtection])
+        let entry = Entry(summary: summary, status: status, version: version, loadedOn: loadedOn, format: format)
+        try? JSONEncoder().encode(entry).write(to: file(for: base), options: [.atomic, .completeFileProtection])
     }
 
     static func clear(for base: URL) { try? FileManager.default.removeItem(at: file(for: base)) }

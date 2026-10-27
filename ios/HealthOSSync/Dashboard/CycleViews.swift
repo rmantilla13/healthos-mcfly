@@ -5,7 +5,7 @@ import SwiftUI
 // only while cycle tracking is on; nothing here reaches the summary, flags, patterns or the digest. Every estimate
 // is worded as one: no day is ever shown as safe, and nothing is fit to use as contraception.
 
-/// Where today sits in the cycle, on Today. Opens the Cycle section of Trends.
+/// Where today sits in the cycle, on Home. Opens the Cycle page.
 struct CycleCard: View {
     let cycle: CycleData
     let phase: CyclePhase
@@ -19,16 +19,16 @@ struct CycleCard: View {
         Button { dashboard.open(.cycle) } label: {
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text("Cycle").font(.subheadline.weight(.medium)).foregroundStyle(Palette.ink2)
+                    Text("Cycle").font(.app(.subheadline, weight: .medium)).foregroundStyle(Palette.ink2)
                     Spacer()
                     Image(systemName: "arrow.up.right").font(.caption.weight(.semibold)).foregroundStyle(Palette.ink3)
                 }
                 HStack(alignment: .center, spacing: 14) {
                     VStack(alignment: .leading, spacing: 5) {
-                        Text(PhaseStyle.title(phase.name)).font(.title3.weight(.semibold)).foregroundStyle(Palette.ink)
-                        Text("Day \(phase.day)\(next)").font(.footnote).foregroundStyle(Palette.ink2)
+                        Text(PhaseStyle.title(phase.name)).font(.app(.title3, weight: .semibold)).foregroundStyle(Palette.ink)
+                        Text("Day \(phase.day)\(next)").font(.app(.footnote)).foregroundStyle(Palette.ink2)
                         if let fertile = CycleText.fertileLine(cycle) {
-                            Text(fertile).font(.caption).foregroundStyle(Palette.ink3)
+                            Text(fertile).font(.app(.caption)).foregroundStyle(Palette.ink3)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -57,10 +57,10 @@ struct CycleTrends: View {
             if let cycle {
                 CycleSections(cycle: cycle, units: dashboard.units)
             } else if let error {
-                ContentUnavailableView("Couldn't load your cycle", systemImage: "circle.dashed", description: Text(error))
+                Unavailable("Couldn't load your cycle", systemImage: "circle.dashed", description: error)
             } else if loaded {
                 Text("Your cycle shows here once cycle tracking is on and a period is logged, in Apple Health or on the web.")
-                    .font(.footnote).foregroundStyle(Palette.ink3)
+                    .font(.app(.footnote)).foregroundStyle(Palette.ink3)
                     .card()
             } else {
                 ProgressView().frame(maxWidth: .infinity, minHeight: 200)
@@ -299,8 +299,8 @@ private struct PhaseRing: View {
                 ctx.stroke(dot, with: .color(Palette.surface), lineWidth: 2)
             }
             VStack(spacing: 0) {
-                Text("Day").font(.caption2).foregroundStyle(Palette.ink3)
-                Text("\(layout.day)").font(.system(size: 22, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(Palette.ink)
+                Text("Day").font(.app(.caption2)).foregroundStyle(Palette.ink3)
+                Text("\(layout.day)").font(.app(fixedSize: 22, weight: .semibold)).monospacedDigit().foregroundStyle(Palette.ink)
             }
         }
         .accessibilityHidden(true)
@@ -317,7 +317,7 @@ private struct CycleNowCard: View {
         let est = cycle.shownEstimate
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("This cycle").font(.headline).foregroundStyle(Palette.ink)
+                Text("This cycle").font(.app(.headline)).foregroundStyle(Palette.ink)
                 Spacer()
                 if let est { Chip(text: Self.confidence(est)) }
             }
@@ -325,17 +325,17 @@ private struct CycleNowCard: View {
                 HStack(alignment: .center, spacing: 14) {
                     VStack(alignment: .leading, spacing: 4) {
                         if let phase = cycle.phase {
-                            Text(PhaseStyle.title(phase.name)).font(.title2.weight(.semibold)).foregroundStyle(Palette.ink)
+                            Text(PhaseStyle.title(phase.name)).font(.app(.title2, weight: .semibold)).foregroundStyle(Palette.ink)
                         }
-                        Text("Day \(current.day)").font(cycle.phase == nil ? .title2.weight(.semibold) : .subheadline.weight(.medium))
+                        Text("Day \(current.day)").font(cycle.phase == nil ? .app(.title2, weight: .semibold) : .app(.subheadline, weight: .medium))
                             .foregroundStyle(cycle.phase == nil ? Palette.ink : Palette.ink2)
-                        Text("Period started \(Fmt.day(current.start))").font(.caption).foregroundStyle(Palette.ink3)
+                        Text("Period started \(Fmt.day(current.start))").font(.app(.caption)).foregroundStyle(Palette.ink3)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     PhaseRing(layout: CycleLayout(cycle: cycle, day: current.day)).frame(width: 84, height: 84)
                 }
                 if let phase = cycle.phase {
-                    Text(PhaseStyle.blurb(phase.name)).font(.footnote).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
+                    Text(PhaseStyle.blurb(phase.name)).font(.app(.footnote)).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
                 }
                 if let est {
                     let until = Fmt.daysBetween(cycle.today, est.nextPeriod.date)
@@ -349,15 +349,15 @@ private struct CycleNowCard: View {
                     Text(cycle.noEstimate == "stale"
                         ? "Your latest logged period started \(Fmt.day(current.start)). Log your most recent one to see estimates again."
                         : "Estimates appear once a period is logged.")
-                        .font(.footnote).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
+                        .font(.app(.footnote)).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
                 }
             } else {
                 Text("No period logged yet. Log the first day of your next one, or add your history in Apple Health.")
-                    .font(.footnote).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
+                    .font(.app(.footnote)).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
             }
             if let est {
                 Text("\(Self.basis(est)) Estimates, not medical advice, and not reliable as contraception.")
-                    .font(.caption).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
+                    .font(.app(.caption)).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
             }
         }
         .card(.pink)
@@ -365,9 +365,9 @@ private struct CycleNowCard: View {
 
     private func fact(_ title: String, _ value: String, _ note: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(.caption).foregroundStyle(Palette.ink3)
-            Text(value).font(.subheadline.weight(.medium)).foregroundStyle(Palette.ink)
-            Text(note).font(.caption).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
+            Text(title).font(.app(.caption)).foregroundStyle(Palette.ink3)
+            Text(value).font(.app(.subheadline, weight: .medium)).foregroundStyle(Palette.ink)
+            Text(note).font(.app(.caption)).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
         }
         .accessibilityElement(children: .combine)
     }
@@ -405,7 +405,7 @@ private struct CycleFertilityCard: View {
         let ovulation = found ?? cycle.shownEstimate?.ovulation
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Fertile window").font(.headline).foregroundStyle(Palette.ink)
+                Text("Fertile window").font(.app(.headline)).foregroundStyle(Palette.ink)
                 Spacer()
                 Chip(text: cycle.fertility.first?.basis == "logged" ? "Your signs" : "Estimate")
             }
@@ -424,8 +424,9 @@ private struct CycleFertilityCard: View {
                         .frame(height: 72)
                         .opacity(d < cycle.today ? 0.55 : 1)
                         Text("\(Int(d.suffix(2)) ?? 0)")
-                            .font(.caption2.weight(d == cycle.today ? .bold : .regular)).monospacedDigit()
+                            .font(.app(.caption2, weight: d == cycle.today ? .bold : .regular)).monospacedDigit()
                             .foregroundStyle(d == cycle.today ? Palette.ink : Palette.ink3)
+                        // ○ and ● aren't in DM Sans's latin set, so these marks are in the system face.
                         Text(d == ovulation ? (found == nil ? "○" : "●") : " ").font(.system(size: 9)).foregroundStyle(Palette.fertilePeak)
                     }
                     .frame(maxWidth: .infinity)
@@ -437,14 +438,14 @@ private struct CycleFertilityCard: View {
                 ForEach(["medium", "high", "peak"], id: \.self) { l in
                     HStack(spacing: 5) {
                         RoundedRectangle(cornerRadius: 3).fill(FertileColor.of(l)).frame(width: 10, height: 10)
-                        Text(CycleText.level(l)).font(.caption2).foregroundStyle(Palette.ink3)
+                        Text(CycleText.level(l)).font(.app(.caption2)).foregroundStyle(Palette.ink3)
                     }
                 }
-                Text(found == nil ? "○ Ovulation (estimate)" : "● Ovulation").font(.caption2).foregroundStyle(Palette.ink3)
+                Text(found == nil ? "○ Ovulation (estimate)" : "● Ovulation").font(.app(.caption2)).foregroundStyle(Palette.ink3)
             }
             .accessibilityHidden(true)
             Text("Each day's chance of conception, relative to the most fertile day: the five days before ovulation and the day itself. Positive LH tests, egg-white or watery mucus and a temperature rise all sharpen it. Never treat a day outside it as safe.")
-                .font(.caption).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
+                .font(.app(.caption)).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
         }
         .card()
     }
@@ -494,19 +495,19 @@ private struct CycleTemperatureCard: View {
         let length = max(cd(end), readings.last?.day ?? 0, 14)
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
-                Text("Temperature").font(.headline).foregroundStyle(Palette.ink)
+                Text("Temperature").font(.app(.headline)).foregroundStyle(Palette.ink)
                 Spacer()
                 Button { index = i - 1 } label: { Image(systemName: "chevron.left") }
                     .disabled(i <= 0).accessibilityLabel("Earlier cycle")
-                Text(c.end.map { CycleText.range(c.start, $0) } ?? "Since \(Fmt.day(c.start))").font(.caption).foregroundStyle(Palette.ink2).monospacedDigit()
+                Text(c.end.map { CycleText.range(c.start, $0) } ?? "Since \(Fmt.day(c.start))").font(.app(.caption)).foregroundStyle(Palette.ink2).monospacedDigit()
                 Button { index = i + 1 } label: { Image(systemName: "chevron.right") }
                     .disabled(i >= history.count - 1).accessibilityLabel("Later cycle")
             }
             .buttonStyle(.borderless)
-            Text(status(c, source: source)).font(.caption).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
+            Text(status(c, source: source)).font(.app(.caption)).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
             if readings.isEmpty {
                 Text("No temperatures in this cycle. Wearing an Apple Watch (Series 8 or later) or WHOOP to sleep records one every night; you can also log a thermometer reading on the web.")
-                    .font(.footnote).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
+                    .font(.app(.footnote)).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
             } else {
                 chart(c, readings: readings, length: length, cd: cd)
                 legend
@@ -534,7 +535,7 @@ private struct CycleTemperatureCard: View {
         let lo = (values.min() ?? -0.1) - span * 0.25
         let hi = (values.max() ?? 0.1) + span * 0.15
         let ov = c.ovulation.map { cd($0.date) }
-        let bleeding = cycle.days.filter { CycleText.bleeding($0) && $0.date >= c.start }.map { cd($0.date) }.filter { $0 <= length }
+        let bleeding = cycle.days.filter { CycleText.bleeding($0.day) && $0.date >= c.start }.map { cd($0.date) }.filter { $0 <= length }
         let lh = cycle.days.filter { $0.ovulationTest == "lh_surge" && $0.date >= c.start }.map { cd($0.date) }.filter { $0 <= length }
         let fertile = c.end == nil ? cycle.fertility.map { Band(day: cd($0.date), level: $0.level) }.filter { $0.day <= length } : []
         let usable = readings.filter { !$0.excluded }
@@ -586,13 +587,13 @@ private struct CycleTemperatureCard: View {
         .chartYScale(domain: lo...hi)
         .chartXAxis {
             AxisMarks(values: Array(stride(from: 1, through: length, by: length > 30 ? 7 : 5)).map(Double.init)) { v in
-                AxisValueLabel { if let d = v.as(Double.self) { Text("\(Int(d))").foregroundStyle(Palette.ink3) } }
+                AxisValueLabel { if let d = v.as(Double.self) { Text("\(Int(d))").foregroundStyle(Palette.ink3) } }.font(.axis)
             }
         }
         .chartYAxis {
             AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { v in
                 AxisGridLine().foregroundStyle(Palette.grid)
-                AxisValueLabel { if let d = v.as(Double.self) { Text(Fmt.signed(d, abs(d) < 0.1 && d != 0 ? 2 : 1)).foregroundStyle(Palette.ink3) } }
+                AxisValueLabel { if let d = v.as(Double.self) { Text(Fmt.signed(d, abs(d) < 0.1 && d != 0 ? 2 : 1)).foregroundStyle(Palette.ink3) } }.font(.axis)
             }
         }
         .frame(height: 190)
@@ -606,7 +607,7 @@ private struct CycleTemperatureCard: View {
             Text("○ Left out")
             Text("▲ LH test")
         }
-        .font(.caption2).foregroundStyle(Palette.ink3)
+        .font(.app(.caption2)).foregroundStyle(Palette.ink3)
         .accessibilityHidden(true)
     }
 }
@@ -621,13 +622,13 @@ private struct CycleCalendarCard: View {
 
     var body: some View {
         let dates = Self.dates(cycle)
-        let byDate = Dictionary(cycle.days.map { ($0.date, $0) }, uniquingKeysWith: { _, b in b })
+        let byDate = Dictionary(cycle.days.map { ($0.date, $0.day) }, uniquingKeysWith: { _, b in b })
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
-                Text("Calendar").font(.headline).foregroundStyle(Palette.ink)
+                Text("Calendar").font(.app(.headline)).foregroundStyle(Palette.ink)
                 Spacer()
                 if let first = dates.first, let last = dates.last {
-                    Text(CycleText.range(first, last)).font(.caption).foregroundStyle(Palette.ink3)
+                    Text(CycleText.range(first, last)).font(.app(.caption)).foregroundStyle(Palette.ink3)
                 }
             }
             // A plain Grid, not a lazy one: inside the Trends scroll view a lazy grid sizes its rows as they scroll in,
@@ -635,7 +636,7 @@ private struct CycleCalendarCard: View {
             Grid(horizontalSpacing: 4, verticalSpacing: 6) {
                 GridRow {
                     ForEach(Array(Self.weekdays.enumerated()), id: \.offset) { _, w in
-                        Text(w).font(.caption2.weight(.medium)).foregroundStyle(Palette.ink3).frame(maxWidth: .infinity).accessibilityHidden(true)
+                        Text(w).font(.app(.caption2, weight: .medium)).foregroundStyle(Palette.ink3).frame(maxWidth: .infinity).accessibilityHidden(true)
                     }
                 }
                 ForEach(Array(stride(from: 0, to: dates.count, by: 7)), id: \.self) { row in
@@ -690,7 +691,7 @@ private struct CycleCalendarCard: View {
         let m = marks(date, day: day)
         let onPeak = m.fertile == "peak" && !m.period && !m.predicted
         let number = Text("\(Int(date.suffix(2)) ?? 0)")
-            .font(.footnote.weight(m.period || m.today ? .semibold : .regular))
+            .font(.app(.footnote, weight: m.period || m.today ? .semibold : .regular))
             .monospacedDigit()
             .underline(m.today)
             .foregroundStyle(m.period ? Color.white : m.predicted ? Palette.gaugeFill : onPeak ? Palette.surface : m.future ? Palette.ink3 : Palette.ink)
@@ -740,7 +741,7 @@ private struct CycleCalendarCard: View {
                     ForEach(shown[i..<min(i + 2, shown.count)]) { key in
                         HStack(spacing: 6) {
                             key.shape.frame(width: 12, height: 12)
-                            Text(key.label).font(.caption2).foregroundStyle(Palette.ink3)
+                            Text(key.label).font(.app(.caption2)).foregroundStyle(Palette.ink3)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -789,9 +790,9 @@ private struct CycleHistoryCard: View {
         let longest = max(35, rows.map(\.days).max() ?? 0)
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
-                Text("Your cycles").font(.headline).foregroundStyle(Palette.ink)
+                Text("Your cycles").font(.app(.headline)).foregroundStyle(Palette.ink)
                 Spacer()
-                Text("\(CycleText.plural(cycle.periods.count, "period")) logged").font(.caption).foregroundStyle(Palette.ink3)
+                Text("\(CycleText.plural(cycle.periods.count, "period")) logged").font(.app(.caption)).foregroundStyle(Palette.ink3)
             }
             let stats = statItems
             Grid(alignment: .topLeading, horizontalSpacing: 16, verticalSpacing: 12) {
@@ -804,12 +805,12 @@ private struct CycleHistoryCard: View {
                 }
             }
             if rows.isEmpty {
-                Text("Cycle lengths appear after two period starts.").font(.footnote).foregroundStyle(Palette.ink3)
+                Text("Cycle lengths appear after two period starts.").font(.app(.footnote)).foregroundStyle(Palette.ink3)
             } else {
                 VStack(spacing: 8) {
                     ForEach(rows) { r in
                         HStack(spacing: 10) {
-                            Text(Fmt.day(r.start)).font(.caption).foregroundStyle(Palette.ink3).frame(width: 52, alignment: .leading)
+                            Text(Fmt.day(r.start)).font(.app(.caption)).foregroundStyle(Palette.ink3).frame(width: 52, alignment: .leading)
                             GeometryReader { geo in
                                 let w = { (n: Int) in geo.size.width * min(1, Double(n) / Double(longest)) }
                                 HStack(spacing: 2) {
@@ -823,7 +824,7 @@ private struct CycleHistoryCard: View {
                                 }
                             }
                             .frame(height: 8)
-                            Text(r.current ? "\(r.days) d…" : "\(r.days) d").font(.caption.weight(.medium)).monospacedDigit().foregroundStyle(Palette.ink2).frame(width: 44, alignment: .trailing)
+                            Text(r.current ? "\(r.days) d…" : "\(r.days) d").font(.app(.caption, weight: .medium)).monospacedDigit().foregroundStyle(Palette.ink2).frame(width: 44, alignment: .trailing)
                         }
                         .accessibilityElement(children: .ignore)
                         .accessibilityLabel(r.label)
@@ -835,7 +836,7 @@ private struct CycleHistoryCard: View {
                         HStack(spacing: 5) { Capsule().fill(Palette.fertileMedium).frame(width: 12, height: 6); Text("Before ovulation") }
                         HStack(spacing: 5) { Capsule().fill(Palette.cycleLuteal).frame(width: 12, height: 6); Text("After") }
                     }
-                    .font(.caption2).foregroundStyle(Palette.ink3)
+                    .font(.app(.caption2)).foregroundStyle(Palette.ink3)
                     .accessibilityHidden(true)
                 }
             }
@@ -890,9 +891,9 @@ private struct CycleHistoryCard: View {
 
     private func stat(_ title: String, _ value: String, note: String?) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(.caption).foregroundStyle(Palette.ink3)
-            Text(value).font(.title3.weight(.semibold)).monospacedDigit().foregroundStyle(Palette.ink)
-            if let note { Text(note).font(.caption).foregroundStyle(Palette.ink3) }
+            Text(title).font(.app(.caption)).foregroundStyle(Palette.ink3)
+            Text(value).font(.app(.title3, weight: .semibold)).monospacedDigit().foregroundStyle(Palette.ink)
+            if let note { Text(note).font(.app(.caption)).foregroundStyle(Palette.ink3) }
         }
         .accessibilityElement(children: .combine)
     }
@@ -908,17 +909,17 @@ private struct CyclePatternsCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
-                Text("Patterns").font(.headline).foregroundStyle(Palette.ink)
+                Text("Patterns").font(.app(.headline)).foregroundStyle(Palette.ink)
                 Spacer()
-                Text("From your own cycles").font(.caption).foregroundStyle(Palette.ink3)
+                Text("From your own cycles").font(.app(.caption)).foregroundStyle(Palette.ink3)
             }
             ForEach(insights.body, id: \.metric) { b in
                 HStack(alignment: .firstTextBaseline) {
-                    Text(Self.metric(b.metric)).font(.subheadline).foregroundStyle(Palette.ink2)
+                    Text(Self.metric(b.metric)).font(.app(.subheadline)).foregroundStyle(Palette.ink2)
                     Spacer()
                     VStack(alignment: .trailing, spacing: 2) {
-                        Text("\(value(b, b.follicular)) → \(value(b, b.luteal))").font(.subheadline.weight(.semibold)).monospacedDigit().foregroundStyle(Palette.ink)
-                        Text("before → after ovulation, \(CycleText.plural(b.cycles, "cycle"))").font(.caption2).foregroundStyle(Palette.ink3)
+                        Text("\(value(b, b.follicular)) → \(value(b, b.luteal))").font(.app(.subheadline, weight: .semibold)).monospacedDigit().foregroundStyle(Palette.ink)
+                        Text("before → after ovulation, \(CycleText.plural(b.cycles, "cycle"))").font(.app(.caption2)).foregroundStyle(Palette.ink3)
                     }
                 }
                 .accessibilityElement(children: .combine)
@@ -931,9 +932,9 @@ private struct CyclePatternsCard: View {
                         GridRow {
                             ForEach(symptoms[i..<min(i + 2, symptoms.count)], id: \.symptom) { s in
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(CycleText.symptom(s.symptom)).font(.footnote.weight(.semibold)).foregroundStyle(Tone.peach.ink)
+                                    Text(CycleText.symptom(s.symptom)).font(.app(.footnote, weight: .semibold)).foregroundStyle(Tone.peach.ink)
                                     Text("\(s.phase.map { "mostly \(Self.phase($0))" } ?? "at different points") · \(CycleText.plural(s.cycles, "cycle"))")
-                                        .font(.caption2).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
+                                        .font(.app(.caption2)).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
                                 }
                                 .padding(.horizontal, 10).padding(.vertical, 8)
                                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -947,10 +948,10 @@ private struct CyclePatternsCard: View {
             if !insights.deviations.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(insights.deviations, id: \.kind) { d in
-                        Text(Self.deviation(d)).font(.footnote).foregroundStyle(Palette.ink).fixedSize(horizontal: false, vertical: true)
+                        Text(Self.deviation(d)).font(.app(.footnote)).foregroundStyle(Palette.ink).fixedSize(horizontal: false, vertical: true)
                     }
                     Text("Outside the usual ranges (FIGO). Often nothing, but worth mentioning to a clinician if it keeps happening.")
-                        .font(.caption).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
+                        .font(.app(.caption)).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
