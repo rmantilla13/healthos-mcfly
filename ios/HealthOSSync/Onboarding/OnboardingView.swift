@@ -177,10 +177,6 @@ private struct StepTabs: View {
                 tabs(named: false)
             }
         }
-        // The tabs stop growing at the first accessibility size, so the three keep one line; VoiceOver reads each.
-        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Steps")
     }
 
     /// The row; `named`: every step's name shows, not only the current one's.
@@ -219,5 +215,9 @@ private struct StepTabs: View {
             }
             Spacer(minLength: 0)
         }
+        // The tabs stop growing at the first accessibility size, so the three keep one line; VoiceOver reads each.
+        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Steps")
     }
 }

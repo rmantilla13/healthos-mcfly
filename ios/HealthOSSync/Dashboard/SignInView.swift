@@ -16,8 +16,7 @@ struct SignInView: View {
     }
 
     var body: some View {
-        // On the open Duo in landscape, the form keeps to the leading side and healthOS's mark and line sit on the other.
-        WelcomeFrame(aside: true) {
+        WelcomeFrame {
             switch step {
             case .signIn:
                 Button("Change server") { dashboard.tab = .settings }

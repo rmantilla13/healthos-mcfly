@@ -62,6 +62,13 @@ final class WelcomeDuoTests: XCTestCase {
         }
     }
 
+    /// The same against the fold HOS Duo reports (40 pt wide, not the presets' 0 pt midline), the bar either side.
+    func testNothingTappableOnTheMeasuredFold() async throws {
+        for step in OnboardingStep.allCases {
+            try await SignInDuoTests.assertClearOfTheMeasuredFold(await welcome(step), "step \(step.rawValue)")
+        }
+    }
+
     /// Upright (medium) every step keeps its name, as the web above 560; closed, and on the leading side in landscape
     /// (compact there), only the current one does, as the web's phone. VoiceOver reads every name either way, so this
     /// measures the tabs: a tab with its name drawn is far wider than its numeral alone.
@@ -91,19 +98,27 @@ final class WelcomeDuoTests: XCTestCase {
         }
     }
 
-    /// In landscape the card keeps to the leading side: every control ends before the fold's band, and nothing sits on
-    /// the trailing side (the welcome has no aside).
+    /// In landscape the card keeps to the leading side: on every step, the bar either side, every element (the Sign
+    /// out at the top and each choice included) ends before the fold's band, so nothing reaches into it or past it.
     func testTheCardKeepsToTheLeadingSide() async throws {
-        let host = try await DuoHost(await welcome(.perspective), as: .innerLandscape())
-        defer { host.close() }
-        let band = try XCTUnwrap(DuoFoldAssertions.band(.innerLandscape()))
-        let elements = try await host.elements()
-        XCTAssertFalse(elements.isEmpty)
-        for element in elements {
-            XCTAssertLessThanOrEqual(element.accessibilityFrame.minX, band.lowerBound, "\(element.accessibilityLabel ?? "?") \(element.accessibilityFrame)")
+        for step in OnboardingStep.allCases {
+            for bar: HorizontalEdge in [.trailing, .leading] {
+                let state = DuoState.innerLandscape(bar: bar)
+                let host = try await DuoHost(await welcome(step), as: state)
+                let band = try XCTUnwrap(DuoFoldAssertions.band(state))
+                let elements = try await host.elements()
+                host.window.endEditing(true)
+                host.close()
+                XCTAssertFalse(elements.isEmpty)
+                for element in elements {
+                    XCTAssertLessThanOrEqual(element.accessibilityFrame.maxX, band.lowerBound,
+                                             "step \(step.rawValue), bar \(bar): \(element.accessibilityLabel ?? "?") \(element.accessibilityFrame)")
+                }
+                if step == .perspective {
+                    XCTAssertNotNil(elements.first { ($0.accessibilityLabel ?? "").hasPrefix("Digital human") }, "step 1's choices")
+                }
+            }
         }
-        let choice = try XCTUnwrap(elements.first { ($0.accessibilityLabel ?? "").hasPrefix("Digital human") })
-        XCTAssertLessThanOrEqual(choice.accessibilityFrame.maxX, band.lowerBound, "a choice ends before the fold")
     }
 
     // MARK: A fold keeps the page (P4, P14)
