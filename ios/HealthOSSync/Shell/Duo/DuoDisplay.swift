@@ -47,8 +47,15 @@ struct DuoDisplay: Equatable, Sendable {
     static let innerLandscapeSize = CGSize(width: 951, height: 669)
     static let innerPortraitSize = CGSize(width: 669, height: 951)
     static let innerSplitSize = CGSize(width: 471, height: 669)
-    /// The fold's width in these presets: none until G2 measures it.
+    /// The fold's width in these presets: none, though G2 has measured it (`measuredInnerLandscapeFold`). The presets
+    /// keep 0 until the change is agreed, since every page's drawn tests are written against 443 | 379 (gates.md G2).
     static let foldWidth: CGFloat = 0
+
+    /// G2 (HOS Duo, iOS 27.1, the shell stage): the `.division` region the inner display reports in landscape, in window
+    /// points. 40 pt wide, centred on the midline (x 455.5–495.5), inactive while flat and active when partly open (99°
+    /// and 147°). With the bar trailing, a page's 847 pt of content splits 423 | 359 around it with the 12 pt clearance,
+    /// not the presets' 443 | 379. The live app reads the real region; only drawn tests use the presets.
+    static let measuredInnerLandscapeFold = CGRect(x: 455.5, y: 0, width: 40, height: 669)
 
     /// Whether the fold runs up and down the window (a vertical division) rather than across it.
     var foldIsVertical: Bool { fold.map { $0.height > $0.width } ?? false }

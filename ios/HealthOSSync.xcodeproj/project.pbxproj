@@ -17,6 +17,7 @@
 		0B7BB09A64E6EE89835059FD /* PhotoPipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCB856B29DC416580B8A93A0 /* PhotoPipeline.swift */; };
 		0BDF60A216902A26A4A8FE46 /* DayAggregatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF3AD1F8E32A8E71A82AA62D /* DayAggregatorTests.swift */; };
 		0EDCE35D1D564F2670CB8267 /* portraits.json in Resources */ = {isa = PBXBuildFile; fileRef = 73AE4AF2E08289558F5FE74B /* portraits.json */; };
+		0EECBB307E0E0F000D7CCC44 /* DuoShellTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFAC9501F916077C0C90635A /* DuoShellTests.swift */; };
 		0F8A1DFE4BBDAE51D8777C27 /* HomeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CF00FE6CAC4FB940559D6D2 /* HomeTests.swift */; };
 		0FB626BE268BECC37DF88D1F /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B00CB598628622D59B7DB55 /* Theme.swift */; };
 		14401AF7A6909B6133ABD8FD /* DuoBarEdge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CE2734A02279BFA5F9CB9D3 /* DuoBarEdge.swift */; };
@@ -435,6 +436,7 @@
 		A924DDC5C89C88A002CD3029 /* DuoScrollTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuoScrollTests.swift; sourceTree = "<group>"; };
 		AA0DE5D33B140C96BB524233 /* Welcome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Welcome.swift; sourceTree = "<group>"; };
 		AB6E19D7D2BCE0CB4918F121 /* DuoKeyboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuoKeyboard.swift; sourceTree = "<group>"; };
+		AFAC9501F916077C0C90635A /* DuoShellTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuoShellTests.swift; sourceTree = "<group>"; };
 		AFFDD5DFDE94A19E371CA624 /* ProfileExportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileExportTests.swift; sourceTree = "<group>"; };
 		B479E2FF3ECF8F9266A6F82C /* Config.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Config.swift; sourceTree = "<group>"; };
 		B4FC9B99D78D356233E0EEAF /* HomeNutritionLinkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeNutritionLinkTests.swift; sourceTree = "<group>"; };
@@ -654,6 +656,7 @@
 				245BD87F6395DAEF7CA2D83D /* DuoLayoutTests.swift */,
 				80CE2D7B5152C0B93CA5CECD /* DuoReaderTests.swift */,
 				A924DDC5C89C88A002CD3029 /* DuoScrollTests.swift */,
+				AFAC9501F916077C0C90635A /* DuoShellTests.swift */,
 				CCCDD972CF1A8882B8A36B22 /* DuoSnapshot.swift */,
 				2AF0E336EA4DB332150CFF8F /* EditPreferencesTests.swift */,
 				921D0C88BED0295B748107F6 /* FamilyTests.swift */,
@@ -1182,6 +1185,7 @@
 				6E8186560C1B2FA71548779E /* DuoLayoutTests.swift in Sources */,
 				6576428E31E5EEA78C2B389C /* DuoReaderTests.swift in Sources */,
 				44697F18A5FD064ED5475E74 /* DuoScrollTests.swift in Sources */,
+				0EECBB307E0E0F000D7CCC44 /* DuoShellTests.swift in Sources */,
 				5829142E46002AA15E2A12A9 /* DuoSnapshot.swift in Sources */,
 				251CCE9EF02BD5F3CF4E3676 /* EditPreferencesTests.swift in Sources */,
 				6C6C7DCCE697784424F3E782 /* FamilyTests.swift in Sources */,
