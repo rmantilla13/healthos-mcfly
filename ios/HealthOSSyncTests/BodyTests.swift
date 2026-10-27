@@ -174,6 +174,41 @@ final class BodyTests: XCTestCase {
         XCTAssertNil(model.tabTrends(.strain, days: 30).value, "the answer read for them never lands")
     }
 
+    /// Today (the shared date nil), opened for the first time: the device rows' answers land, not only their reads.
+    func testTodaysDeviceReadingsLand() async throws {
+        let d = signedIn()
+        let f = try BodyDuoTests.fixture()
+        d.apply(status: f.status)
+        d.summary = f.summary
+        XCTAssertNil(d.date)
+        XCTAssertNotNil(f.summary.latestDataDate, "the fixture has a device's readings")
+        let model = BodyModel()
+        await model.loadOverview(d, reads: reads(trends: { _, _ in ["resting_hr": [Point(date: "2026-10-21", value: 52)]] }))
+        let devices = try XCTUnwrap(model.devices, "today's device record is made")
+        XCTAssertNil(devices.date)
+        XCTAssertNotNil(devices.trends.value, "the trends landed")
+        XCTAssertNotNil(devices.workouts.value, "the workouts landed")
+        XCTAssertNotNil(devices.labs.failure, "the labs' answer (a 500 here) landed, not left loading")
+    }
+
+    /// The next person never sees the last one's measurements or readings: nothing shows until their own reads start,
+    /// and the last person's go from memory as the session changes.
+    func testTheLastPersonsReadingsDontShowForTheNext() async throws {
+        let d = signedIn()
+        let f = try BodyDuoTests.fixture()
+        d.apply(status: f.status)
+        d.summary = f.summary
+        let model = BodyModel()
+        await model.loadOverview(d, reads: reads(trends: { _, _ in ["weight": [Point(date: "2026-10-21", value: 70)]] }))
+        XCTAssertNotNil(model.now(d))
+        XCTAssertNotNil(model.measured.value)
+        d.signedIn()
+        XCTAssertNil(model.now(d), "under someone else, the page shows its spinner, not the last person's cards")
+        model.adopt(d.session)
+        XCTAssertNil(model.measured.value, "the last person's measurements are gone")
+        XCTAssertNil(model.devices, "and their device readings")
+    }
+
     func testAServerWithoutBodyRoutesCannotAdd() async throws {
         let d = signedIn()
         let f = try BodyDuoTests.fixture()

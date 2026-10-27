@@ -51,9 +51,11 @@ struct BodyScreen: View {
             if let request = dashboard.request(for: .body) { tab = BodyTab.of(request.route.query) }
         }
         // Signed out, someone else, another server: no sheet stays up on the last person's entries.
-        .onChange(of: dashboard.session) { _, _ in
+        .onChange(of: dashboard.session) { _, session in
             adding = nil
             ticks = [:]
+            // The last person's readings leave memory now, not at the next read.
+            model.adopt(session)
         }
     }
 
@@ -186,24 +188,24 @@ private struct BodyContent: View {
                 if card == "body.heart" { BodyHeartCard(day: day) } else { BodyMetricsCard(summary: s, trends: model.devices?.trends.value ?? [:]) }
             }
         case "body.devices.3":
-            let day = model.devices?.day.value ?? nil
-            pair(BodyRows.shown(["body.energy", "body.steps"], shown)) { card in
-                if card == "body.energy" {
-                    BodyEnergyCard(day: day, points: model.devices?.trends.value?["active_energy"] ?? [], date: s.date)
-                } else {
-                    BodyStepsDayCard(day: day, summary: s, goal: dashboard.stepGoal)
+            // In the open Duo's trailing pane (Q5) the chart takes the pane's width and the small cards go two-up:
+            // Activity level beside Glucose, which comes up from the last row. Elsewhere, the web's rows.
+            let third = BodyRows.shown(["body.energy", "body.steps"], shown)
+            BodyInPane {
+                DuoGrid(third + (rows.lastRow.contains("body.glucose") ? ["body.glucose"] : []), id: \.self, paneColumns: 2) { card in
+                    deviceCard(card, s)
                 }
+            } otherwise: {
+                pair(third) { card in deviceCard(card, s) }
             }
         case "body.devices.4":
-            DuoGrid(rows.lastRow, id: \.self, paneColumns: 2) { card in
-                switch card {
-                case "body.workout":
-                    BodyWorkoutCard(summary: s, read: model.devices?.workouts ?? .loading, ticked: { ticks[$0] ?? [] },
-                                    tick: { w, sg, on in ticks[w, default: []] = on ? ticks[w, default: []].union([sg]) : ticks[w, default: []].subtracting([sg]) })
-                        .duoSpans()
-                case "body.glucose": BodyGlucoseCard(summary: s, read: model.devices?.glucose ?? .loading)
-                default: BodyBiomarkersCard(read: model.devices?.labs ?? .loading).duoSpans()
+            let rest = BodyRows.shown(["body.energy", "body.steps"], shown).isEmpty ? rows.lastRow : rows.lastRow.filter { $0 != "body.glucose" }
+            BodyInPane {
+                if !rest.isEmpty {
+                    DuoGrid(rest, id: \.self, paneColumns: 2) { card in deviceCard(card, s) }
                 }
+            } otherwise: {
+                DuoGrid(rows.lastRow, id: \.self, paneColumns: 2) { card in deviceCard(card, s) }
             }
         case "body.hidden":
             BodyAllHidden()
@@ -244,6 +246,25 @@ private struct BodyContent: View {
         }
     }
 
+    /// One of the device rows' cards; the ones that need the width span a pane's two columns.
+    @ViewBuilder private func deviceCard(_ card: String, _ s: Summary) -> some View {
+        let day = model.devices?.day.value ?? nil
+        switch card {
+        case "body.energy":
+            BodyEnergyCard(day: day, points: model.devices?.trends.value?["active_energy"] ?? [], date: s.date).duoSpans()
+        case "body.steps":
+            BodyStepsDayCard(day: day, summary: s, goal: dashboard.stepGoal)
+        case "body.workout":
+            BodyWorkoutCard(summary: s, read: model.devices?.workouts ?? .loading, ticked: { ticks[$0] ?? [] },
+                            tick: { w, sg, on in ticks[w, default: []] = on ? ticks[w, default: []].union([sg]) : ticks[w, default: []].subtracting([sg]) })
+                .duoSpans()
+        case "body.glucose":
+            BodyGlucoseCard(summary: s, read: model.devices?.glucose ?? .loading)
+        default:
+            BodyBiomarkersCard(read: model.devices?.labs ?? .loading).duoSpans()
+        }
+    }
+
     /// A pair of cards (CardRow pair): stacked, one alone full width when the other is hidden.
     @ViewBuilder private func pair<Card: View>(_ cards: [String], @ViewBuilder card: @escaping (String) -> Card) -> some View {
         if cards.count == 2 {
@@ -251,6 +272,22 @@ private struct BodyContent: View {
         } else if let only = cards.first {
             card(only)
         }
+    }
+}
+
+/// One thing in one of DuoPanes' panes (the open Duo's wide layout), another everywhere else.
+private struct BodyInPane<Pane: View, Other: View>: View {
+    @Environment(\.duoInPane) private var inPane
+    private let pane: Pane
+    private let other: Other
+
+    init(@ViewBuilder _ pane: () -> Pane, @ViewBuilder otherwise other: () -> Other) {
+        self.pane = pane()
+        self.other = other()
+    }
+
+    var body: some View {
+        if inPane { pane } else { other }
     }
 }
 

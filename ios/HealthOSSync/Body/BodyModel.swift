@@ -153,10 +153,11 @@ final class BodyModel {
     @ObservationIgnored private var dayTicket = 0
 
     /// Today's summary, as the figure and measurement cards read it: the Dashboard's while it's today's, else the one
-    /// read for today.
+    /// read for today. Nil until this model's reads are the person's here now, so the page shows its spinner rather
+    /// than the last person's measurements and device readings beside the next person's summary.
     func now(_ dashboard: Dashboard) -> Summary? {
-        if dashboard.date == nil { return dashboard.summary }
-        return owner == dashboard.session ? today : nil
+        guard owner == dashboard.session else { return nil }
+        return dashboard.date == nil ? dashboard.summary : today
     }
 
     /// The person's ticks: nothing of the last person's stays (the page keeps them; this only says whose they are).
@@ -229,7 +230,8 @@ final class BodyModel {
             devices = nil
             return
         }
-        if devices?.date != date { devices = BodyDevices(date: date) }
+        // Today's date is nil, as a first open's missing record is: compare the record, not only its date.
+        if devices == nil || devices?.date != date { devices = BodyDevices(date: date) }
         let shown = dashboard.cardShown
         if let t = await read(asked, dashboard, { try await reads.trends(dashboard, BodyOverviewMath.trendMetrics, 45, date) }), current() {
             devices?.trends = t

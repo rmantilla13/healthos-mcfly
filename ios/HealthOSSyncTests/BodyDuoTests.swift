@@ -258,6 +258,32 @@ final class BodyDuoTests: XCTestCase {
         }
     }
 
+    /// In the trailing pane the device rows stay in two columns to the end: the charts across it, Activity level and
+    /// Glucose two-up. Today and another day. On the outer display, the web's rows, one card to a row.
+    func testTheTrailingPaneKeepsTwoColumns() async throws {
+        let f = try Self.fixture()
+        for past in [true, false] {
+            let d = Self.dashboard(f, past: past)
+            let state = DuoState.innerLandscape()
+            let host = try await DuoHost(page(d, Self.reads(f, counter: Counter())), as: state)
+            defer { host.close() }
+            let frames = try await Self.frames(host)
+            let fold = try XCTUnwrap(DuoFoldAssertions.band(state))
+            let energy = try XCTUnwrap(frames["body.energy"], "past \(past): \(frames.keys.sorted())")
+            let steps = try XCTUnwrap(frames["body.steps"])
+            let glucose = try XCTUnwrap(frames["body.glucose"])
+            XCTAssertGreaterThan(steps.minX, fold.upperBound)
+            XCTAssertEqual(steps.minY, glucose.minY, accuracy: 1, "two-up, past \(past)")
+            XCTAssertLessThan(steps.maxX, glucose.minX)
+            XCTAssertGreaterThan(energy.width, steps.width * 1.8, "the chart spans the pane")
+            DuoSnapshot.write(host.image(), name: past ? "d-pane" : "d-pane-today", state: state)
+            try await host.set(.outer)
+            let outer = try await Self.frames(host)
+            let s2 = try XCTUnwrap(outer["body.steps"]), g2 = try XCTUnwrap(outer["body.glucose"])
+            XCTAssertGreaterThan(g2.minY, s2.maxY, "one to a row on the outer display")
+        }
+    }
+
     /// A tab's charts go one each side of the fold, two to a row; upright, one to a row as on the web.
     func testATabsChartsGoOneEachSideOfTheFold() async throws {
         let f = try Self.fixture()
