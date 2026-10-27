@@ -245,8 +245,9 @@ private struct SleepCardTitle: View {
     var open: (() -> Void)?
 
     var body: some View {
+        let style: Font.TextStyle = size > 14 ? .subheadline : .footnote
         HStack(alignment: .center, spacing: 8) {
-            Text(title).font(.app(size: size, weight: .medium, relativeTo: size > 14 ? .subheadline : .footnote)).foregroundStyle(Palette.ink)
+            Text(title).font(.app(size: size, weight: .medium, relativeTo: style)).foregroundStyle(Palette.ink)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
             Spacer(minLength: 0)
