@@ -23,6 +23,8 @@ enum JournalWords {
     static let stillHere = "Your check-in is still here."
     static let history = "Earlier check-ins"
     static let empty = "Your journal is empty. Write your first check-in above."
+    /// The open Duo's split, where the composer is beside the check-ins (leading, so no "left" or "right" either).
+    static let emptyBeside = "Your journal is empty. Write your first check-in."
     static func noneRecent(_ days: Int) -> String { "No check-ins in the last \(days) days." }
     static let showEarlier = "Show earlier check-ins"
     static let loading = "Loading…"
@@ -234,7 +236,13 @@ final class JournalModel {
     var groups: [(date: String, entries: [JournalEntry])] { JournalText.days(data?.entries ?? []) }
     /// Delete all shows once there's anything to delete.
     var hasAny: Bool { !(data?.entries.isEmpty ?? true) || data?.older == true }
-    var emptyLine: String { data?.older == true ? JournalWords.noneRecent(JournalText.recentDays) : JournalWords.empty }
+    var emptyLine: String { emptyLine(split: false) }
+
+    /// The empty line, in the two panes without the web's "above" (the composer is beside it there).
+    func emptyLine(split: Bool) -> String {
+        if data?.older == true { return JournalWords.noneRecent(JournalText.recentDays) }
+        return split ? JournalWords.emptyBeside : JournalWords.empty
+    }
 
     /// Reads the check-ins for `days`. Only the latest read's answer is kept.
     func load() async {

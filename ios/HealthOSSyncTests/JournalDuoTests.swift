@@ -214,18 +214,65 @@ final class JournalDuoTests: XCTestCase {
         }
     }
 
+    /// With no check-ins to show on the open Duo, the trailing side isn't one short card: the privacy line (and Delete
+    /// all, when older check-ins exist) and the art go under the empty line there, which doesn't say "above". Nothing
+    /// tappable on the fold. The single column keeps the web's words.
+    func testAnEmptyJournalFillsTheTrailingSide() async throws {
+        let none = #"{"today":"2026-10-26","older":false,"entries":[]}"#
+        let olderOnly = #"{"today":"2026-10-26","older":true,"entries":[]}"#
+        for json in [none, olderOnly] {
+            for state: DuoState in [.innerLandscape(), .innerLandscape(bar: .leading)] {
+                let host = try await DuoHost(page(FakeJournalCalls(json)), as: state)
+                defer { host.close() }
+                let band = try XCTUnwrap(DuoFoldAssertions.band(state))
+                let elements = try await host.elements()
+                let save = try XCTUnwrap(element("journal.save", in: elements))
+                let line = try XCTUnwrap(element("journal.empty", in: elements), "the empty line in \(state)")
+                let privacy = try XCTUnwrap(element("journal.privacyLine", in: elements), "the privacy line in \(state)")
+                XCTAssertLessThan(save.accessibilityFrame.maxX, band.lowerBound, "Save check-in leading in \(state)")
+                XCTAssertGreaterThan(line.accessibilityFrame.minX, band.upperBound, "the empty line trailing in \(state)")
+                XCTAssertGreaterThan(privacy.accessibilityFrame.minX, band.upperBound, "the privacy line trailing in \(state)")
+                XCTAssertGreaterThan(privacy.accessibilityFrame.minY, line.accessibilityFrame.maxY, "under the empty line in \(state)")
+                XCTAssertFalse(line.accessibilityLabel?.contains("above") ?? true, "no \"above\" beside the composer")
+                if json == olderOnly {
+                    XCTAssertEqual(line.accessibilityLabel, JournalWords.noneRecent(JournalText.recentDays))
+                    let deleteAll = try XCTUnwrap(element("journal.deleteAll", in: elements), "Delete all in \(state)")
+                    XCTAssertGreaterThan(deleteAll.accessibilityFrame.minX, band.upperBound, "Delete all trailing in \(state)")
+                } else {
+                    XCTAssertEqual(line.accessibilityLabel, JournalWords.emptyBeside)
+                }
+            }
+            for state in DuoState.folded {
+                for size: DynamicTypeSize in [.large, .accessibility3] {
+                    try await DuoFoldAssertions.assertNothingTappableOnTheFold(page(FakeJournalCalls(json)), state: state, typeSize: size)
+                }
+            }
+        }
+        for state: DuoState in [.outer, .innerPortrait(), .innerSplit(bar: .trailing)] {
+            let host = try await DuoHost(page(FakeJournalCalls(none)), as: state)
+            defer { host.close() }
+            let elements = try await host.elements()
+            let line = try XCTUnwrap(element("journal.empty", in: elements), "\(state)")
+            XCTAssertEqual(line.accessibilityLabel, JournalWords.empty, "the web's words in one column, \(state)")
+        }
+    }
+
     // MARK: Helpers
 
     /// What VoiceOver reaches by its identifier, or else by the label it's known by here (SwiftUI's elements don't all
     /// say they take identifiers, so the identifier is read through the selector).
     private func element(_ id: String, in elements: [NSObject]) -> NSObject? {
-        let labels = ["journal.save": JournalWords.save, "journal.entry.e1.edit": "Edit the check-in from today at",
-                      "journal.deleteAll": JournalWords.deleteAll, "journal.tryAgain": JournalWords.tryAgain]
+        let labels: [String: [String]] = [
+            "journal.save": [JournalWords.save], "journal.entry.e1.edit": ["Edit the check-in from today at"],
+            "journal.deleteAll": [JournalWords.deleteAll], "journal.tryAgain": [JournalWords.tryAgain],
+            "journal.privacyLine": [JournalWords.privacy],
+            "journal.empty": ["Your journal is empty", "No check-ins in the last"],
+        ]
         let identifier = NSSelectorFromString("accessibilityIdentifier")
         return elements.first { o in
             if o.responds(to: identifier), o.value(forKey: "accessibilityIdentifier") as? String == id { return true }
-            guard let label = labels[id], let own = o.accessibilityLabel else { return false }
-            return own.hasPrefix(label)
+            guard let prefixes = labels[id], let own = o.accessibilityLabel else { return false }
+            return prefixes.contains { own.hasPrefix($0) }
         }
     }
 

@@ -113,22 +113,22 @@ private struct JournalContent: View {
                     DuoPage { _ in
                         // Both sides scroll (a composer above check-ins that grow): the leading one only when the
                         // composer and what's under it are taller than the pane (the larger text sizes).
+                        // With no check-ins to show, the trailing side would be one short card: the privacy line
+                        // (Delete all) and the art go under it there, as the single column has them after the
+                        // check-ins, so neither side is left mostly empty. Each row is in one pane only (its id).
+                        let historyEmpty = model.groups.isEmpty
                         DuoPanes(anchor: .secondary, leadScrolls: true) {
                             JournalRows {
                                 lead
                                 // The privacy line and Delete all under the composer, and the journal art (the web's,
                                 // beside its composer above 640) below them: the leading side used, not left empty.
-                                JournalPrivacy(model: model)
-                                    .id(JournalRow.privacy)
-                                // Kept to what's left of the pane at the default text sizes, so the side stays put.
-                                JournalArt(width: 200, maxHeight: 160)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.top, 4)
+                                if !historyEmpty { privacyAndArt }
                             }
                         } secondary: {
                             JournalRows {
-                                JournalHistory(model: model, data: data)
+                                JournalHistory(model: model, data: data, split: true)
                                     .id(JournalRow.history)
+                                if historyEmpty { privacyAndArt }
                             }
                         } single: {
                             JournalRows {
@@ -163,7 +163,17 @@ private struct JournalContent: View {
             .id(JournalRow.composer)
     }
 
-    /// The check-ins and the privacy line, the trailing side of the fold when it splits.
+    /// The privacy line and Delete all, then the journal art, in whichever pane has the room.
+    @ViewBuilder private var privacyAndArt: some View {
+        JournalPrivacy(model: model)
+            .id(JournalRow.privacy)
+        // Kept to what's left of the pane at the default text sizes, so the side stays put.
+        JournalArt(width: 200, maxHeight: 160)
+            .frame(maxWidth: .infinity)
+            .padding(.top, 4)
+    }
+
+    /// The check-ins and the privacy line, the single column.
     @ViewBuilder private func entries(_ data: JournalData) -> some View {
         JournalHistory(model: model, data: data)
             .id(JournalRow.history)
@@ -209,6 +219,8 @@ private struct JournalRows<Content: View>: View {
 private struct JournalHistory: View {
     let model: JournalModel
     let data: JournalData
+    /// Beside the composer on the open Duo, not under it: the empty line doesn't say "above".
+    var split = false
     @AccessibilityFocusState private var headingFocused: Bool
 
     var body: some View {
@@ -221,7 +233,7 @@ private struct JournalHistory: View {
                 .padding(.bottom, 6)
             let groups = model.groups
             if groups.isEmpty {
-                Text(model.emptyLine)
+                Text(model.emptyLine(split: split))
                     .font(.app(size: 13, relativeTo: .footnote))
                     .foregroundStyle(Palette.ink2)
                     .fixedSize(horizontal: false, vertical: true)

@@ -254,6 +254,7 @@ final class JournalTests: XCTestCase {
         XCTAssertTrue(model.showsMore)
         XCTAssertTrue(model.hasAny)
         XCTAssertEqual(model.emptyLine, "No check-ins in the last 90 days.")
+        XCTAssertEqual(model.emptyLine(split: true), "No check-ins in the last 90 days.", "no direction to change")
 
         fake.readError = URLError(.timedOut)
         await model.showEarlier()
@@ -278,6 +279,10 @@ final class JournalTests: XCTestCase {
         let model = JournalModel(calls: fake.calls)
         await model.load()
         XCTAssertEqual(model.emptyLine, JournalWords.empty)
+        // Beside the composer on the open Duo: no "above"; the web's words everywhere else.
+        XCTAssertEqual(model.emptyLine(split: false), JournalWords.empty)
+        XCTAssertEqual(model.emptyLine(split: true), JournalWords.emptyBeside)
+        XCTAssertFalse(model.emptyLine(split: true).contains("above"))
         XCTAssertFalse(model.hasAny)
         XCTAssertFalse(model.showsMore, "a server before `older` sends none: no button")
     }
