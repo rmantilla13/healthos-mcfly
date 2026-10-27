@@ -184,6 +184,31 @@ final class SleepDuoTests: XCTestCase {
         }
     }
 
+    /// Open in landscape at AX3 the tabs don't fit the leading side on one row, so they take more rows there: every tab,
+    /// the chosen one included, is in full view on the leading side, never cut off at the fold or hidden past it.
+    func testEveryTabIsInViewAtTheLargestSizes() async throws {
+        let counter = Counter()
+        let d = try dashboard()
+        let r = try reads(counter, night: try night())
+        for tab in SleepTab.allCases {
+            for state in [DuoState.innerLandscape(), .innerLandscape(bar: .leading)] {
+                let host = try await DuoHost(page(d, r, model: SleepModel(tab: tab)), as: state, typeSize: .accessibility3)
+                defer { host.close() }
+                let band = try XCTUnwrap(DuoFoldAssertions.band(state))
+                let elements = try await host.elements()
+                for other in SleepTab.allCases {
+                    let pill = try XCTUnwrap(elements.first { $0.accessibilityLabel == other.label && $0.accessibilityTraits.contains(.button) },
+                                             "\(tab) \(state): no \(other) tab")
+                    let frame = pill.accessibilityFrame
+                    XCTAssertLessThanOrEqual(frame.maxX, band.lowerBound + 0.5, "\(tab) \(state): \(other) runs into the fold")
+                    XCTAssertGreaterThanOrEqual(frame.minX, 0, "\(tab) \(state): \(other)")
+                }
+                let chosen = elements.first { $0.accessibilityLabel == tab.label && $0.accessibilityTraits.contains(.selected) }
+                XCTAssertNotNil(chosen, "\(tab) \(state): the chosen tab says so")
+            }
+        }
+    }
+
     // MARK: Continuity
 
     /// A fold, an unfold and a turn keep the tab chosen and read nothing again (P4, P14): the model and the loaders sit
