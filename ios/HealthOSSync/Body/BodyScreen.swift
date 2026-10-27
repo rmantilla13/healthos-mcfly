@@ -33,7 +33,8 @@ struct BodyScreen: View {
                     .environment(\.bodyReads, reads)
             }
         }
-        .task(id: "\(readKey)|\(dashboard.date ?? "")|\(tab == .overview)") {
+        // The summary's day too: the device rows wait for it, so a summary that lands after the page opens reads them.
+        .task(id: "\(readKey)|\(dashboard.date ?? "")|\(tab == .overview)|\(dashboard.summary?.date ?? "")|\(dashboard.summary?.latestDataDate ?? "")") {
             guard dashboard.phase == .ready, tab == .overview else { return }
             await model.loadOverview(dashboard, reads: reads)
         }

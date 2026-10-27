@@ -184,11 +184,12 @@ struct BodyEntryList: View {
     var body: some View {
         Group {
             switch read {
-            case .loading: EmptyView()
+            // A view, not EmptyView: an empty Group has nothing for the read's .task to start from.
+            case .loading: Color.clear.frame(height: 0).accessibilityHidden(true)
             case .failed: Text("Couldn't load your entries.").font(.app(.footnote)).foregroundStyle(Palette.ink3)
             case .done(let data):
                 // A server without entries has nothing to list.
-                if let entries = data?.entries, !entries.isEmpty { list(entries) }
+                if let entries = data?.entries, !entries.isEmpty { list(entries) } else { Color.clear.frame(height: 0).accessibilityHidden(true) }
             }
         }
         .task(id: version) {
@@ -243,6 +244,7 @@ struct BodyEntryList: View {
             }
         }
         .padding(.top, 8)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("body.entry.list")
     }
 

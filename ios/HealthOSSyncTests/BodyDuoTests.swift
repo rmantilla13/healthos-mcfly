@@ -319,6 +319,43 @@ final class BodyDuoTests: XCTestCase {
         XCTAssertEqual(counter.reads, before, "a fold reads nothing again")
     }
 
+    /// The page opens before today's summary has come: once it lands, the device rows are read (they wait for it).
+    func testTheDeviceRowsAreReadOnceTheSummaryLands() async throws {
+        let f = try Self.fixture()
+        let counter = Counter()
+        let d = Self.dashboard(f, past: false)
+        let summary = d.summary
+        d.summary = nil
+        let host = try await DuoHost(page(d, Self.reads(f, counter: counter)), as: .outer)
+        defer { host.close() }
+        XCTAssertFalse(counter.reads.contains { $0.hasPrefix("trends \(BodyOverviewMath.trendMetrics.joined(separator: ","))") })
+        d.summary = summary
+        try await host.settle()
+        try await Task.sleep(for: .milliseconds(500))
+        XCTAssertTrue(counter.reads.contains { $0.hasPrefix("trends \(BodyOverviewMath.trendMetrics.joined(separator: ","))") }, "\(counter.reads)")
+    }
+
+    /// The entry sheet reads and lists your entries (each with its Delete), and asks before deleting one.
+    func testTheEntrySheetListsYourEntries() async throws {
+        let f = try Self.fixture()
+        let counter = Counter()
+        let d = Self.dashboard(f, past: false)
+        let entry = BodyEntry(id: "e1", metric: "weight", value: 72.4, date: f.summary.today, method: "scale")
+        let sheet = BodyEntrySheet(metric: .weight, today: f.summary.today, demo: false, changed: {}, close: {})
+            .environment(d).environment(\.bodyReads, Self.reads(f, counter: counter, entries: [entry]))
+        let host = try await DuoHost(sheet, as: .outer)
+        defer { host.close() }
+        try await Task.sleep(for: .milliseconds(500))
+        XCTAssertTrue(counter.reads.contains("entries weight"), "\(counter.reads)")
+        let frames = try await Self.frames(host)
+        XCTAssertNotNil(frames["body.entry.list"], "\(frames.keys.sorted())")
+        XCTAssertNotNil(frames["body.entry.delete"], "each entry has its own Delete")
+        for state: DuoState in [.innerLandscape(), .innerPortrait()] {
+            try await host.set(state)
+            DuoSnapshot.write(host.image(), name: "d-entry", state: state)
+        }
+    }
+
     func testTheOverviewReadsOnceAcrossBandChanges() async throws {
         let f = try Self.fixture()
         let counter = Counter()

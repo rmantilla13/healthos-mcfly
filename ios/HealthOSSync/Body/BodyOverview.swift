@@ -281,9 +281,18 @@ struct BodyLeadPane<Lead: View>: View {
     static var bottom: CGFloat { 16 }
 
     var body: some View {
-        BodyLeadPaneLayout(height: typeSize.isAccessibilitySize ? nil : height.map { $0 - Self.bottom }) {
-            lead
-            BodyFigureCard(summary: summary, fitted: !typeSize.isAccessibilitySize)
+        Group {
+            if typeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 14) {
+                    lead
+                    BodyFigureCard(summary: summary)
+                }
+            } else {
+                BodyLeadPaneLayout(height: height.map { $0 - Self.bottom }) {
+                    lead
+                    BodyFigureCard(summary: summary, fitted: true)
+                }
+            }
         }
         .padding(.bottom, Self.bottom)
     }
