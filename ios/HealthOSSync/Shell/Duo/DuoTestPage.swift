@@ -31,6 +31,7 @@ struct DuoTestPage: View {
 struct DuoTestContent: View {
     @State private var typed = ""
     @State private var sheetOpen = false
+    @State private var bareSheetOpen = false
 
     var body: some View {
         DuoPage { band in
@@ -53,6 +54,13 @@ struct DuoTestContent: View {
                     }
                     .buttonStyle(.accentPill)
                     .accessibilityIdentifier("duoTest.openSheet")
+                    .duoOneSide()
+                    // A plain system sheet with a field, no SheetScaffold: what a fold does to a sheet's focus without
+                    // the scaffold (G4(f)'s comparison).
+                    Button { bareSheetOpen = true } label: {
+                        Text("Open a plain sheet").frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                    .accessibilityIdentifier("duoTest.openBareSheet")
                     .duoOneSide()
                     TextField("Type here", text: $typed)
                         .textFieldStyle(.roundedBorder)
@@ -84,6 +92,7 @@ struct DuoTestContent: View {
             .padding(.bottom, 10)
         }
         .sheet(isPresented: $sheetOpen) { DuoTestSheet() }
+        .sheet(isPresented: $bareSheetOpen) { DuoBareSheet() }
     }
 }
 
@@ -123,6 +132,48 @@ private struct DuoTestSheet: View {
             Text("Typed: \(text.count) characters").accessibilityIdentifier("duoTest.sheetCount")
         }
         .onAppear { focused = true }
+    }
+}
+
+/// A plain sheet with one field and no SheetScaffold (G4(f)'s comparison).
+private struct DuoBareSheet: View {
+    @State private var text = ""
+
+    /// `-duoBareSheet <variant>`: what the sheet adds of SheetScaffold's, one piece at a time: `detents` (its
+    /// `.presentationDetents([.large])`), `scope` (its DuoScope), `scaffold` (the whole SheetScaffold, with no
+    /// FocusState); `scaffoldFocus`, `scaffoldFocusOnAppear` and `focusOnAppear` add a FocusState (set by a tap, or as the
+    /// sheet appears). Nothing by default.
+    private var variant: String { UserDefaults.standard.string(forKey: "duoBareSheet") ?? "" }
+
+    var body: some View {
+        switch variant {
+        case "detents": column.presentationDetents([.large])
+        case "scope": DuoScope(.sheet(maxWidth: 650, padding: 18)) { _ in ScrollView { column } }
+        case "scaffold": SheetScaffold(title: "A plain sheet") { field }
+        case "scaffoldFocus": SheetScaffold(title: "A plain sheet") { field.focused($focused) }
+        case "scaffoldFocusOnAppear": SheetScaffold(title: "A plain sheet") { field.focused($focused) }.onAppear { focused = true }
+        case "focusOnAppear": column.focused($focused).onAppear { focused = true }
+        default: column
+        }
+    }
+
+    @FocusState private var focused: Bool
+
+    private var field: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            TextField("Type in the plain sheet", text: $text)
+                .textFieldStyle(.roundedBorder)
+                .accessibilityIdentifier("duoTest.bareField")
+            Text("Typed: \(text.count) characters").accessibilityIdentifier("duoTest.bareCount")
+        }
+    }
+
+    private var column: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            field
+            Spacer()
+        }
+        .padding(18)
     }
 }
 
