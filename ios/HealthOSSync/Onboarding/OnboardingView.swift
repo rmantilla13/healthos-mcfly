@@ -66,8 +66,10 @@ struct OnboardingView: View {
     }
 }
 
-/// The card: step tabs, the step's heading, the step, and Back, the helper line and the main button.
-private struct OnboardingSteps: View {
+/// The card: step tabs, the step's heading, the step, and Back, the helper line and the main button. The model and the
+/// reference photo are OnboardingView's, above the frame, and the frame is never rebuilt by a fold (P4, P14). Tests draw
+/// it on its own, without OnboardingView's navigation stack.
+struct OnboardingSteps: View {
     @Bindable var model: OnboardingModel
     let reference: ReferencePhoto
     @Environment(Dashboard.self) private var dashboard
@@ -155,15 +157,35 @@ private struct OnboardingSteps: View {
 }
 
 /// 01 Your perspective · 02 A little about you · 03 Your community. A step reached opens again; at phone width only the
-/// current one keeps its name on screen (VoiceOver reads them all).
+/// current one keeps its name on screen (VoiceOver reads them all). Wider (the open Duo upright, the medium band: the
+/// web above 560), every step keeps its name, 30pt apart, as long as the three fit on one line.
 private struct StepTabs: View {
     let step: OnboardingStep
     let furthest: OnboardingStep
     let busy: Bool
     let open: (OnboardingStep) -> Void
+    @Environment(\.duoBand) private var band
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 18) {
+        Group {
+            if band >= .medium {
+                ViewThatFits(in: .horizontal) {
+                    tabs(named: true)
+                    tabs(named: false)
+                }
+            } else {
+                tabs(named: false)
+            }
+        }
+        // The tabs stop growing at the first accessibility size, so the three keep one line; VoiceOver reads each.
+        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Steps")
+    }
+
+    /// The row; `named`: every step's name shows, not only the current one's.
+    private func tabs(named: Bool) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: named ? 30 : 18) {
             ForEach(OnboardingStep.allCases) { tab in
                 let reached = tab <= furthest
                 let current = tab == step
@@ -175,8 +197,11 @@ private struct StepTabs: View {
                             .overlay(alignment: .bottom) {
                                 RoundedRectangle(cornerRadius: 1).frame(height: 1.5).offset(y: 7)
                             }
-                        if current {
-                            Text(tab.label).font(.app(size: 12.5, relativeTo: .footnote)).lineLimit(1).minimumScaleFactor(0.8)
+                        if current || named {
+                            Text(tab.label)
+                                .font(.app(size: 12.5, relativeTo: .footnote))
+                                .lineLimit(1)
+                                .minimumScaleFactor(named ? 1 : 0.8)
                         }
                     }
                     .foregroundStyle(reached ? Palette.ink : WelcomeLook.stepOff.color)
@@ -194,9 +219,5 @@ private struct StepTabs: View {
             }
             Spacer(minLength: 0)
         }
-        // The tabs stop growing at the first accessibility size, so the three keep one line; VoiceOver reads each.
-        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Steps")
     }
 }

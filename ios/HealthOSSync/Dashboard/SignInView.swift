@@ -7,10 +7,17 @@ import SwiftUI
 /// servers. "Change server", at the top right, is the iPhone's own: it opens Profile, where the address is.
 struct SignInView: View {
     @Environment(Dashboard.self) private var dashboard
-    @State private var step: SignInStep = .signIn
+    /// Above the frame, so a fold that changes the page's layout keeps the step (P4).
+    @State private var step: SignInStep
+
+    /// `step`: where it opens; the app always opens the form (tests draw the other steps).
+    init(step: SignInStep = .signIn) {
+        _step = State(initialValue: step)
+    }
 
     var body: some View {
-        WelcomeFrame {
+        // On the open Duo in landscape, the form keeps to the leading side and healthOS's mark and line sit on the other.
+        WelcomeFrame(aside: true) {
             switch step {
             case .signIn:
                 Button("Change server") { dashboard.tab = .settings }

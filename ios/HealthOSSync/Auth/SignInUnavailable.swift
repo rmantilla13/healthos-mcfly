@@ -9,7 +9,7 @@ struct SignInUnavailable: View {
     @State private var trying = false
 
     var body: some View {
-        WelcomeFrame {
+        WelcomeFrame(aside: true) {
             Button("Change server") { dashboard.tab = .settings }
                 .buttonStyle(.welcomeTopLink)
                 .accessibilityIdentifier("changeServer")
