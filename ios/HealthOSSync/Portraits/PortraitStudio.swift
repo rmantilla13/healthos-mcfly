@@ -8,71 +8,45 @@ import SwiftUI
 struct PortraitStudio: View {
     let model: PortraitStudioModel
     @Environment(Dashboard.self) private var dashboard
-    @State private var askSource = false
-    @State private var pickerShown = false
-    @State private var picked: PhotosPickerItem?
-    @State private var cameraShown = false
-    @State private var deleting: Portrait?
-    @State private var replacing: Portrait?
+    @Environment(\.profileCardsKeep) private var keep
+    /// Its dialogs, picker and camera when the page keeps none (`profileCards(_:)`).
+    @State private var ownAsks = PortraitAsks()
 
     var body: some View {
+        let asks = keep?.asks ?? ownAsks
         PortraitStudioContent(
             model: model,
             byok: dashboard.availability.byok,
             ownKey: dashboard.availability.ai.value?.key("openai") != nil,
-            add: addPhoto,
+            add: { asks.add(camera: UIImagePickerController.isSourceTypeAvailable(.camera)) },
             make: { ref in Task { await model.make(from: ref) } },
-            delete: { deleting = $0 },
+            delete: { asks.deleting = $0 },
             use: { p in
-                if dashboard.status?.photo != nil { replacing = p } else { Task { await model.use(p) } }
-            })
+                if dashboard.status?.photo != nil { asks.replacing = p } else { Task { await model.use(p) } }
+            },
+            asks: asks)
             .task { await dashboard.loadAI() }
             .task(id: model.making) { await model.poll() }
             .sensoryFeedback(.success, trigger: model.successes)
             // What the web's role="alert" and role="status" lines read out: a refusal, a failed Use, Use's steps, one
             // being made.
             .onChange(of: model.spoken) { _, spoken in spoken?.post() }
-            .confirmationDialog(PortraitWords.add, isPresented: $askSource, titleVisibility: .hidden) {
-                Button("Choose a photo") { pickerShown = true }
-                Button("Take a photo") { cameraShown = true }
-                Button("Cancel", role: .cancel) {}
-            }
-            .photosPicker(isPresented: $pickerShown, selection: $picked, matching: .images, photoLibrary: .shared())
-            .onChange(of: picked) { _, item in
-                guard let item else { return }
-                picked = nil
-                Task { await addPicked(item) }
-            }
-            .fullScreenCover(isPresented: $cameraShown) {
-                CameraPicker { image in
-                    cameraShown = false
-                    guard let image else { return }
-                    Task { await model.add { PhotoPipeline.reference(image) } }
-                }
-                .ignoresSafeArea()
-            }
-            .confirmationDialog(deleting.map { PortraitWords.deleteQuestion($0, chosen: model.chosen) } ?? "",
-                                isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
-                                titleVisibility: .visible, presenting: deleting) { p in
-                Button(PortraitWords.delete, role: .destructive) { Task { await model.delete(p) } }
-                Button("Cancel", role: .cancel) {}
-            }
-            .confirmationDialog(PortraitWords.replacePhoto,
-                                isPresented: Binding(get: { replacing != nil }, set: { if !$0 { replacing = nil } }),
-                                titleVisibility: .visible, presenting: replacing) { p in
-                Button(PortraitWords.useThis) { Task { await model.use(p) } }
-                Button("Cancel", role: .cancel) {}
-            }
+            // The picker and the camera: here, unless the page presents them from above its panes.
+            .modifier(OwnPickers(asks: keep == nil ? ownAsks : nil, model: model))
     }
+}
 
-    /// The camera, where there is one, or straight to Photos.
-    private func addPhoto() {
-        if UIImagePickerController.isSourceTypeAvailable(.camera) { askSource = true } else { pickerShown = true }
-    }
+/// The studio's photo picker and camera on the studio itself, for a page without a keep.
+private struct OwnPickers: ViewModifier {
+    let asks: PortraitAsks?
+    let model: PortraitStudioModel
 
-    private func addPicked(_ item: PhotosPickerItem) async {
-        guard let data = try? await item.loadTransferable(type: Data.self) else { return model.notAnImage() }
-        await model.add { PhotoPipeline.reference(data) }
+    func body(content: Content) -> some View {
+        if let asks {
+            content.portraitPickers(asks) { [model] in model }
+        } else {
+            content
+        }
     }
 }
 
@@ -88,6 +62,8 @@ struct PortraitStudioContent: View {
     var make: (Portrait) -> Void = { _ in }
     var delete: (Portrait) -> Void = { _ in }
     var use: (Portrait) -> Void = { _ in }
+    /// The studio's questions, each shown on the button that asked (P10); nil draws without them (tests).
+    var asks: PortraitAsks? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -120,7 +96,7 @@ struct PortraitStudioContent: View {
             if !model.references.isEmpty {
                 VStack(spacing: 0) {
                     ForEach(model.references) { ref in
-                        ReferenceRow(model: model, ref: ref, byok: byok, make: make, delete: delete, use: use)
+                        ReferenceRow(model: model, ref: ref, byok: byok, make: make, delete: delete, use: use, asks: asks)
                             .padding(.top, 14)
                             .padding(.bottom, ref.id == model.references.last?.id ? 0 : 14)
                             .overlay(alignment: .top) { Hairline() }
@@ -133,7 +109,7 @@ struct PortraitStudioContent: View {
                         .font(.app(size: 12.5, weight: .medium, relativeTo: .footnote))
                         .foregroundStyle(Palette.ink3)
                         .accessibilityAddTraits(.isHeader)
-                    TileGrid(model: model, portraits: model.orphans, use: use, delete: delete).padding(.top, 14)
+                    TileGrid(model: model, portraits: model.orphans, use: use, delete: delete, asks: asks).padding(.top, 14)
                 }
                 .padding(.top, 14)
                 .overlay(alignment: .top) { Hairline() }
@@ -166,6 +142,7 @@ struct PortraitStudioContent: View {
             .buttonStyle(.quietPill(size: .compact))
             .disabled(model.full || model.locked)
             .accessibilityIdentifier("portraits.add")
+            .modifier(AddSourceDialog(asks: asks))
         }
     }
 }
@@ -179,6 +156,7 @@ private struct ReferenceRow: View {
     let make: (Portrait) -> Void
     let delete: (Portrait) -> Void
     let use: (Portrait) -> Void
+    let asks: PortraitAsks?
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
@@ -214,11 +192,12 @@ private struct ReferenceRow: View {
                     .disabled(model.locked)
                     .accessibilityLabel(PortraitWords.deleteReferenceLabel(ref))
                     .accessibilityIdentifier("portraits.delete.\(ref.id)")
+                    .modifier(DeleteDialog(asks: asks, model: model, p: ref))
             }
             .padding(.top, 10)
             .padding(.leading, typeSize.isAccessibilitySize ? 0 : 68)
             if !fromIt.isEmpty {
-                TileGrid(model: model, portraits: fromIt, use: use, delete: delete).padding(.top, 14)
+                TileGrid(model: model, portraits: fromIt, use: use, delete: delete, asks: asks).padding(.top, 14)
             }
         }
     }
@@ -239,27 +218,25 @@ private struct ReferenceRow: View {
     }
 }
 
-/// Portraits as tiles, two to a row (one at the largest text sizes); the tiles in a row as tall as each other, their
-/// buttons along the bottom, as the web's grid lines them up.
+/// Portraits as tiles, two to a row on the phone (one at the largest text sizes), more where the card is wider
+/// (PortraitTileColumns); the tiles in a row as tall as each other, their buttons along the bottom, as the web's grid
+/// lines them up.
 private struct TileGrid: View {
     let model: PortraitStudioModel
     let portraits: [Portrait]
     let use: (Portrait) -> Void
     let delete: (Portrait) -> Void
+    let asks: PortraitAsks?
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.duoBand) private var band
 
     var body: some View {
-        let perRow = typeSize.isAccessibilitySize ? 1 : 2
-        let rows = stride(from: 0, to: portraits.count, by: perRow).map { Array(portraits[$0..<min($0 + perRow, portraits.count)]) }
-        VStack(spacing: 10) {
-            ForEach(rows, id: \.first?.id) { row in
-                HStack(alignment: .top, spacing: 10) {
-                    ForEach(row) { p in
-                        PortraitTile(model: model, p: p, use: use, delete: delete).frame(maxWidth: .infinity, maxHeight: .infinity)
-                    }
-                    if row.count < perRow { Color.clear.frame(maxWidth: .infinity, maxHeight: 1) }
-                }
-                .fixedSize(horizontal: false, vertical: true)
+        let accessibility = typeSize.isAccessibilitySize
+        CardColumnsLayout(spacing: PortraitTileColumns.spacing) { [band] width in
+            PortraitTileColumns.count(width: width, band: band, accessibility: accessibility)
+        } {
+            ForEach(portraits) { p in
+                PortraitTile(model: model, p: p, use: use, delete: delete, asks: asks).frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
     }
@@ -272,6 +249,7 @@ private struct PortraitTile: View {
     let p: Portrait
     let use: (Portrait) -> Void
     let delete: (Portrait) -> Void
+    let asks: PortraitAsks?
 
     var body: some View {
         let chosen = p.id == model.chosen
@@ -284,10 +262,13 @@ private struct PortraitTile: View {
                 if p.status == "failed" { state(PortraitWords.failure(p), bad: true) }
                 if let using { state(using) }
                 if let failed { state(failed, bad: true) }
+                // Its dialogs on the row of buttons (both of its candidates are the one place they show).
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 4) { actions(chosen: chosen, using: using != nil) }
                     VStack(alignment: .leading, spacing: 4) { actions(chosen: chosen, using: using != nil) }
                 }
+                .modifier(DeleteDialog(asks: asks, model: model, p: p))
+                .modifier(ReplaceDialog(asks: asks, model: model, p: p))
             }
             .padding(.horizontal, 12)
             .padding(.top, 10)
@@ -359,6 +340,66 @@ private struct PortraitTile: View {
             .foregroundStyle(bad ? ColorToken.badgeBadInk.color : Palette.ink2)
             .lineSpacing(2)
             .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// Add's question, on the add pill: choose a photo or take one.
+private struct AddSourceDialog: ViewModifier {
+    let asks: PortraitAsks?
+
+    func body(content: Content) -> some View {
+        if let asks {
+            @Bindable var asks = asks
+            content.confirmationDialog(PortraitWords.add, isPresented: $asks.askSource, titleVisibility: .hidden) {
+                Button("Choose a photo") { asks.pickerShown = true }
+                Button("Take a photo") { asks.cameraShown = true }
+                Button("Cancel", role: .cancel) {}
+            }
+        } else {
+            content
+        }
+    }
+}
+
+/// Delete's question for one reference or portrait, on its own Delete (P10).
+private struct DeleteDialog: ViewModifier {
+    let asks: PortraitAsks?
+    let model: PortraitStudioModel
+    let p: Portrait
+
+    func body(content: Content) -> some View {
+        if let asks {
+            content.confirmationDialog(PortraitWords.deleteQuestion(p, chosen: model.chosen),
+                                       isPresented: Binding(get: { asks.deleting?.id == p.id },
+                                                            set: { if !$0, asks.deleting?.id == p.id { asks.deleting = nil } }),
+                                       titleVisibility: .visible, presenting: asks.deleting) { p in
+                Button(PortraitWords.delete, role: .destructive) { Task { await model.delete(p) } }
+                Button("Cancel", role: .cancel) {}
+            }
+        } else {
+            content
+        }
+    }
+}
+
+/// "Replace your photo?" for one portrait, on its Use this portrait.
+private struct ReplaceDialog: ViewModifier {
+    let asks: PortraitAsks?
+    let model: PortraitStudioModel
+    let p: Portrait
+
+    func body(content: Content) -> some View {
+        if let asks {
+            content.confirmationDialog(PortraitWords.replacePhoto,
+                                       isPresented: Binding(get: { asks.replacing?.id == p.id },
+                                                            set: { if !$0, asks.replacing?.id == p.id { asks.replacing = nil } }),
+                                       titleVisibility: .visible, presenting: asks.replacing) { p in
+                Button(PortraitWords.useThis) { Task { await model.use(p) } }
+                Button("Cancel", role: .cancel) {}
+            }
+        } else {
+            content
+        }
     }
 }
 
