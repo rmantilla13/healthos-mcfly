@@ -8,10 +8,11 @@ import SwiftUI
 /// sign out or someone else signs in.
 struct PhotoSection: View {
     @Environment(Dashboard.self) private var dashboard
+    @Environment(\.profileCardsKeep) private var keep
 
     var body: some View {
         if let person = dashboard.signedInPerson {
-            PhotoAsIs(dashboard: dashboard, person: person).id(person)
+            PhotoAsIs(dashboard: dashboard, person: person, keep: keep).id(person)
         }
     }
 }
@@ -188,9 +189,12 @@ private struct PhotoAsIs: View {
     @State private var current: UIImage?
 
     /// For `person`: a save or a remove checks they're still the one signed in before it's sent.
-    init(dashboard: Dashboard, person: String) {
+    /// The page's kept model when it keeps one (`profileCards(_:)`), so a fold's pane swap keeps a cut-out waiting to be
+    /// saved.
+    init(dashboard: Dashboard, person: String, keep: ProfileCardsKeep? = nil) {
         self.dashboard = dashboard
-        _model = State(initialValue: PhotoAsIsModel(service: .live(dashboard, for: person)))
+        let make = { PhotoAsIsModel(service: .live(dashboard, for: person)) }
+        _model = State(initialValue: keep?.photo(for: person, make: make) ?? make())
     }
 
     var body: some View {

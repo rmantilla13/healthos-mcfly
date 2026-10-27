@@ -9,6 +9,7 @@ import SwiftUI
 /// time: what it read goes when they sign out, someone else signs in or the server changes.
 struct PeersSection: View {
     @Environment(Dashboard.self) private var dashboard
+    @Environment(\.profileCardsKeep) private var keep
 
     /// Signed in, on a server whose settings name the comparison's switch: never behind a sign-in screen, never on a
     /// server older than it.
@@ -25,19 +26,25 @@ struct PeersSection: View {
     var body: some View {
         // Whose card it is: another server or another account starts from nothing.
         if Self.shown(phase: dashboard.phase, status: dashboard.status), let person = dashboard.signedInPerson {
-            PeersCard().id(person)
+            PeersCard(reader: keep?.peers(for: person)).id(person)
         }
     }
 }
 
 private struct PeersCard: View {
     @Environment(Dashboard.self) private var dashboard
-    @State private var reader = PeerReader()
+    @Environment(\.profileCardsKeep) private var keep
+    @State private var reader: PeerReader
+
+    /// The page's kept reader (above its panes, so a fold's swap keeps the last answer on screen), else its own.
+    init(reader: PeerReader?) { _reader = State(initialValue: reader ?? PeerReader()) }
 
     var body: some View {
         if !reader.missing {
-            Collapsible(PeerWords.title, meta: PeerWords.meta, systemImage: "chart.bar") {
+            // Open again after a fold's swap if it was open (the keep follows its open body).
+            Collapsible(PeerWords.title, meta: PeerWords.meta, systemImage: "chart.bar", startsOpen: keep?.isOpen(.peers) ?? false) {
                 PeerBody(reader: reader, editLink: dashboard.status?.settings?.perspective != nil)
+                    .opensWith(keep, .peers)
             }
         }
     }
@@ -49,12 +56,17 @@ private struct PeerBody: View {
     let reader: PeerReader
     let editLink: Bool
     @Environment(Dashboard.self) private var dashboard
+    @Environment(\.profileCardsKeep) private var keep
 
     var body: some View {
         let settings = dashboard.status?.settings
+        let key = PeersSection.readKey(generation: dashboard.generation, peerComparison: settings?.peerComparison, age: settings?.age)
         PeerContent(data: reader.data, error: reader.error, editLink: editLink)
-            .task(id: PeersSection.readKey(generation: dashboard.generation, peerComparison: settings?.peerComparison, age: settings?.age)) {
+            .task(id: key) {
+                // Built again by a fold (the page's panes swapped) with an answer for this key on screen: no second read.
+                if keep?.skipsPeersRead(key: key, reader: reader) == true { return }
                 await reader.read { try await dashboard.peers() }
+                if reader.data != nil, reader.error == nil { keep?.peersReadKey = key }
             }
             .environment(\.openURL, OpenURLAction { url in dashboard.open(url: url) ? .handled : .systemAction })
     }
@@ -93,9 +105,7 @@ struct PeerContent: View {
                     if data.metrics.isEmpty {
                         PeerNote(markdown: PeerWords.noReadings)
                     } else {
-                        VStack(spacing: 10) {
-                            ForEach(data.metrics) { PeerRow(m: $0) }
-                        }
+                        PeerRows(metrics: data.metrics)
                     }
                 }
                 Text(PeerWords.fine).modifier(PeerFine())
@@ -104,6 +114,30 @@ struct PeerContent: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// A row per measurement (.profile-peers): one to a row on every iPhone and on the Duo upright (the web's auto-fill of
+/// 300 pt gives two only on a card at least 610 wide, which no iPhone and no Duo scope gives a Profile card), and two to
+/// a row in one of the open Duo's panes where a column keeps Q5's 170 pt (PeerColumns, decisions.md Q5), a row's cards
+/// as tall as each other with their bars along the bottom.
+private struct PeerRows: View {
+    let metrics: [PeerMetric]
+    @Environment(\.duoInPane) private var inPane
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    var body: some View {
+        if inPane {
+            CardColumnsLayout(spacing: PeerColumns.spacing) { [typeSize] width in
+                PeerColumns.count(width: width, inPane: true, typeSize: typeSize)
+            } {
+                ForEach(metrics) { PeerRow(m: $0, fills: true) }
+            }
+        } else {
+            VStack(spacing: 10) {
+                ForEach(metrics) { PeerRow(m: $0) }
+            }
+        }
     }
 }
 
@@ -141,6 +175,8 @@ private struct PeerFine: ViewModifier {
 /// one ends with the four-quarter bar. VoiceOver reads the row as one, the bar left out: its words say the same.
 struct PeerRow: View {
     let m: PeerMetric
+    /// Fills a grid cell taller than itself, the bar at the bottom (two to a row in a pane).
+    var fills = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -165,12 +201,13 @@ struct PeerRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .combine)
             if m.status == "ready", let band = m.quarter, m.group != nil {
-                PeerBar(yours: band).padding(.bottom, 4)
+                // margin: auto 0 4px: at the bottom of a row taller than this one.
+                PeerBar(yours: band).padding(.bottom, 4).frame(maxHeight: fills ? .infinity : nil, alignment: .bottom)
             }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: fills ? .infinity : nil, alignment: .topLeading)
         .background(Palette.surface, in: RoundedRectangle(cornerRadius: Radius.tile, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: Radius.tile, style: .continuous).strokeBorder(Palette.border))
     }
