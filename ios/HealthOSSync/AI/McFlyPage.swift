@@ -464,10 +464,11 @@ private struct McFlyShownBeside: View {
     let title: String
 
     var body: some View {
+        // The symbols take the words' font, so they grow with the text size.
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Image(systemName: "chart.bar.xaxis").font(.system(size: 12, weight: .medium)).accessibilityHidden(true)
+            Image(systemName: "chart.bar.xaxis").imageScale(.small).accessibilityHidden(true)
             Text(title).fixedSize(horizontal: false, vertical: true)
-            Image(systemName: "arrow.right").font(.system(size: 11, weight: .medium)).accessibilityHidden(true)
+            Image(systemName: "arrow.right").imageScale(.small).accessibilityHidden(true)
         }
         .font(.app(size: 13, weight: .medium, relativeTo: .footnote))
         .foregroundStyle(Palette.ink2)
