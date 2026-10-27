@@ -73,7 +73,8 @@ struct AccountMenuSheet: View {
         }
         .scrollBounceBehavior(.basedOnSize)
         .font(.app(.body))
-        .presentationDetents([.height(height)])
+        // As tall as its rows; on the iPhone Duo's inner display, a centred sheet fitted to them (§2.7).
+        .duoMenuSheet(height: height)
         .presentationCornerRadius(22)
         .presentationBackground { GradientFill(.menuBg) }
         // The menu is named as a whole; each row keeps its own name.
@@ -110,15 +111,29 @@ private struct MenuRowStyle: ButtonStyle {
 
 extension View {
     /// Your avatar at the top right, opening the account menu, as on the web's phone top bar. Home has its own in its
-    /// header, which hides the bar.
+    /// header, which hides the bar. In the iPhone Duo's vertical bar the avatar is the last item to give way (O2, O8).
+    /// Search (the web's ⌘K) sits before it once slice S has built it (`SearchScreen.ready`), and gives way first.
     func accountMenu() -> some View {
         toolbar {
+            if SearchScreen.ready {
+                ToolbarItem(placement: .topBarTrailing) { SearchToolbarButton() }.duoVisibilityPriority(.normal)
+            }
             if #available(iOS 26, *) {
                 // The avatar has its own ring: no glass bubble around it, as on the web's top bar.
-                ToolbarItem(placement: .topBarTrailing) { AccountMenu() }.sharedBackgroundVisibility(.hidden)
+                ToolbarItem(placement: .topBarTrailing) { AccountMenu() }.sharedBackgroundVisibility(.hidden).duoVisibilityPriority(.high)
             } else {
-                ToolbarItem(placement: .topBarTrailing) { AccountMenu() }
+                ToolbarItem(placement: .topBarTrailing) { AccountMenu() }.duoVisibilityPriority(.high)
             }
         }
+    }
+}
+
+/// The toolbar's Search (P8: a symbol and a title): the shell shows SearchScreen while `dashboard.searchOpen`.
+private struct SearchToolbarButton: View {
+    @Environment(Dashboard.self) private var dashboard
+
+    var body: some View {
+        Button { dashboard.searchOpen = true } label: { Label("Search", systemImage: "magnifyingglass") }
+            .accessibilityIdentifier("search")
     }
 }
