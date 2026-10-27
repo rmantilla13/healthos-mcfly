@@ -166,7 +166,7 @@ final class McFlyDuoTests: XCTestCase {
     // MARK: Band changes (P4, P14)
 
     /// A fold or a turn lays the page out again without making the conversation again: the same field, still focused,
-    /// with what's typed (McFlyChat.draft); the same thread scroll view; the key sheet still up.
+    /// with what's typed (the page's draft); the same thread scroll view; the key sheet still up.
     func testStateSurvivesBandChange() async throws {
         let d = try dashboard(.charts)
         let host = try await DuoHost(page(d), as: .outer)
@@ -175,14 +175,14 @@ final class McFlyDuoTests: XCTestCase {
         XCTAssertTrue(field.becomeFirstResponder())
         (field as? UITextInput)?.insertText("And my steps?")
         try await host.settle()
-        XCTAssertEqual(d.mcfly.draft, "And my steps?")
+        XCTAssertEqual(Self.text(of: field), "And my steps?")
         let thread = try XCTUnwrap(DuoScrollTests.verticalScrollViews(in: host.window).first, "the thread scrolls")
         for state: DuoState in [.innerLandscape(), .innerPortrait(), .innerLandscape(bar: .leading), .innerSplit(bar: .trailing),
                                 .innerLandscape(foldActive: true), .outer] {
             try await host.set(state)
             XCTAssertTrue(Self.questionField(in: host.window) === field, "\(state): the same field, never made again")
             XCTAssertTrue(field.isFirstResponder, "\(state): still focused")
-            XCTAssertEqual(d.mcfly.draft, "And my steps?", "\(state)")
+            XCTAssertEqual(Self.text(of: field), "And my steps?", "\(state)")
             XCTAssertNotNil(thread.window, "\(state): the same thread")
         }
         field.resignFirstResponder()
@@ -290,17 +290,32 @@ final class McFlyDuoTests: XCTestCase {
         XCTAssertTrue(McFlyShownAnswer.all(try dashboard(.empty).mcfly.messages).isEmpty)
     }
 
-    /// The draft is McFlyChat's: New chat keeps it, a sign-out (forget) clears it with the rest of the person.
-    func testTheDraftIsTheConversationsAndGoesWithASignOut() throws {
-        let chat = McFlyChat()
-        chat.draft = "How did I sleep?"
-        chat.newChat()
-        XCTAssertEqual(chat.draft, "How did I sleep?")
-        chat.forget()
-        XCTAssertEqual(chat.draft, "")
+    /// The draft is the page's, as on the web: leave Ask McFly and open it again (from More or Home's pill), and the
+    /// box is empty, though the conversation is still there.
+    func testTheDraftGoesWhenThePageDoes() async throws {
+        let d = try dashboard(.charts)
+        let first = try await DuoHost(page(d), as: .outer)
+        let field = try XCTUnwrap(Self.questionField(in: first.window))
+        XCTAssertTrue(field.becomeFirstResponder())
+        (field as? UITextInput)?.insertText("How did I sleep?")
+        try await first.settle()
+        XCTAssertEqual(Self.text(of: field), "How did I sleep?")
+        field.resignFirstResponder()
+        first.close()
+
+        let again = try await DuoHost(page(d), as: .outer)
+        defer { again.close() }
+        let fresh = try XCTUnwrap(Self.questionField(in: again.window))
+        XCTAssertEqual(Self.text(of: fresh), "", "an empty box")
+        XCTAssertEqual(d.mcfly.messages.count, 4, "the conversation stays")
     }
 
     // MARK: Helpers
+
+    /// What's typed in the composer's field.
+    static func text(of field: UIView) -> String? {
+        (field as? UITextView)?.text ?? (field as? UITextField)?.text
+    }
 
     /// The composer's field, the page's one place to type: a vertical TextField is a UITextView (a UITextField on
     /// older systems).

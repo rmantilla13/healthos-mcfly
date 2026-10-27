@@ -349,9 +349,6 @@ struct McFlyMessage: Identifiable, Equatable {
 @Observable
 final class McFlyChat {
     var messages: [McFlyMessage] = []
-    /// What's typed in the composer and not sent yet. Here rather than in the page, so it stays whatever the page
-    /// around it does (on iPhone Duo, a fold that lays the page out again). New chat keeps it; a sign-out doesn't.
-    var draft = ""
     /// GET /api/mcfly, read after every load and every answer. Availability sees it (`mcflyState`).
     var status: McFlyStatus?
     var streaming = false
@@ -415,7 +412,6 @@ final class McFlyChat {
         task?.cancel()
         task = nil
         messages = []
-        draft = ""
         status = nil
         streaming = false
         stopping = false

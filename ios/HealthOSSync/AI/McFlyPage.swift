@@ -36,11 +36,14 @@ private let threadSpace = "mcfly-thread"
 struct McFlyScreen: View {
     @Bindable var chat: McFlyChat
     @Environment(Dashboard.self) private var dashboard
+    /// What's typed and not sent yet. Here, above the Duo's page block, so a fold or a turn keeps it; leaving the page
+    /// empties it, as on the web.
+    @State private var draft = ""
     @State private var chatbot = false
 
     var body: some View {
         DuoPage { _ in
-            McFlyLayout(chat: chat) { chatbot = true }
+            McFlyLayout(chat: chat, draft: $draft) { chatbot = true }
         }
         .background(Palette.page)
         .sheet(isPresented: $chatbot, onDismiss: {
@@ -82,6 +85,7 @@ struct McFlyScreen: View {
 /// a pane that scrolls on its own. Nothing shows beside a conversation McFly can't have here.
 private struct McFlyLayout: View {
     @Bindable var chat: McFlyChat
+    @Binding var draft: String
     let connect: () -> Void
     @Environment(Dashboard.self) private var dashboard
     @Environment(\.duoFold) private var fold
@@ -95,7 +99,7 @@ private struct McFlyLayout: View {
         let spans = fold.span.map { DuoPanes<EmptyView, EmptyView, EmptyView>.paneSpans(margins: margins, fold: $0) }
         let beside = spans != nil && chat.status?.unavailable == nil
         HStack(alignment: .top, spacing: 0) {
-            McFlyConversation(chat: chat, follow: follow, focused: $focused, beside: beside, ask: ask, connect: connect)
+            McFlyConversation(chat: chat, draft: $draft, follow: follow, focused: $focused, beside: beside, ask: ask, connect: connect)
                 // The leading side keeps the fold's clearance on its trailing edge, as a pane does.
                 .environment(\.duoMargins, spans == nil ? margins : DuoMargins(leading: margins.leading, trailing: DuoFold.clearance))
                 .environment(\.duoBand, spans == nil ? band : .compact)
@@ -128,7 +132,7 @@ private struct McFlyLayout: View {
     /// A typed question or a suggestion: the box empties either way, as the web's ask() does.
     private func ask(_ q: String) {
         guard !chat.streaming, chat.status?.questionsLeft != 0 else { return }
-        chat.draft = ""
+        draft = ""
         // On a phone, the keyboard steps aside while the answer comes in.
         focused = false
         follow.sent()
@@ -142,6 +146,7 @@ private struct McFlyLayout: View {
 /// landscape), its answers' charts are on the other side, so the thread names each one where it was.
 private struct McFlyConversation: View {
     @Bindable var chat: McFlyChat
+    @Binding var draft: String
     let follow: McFlyFollow
     let focused: FocusState<Bool>.Binding
     let beside: Bool
@@ -315,11 +320,11 @@ private struct McFlyConversation: View {
     // MARK: Composer
 
     private var left: Int? { chat.status?.questionsLeft }
-    private var canSend: Bool { !chat.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !chat.streaming && left != 0 }
+    private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !chat.streaming && left != 0 }
 
     private var composer: some View {
         VStack(alignment: .leading, spacing: 8) {
-            TextField("", text: $chat.draft, prompt: Text(McFlyWords.placeholder(chat.status)).foregroundStyle(Palette.ink3), axis: .vertical)
+            TextField("", text: $draft, prompt: Text(McFlyWords.placeholder(chat.status)).foregroundStyle(Palette.ink3), axis: .vertical)
                 .font(.app(size: 14, relativeTo: .body))
                 .foregroundStyle(Palette.ink)
                 .lineLimit(2...8)
@@ -327,13 +332,13 @@ private struct McFlyConversation: View {
                 .submitLabel(.send)
                 .onSubmit(send)
                 .disabled(left == 0)
-                .onChange(of: chat.draft) { old, value in
+                .onChange(of: draft) { old, value in
                     // Return sends, as the web's Enter does; the field keeps lines pasted into it.
                     if McFlyScreen.returnPressed(old: old, new: value) {
-                        chat.draft = old
+                        draft = old
                         send()
                     } else if value.count > 4000 {
-                        chat.draft = String(value.prefix(4000))
+                        draft = String(value.prefix(4000))
                     }
                 }
                 .padding(.horizontal, 12)
@@ -372,8 +377,8 @@ private struct McFlyConversation: View {
 
     private func send() {
         guard canSend else { return }
-        let q = chat.draft
-        chat.draft = ""
+        let q = draft
+        draft = ""
         ask(q)
     }
 }
