@@ -9,8 +9,8 @@ import SwiftUI
 /// the page splits on the fold, the intro runs above two panes, as the web's wide Today: the conversation on the leading
 /// side (its thread scrolling, the composer at its foot) and the day on the trailing side (design §7, decisions.md Q5).
 /// Everything a fold must keep lives here, above those panes (P4): the day and its read, the + menu and the sheets it
-/// opens, the meal photo's picker and camera, the voice note and the problem line. The composer's keyboard is the
-/// conversation's (`thread.composerFocused`), so the composer a swap brings takes it back.
+/// opens, the meal photo's picker and camera, the voice note, the problem line and the journal's open editors. The
+/// composer's keyboard is the conversation's (`thread.composerFocused`), so the composer a swap brings takes it back.
 struct NutritionToday<Views: View>: View {
     let mode: NutritionMode
     let thread: NutritionThread
@@ -42,6 +42,8 @@ struct NutritionToday<Views: View>: View {
     /// The line under the composer: a photo that couldn't be opened, or why voice notes are off.
     @State private var problem: String?
     @State private var voice: VoiceNote?
+    /// The journal's entries being edited, with what's typed in them: here, so a fold that swaps the panes keeps them.
+    @State private var edits = FoodEntryEdits()
 
     var body: some View {
         let today = day?.today ?? Day.today()
@@ -59,6 +61,9 @@ struct NutritionToday<Views: View>: View {
             }
             .scrollDismissesKeyboard(.interactively)
         }
+        .environment(\.foodEntryEdits, edits)
+        // Another day's entries are other rows: the editors open on this one close, as they always have.
+        .onChange(of: viewing) { edits.open = [:] }
         .background(Palette.page)
         .refreshable { await dashboard.load() }
         // Read again when anything changes (a save, an edit, the background version check) and when the person's
