@@ -21,12 +21,13 @@ final class SleepDuoTests: XCTestCase {
         var reads = 0
     }
 
-    private func reads(_ counter: Counter, night: SleepNightDetail?, timing: SleepTiming? = nil, patterns: Patterns? = nil) throws -> SleepReads {
+    private func reads(_ counter: Counter, night: SleepNightDetail?, timing: SleepTiming? = nil, patterns: Patterns? = nil,
+                       noPatterns: Bool = false) throws -> SleepReads {
         let rhr = try sleepDecode(Trends.self, "sleep-rhr")["resting_hr"] ?? []
         let stages = try sleepDecode(Trends.self, "sleep-stages")
         let trends = try sleepDecode(Trends.self, "sleep-trends")
         let timing = try timing ?? sleepDecode(SleepTiming.self, "sleep-timing")
-        let patterns = try patterns ?? sleepDecode(Patterns.self, "patterns")
+        let patterns = noPatterns ? nil : try patterns ?? sleepDecode(Patterns.self, "patterns")
         return SleepReads(
             night: { _, _ in counter.reads += 1; return night },
             restingHr: { _, _ in counter.reads += 1; return rhr },
@@ -143,6 +144,29 @@ final class SleepDuoTests: XCTestCase {
         defer { host.close() }
         let labels = try await host.elements().compactMap(\.accessibilityLabel)
         XCTAssertTrue(labels.contains { $0.contains(SleepWords.needsAWeek(3)) }, "\(labels)")
+    }
+
+    /// No patterns (still loading, failed, or a server without /patterns) and a week of nights: the card is there as on
+    /// the web, with "Nothing stands out yet" and its note, and open in landscape it sits beside usual times on the
+    /// trailing side, so neither side of the second row is empty.
+    func testCoachingKeepsThePatternsCardWithoutPatterns() async throws {
+        let counter = Counter()
+        let d = try dashboard()
+        let r = try reads(counter, night: try night(), noPatterns: true)
+        for state in [DuoState.outer, .innerPortrait(), .innerLandscape(), .innerLandscape(bar: .leading)] {
+            try await DuoSnapshot.draw(page(d, r, model: SleepModel(tab: .coaching)), as: state, name: "d-coaching-nopatterns")
+            let host = try await DuoHost(page(d, r, model: SleepModel(tab: .coaching)), as: state)
+            defer { host.close() }
+            let elements = try await host.elements()
+            let labels = elements.compactMap(\.accessibilityLabel)
+            XCTAssertTrue(labels.contains("What goes with your better nights"), "\(state): \(labels)")
+            XCTAssertTrue(labels.contains(SleepWords.patternsEmpty), "\(state)")
+            XCTAssertTrue(labels.contains(SleepWords.patternsNote), "\(state)")
+            if let band = DuoFoldAssertions.band(state) {
+                let note = try XCTUnwrap(elements.first { $0.accessibilityLabel == SleepWords.patternsNote })
+                XCTAssertGreaterThan(note.accessibilityFrame.minX, band.upperBound, "\(state): the patterns go on the trailing side")
+            }
+        }
     }
 
     // MARK: The fold

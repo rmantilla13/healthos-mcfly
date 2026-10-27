@@ -460,10 +460,11 @@ struct SleepUsualTimesCard: View {
 /// What goes with your better nights (CoachingTab): the sleep patterns from the person's own days, worded as what tends
 /// to go together, never as causes, and the web's note saying so.
 struct SleepPatternsCard: View {
-    let patterns: Patterns
+    /// nil until /patterns answers, or when it can't: the card stays, with no rows and no date range.
+    let patterns: Patterns?
 
     var body: some View {
-        let rows = patterns.patterns.filter { $0.page == "sleep" }
+        let rows = (patterns?.patterns ?? []).filter { $0.page == "sleep" }
         VStack(alignment: .leading, spacing: 0) {
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .firstTextBaseline, spacing: 12) { heading; Spacer(minLength: 0); range }
@@ -507,8 +508,10 @@ struct SleepPatternsCard: View {
             .accessibilityAddTraits(.isHeader)
     }
 
-    private var range: some View {
-        Text("\(Fmt.day(patterns.start)) – \(Fmt.day(patterns.end))").font(.app(.footnote)).foregroundStyle(Palette.ink3)
+    @ViewBuilder private var range: some View {
+        if let patterns {
+            Text("\(Fmt.day(patterns.start)) – \(Fmt.day(patterns.end))").font(.app(.footnote)).foregroundStyle(Palette.ink3)
+        }
     }
 }
 

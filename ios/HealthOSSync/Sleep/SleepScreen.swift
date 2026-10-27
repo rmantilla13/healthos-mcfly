@@ -397,7 +397,8 @@ private struct SleepCoachingAlone<Content: View>: View {
 
 /// Coaching's cards. The web's: your need and your debt (2-up in the medium band), usual times on its own, then what
 /// goes with your better nights across the page. Split on the fold, two to a row, one each side: need beside debt, then
-/// usual times beside the patterns.
+/// usual times beside the patterns. The patterns card is there as on the web whether or not /patterns has answered
+/// (loading, failed, or an older server without it): no rows, "Nothing stands out yet" and the note.
 private struct SleepCoachingCards: View {
     let stats: SleepTiming.Stats
     let patterns: Patterns?
@@ -405,10 +406,10 @@ private struct SleepCoachingCards: View {
 
     var body: some View {
         if fold.splits {
-            DuoGrid(["need", "debt", "times"] + (patterns != nil ? ["patterns"] : []), id: \.self) { card($0) }
+            DuoGrid(["need", "debt", "times", "patterns"], id: \.self) { card($0) }
         } else {
             DuoGrid(["need", "debt", "times"], id: \.self, medium: 2, loneSpans: false) { card($0) }
-            if let patterns { SleepPatternsCard(patterns: patterns) }
+            SleepPatternsCard(patterns: patterns)
         }
     }
 
@@ -423,7 +424,7 @@ private struct SleepCoachingCards: View {
                            unit: st.debt != nil ? "over \(st.debtNights) night\(st.debtNights == 1 ? "" : "s")" : "short of your need",
                            foot: SleepWords.debtNote)
         case "patterns":
-            if let patterns { SleepPatternsCard(patterns: patterns) }
+            SleepPatternsCard(patterns: patterns)
         default:
             SleepUsualTimesCard(stats: st)
         }
