@@ -40,7 +40,7 @@ final class CardPlacesTests: XCTestCase {
     }
 
     func testSleepPlaces() {
-        XCTAssertEqual(Cards.ids(in: .sleep), ["sleep.total", "sleep.score", "sleep.efficiency", "sleep.stages"])
+        XCTAssertEqual(Cards.ids(in: .sleep), ["sleep.total", "sleep.score", "sleep.efficiency", "sleep.rhr", "sleep.stages", "sleep.insights", "sleep.timeline"])
     }
 
     func testBodyPlaces() {
