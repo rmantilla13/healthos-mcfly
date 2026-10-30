@@ -85,7 +85,7 @@ export function Home({
           pair
           cards={[
             ['home.nutrition', <TodayNutritionCard numbers={nutrition} date={s.date} today={s.today} />],
-            ['home.journal', <JournalPromptCard />],
+            ['home.journal', <JournalPromptCard standing={s.standing} />],
           ]}
         />
 

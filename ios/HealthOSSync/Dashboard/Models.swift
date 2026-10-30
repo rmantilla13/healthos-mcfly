@@ -48,6 +48,9 @@ struct Summary: Codable {
     /// Resting heart rate and respiratory rate over the last 30 days, for the web's Home cards. nil from older servers.
     @Lossy var restingHr: Reading?
     @Lossy var respRate: Reading?
+    /// Today's readings against your own usual, by the Family board's rule, for the journal card's orb. nil without
+    /// anything a watch or WHOOP measures, from older servers, and for a status this build doesn't know.
+    @Lossy var standing: Standing?
 
     /// Each vital on its own, so one the app can't read leaves the others.
     struct Vitals: Codable {
@@ -132,6 +135,14 @@ struct Insight: Codable, Identifiable {
     let date: String
     /// Web page the insight links to: vitals, sleep, activity, body...
     let page: String
+}
+
+/// How today's readings stand against your own usual (Summary.standing, shared/types.ts Standing): the board's status,
+/// and the readings off it with `off` or `check` ("recovery", "hrv", "resting_hr", "sleep").
+struct Standing: Codable, Equatable {
+    enum Status: String, Codable { case good, off, check, quiet, learning }
+    let status: Status
+    let reasons: [String]
 }
 
 /// A gentle flag on Today (Summary.flags). Never mentions the cycle; the app adds that context itself.

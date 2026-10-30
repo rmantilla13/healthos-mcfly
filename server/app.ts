@@ -29,7 +29,7 @@ import { estimateHandler } from './estimate.ts';
 import { dropExpiredDrafts } from './foodlog.ts';
 import { type FetchFn, pruneFoodCache } from './foods.ts';
 import { nutritionErrors, nutritionRouter } from './nutrition.ts';
-import { familyRouter } from './family.ts';
+import { familyRouter, standing } from './family.ts';
 import { DATA_DIR, type Db, type Scope, bumpDataVersion, deleteSource, getUserSetting, setUserSetting } from './db.ts';
 import { patterns, sleepTiming } from './insights.ts';
 import { sleepNight } from './sleepnight.ts';
@@ -145,7 +145,9 @@ export function createApp({ db, hosted, ingestToken, mcflyClient = defaultClient
     void res.status(501).json({ error: `${what} runs on your Mac. Start healthOS there (npm run dev) and do it from that copy; it writes to the same database.` });
 
   api.get('/summary', async (req, res) => {
-    res.json(await summary(scopeOf(res), hosted, asOf(req)));
+    const scope = scopeOf(res);
+    const [day, today] = await Promise.all([summary(scope, hosted, asOf(req)), standing(db, hosted, scope.userId)]);
+    res.json(today ? { ...day, standing: today } : day);
   });
 
   api.get('/trends', async (req, res) => {
