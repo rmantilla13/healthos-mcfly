@@ -45,7 +45,7 @@ export function VitalCard({
   range?: MetricRange;
   /** The sheet's heading above the metric's name. */
   section?: string;
-  /** A line under the value ("Normal", "Below your range"). */
+  /** A line under the value ("Normal", "Slightly low"). */
   status?: ReactNode;
   /** A mini chart, under the value. */
   children?: ReactNode;

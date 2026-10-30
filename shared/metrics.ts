@@ -1,6 +1,6 @@
 // Detail sheets (GET /api/metric/:key): one metric over a day, week, month or year, with three summary figures,
 // how it compares with the period before, and one plain sentence about it. Shared by the server and the dashboard.
-import type { DayData, Point } from './types.ts';
+import type { DayData, Point, VitalLevel } from './types.ts';
 
 export type MetricKey =
   | 'resting_hr'
@@ -160,8 +160,8 @@ export const METRIC_INFO: Record<MetricKey, MetricInfo> = {
     ranges: ALL,
     initial: 'month',
     about: {
-      what: 'An estimate of the percentage of oxygen-saturated haemoglobin in your blood.',
-      caveat: `${WEARABLE} Sensor fit and measurement conditions matter.`,
+      what: 'An estimate of the percentage of oxygen-saturated haemoglobin in your blood. Higher is better: 95 to 100% is normal for most people, and 92% or lower is low.',
+      caveat: `${WEARABLE} Sensor fit and measurement conditions matter, and it can read lower at altitude or with a lung condition such as COPD, where your clinician may give you your own target.`,
       source: { label: 'Cleveland Clinic · Blood oxygen level', href: 'https://my.clevelandclinic.org/health/diagnostics/22447-blood-oxygen-level' },
     },
   },
@@ -291,6 +291,24 @@ export const isMetricRange = (v: unknown): v is MetricRange => v === 'day' || v 
 /** Blood glucose: mg/dL per mmol/L (glucose's molar mass, 180.16 g/mol, over 10). */
 export const MG_DL_PER_MMOL_L = 18.016;
 export const mmolFromMgDl = (mgDl: number) => mgDl / MG_DL_PER_MMOL_L;
+
+/**
+ * Blood oxygen against fixed bands, not the person's own usual: higher is better, up to 100%, so a high reading is
+ * never flagged. The bands are the sheet's source's: Cleveland Clinic calls 95–100% normal and says to call your
+ * provider at 92% or lower. Each band's level colours its dot as a vital's does (green, amber, red).
+ */
+export type Spo2Band = 'normal' | 'slightly_low' | 'low';
+export const SPO2_BANDS: Record<Spo2Band, { text: string; range: string; level: VitalLevel }> = {
+  normal: { text: 'Normal', range: '95–100%', level: 'normal' },
+  slightly_low: { text: 'Slightly low', range: 'under 95%', level: 'unusual' },
+  low: { text: 'Low', range: '92% or lower', level: 'off' },
+};
+
+/** A reading's band, as it shows (to a tenth), so a 94.96 that reads "95.0%" is normal. */
+export function spo2Band(value: number): Spo2Band {
+  const v = Math.round(value * 10) / 10;
+  return v >= 95 ? 'normal' : v > 92 ? 'slightly_low' : 'low';
+}
 
 /** One figure on the sheet: a value with its unit, and what it is (its date, or a note such as "so far today"). */
 export type MetricFigure = { label: string; value: number | null; unit: string; date?: string; note?: string };

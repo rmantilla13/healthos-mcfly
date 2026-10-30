@@ -126,8 +126,8 @@ extension MetricKey {
                 "Apple · Track daily activity with Apple Watch", "https://support.apple.com/guide/watch/track-daily-activity-apd3bf6d85a6/watchos"))
         case .spo2:
             MetricInfo(label: "Blood oxygen", unit: "%", digits: 1, chart: .trend, ranges: Self.all, initial: .month, about: Self.about(
-                "An estimate of the percentage of oxygen-saturated haemoglobin in your blood.",
-                "\(Self.wearable) Sensor fit and measurement conditions matter.",
+                "An estimate of the percentage of oxygen-saturated haemoglobin in your blood. Higher is better: 95 to 100% is normal for most people, and 92% or lower is low.",
+                "\(Self.wearable) Sensor fit and measurement conditions matter, and it can read lower at altitude or with a lung condition such as COPD, where your clinician may give you your own target.",
                 "Cleveland Clinic · Blood oxygen level", "https://my.clevelandclinic.org/health/diagnostics/22447-blood-oxygen-level"))
         case .respRate:
             MetricInfo(label: "Respiratory rate", unit: "breaths/min", digits: 1, chart: .trend, ranges: Self.all, initial: .month, about: Self.about(

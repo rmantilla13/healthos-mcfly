@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { AddressInfo } from 'node:net';
 import type { MetricSheet } from '../shared/metrics.ts';
-import { aboutBefore, emptyWindowText, mmolFromMgDl, nothingToShow, showSheet, stillEmpty, widenedNote, widerRange } from '../shared/metrics.ts';
+import { SPO2_BANDS, aboutBefore, emptyWindowText, mmolFromMgDl, nothingToShow, showSheet, spo2Band, stillEmpty, widenedNote, widerRange } from '../shared/metrics.ts';
 import type { DayData, Point, Summary } from '../shared/types.ts';
 import { createApp } from '../server/app.ts';
 import { hashPassword } from '../server/auth.ts';
@@ -303,11 +303,11 @@ test("the status and the sentence are the card's, from the summary for the same 
   assert.equal(hrv.status?.text, words[s.hrv.status!]);
   assert.doesNotMatch(hrv.narrative!, /optimal/i);
 
-  // Blood oxygen: the summary's own range status.
+  // Blood oxygen: the cards' fixed band for the summary's latest reading, not the usual range.
   const spo2 = await owner.sheet('spo2', `range=month&date=${asOf}`);
-  // The cards say "Normal" for anything not below the range, so a high reading is "at or above", never just "above".
-  const spo2Words = { low: 'Below your usual', normal: 'Within your usual', high: 'At or above your usual' } as const;
-  assert.equal(spo2.status?.text, spo2Words[s.spo2.status!]);
+  const band = SPO2_BANDS[spo2Band(s.spo2.latest!.value)];
+  assert.deepEqual(spo2.status, { text: `${band.text}, ${band.range}`, position: 'band' });
+  assert.match(spo2.narrative!, new RegExp(`is ${band.text.toLowerCase()} \\(${band.range}\\)\\.$`));
 
   // Steps: the share of the goal the Activity card shows.
   const steps = await owner.sheet('steps', `range=week&date=${asOf}`);
