@@ -512,7 +512,8 @@ final class HomeOtherCardsTests: XCTestCase {
     func testTheJournalOrbIsTheWebs() throws {
         let css = try web("src/styles.css")
         let start = try XCTUnwrap(css.range(of: "/* ---------- The journal's orb"))
-        let end = try XCTUnwrap(css.range(of: ".journal-orb-area {", range: start.upperBound..<css.endIndex))
+        // The colours end where the states begin.
+        let end = try XCTUnwrap(css.range(of: "/* What it shows (data-state", range: start.upperBound..<css.endIndex))
         let block = css[start.lowerBound..<end.lowerBound]
         let media = try XCTUnwrap(block.range(of: "@media (prefers-color-scheme: dark)"))
         let forced = try XCTUnwrap(block.range(of: "/* Forced dark"))
@@ -548,10 +549,10 @@ final class HomeOtherCardsTests: XCTestCase {
 
         // The loops: their lengths, and each blob's keyframes as the CSS writes them.
         typealias M = JournalOrbMotion
-        for line in ["animation: journal-orb-breathe \(Int(M.breathePeriod))s ease-in-out infinite;", "animation: journal-orb-halo \(Int(M.breathePeriod))s ease-in-out infinite;",
-                     "animation: journal-orb-spin \(Int(M.spinPeriod))s linear infinite;", "animation: journal-orb-drift-a 17s ease-in-out infinite;",
-                     "animation: journal-orb-drift-b 13s ease-in-out infinite;", "animation: journal-orb-drift-c 21s ease-in-out infinite;",
-                     "animation: journal-orb-drift-b 11s ease-in-out infinite reverse;", "transform: scale(1.035);", "opacity: 0.7;\n    transform: scale(0.95);",
+        func paced(_ name: String, _ seconds: Double, _ rest: String) -> String { "animation: journal-orb-\(name) calc(\(Int(seconds))s * var(--journal-orb-pace, 1)) \(rest);" }
+        for line in [paced("breathe", M.breathePeriod, "ease-in-out infinite"), paced("halo", M.breathePeriod, "ease-in-out infinite"),
+                     paced("spin", M.spinPeriod, "linear infinite"), paced("drift-a", 17, "ease-in-out infinite"), paced("drift-b", 13, "ease-in-out infinite"),
+                     paced("drift-c", 21, "ease-in-out infinite"), paced("drift-b", 11, "ease-in-out infinite reverse"), "transform: scale(1.035);", "opacity: 0.7;\n    transform: scale(0.95);",
                      "opacity: 1;\n    transform: scale(1.06);"] {
             XCTAssertTrue(css.contains(line), line)
         }
@@ -578,6 +579,58 @@ final class HomeOtherCardsTests: XCTestCase {
         XCTAssertEqual(still.drift.count, 4)
         XCTAssertTrue(still.drift.values.allSatisfy { $0 == JournalOrbMotion.Drift() })
         XCTAssertTrue(css.contains("@media (prefers-reduced-motion: no-preference) {\n  .journal-orb {\n    animation: journal-orb-breathe"))
+    }
+
+    /// The orb follows today's readings as the web's does: each state's look is styles.css's, the words are
+    /// JournalPrompt.tsx's, and the summary's standing reads (an unknown status reads as none: the orb as drawn).
+    func testTheJournalOrbFollowsYourReadings() throws {
+        let css = try web("src/styles.css")
+        func look(_ selector: String) throws -> JournalOrbLook {
+            let start = try XCTUnwrap(css.range(of: selector), selector)
+            let block = css[start.upperBound...].prefix { $0 != "}" }
+            var values: [String: Double] = [:]
+            for m in block.matches(of: /--journal-orb-([a-z]+)(?:-share)?: ([0-9.]+);/) { values[String(m.1)] = Double(m.2) }
+            return JournalOrbLook(pace: values["pace"] ?? 1, peach: values["peach"] ?? 1, rose: values["rose"] ?? 1, lilac: values["lilac"] ?? 1,
+                                  glow: values["glow"] ?? 1, veil: values["veil"] ?? 0, halo: values["halo"] ?? 1)
+        }
+        XCTAssertEqual(JournalOrbLook.of(.off), try look(".journal-orb-area[data-state='off'] {"))
+        XCTAssertEqual(JournalOrbLook.of(.check), try look(".journal-orb-area[data-state='check'] {"))
+        XCTAssertEqual(JournalOrbLook.of(.quiet), try look(".journal-orb-area[data-state='quiet'],\n.journal-orb-area[data-state='learning'] {"))
+        XCTAssertEqual(JournalOrbLook.of(.learning), JournalOrbLook.of(.quiet))
+        XCTAssertEqual(JournalOrbLook.of(.good), JournalOrbLook(), "within your usual: the orb as drawn")
+        XCTAssertEqual(JournalOrbLook.of(nil), JournalOrbLook())
+        for (blob, share) in [("rose", "rose"), ("peach", "peach"), ("lilac", "lilac"), ("glow", "glow")] {
+            XCTAssertTrue(css.contains("var(--journal-orb-\(blob)) 0%, transparent 100%);\n  opacity: var(--journal-orb-\(share)-share, 1);"), blob)
+        }
+        XCTAssertTrue(css.contains("opacity: var(--journal-orb-veil-share, 0);"))
+        XCTAssertTrue(css.contains("color-mix(in srgb, var(--journal-orb-halo) calc(var(--journal-orb-halo-share, 1) * 100%), transparent)"))
+
+        // The words, as the web says them.
+        let tsx = try web("src/components/home/JournalPrompt.tsx")
+        XCTAssertTrue(tsx.contains("const REASON: Record<FamilyReason, string> = { recovery: 'recovery', hrv: 'HRV', resting_hr: 'resting heart rate', sleep: 'sleep' };"))
+        for words in ["'Your readings are within your usual.'", "`Off your usual: ${off}.`", "`Off your usual: ${off}. A good day to check in.`",
+                      "'Still learning your usual.'", "'No recent readings to go by.'"] {
+            XCTAssertTrue(tsx.contains(words), words)
+        }
+        typealias C = JournalPromptCard.Model
+        XCTAssertEqual(C.words(Standing(status: .good, reasons: [])), "Your readings are within your usual.")
+        XCTAssertEqual(C.words(Standing(status: .off, reasons: ["sleep"])), "Off your usual: sleep.")
+        XCTAssertEqual(C.words(Standing(status: .check, reasons: ["recovery", "resting_hr", "sleep"])),
+                       "Off your usual: recovery, resting heart rate and sleep. A good day to check in.")
+        XCTAssertEqual(C.words(Standing(status: .check, reasons: ["hrv", "sleep"])), "Off your usual: HRV and sleep. A good day to check in.")
+        XCTAssertEqual(C.words(Standing(status: .learning, reasons: [])), "Still learning your usual.")
+        XCTAssertEqual(C.words(Standing(status: .quiet, reasons: [])), "No recent readings to go by.")
+        XCTAssertEqual(C(nil, standing: Standing(status: .off, reasons: ["hrv"])).standing, "Off your usual: HRV.")
+        XCTAssertNil(C(nil).standing, "no standing, no line")
+
+        // The summary's standing.
+        let base = #"{"date":"2026-10-30","today":"2026-10-30","latestDataDate":null,"insights":[]"#
+        let read = try decode(Summary.self, base + #","standing":{"status":"check","reasons":["recovery","sleep"]}}"#).standing
+        XCTAssertEqual(read, Standing(status: .check, reasons: ["recovery", "sleep"]))
+        XCTAssertNil(try decode(Summary.self, base + "}").standing, "an older server")
+        XCTAssertNil(try decode(Summary.self, base + #","standing":{"status":"radiant","reasons":[]}}"#).standing, "a status this build doesn't know")
+        XCTAssertTrue(try web("shared/types.ts").contains("export type Standing = { status: FamilyStatus; reasons: FamilyReason[] };"))
+        XCTAssertTrue(try web("shared/types.ts").contains("export type FamilyStatus = 'good' | 'off' | 'check' | 'quiet' | 'learning';"))
     }
 
     func testFoodTotalsAreTheLatestDaysFirstFive() throws {

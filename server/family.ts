@@ -4,7 +4,7 @@
 // and a tile carries only what FamilyMember lists: nothing older than 30 days, no email, nothing about anyone who
 // doesn't share.
 import express from 'express';
-import type { CycleDay, FamilyBoard, FamilyCyclePhase, FamilyDevice, FamilyHistory, FamilyMember, FamilyReason, FamilyStatus, Latest, Point, RangeStatus } from '../shared/types.ts';
+import type { CycleDay, FamilyBoard, FamilyCyclePhase, FamilyDevice, FamilyHistory, FamilyMember, FamilyReason, FamilyStatus, Latest, Point, RangeStatus, Standing } from '../shared/types.ts';
 import { authMode, currentUser } from './auth.ts';
 import { analyzeCycle, analyzeInputs, loadCycleInputs } from './cycle/index.ts';
 import { addDays } from './dates.ts';
@@ -88,55 +88,7 @@ async function memberTile(db: Db, hosted: boolean, userId: string, o: TileOpts):
     o.sharesPhase && settings.cycleTracking ? cyclePhaseOf(db, userId, today) : null,
   ]);
   const ctx = { daily, demo };
-  const yesterday = addDays(today, -1);
-  const window = (metric: string) => series(ctx, metric, from, today);
-  // Phone-only sleep is time in bed (the importer keeps it when nothing else exists): shown, never judged.
-  const inBedOnly = (date: string, hours: number) => {
-    const bed = valueOn(ctx, 'sleep_in_bed', date)?.value;
-    return bed !== undefined && Math.abs(bed - hours) * 60 <= 1;
-  };
-
-  // Sleep: last night, against the 28 nights before it that a watch or WHOOP measured (time in bed runs longer).
-  const night = latest(ctx, 'sleep_hours', today, 1);
-  const sleep = night
-    ? {
-        hours: round(night.value, 2),
-        date: night.date,
-        usual: nullableRound(usualOf(series(ctx, 'sleep_hours', addDays(night.date, -28), addDays(night.date, -1)).filter((p) => !inBedOnly(p.date, p.value))), 2),
-        inBed: inBedOnly(night.date, night.value),
-      }
-    : null;
-
-  // Readiness: WHOOP recovery, else HRV (Apple Watch's SDNN or WHOOP's RMSSD), each against its 30 days before.
-  let readiness: FamilyMember['readiness'] = null;
-  let readinessLow: FamilyReason | null = null;
-  const prior = (metric: string, l: Latest) => series(ctx, metric, addDays(l.date, -30), addDays(l.date, -1));
-  const recovery = latest(ctx, 'recovery', today, 1);
-  if (recovery) {
-    const usual = usualOf(prior('recovery', recovery));
-    readiness = { kind: 'recovery', value: Math.round(recovery.value), date: recovery.date, usual: nullableRound(usual, 0) };
-    if (usual !== null && recovery.value <= usual - 25) readinessLow = 'recovery';
-  } else {
-    const hrv = (['hrv_rmssd', 'hrv_sdnn'] as const)
-      .map((metric) => ({ metric, l: latest(ctx, metric, today, 3) }))
-      .filter((x): x is { metric: 'hrv_rmssd' | 'hrv_sdnn'; l: Latest } => x.l !== null)
-      .sort((a, b) => b.l.date.localeCompare(a.l.date))[0];
-    if (hrv) {
-      const history = prior(hrv.metric, hrv.l);
-      const usual = usualOf(history);
-      readiness = { kind: 'hrv', metric: hrv.metric, value: Math.round(hrv.l.value), date: hrv.l.date, usual: nullableRound(usual, 0) };
-      if (usual !== null && against(history, hrv.l.value, usual * 0.05) === 'low') readinessLow = 'hrv';
-    }
-  }
-
-  // Resting heart rate against the same device's own history: WHOOP's is measured asleep, Apple Watch's over
-  // the day, so a watch reading that arrives before WHOOP's must not be judged against WHOOP's usual.
-  const rhr = latest(ctx, 'resting_hr', today, 3);
-  const rhrFrom = rhr ? valueOn(ctx, 'resting_hr', rhr.date)?.source : undefined;
-  const own = rhrFrom ? daily.get('resting_hr')?.get(rhrFrom) : undefined;
-  const rhrHistory = rhr && own ? [...own].filter(([d]) => d >= addDays(rhr.date, -30) && d < rhr.date).map(([date, value]) => ({ date, value })) : [];
-  const rhrStatus = rhr ? against(rhrHistory, rhr.value, 2) : null;
-  const restingHr = rhr && rhrStatus ? { status: rhrStatus, date: rhr.date, value: Math.round(rhr.value), usual: nullableRound(usualOf(rhrHistory), 0) } : null;
+  const { sleep, readiness, restingHr, rhrFrom, signals, status, quietSince, inBedOnly } = judge(ctx, today, newest);
 
   // Today's steps by the same rule as everywhere else; how far along the day is only from the phone's hours.
   const counted = valueOn(ctx, 'steps', today);
@@ -146,23 +98,6 @@ async function memberTile(db: Db, hosted: boolean, userId: string, o: TileOpts):
     const pace = fromWhoop ? null : stepsPace(hourly, today);
     steps = { value: Math.round(counted.value), source: fromWhoop ? 'whoop' : 'apple', asOfHour: pace?.asOfHour ?? null, usualByNow: pace?.usualByNow ?? null };
   }
-
-  // What the board compares at all: something a watch or WHOOP measures (phone-only sleep doesn't count).
-  const stagedSleep = window('sleep_hours').filter((p) => !inBedOnly(p.date, p.value));
-  const wearable = [window('recovery'), window('hrv_rmssd'), window('hrv_sdnn'), window('resting_hr'), stagedSleep].flat();
-  const signals: FamilyReason[] = [];
-  if (readinessLow) signals.push(readinessLow);
-  if (restingHr?.status === 'high') signals.push('resting_hr');
-  if (sleep && !sleep.inBed && sleep.usual !== null && sleep.hours <= sleep.usual - 1.5) signals.push('sleep');
-  const { status, quietSince } = familyStatus({
-    today,
-    newest,
-    wearableNewest: wearable.reduce<string | null>((d, p) => (d === null || p.date > d ? p.date : d), null),
-    // A reading counts as fresh before there's a usual to judge it by (then the status says it's still learning).
-    fresh: readiness !== null || rhr !== null || (sleep !== null && !sleep.inBed),
-    baselines: (sleep !== null && !sleep.inBed && sleep.usual !== null) || (readiness?.usual ?? null) !== null || restingHr !== null,
-    signals,
-  });
 
   // The last 30 days of each, for the charts.
   const historyFrom = addDays(today, -(HISTORY_DAYS - 1));
@@ -229,6 +164,96 @@ async function memberTile(db: Db, hosted: boolean, userId: string, o: TileOpts):
     ...(phase ? { cyclePhase: phase } : {}),
     history,
   };
+}
+
+type Daily = Awaited<ReturnType<typeof loadDaily>>;
+/** The metrics judge() reads. */
+const JUDGED = ['sleep_hours', 'sleep_in_bed', 'recovery', 'hrv_rmssd', 'hrv_sdnn', 'resting_hr'];
+
+/**
+ * Today's readings against this person's own usual: last night's sleep, readiness and resting heart rate, the clear
+ * departures among them, and the status they add up to. The board's tile shows it, and so does the person's own Home
+ * (Summary.standing, for the journal card's orb).
+ */
+function judge(ctx: { daily: Daily; demo: boolean }, today: string, newest: string | null) {
+  const window = (metric: string) => series(ctx, metric, addDays(today, -WINDOW_DAYS), today);
+  // Phone-only sleep is time in bed (the importer keeps it when nothing else exists): shown, never judged.
+  const inBedOnly = (date: string, hours: number) => {
+    const bed = valueOn(ctx, 'sleep_in_bed', date)?.value;
+    return bed !== undefined && Math.abs(bed - hours) * 60 <= 1;
+  };
+
+  // Sleep: last night, against the 28 nights before it that a watch or WHOOP measured (time in bed runs longer).
+  const night = latest(ctx, 'sleep_hours', today, 1);
+  const sleep = night
+    ? {
+        hours: round(night.value, 2),
+        date: night.date,
+        usual: nullableRound(usualOf(series(ctx, 'sleep_hours', addDays(night.date, -28), addDays(night.date, -1)).filter((p) => !inBedOnly(p.date, p.value))), 2),
+        inBed: inBedOnly(night.date, night.value),
+      }
+    : null;
+
+  // Readiness: WHOOP recovery, else HRV (Apple Watch's SDNN or WHOOP's RMSSD), each against its 30 days before.
+  let readiness: FamilyMember['readiness'] = null;
+  let readinessLow: FamilyReason | null = null;
+  const prior = (metric: string, l: Latest) => series(ctx, metric, addDays(l.date, -30), addDays(l.date, -1));
+  const recovery = latest(ctx, 'recovery', today, 1);
+  if (recovery) {
+    const usual = usualOf(prior('recovery', recovery));
+    readiness = { kind: 'recovery', value: Math.round(recovery.value), date: recovery.date, usual: nullableRound(usual, 0) };
+    if (usual !== null && recovery.value <= usual - 25) readinessLow = 'recovery';
+  } else {
+    const hrv = (['hrv_rmssd', 'hrv_sdnn'] as const)
+      .map((metric) => ({ metric, l: latest(ctx, metric, today, 3) }))
+      .filter((x): x is { metric: 'hrv_rmssd' | 'hrv_sdnn'; l: Latest } => x.l !== null)
+      .sort((a, b) => b.l.date.localeCompare(a.l.date))[0];
+    if (hrv) {
+      const history = prior(hrv.metric, hrv.l);
+      const usual = usualOf(history);
+      readiness = { kind: 'hrv', metric: hrv.metric, value: Math.round(hrv.l.value), date: hrv.l.date, usual: nullableRound(usual, 0) };
+      if (usual !== null && against(history, hrv.l.value, usual * 0.05) === 'low') readinessLow = 'hrv';
+    }
+  }
+
+  // Resting heart rate against the same device's own history: WHOOP's is measured asleep, Apple Watch's over
+  // the day, so a watch reading that arrives before WHOOP's must not be judged against WHOOP's usual.
+  const rhr = latest(ctx, 'resting_hr', today, 3);
+  const rhrFrom = rhr ? valueOn(ctx, 'resting_hr', rhr.date)?.source : undefined;
+  const own = rhrFrom ? ctx.daily.get('resting_hr')?.get(rhrFrom) : undefined;
+  const rhrHistory = rhr && own ? [...own].filter(([d]) => d >= addDays(rhr.date, -30) && d < rhr.date).map(([date, value]) => ({ date, value })) : [];
+  const rhrStatus = rhr ? against(rhrHistory, rhr.value, 2) : null;
+  const restingHr = rhr && rhrStatus ? { status: rhrStatus, date: rhr.date, value: Math.round(rhr.value), usual: nullableRound(usualOf(rhrHistory), 0) } : null;
+
+  // What the board compares at all: something a watch or WHOOP measures (phone-only sleep doesn't count).
+  const stagedSleep = window('sleep_hours').filter((p) => !inBedOnly(p.date, p.value));
+  const wearable = [window('recovery'), window('hrv_rmssd'), window('hrv_sdnn'), window('resting_hr'), stagedSleep].flat();
+  const signals: FamilyReason[] = [];
+  if (readinessLow) signals.push(readinessLow);
+  if (restingHr?.status === 'high') signals.push('resting_hr');
+  if (sleep && !sleep.inBed && sleep.usual !== null && sleep.hours <= sleep.usual - 1.5) signals.push('sleep');
+  const { status, quietSince } = familyStatus({
+    today,
+    newest,
+    wearableNewest: wearable.reduce<string | null>((d, p) => (d === null || p.date > d ? p.date : d), null),
+    // A reading counts as fresh before there's a usual to judge it by (then the status says it's still learning).
+    fresh: readiness !== null || rhr !== null || (sleep !== null && !sleep.inBed),
+    baselines: (sleep !== null && !sleep.inBed && sleep.usual !== null) || (readiness?.usual ?? null) !== null || restingHr !== null,
+    signals,
+  });
+  return { sleep, readiness, restingHr, rhrFrom, signals, status, quietSince, inBedOnly };
+}
+
+/**
+ * The person's own standing today, for their Home whether or not they share: the board's status and every departure
+ * behind it. Undefined where the board gives no status (nothing a watch or WHOOP measures).
+ */
+export async function standing(db: Db, hosted: boolean, userId: string): Promise<Standing | undefined> {
+  const scope = { db, userId };
+  const { demo, today } = await requestContext(scope, hosted);
+  const [daily, newest] = await Promise.all([loadDaily(scope, demo, addDays(today, -WINDOW_DAYS), today, JUDGED), latestDataDate(scope, demo, today)]);
+  const { status, signals } = judge({ daily, demo }, today, newest);
+  return status ? { status, reasons: status === 'off' || status === 'check' ? signals : [] } : undefined;
 }
 
 const round = (v: number, places: number) => Math.round(v * 10 ** places) / 10 ** places;

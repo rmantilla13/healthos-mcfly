@@ -4,34 +4,56 @@ import SwiftUI
 /// (journal?new=1 opens a new one), or, once there is one today (GET /api/journal?days=1), its mood and first line, and
 /// an invitation to add another. Home reads the journal (HomeReads) and leaves the card out on a server without one (an
 /// older one). Check-ins are private to the person and this is their own Home: what's read is held in memory only, for
-/// this card, never kept on disk or logged.
+/// this card, never kept on disk or logged. Its orb follows today's readings against your own usual (Summary.standing),
+/// and a line says the same in words, so it never rests on colour alone.
 struct JournalPromptCard: View {
     /// Today's latest check-in; nil while there's none (or it's still being read).
     var latest: JournalEntry? = nil
+    /// Today's readings against your usual; nil without any (no watch or WHOOP, an older server): the orb as drawn, no line.
+    var standing: Standing? = nil
     @Environment(Dashboard.self) private var dashboard
     @Environment(\.colorScheme) private var scheme
     /// The card's width inside its padding, for the words' two thirds.
     @State private var inner: CGFloat = 303
     @Environment(\.dynamicTypeSize) private var typeSize
 
-    /// What the card says: the latest of today's check-ins, its mood's word and first line.
+    /// What the card says: the latest of today's check-ins, its mood's word and first line, and how today's readings stand.
     struct Model: Equatable {
         let mood: String?
         /// The first line with words in it, or "A check-in at 08:10".
         let line: String?
         let button: String
+        /// What the orb shows, in words (standingWords in JournalPrompt.tsx).
+        let standing: String?
 
         /// From GET /api/journal?days=1: the first of today's is the latest (newest first).
-        init(_ data: JournalData?) { self.init(latest: data?.todays.first) }
+        init(_ data: JournalData?, standing: Standing? = nil) { self.init(latest: data?.todays.first, standing: standing) }
 
-        init(latest: JournalEntry?) {
+        init(latest: JournalEntry?, standing: Standing? = nil) {
             mood = latest?.mood?.label
             line = latest.map { $0.firstLine ?? "A check-in at \($0.time)" }
             button = latest == nil ? "Write a check-in" : "Add another"
+            self.standing = standing.map(Self.words)
+        }
+
+        /// The web's words for a reason, inside a sentence.
+        static let reasons = ["recovery": "recovery", "hrv": "HRV", "resting_hr": "resting heart rate", "sleep": "sleep"]
+
+        /// Today's readings against your own last 30 days, the Family board's rule.
+        static func words(_ s: Standing) -> String {
+            let named = s.reasons.compactMap { reasons[$0] }
+            let off = named.count < 2 ? named.joined() : "\(named.dropLast().joined(separator: ", ")) and \(named.last!)"
+            switch s.status {
+            case .good: return "Your readings are within your usual."
+            case .off: return "Off your usual: \(off)."
+            case .check: return "Off your usual: \(off). A good day to check in."
+            case .learning: return "Still learning your usual."
+            case .quiet: return "No recent readings to go by."
+            }
         }
     }
 
-    var body: some View { card(Model(latest: latest)) }
+    var body: some View { card(Model(latest: latest, standing: standing)) }
 
     private func card(_ m: Model) -> some View {
         let shape = RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
@@ -73,7 +95,7 @@ struct JournalPromptCard: View {
             .contentShape(shape)
         }
         .buttonStyle(CardPressStyle())
-        .accessibilityLabel(["Your health journal", "How are you feeling today?", m.mood, m.line ?? "A thought, a feeling, a little context."].compactMap { $0 }.joined(separator: ". "))
+        .accessibilityLabel(["Your health journal", "How are you feeling today?", m.mood, m.line ?? "A thought, a feeling, a little context.", m.standing].compactMap { $0 }.joined(separator: ". "))
         .accessibilityHint(m.button == "Write a check-in" ? "Writes a check-in" : "Adds another check-in")
         .accessibilityIdentifier("card-home.journal")
     }
@@ -100,6 +122,11 @@ struct JournalPromptCard: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 10)
             }
+            if let standing = m.standing {
+                Text(standing).font(.app(.caption)).foregroundStyle(Palette.ink2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 8)
+            }
         }
     }
 
@@ -107,7 +134,7 @@ struct JournalPromptCard: View {
     private var orb: some View {
         GeometryReader { geo in
             let place = JournalOrb.place(in: geo.size)
-            JournalOrb(diameter: place.diameter)
+            JournalOrb(diameter: place.diameter, state: standing?.status)
                 .position(place.center)
         }
         .allowsHitTesting(false)
@@ -118,9 +145,11 @@ struct JournalPromptCard: View {
 /// The journal's orb (src/components/JournalOrb.tsx, .journal-orb in styles.css): a soft glass ball in the blush family,
 /// peach and rose into a lavender edge, kept apart from McFly's red Orb. Its colours drift and turn inside it and its
 /// glow breathes, on the web's loops (JournalOrbMotion). Reduce Motion holds it still, as the web draws it unanimated,
-/// and Reduce Transparency leaves out the glow, as Orb does. One Canvas, drawn at most 30 times a second.
+/// and Reduce Transparency leaves out the glow, as Orb does. One Canvas, drawn at most 30 times a second. With a
+/// `state` it follows today's readings (JournalOrbLook).
 struct JournalOrb: View {
     let diameter: CGFloat
+    var state: Standing.Status? = nil
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -139,8 +168,10 @@ struct JournalOrb: View {
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { context in
-            let state = JournalOrbMotion.state(at: reduceMotion ? nil : context.date.timeIntervalSinceReferenceDate)
-            Canvas { ctx, size in draw(state, in: &ctx, size: size) }
+            let look = JournalOrbLook.of(state)
+            // Slower the further off: each loop's length times the pace.
+            let moment = JournalOrbMotion.state(at: reduceMotion ? nil : context.date.timeIntervalSinceReferenceDate / look.pace)
+            Canvas { ctx, size in draw(moment, look, in: &ctx, size: size) }
         }
         .frame(width: diameter * Self.canvas, height: diameter * Self.canvas)
         .accessibilityHidden(true)
@@ -155,13 +186,13 @@ struct JournalOrb: View {
         .radialGradient(Gradient(colors: [color, color.opacity(0)]), center: c, startRadius: 0, endRadius: r)
     }
 
-    private func draw(_ s: JournalOrbMotion.State, in ctx: inout GraphicsContext, size: CGSize) {
+    private func draw(_ s: JournalOrbMotion.State, _ look: JournalOrbLook, in ctx: inout GraphicsContext, size: CGSize) {
         func color(_ token: Themed<CSSColor>) -> Color { token(scheme).color }
         let center = CGPoint(x: size.width / 2, y: size.height / 2)
         let d = diameter * s.breathe
         // The glow: the halo colour out to 52% of its reach, then fading to nothing.
         if !reduceTransparency {
-            let r = d * 0.8 * s.haloScale, halo = color(JournalOrbColors.halo)
+            let r = d * 0.8 * s.haloScale, halo = color(JournalOrbColors.halo).opacity(look.halo)
             var glow = ctx
             glow.opacity = s.haloOpacity
             glow.fill(Self.circle(center, r), with: .radialGradient(Gradient(stops: [.init(color: halo, location: 0), .init(color: halo, location: 0.52),
@@ -188,8 +219,10 @@ struct JournalOrb: View {
                 let w = blob.frame.size * span, drift = s.drift[blob] ?? .init()
                 let c = CGPoint(x: -span / 2 + blob.frame.x * span + w * (0.5 + drift.x), y: -span / 2 + blob.frame.y * span + w * (0.5 + drift.y))
                 let r = w / 2 * drift.scale
-                swirl.fill(Self.circle(c, r), with: Self.fade(color(blob.color), at: c, r))
+                swirl.fill(Self.circle(c, r), with: Self.fade(color(blob.color).opacity(look.share(blob)), at: c, r))
             }
+            // The state's veil over the colours, under the shine.
+            if look.veil > 0 { l.fill(Path(ball), with: .color(color(JournalOrbColors.veil).opacity(look.veil))) }
             // The shine up on the left and its reflection low on the right (radial-gradient(24% 17% at 36% 22%) and
             // (30% 12% at 58% 88%)).
             for (at, rx, ry, token) in [(CGPoint(x: 0.36, y: 0.22), 0.24, 0.17, JournalOrbColors.shine), (CGPoint(x: 0.58, y: 0.88), 0.3, 0.12, JournalOrbColors.rim)] {
@@ -228,13 +261,47 @@ enum JournalOrbColors {
     static let shade = Themed<CSSColor>(.rgba(150, 86, 140, 0.28), .rgba(22, 8, 32, 0.4))
     static let shine = Themed<CSSColor>(.rgba(255, 255, 255, 0.85), .rgba(255, 240, 236, 0.65))
     static let halo = Themed<CSSColor>(.rgba(240, 164, 182, 0.42), .rgba(222, 104, 150, 0.34))
+    /// The state's veil (JournalOrbLook.veil).
+    static let veil = Themed<CSSColor>(0xECE6F4, 0x3B3453)
 
     /// By the CSS's names, for the test that reads styles.css.
     static let all: [String: Themed<CSSColor>] = [
         "journal-orb-core": core, "journal-orb-mid": mid, "journal-orb-edge": edge, "journal-orb-rose": rose, "journal-orb-peach": peach,
         "journal-orb-lilac": lilac, "journal-orb-glow": glow, "journal-orb-rim": rim, "journal-orb-shade": shade, "journal-orb-shine": shine,
-        "journal-orb-halo": halo,
+        "journal-orb-halo": halo, "journal-orb-veil": veil,
     ]
+}
+
+/// What the orb shows of today's readings (styles.css's .journal-orb-area[data-state]): how lively it is (its loops'
+/// lengths times `pace`) and how much of each colour, its veil and its glow come through, the same in light and dark.
+/// Within your usual, or without a state, it's the orb as drawn; one reading off, cooler and slower; several, calm
+/// lavender and slower still; nothing recent or no usual yet, pale and slow.
+struct JournalOrbLook: Equatable {
+    var pace: Double = 1
+    var peach: Double = 1
+    var rose: Double = 1
+    var lilac: Double = 1
+    var glow: Double = 1
+    var veil: Double = 0
+    var halo: Double = 1
+
+    static func of(_ state: Standing.Status?) -> JournalOrbLook {
+        switch state {
+        case .off: JournalOrbLook(pace: 1.35, peach: 0.5, rose: 0.8, glow: 0.85, veil: 0.16, halo: 0.8)
+        case .check: JournalOrbLook(pace: 1.7, peach: 0.2, rose: 0.45, lilac: 0.95, glow: 0.7, veil: 0.34, halo: 0.6)
+        case .quiet, .learning: JournalOrbLook(pace: 2.4, peach: 0.15, rose: 0.25, lilac: 0.35, glow: 0.6, veil: 0.62, halo: 0.4)
+        case .good, nil: JournalOrbLook()
+        }
+    }
+
+    func share(_ blob: JournalOrbMotion.Blob) -> Double {
+        switch blob {
+        case .rose: rose
+        case .peach: peach
+        case .lilac: lilac
+        case .glow: glow
+        }
+    }
 }
 
 /// The orb's loops (styles.css's @keyframes journal-orb-*): the ball breathes and its glow swells every 9s, the swirl turns
