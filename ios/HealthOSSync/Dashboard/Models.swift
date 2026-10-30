@@ -189,9 +189,11 @@ struct Workout: Codable, Identifiable {
     let avgHr: Double?
     let maxHr: Double?
     let strain: Double?
+    /// Health's effort score, 1 to 10; missing from servers before it.
+    let effort: Double?
 
     enum CodingKeys: String, CodingKey {
-        case id, source, sport, start, end, date, strain
+        case id, source, sport, start, end, date, strain, effort
         case durationMin = "duration_min", energyKcal = "energy_kcal", distanceM = "distance_m", avgHr = "avg_hr", maxHr = "max_hr"
     }
 }

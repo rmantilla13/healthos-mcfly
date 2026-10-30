@@ -40,6 +40,7 @@ type MetricInfo = { label: string; unit: string; kind?: Kind };
 export const METRICS: Record<string, MetricInfo> = {
   steps: { label: 'Steps', unit: 'steps' },
   active_energy: { label: 'Active energy (Apple)', unit: 'kcal' },
+  resting_energy: { label: 'Resting energy (Apple)', unit: 'kcal' },
   whoop_kcal: { label: 'Calories burned, whole day (WHOOP)', unit: 'kcal' },
   exercise_min: { label: 'Exercise minutes (Apple ring)', unit: 'min' },
   distance_km: { label: 'Walking and running distance', unit: 'km', kind: 'distance' },
@@ -47,6 +48,7 @@ export const METRICS: Record<string, MetricInfo> = {
   hr_min: { label: 'Lowest heart rate', unit: 'bpm' },
   hr_max: { label: 'Highest heart rate', unit: 'bpm' },
   resting_hr: { label: 'Resting heart rate', unit: 'bpm' },
+  hr_recovery: { label: 'Heart rate recovery, the drop one minute after a workout (Apple Watch)', unit: 'bpm' },
   hrv_rmssd: { label: 'HRV, RMSSD (WHOOP, during sleep)', unit: 'ms' },
   hrv_rmssd_watch: { label: 'HRV, RMSSD (Apple Watch)', unit: 'ms' },
   hrv_sdnn: { label: 'HRV, SDNN (Apple Watch)', unit: 'ms' },
@@ -153,7 +155,7 @@ type Tool = BetaTool & {
 
 const METRIC_NAMES = Object.keys(METRICS);
 /** Daily totals: today's is only so far, so it's left out of averages until the day is over. */
-const SUMMED = new Set(['steps', 'active_energy', 'whoop_kcal', 'exercise_min', 'distance_km', 'flights', 'stand_hours', 'daylight_min', 'caffeine_mg', 'water_ml']);
+const SUMMED = new Set(['steps', 'active_energy', 'resting_energy', 'whoop_kcal', 'exercise_min', 'distance_km', 'flights', 'stand_hours', 'daylight_min', 'caffeine_mg', 'water_ml']);
 /** The days an average counts: every day with data, except today's unfinished total. */
 const forAverage = (ctx: Ctx, metric: string, pts: Point[]) => (SUMMED.has(metric) ? pts.filter((p) => p.date !== ctx.today) : pts);
 const lowerLabel = (m: string) => (METRICS[m]?.label ?? m).replace(/ \(.*\)$/, '').toLowerCase();
@@ -427,7 +429,7 @@ const TOOLS: Tool[] = [
   {
     name: 'get_workouts',
     description:
-      'Workouts in a date range, newest first (Apple and WHOOP copies of the same session are merged), with totals by sport. Each has sport, start time, duration, energy, distance, average and max heart rate, and WHOOP strain when available.',
+      "Workouts in a date range, newest first (Apple and WHOOP copies of the same session are merged), with totals by sport. Each has sport, start time, duration, energy, distance, average and max heart rate, WHOOP strain when available, and Apple Health's effort score (1 to 10: the person's own rating, else Apple Watch's estimate) when available.",
     input_schema: {
       type: 'object',
       properties: {
@@ -463,6 +465,7 @@ const TOOLS: Tool[] = [
           avgHr: w.avg_hr === null ? null : Math.round(w.avg_hr),
           maxHr: w.max_hr === null ? null : Math.round(w.max_hr),
           strain: w.strain === null ? null : round(w.strain),
+          effort: w.effort === null ? null : round(w.effort),
           source: w.source,
         })),
         truncated: list.length > 100,

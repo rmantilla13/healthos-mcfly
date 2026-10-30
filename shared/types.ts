@@ -112,6 +112,8 @@ export type Workout = {
   avg_hr: number | null;
   max_hr: number | null;
   strain: number | null;
+  /** Apple Health's effort score, 1 to 10: the person's rating, else the Watch's estimate. */
+  effort: number | null;
 };
 
 export type Trends = Record<string, Point[]>;

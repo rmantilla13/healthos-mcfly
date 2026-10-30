@@ -24,6 +24,8 @@ struct WorkoutRow: Codable, Equatable {
     var avg_hr: Double?
     var max_hr: Double?
     var strain: Double?
+    /// Health's effort score, 1 to 10 (iOS 18): the person's rating, else the Watch's estimate. Left out when there's none.
+    var effort: Double?
 }
 
 struct EventRow: Codable, Equatable {
@@ -268,7 +270,8 @@ final class DayAggregator {
         }
     }
 
-    func add(workouts list: [HKWorkout]) {
+    /// `effort`: each workout's effort score by its UUID (`Health.efforts`).
+    func add(workouts list: [HKWorkout], effort: [UUID: Double] = [:]) {
         let distanceTypes: [HKQuantityTypeIdentifier] = [.distanceWalkingRunning, .distanceCycling, .distanceSwimming, .distanceWheelchair, .distanceDownhillSnowSports]
         for w in list where !w.writtenBy.isReadDirectly {
             let start = w.startStamp
@@ -296,7 +299,8 @@ final class DayAggregator {
                 distance_m: distance.flatMap { $0.isFinite && $0 > 0 ? $0 : nil },
                 avg_hr: hr?.averageQuantity()?.doubleValue(for: HealthTypes.bpm),
                 max_hr: hr?.maximumQuantity()?.doubleValue(for: HealthTypes.bpm),
-                strain: nil))
+                strain: nil,
+                effort: effort[w.uuid].flatMap { (1...10).contains($0) ? $0 : nil }))
         }
     }
 

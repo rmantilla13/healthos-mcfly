@@ -363,6 +363,7 @@ export function mapWhoop(
       avg_hr: scored ? w.score!.average_heart_rate : null,
       max_hr: scored ? w.score!.max_heart_rate : null,
       strain: scored ? w.score!.strain : null,
+      effort: null,
     });
   }
 

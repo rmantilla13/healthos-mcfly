@@ -50,6 +50,7 @@ const workout = {
   avg_hr: 150,
   max_hr: 172,
   strain: null,
+  effort: 7,
 };
 const sleep = (id: string) => ({
   id,
@@ -116,7 +117,12 @@ test('ingest upserts rows as source apple and replaces a day on re-send', async 
       { source: 'whoop', value: 42 },
     ]);
     assert.equal(await count(db, 'workouts'), 1);
-    assert.equal((await db.query<{ energy_kcal: number }>('SELECT energy_kcal FROM workouts'))[0].energy_kcal, 310);
+    assert.deepEqual(await db.query('SELECT energy_kcal, effort FROM workouts'), [{ energy_kcal: 310, effort: 7 }]);
+
+    // A build from before workout effort sends none: the workout is stored without one.
+    const { effort: _, ...older } = workout;
+    await post(url, { workouts: [older] });
+    assert.deepEqual(await db.query('SELECT effort FROM workouts'), [{ effort: null }]);
 
     // A different source now wins the night: its sleep event replaces the old one for that date.
     await post(url, { events: [sleep('s2')] });
@@ -198,6 +204,8 @@ test('ingest rejects malformed rows and writes nothing from that request', async
     [{ daily: [{ ...good, value: '100' }] }, /daily\[0\]\.value: expected a finite number/],
     [{ workouts: [{ ...workout, start: '2026-10-13 18:00:00' }] }, /workouts\[0\]\.start/],
     [{ workouts: [{ ...workout, duration_min: -1 }] }, /duration_min/],
+    [{ workouts: [{ ...workout, effort: 11 }] }, /workouts\[0\]\.effort: expected a score from 1 to 10/],
+    [{ workouts: [{ ...workout, effort: '7' }] }, /workouts\[0\]\.effort: expected a finite number/],
     [{ events: [{ ...sleep('s1'), kind: 'workout' }] }, /events\[0\]\.kind/],
   ];
   await serve(appFor(db, TOKEN), async (url) => {
@@ -212,7 +220,7 @@ test('ingest rejects malformed rows and writes nothing from that request', async
 
 // What installed apps sent before blood pressure, glucose, mobility, daylight, stand hours, caffeine and water.
 const LEGACY = ['steps', 'active_energy', 'exercise_min', 'distance_km', 'hr_avg', 'hr_min', 'hr_max', 'resting_hr', 'hrv_sdnn', 'hrv_rmssd_watch', 'spo2', 'resp_rate', 'wrist_temp', 'body_temp', 'weight', 'body_fat', 'lean_mass', 'vo2max', 'sleep_hours', 'sleep_in_bed', 'sleep_deep', 'sleep_rem', 'sleep_light', 'sleep_awake'];
-const ADDED = ['blood_pressure_systolic', 'blood_pressure_diastolic', 'glucose', 'walking_speed', 'walking_steadiness', 'walking_asymmetry', 'daylight_min', 'flights', 'stand_hours', 'breathing_disturbances', 'caffeine_mg', 'water_ml'];
+const ADDED = ['blood_pressure_systolic', 'blood_pressure_diastolic', 'glucose', 'walking_speed', 'walking_steadiness', 'walking_asymmetry', 'daylight_min', 'flights', 'stand_hours', 'breathing_disturbances', 'caffeine_mg', 'water_ml', 'resting_energy', 'hr_recovery'];
 
 test('ingest takes the newer daily metrics and lists every metric it accepts', async () => {
   const db = await openStore();

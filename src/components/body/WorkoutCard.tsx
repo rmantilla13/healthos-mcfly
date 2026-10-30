@@ -68,6 +68,7 @@ function Latest({ w, list, s, units, userId }: { w: Workout; list: Workout[]; s:
   const max = num(w.max_hr);
   const kcal = num(w.energy_kcal);
   const strain = num(w.strain);
+  const effort = num(w.effort);
   const sessions = recentSessions(list, w, 6);
   // Suggestions are for a session that ended in the last 18 hours (SUGGESTION_HOURS), by the real clock: for an
   // older one (a past day's, or the latest of a quiet week) they'd be beside the point. Ticks are kept per workout,
@@ -87,6 +88,7 @@ function Latest({ w, list, s, units, userId }: { w: Workout; list: Workout[]; s:
   if (max !== null) stats.push({ label: 'Max heart rate', value: `${fmt(max)} bpm` });
   if (kcal !== null) stats.push({ label: 'Energy', value: `${fmt(kcal)} kcal` });
   if (strain !== null) stats.push({ label: 'Strain', value: `${fmt(strain, 1)} of 21`, title: "WHOOP's strain, on its 0 to 21 scale" });
+  if (effort !== null) stats.push({ label: 'Effort', value: `${fmt(effort)} of 10`, title: "Apple Health's effort score: your own rating, or Apple Watch's estimate" });
 
   return (
     <>
