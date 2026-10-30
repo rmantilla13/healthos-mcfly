@@ -6,6 +6,7 @@ import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { JOURNAL_MAX_CHARS, MOODS, type JournalData, type JournalEntry, type Mood } from '../../shared/journal.ts';
 import type { Status } from '../../shared/types.ts';
 import { Icon } from '../components/Icon.tsx';
+import { JournalOrb } from '../components/JournalOrb.tsx';
 import { PageIntro } from '../components/PageIntro.tsx';
 import { daysBetween, fmtDate, sendJson, useApi, useRoute } from '../lib.ts';
 
@@ -215,7 +216,7 @@ export function Journal({ status }: { status: Status }) {
             </p>
           )}
         </div>
-        <img className="journal-art" src="/figures/journal-gut.webp" alt="" aria-hidden="true" />
+        <JournalOrb />
       </section>
 
       <section className="card journal-history" aria-labelledby="journal-history-title">

@@ -5,6 +5,7 @@ import { useId } from 'react';
 import { type JournalData, MOODS } from '../../../shared/journal.ts';
 import { useApi } from '../../lib.ts';
 import { Icon } from '../Icon.tsx';
+import { JournalOrb } from '../JournalOrb.tsx';
 
 const NEW_ENTRY = '#/journal?new=1';
 
@@ -17,7 +18,7 @@ export function JournalPromptCard() {
   const firstLine = latest?.text.split('\n').find((l) => l.trim())?.trim() ?? '';
   return (
     <section className="card metric-blush home-journal" aria-labelledby={titleId}>
-      <img className="home-journal-art" src="/figures/journal-gut.webp" alt="" aria-hidden="true" />
+      <JournalOrb />
       <div className="home-journal-text">
         <p className="home-journal-eyebrow">Your health journal</p>
         <h2 id={titleId}>How are you feeling today?</h2>

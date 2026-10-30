@@ -501,6 +501,74 @@ final class HomeOtherCardsTests: XCTestCase {
         XCTAssertEqual(JournalPromptCard.Model(try decode(JournalData.self, #"{"today":"2026-10-19","entries":[{"id":"c","date":"2026-10-18","time":"09:00","mood":2,"text":"Yesterday"}]}"#)).button, "Write a check-in")
     }
 
+    /// The journal card's orb is the web's (styles.css's "The journal's orb", home.css): its colours light and dark, the two
+    /// dark blocks alike, where it sits, its loops, and still under Reduce Motion.
+    func testTheJournalOrbIsTheWebs() throws {
+        let css = try web("src/styles.css")
+        let start = try XCTUnwrap(css.range(of: "/* ---------- The journal's orb"))
+        let end = try XCTUnwrap(css.range(of: ".journal-orb-area {", range: start.upperBound..<css.endIndex))
+        let block = css[start.lowerBound..<end.lowerBound]
+        let media = try XCTUnwrap(block.range(of: "@media (prefers-color-scheme: dark)"))
+        let forced = try XCTUnwrap(block.range(of: "/* Forced dark"))
+        func values(_ text: Substring) -> [String: String] {
+            Dictionary(text.matches(of: /--(journal-orb-[a-z]+): ([^;]+);/).map { (String($0.1), String($0.2)) }) { a, _ in a }
+        }
+        let light = values(block[..<media.lowerBound]), dark = values(block[media.lowerBound..<forced.lowerBound])
+        XCTAssertEqual(dark, values(block[forced.lowerBound...]), "the forced dark block repeats the dark one")
+        XCTAssertEqual(Set(light.keys), Set(JournalOrbColors.all.keys).union(["journal-orb-blend"]))
+        XCTAssertEqual(Set(dark.keys), Set(light.keys))
+        for (name, token) in JournalOrbColors.all {
+            XCTAssertEqual(token.light.description, light[name], name)
+            XCTAssertEqual(token.dark.description, dark[name], name)
+        }
+        XCTAssertEqual(light["journal-orb-blend"], "normal")
+        XCTAssertEqual(dark["journal-orb-blend"], "screen", "the swirl's colours add up as light on a dark card")
+
+        // Where it sits on a phone: the card's right 48%, 8% past its edge, the orb 88% of that wide or 78% of the card tall.
+        let home = try web("src/styles/home.css")
+        XCTAssertTrue(home.contains("@media (max-width: 560px) {\n  .home-journal-text {\n    max-width: 66%;\n  }\n  .home-journal .journal-orb-area {\n    right: -8%;\n    width: 48%;\n  }"))
+        XCTAssertTrue(css.contains("--d: min(88cqw, 78cqh);"))
+        XCTAssertTrue(css.contains(".journal-orb-halo {\n  position: absolute;\n  inset: -30%;"))
+        let phone = JournalOrb.place(in: CGSize(width: 362, height: 236))
+        XCTAssertEqual(phone.diameter, 362 * 0.48 * 0.88, accuracy: 0.001, "as wide as its area allows")
+        XCTAssertEqual(phone.center.x, 362 * 0.84, accuracy: 0.001)
+        XCTAssertEqual(phone.center.y, 118)
+        XCTAssertEqual(JournalOrb.place(in: CGSize(width: 600, height: 236)).diameter, 236 * 0.78, accuracy: 0.001, "as tall as the card allows")
+
+        // The loops: their lengths, and each blob's keyframes as the CSS writes them.
+        typealias M = JournalOrbMotion
+        for line in ["animation: journal-orb-breathe \(Int(M.breathePeriod))s ease-in-out infinite;", "animation: journal-orb-halo \(Int(M.breathePeriod))s ease-in-out infinite;",
+                     "animation: journal-orb-spin \(Int(M.spinPeriod))s linear infinite;", "animation: journal-orb-drift-a 17s ease-in-out infinite;",
+                     "animation: journal-orb-drift-b 13s ease-in-out infinite;", "animation: journal-orb-drift-c 21s ease-in-out infinite;",
+                     "animation: journal-orb-drift-b 11s ease-in-out infinite reverse;", "transform: scale(1.035);", "opacity: 0.7;\n    transform: scale(0.95);",
+                     "opacity: 1;\n    transform: scale(1.06);"] {
+            XCTAssertTrue(css.contains(line), line)
+        }
+        func percent(_ v: CGFloat) -> Int { Int((v * 100).rounded()) }
+        func number(_ v: CGFloat) -> String { String(describing: (Double(v) * 100).rounded() / 100) }
+        for (name, keys) in [("a", M.driftA), ("b", M.driftB), ("c", M.driftC)] {
+            let frames = try XCTUnwrap(css.range(of: "@keyframes journal-orb-drift-\(name) {").map { String(css[$0.upperBound...].prefix(400)) })
+            for key in keys where key.at > 0 && key.at < 1 {
+                let line = "\(Int((key.at * 100).rounded()))% {\n    transform: translate(\(percent(key.drift.x))%, \(percent(key.drift.y))%) scale(\(number(key.drift.scale)));"
+                XCTAssertTrue(frames.contains(line), line)
+            }
+        }
+        let rose = JournalOrbMotion.state(at: 17 * 0.33).drift[.rose]
+        XCTAssertEqual(rose?.x ?? 0, 0.22, accuracy: 0.0001, "at its keyframe")
+        XCTAssertEqual(rose?.scale ?? 0, 1.12, accuracy: 0.0001)
+        XCTAssertEqual(JournalOrbMotion.state(at: 4.5).breathe, 1.035, accuracy: 0.0001, "the top of the breath, halfway")
+        XCTAssertNotEqual(JournalOrbMotion.state(at: 100), JournalOrbMotion.state(at: 104), "it moves")
+        // Still: the web's orb with its animations off, the glow full and nothing moved.
+        let still = JournalOrbMotion.state(at: nil)
+        XCTAssertEqual(still.breathe, 1)
+        XCTAssertEqual(still.haloScale, 1)
+        XCTAssertEqual(still.haloOpacity, 1)
+        XCTAssertEqual(still.spin, 0)
+        XCTAssertEqual(still.drift.count, 4)
+        XCTAssertTrue(still.drift.values.allSatisfy { $0 == JournalOrbMotion.Drift() })
+        XCTAssertTrue(css.contains("@media (prefers-reduced-motion: no-preference) {\n  .journal-orb {\n    animation: journal-orb-breathe"))
+    }
+
     func testFoodTotalsAreTheLatestDaysFirstFive() throws {
         let data = try decode(NutritionData.self, #"""
         {"enabled":true,"numbers":"all","today":"2026-10-19","start":"2026-10-13","end":"2026-10-19","apps":["MyFitnessPal"],"app":null,
