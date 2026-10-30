@@ -163,6 +163,19 @@ test("a tile: each person against their own usual, with only what's listed", asy
   assert.ok(!text.includes('@example.com') && !text.includes('61.5'), 'no email or weight');
 });
 
+test("your own Home gets the board's standing for you: today's, with every reason, sharing or not", async () => {
+  const a = (await ana.get('/api/summary')).json.standing;
+  assert.deepEqual(a, { status: 'check', reasons: ['recovery', 'resting_hr', 'sleep'] }, 'all three, not only the first two');
+  assert.deepEqual((await leo.get('/api/summary')).json.standing, { status: 'good', reasons: [] });
+  assert.deepEqual((await owner.get('/api/summary')).json.standing, { status: 'quiet', reasons: [] }, 'no data at all');
+  // Home on an earlier day still shows today's: the journal card asks about today.
+  assert.deepEqual((await ana.get(`/api/summary?date=${back(3)}`)).json.standing, a);
+  // It's your own, so it doesn't depend on sharing.
+  await setUserSetting(db, ids.ana, 'family_sharing', 'off');
+  assert.deepEqual((await ana.get('/api/summary')).json.standing, a);
+  await setUserSetting(db, ids.ana, 'family_sharing', 'on');
+});
+
 test("the avatar is served only between people who share, never the cut-out, and cached briefly", async () => {
   const ok = await leo.get(`/api/family/${ids.ana}/avatar.png`);
   assert.equal(ok.status, 200);

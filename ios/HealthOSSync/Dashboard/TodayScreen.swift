@@ -189,7 +189,7 @@ struct TodayContent: View {
                 if id == "home.nutrition" {
                     TodayNutritionCard(date: summary.date, today: summary.today, read: nutrition)
                 } else {
-                    JournalPromptCard(latest: journal.latest)
+                    JournalPromptCard(latest: journal.latest, standing: summary.standing)
                 }
             }
         // Only the iPhone has these: the day by hour, which opens the Day view, and the cycle's phase.

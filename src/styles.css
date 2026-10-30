@@ -6192,6 +6192,7 @@ html:has(.palette[open]) {
   --journal-orb-shade: rgba(150, 86, 140, 0.28);
   --journal-orb-shine: rgba(255, 255, 255, 0.85);
   --journal-orb-halo: rgba(240, 164, 182, 0.42);
+  --journal-orb-veil: #ece6f4;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
@@ -6207,6 +6208,7 @@ html:has(.palette[open]) {
     --journal-orb-shade: rgba(22, 8, 32, 0.4);
     --journal-orb-shine: rgba(255, 240, 236, 0.65);
     --journal-orb-halo: rgba(222, 104, 150, 0.34);
+    --journal-orb-veil: #3b3453;
   }
 }
 /* Forced dark (data-theme='dark' on <html>): the same as the block above. Change both together. */
@@ -6223,6 +6225,39 @@ html:has(.palette[open]) {
   --journal-orb-shade: rgba(22, 8, 32, 0.4);
   --journal-orb-shine: rgba(255, 240, 236, 0.65);
   --journal-orb-halo: rgba(222, 104, 150, 0.34);
+  --journal-orb-veil: #3b3453;
+}
+
+/* What it shows (data-state, from Summary.standing on Home): how lively it is and how much of each colour comes
+   through, the same in light and dark. Within your usual, or without a state (the Journal page), it's the orb as
+   drawn below; one reading off, cooler and slower; several, calm lavender and slower still; nothing recent or no usual
+   yet, pale and slow. */
+.journal-orb-area[data-state='off'] {
+  --journal-orb-pace: 1.35;
+  --journal-orb-peach-share: 0.5;
+  --journal-orb-rose-share: 0.8;
+  --journal-orb-glow-share: 0.85;
+  --journal-orb-veil-share: 0.16;
+  --journal-orb-halo-share: 0.8;
+}
+.journal-orb-area[data-state='check'] {
+  --journal-orb-pace: 1.7;
+  --journal-orb-peach-share: 0.2;
+  --journal-orb-rose-share: 0.45;
+  --journal-orb-lilac-share: 0.95;
+  --journal-orb-glow-share: 0.7;
+  --journal-orb-veil-share: 0.34;
+  --journal-orb-halo-share: 0.6;
+}
+.journal-orb-area[data-state='quiet'],
+.journal-orb-area[data-state='learning'] {
+  --journal-orb-pace: 2.4;
+  --journal-orb-peach-share: 0.15;
+  --journal-orb-rose-share: 0.25;
+  --journal-orb-lilac-share: 0.35;
+  --journal-orb-glow-share: 0.6;
+  --journal-orb-veil-share: 0.62;
+  --journal-orb-halo-share: 0.4;
 }
 
 /* Where it sits is the page's (home.css, journal.css). Its area is a size container, so the orb fits whichever of its
@@ -6243,7 +6278,8 @@ html:has(.palette[open]) {
   position: absolute;
   inset: -30%;
   border-radius: 50%;
-  background: radial-gradient(closest-side, var(--journal-orb-halo) 0%, var(--journal-orb-halo) 52%, transparent 100%);
+  --journal-orb-halo-now: color-mix(in srgb, var(--journal-orb-halo) calc(var(--journal-orb-halo-share, 1) * 100%), transparent);
+  background: radial-gradient(closest-side, var(--journal-orb-halo-now) 0%, var(--journal-orb-halo-now) 52%, transparent 100%);
 }
 /* The glass ball: lit from inside, the colours swirling in it, then its shine, rim light and a little shade below on
    top. Its very edge is feathered, so it sits in its glow rather than on the card. */
@@ -6273,6 +6309,14 @@ html:has(.palette[open]) {
   position: absolute;
   inset: -12%;
 }
+/* The state's veil over the colours, under the shine: none within your usual, more the further off it is. */
+.journal-orb-veil {
+  position: absolute;
+  inset: 0;
+  background: var(--journal-orb-veil);
+  opacity: var(--journal-orb-veil-share, 0);
+  transition: opacity 1.2s ease;
+}
 /* Soft-edged colour, each fading to nothing at its edge, so no blur filter is needed. */
 .journal-orb-blob {
   position: absolute;
@@ -6280,16 +6324,19 @@ html:has(.palette[open]) {
   height: 58%;
   border-radius: 50%;
   mix-blend-mode: var(--journal-orb-blend);
+  transition: opacity 1.2s ease;
 }
 .journal-orb-blob[data-blob='rose'] {
   top: 4%;
   left: 2%;
   background: radial-gradient(closest-side, var(--journal-orb-rose) 0%, transparent 100%);
+  opacity: var(--journal-orb-rose-share, 1);
 }
 .journal-orb-blob[data-blob='peach'] {
   right: 2%;
   bottom: 6%;
   background: radial-gradient(closest-side, var(--journal-orb-peach) 0%, transparent 100%);
+  opacity: var(--journal-orb-peach-share, 1);
 }
 .journal-orb-blob[data-blob='lilac'] {
   bottom: 2%;
@@ -6297,6 +6344,7 @@ html:has(.palette[open]) {
   width: 62%;
   height: 62%;
   background: radial-gradient(closest-side, var(--journal-orb-lilac) 0%, transparent 100%);
+  opacity: var(--journal-orb-lilac-share, 1);
 }
 .journal-orb-blob[data-blob='glow'] {
   top: 16%;
@@ -6304,29 +6352,31 @@ html:has(.palette[open]) {
   width: 40%;
   height: 40%;
   background: radial-gradient(closest-side, var(--journal-orb-glow) 0%, transparent 100%);
+  opacity: var(--journal-orb-glow-share, 1);
 }
-/* Slow and out of step: the glow breathes, the colours turn and each drifts on its own loop. Still under reduced motion. */
+/* Slow and out of step: the glow breathes, the colours turn and each drifts on its own loop, slower the further off
+   your usual (--journal-orb-pace). Still under reduced motion. */
 @media (prefers-reduced-motion: no-preference) {
   .journal-orb {
-    animation: journal-orb-breathe 9s ease-in-out infinite;
+    animation: journal-orb-breathe calc(9s * var(--journal-orb-pace, 1)) ease-in-out infinite;
   }
   .journal-orb-halo {
-    animation: journal-orb-halo 9s ease-in-out infinite;
+    animation: journal-orb-halo calc(9s * var(--journal-orb-pace, 1)) ease-in-out infinite;
   }
   .journal-orb-swirl {
-    animation: journal-orb-spin 48s linear infinite;
+    animation: journal-orb-spin calc(48s * var(--journal-orb-pace, 1)) linear infinite;
   }
   .journal-orb-blob[data-blob='rose'] {
-    animation: journal-orb-drift-a 17s ease-in-out infinite;
+    animation: journal-orb-drift-a calc(17s * var(--journal-orb-pace, 1)) ease-in-out infinite;
   }
   .journal-orb-blob[data-blob='peach'] {
-    animation: journal-orb-drift-b 13s ease-in-out infinite;
+    animation: journal-orb-drift-b calc(13s * var(--journal-orb-pace, 1)) ease-in-out infinite;
   }
   .journal-orb-blob[data-blob='lilac'] {
-    animation: journal-orb-drift-c 21s ease-in-out infinite;
+    animation: journal-orb-drift-c calc(21s * var(--journal-orb-pace, 1)) ease-in-out infinite;
   }
   .journal-orb-blob[data-blob='glow'] {
-    animation: journal-orb-drift-b 11s ease-in-out infinite reverse;
+    animation: journal-orb-drift-b calc(11s * var(--journal-orb-pace, 1)) ease-in-out infinite reverse;
   }
 }
 @keyframes journal-orb-breathe {

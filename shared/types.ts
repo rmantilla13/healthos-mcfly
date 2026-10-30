@@ -82,7 +82,15 @@ export type Summary = {
   week?: WeekSummary;
   /** Gentle heads-ups about the latest readings. Absent when there are none, or from older servers. */
   flags?: Flag[];
+  /**
+   * Today's readings against your own usual, by the Family board's rule (server/family.ts), for the journal card's
+   * orb. Absent without anything a watch or WHOOP measures, and from older servers.
+   */
+  standing?: Standing;
 };
+
+/** How today's readings stand against your own usual; reasons only with 'off' or 'check'. */
+export type Standing = { status: FamilyStatus; reasons: FamilyReason[] };
 
 export type Flag = { id: string; tone: 'caution' | 'info'; title: string; text: string; page: 'vitals' };
 
