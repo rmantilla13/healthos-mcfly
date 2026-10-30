@@ -6,6 +6,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import express, { type Request, type Response } from 'express';
 import type { AiSource } from '../shared/ai.ts';
 import { type LabResult, matchBiomarker, normalizeName, statusHint } from '../shared/labs.ts';
+import { SPO2_BANDS, spo2Band } from '../shared/metrics.ts';
 import type { Digest, DigestReply, McflyStatus, McflyVisual, NutritionNumbers, Point, Units } from '../shared/types.ts';
 import { platformSettings } from './admin.ts';
 import { AiError, type AiFetch, PROVIDER_LABEL, type ToolResult } from './ai/provider.ts';
@@ -333,7 +334,7 @@ const TOOLS: Tool[] = [
   {
     name: 'get_day_summary',
     description:
-      "The dashboard's summary for one day: heart rate, breathing and temperature with how each compares with the 30 days before, recovery or VO2 max, blood oxygen, HRV against its baseline, last night's sleep, strain or active energy, steps against the goal, that day's timeline (sleep, naps, workouts, mindfulness), the dashboard's insights, and the week so far against the week before.",
+      "The dashboard's summary for one day: heart rate, breathing and temperature with how each compares with the 30 days before, recovery or VO2 max, blood oxygen with its band (normal 95–100%, slightly low under 95%, low 92% or lower; higher is better), HRV against its baseline, last night's sleep, strain or active energy, steps against the goal, that day's timeline (sleep, naps, workouts, mindfulness), the dashboard's insights, and the week so far against the week before.",
     input_schema: {
       type: 'object',
       properties: { date: { type: 'string', description: 'YYYY-MM-DD. Defaults to today.' } },
@@ -357,7 +358,7 @@ const TOOLS: Tool[] = [
             ? { kind: 'WHOOP recovery', ...latest(s.readiness.latest, '%'), average: s.readiness.average === null ? null : round(s.readiness.average), zone: s.readiness.zone }
             : { kind: 'VO2 max', ...latest(s.readiness.latest, 'mL/kg/min'), previous: s.readiness.previous }
           : null,
-        bloodOxygen: s.spo2.latest ? { ...latest(s.spo2.latest, '%'), vsLast30Days: s.spo2.status } : null,
+        bloodOxygen: s.spo2.latest ? { ...latest(s.spo2.latest, '%'), band: SPO2_BANDS[spo2Band(s.spo2.latest.value)].text, vsLast30Days: s.spo2.status } : null,
         hrv: s.hrv.latest
           ? { measure: s.hrv.metric === 'hrv_rmssd' ? 'RMSSD' : 'SDNN', ...latest(s.hrv.latest, 'ms'), baseline: s.hrv.baseline === null ? null : round(s.hrv.baseline), status: s.hrv.status }
           : null,

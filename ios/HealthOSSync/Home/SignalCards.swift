@@ -46,6 +46,35 @@ struct SignalStatus: Equatable {
     static func stale(_ date: String, _ asOf: String) -> String? { date == asOf ? nil : Fmt.day(date) }
 }
 
+/// Blood oxygen's fixed bands (shared/metrics.ts SPO2_BANDS), not the person's usual: higher is better, up to 100%, so
+/// a high reading is never flagged. Cleveland Clinic calls 95–100% normal and says to call your provider at 92% or lower.
+enum Spo2Band: Equatable {
+    case normal, slightlyLow, low
+
+    /// A reading's band, as it shows (to a tenth), so a 94.96 that reads "95.0%" is normal (spo2Band).
+    static func of(_ value: Double) -> Spo2Band {
+        let v = (value * 10).rounded() / 10
+        return v >= 95 ? .normal : v > 92 ? .slightlyLow : .low
+    }
+
+    var text: String {
+        switch self {
+        case .normal: "Normal"
+        case .slightlyLow: "Slightly low"
+        case .low: "Low"
+        }
+    }
+
+    /// Its dot, as a vital's: green, amber, red.
+    var level: VitalLevel {
+        switch self {
+        case .normal: .normal
+        case .slightlyLow: .unusual
+        case .low: .off
+        }
+    }
+}
+
 /// What a signal card shows, worked out from the summary (one per card id), so tests can check every word against
 /// Signals.tsx and VitalCard.tsx.
 struct Signal: Equatable {
@@ -53,7 +82,7 @@ struct Signal: Equatable {
         case none
         /// A smooth line over the days, its area faintly filled, the latest day ringed (Mini.tsx MiniLine).
         case line([Point], color: Color, height: CGFloat)
-        /// Blood oxygen's line on 90 to 100, then where the latest sits on that scale (RangeScale).
+        /// Blood oxygen's line on 90 to 100, then where the latest sits on that scale in its bands (RangeScale).
         case spo2([Point], value: Double)
         /// One dot per night over the usual band (Mini.tsx MiniDots).
         case dots([Point], baseline: Double?)
@@ -109,10 +138,10 @@ struct Signal: Equatable {
     static func spo2(_ s: Summary, variant: MetricCardVariant = .home) -> Signal {
         let l = s.spo2?.latest
         let home = variant == .home
-        // The card calls anything not below the usual range "Normal" (the sheet's status says "at or above" for a high one).
+        // Fixed bands, not the person's usual: higher is better, so a high reading is never flagged.
         let status = l.map { l in
-            SignalStatus(words: s.spo2?.status.map { $0 == "low" ? "Below your range" : "Normal" } ?? "Building baseline",
-                         stale: SignalStatus.stale(l.date, s.date))
+            let band = Spo2Band.of(l.value)
+            return SignalStatus(words: band.text, level: band.level, stale: SignalStatus.stale(l.date, s.date))
         }
         let chart: Chart = if home, let l { .spo2(s.spo2?.series ?? [], value: l.value) } else { .none }
         return Signal(id: "home.spo2", title: "Blood oxygen", tint: .peach, unit: "%",
@@ -374,7 +403,7 @@ struct SignalCard: View {
                 SignalLine(points: points, color: color).frame(height: height)
             case .spo2(let points, let value):
                 SignalLine(points: points, color: Palette.series2, domain: 90...100).frame(height: 44)
-                RangeScale(value: value, range: 90...100).padding(.top, 2)
+                RangeScale(value: value, range: 90...100, zones: [(92, Palette.critical), (95, Palette.warning), (100, Palette.good)]).padding(.top, 2)
             case .dots(let points, let baseline):
                 SignalDots(points: points, baseline: baseline).frame(height: 56)
             case .recovery(let value):
