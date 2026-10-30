@@ -126,7 +126,7 @@ test("each person sees only their own data, on every endpoint", async () => {
   await seed(OWNER_ID, 60);
   await seed(bobId, 80);
   await upsertWorkouts(db, OWNER_ID, [
-    { id: 'w1', source: 'apple', sport: 'Running', start: '2026-10-16T07:00:00-05:00', end: '2026-10-16T07:30:00-05:00', date: day(16), duration_min: 30, energy_kcal: 300, distance_m: 5000, avg_hr: 150, max_hr: 170, strain: null },
+    { id: 'w1', source: 'apple', sport: 'Running', start: '2026-10-16T07:00:00-05:00', end: '2026-10-16T07:30:00-05:00', date: day(16), duration_min: 30, energy_kcal: 300, distance_m: 5000, avg_hr: 150, max_hr: 170, strain: null, effort: null },
   ]);
   await upsertEvents(db, OWNER_ID, [{ id: 'e1', source: 'apple', kind: 'mindful', title: 'Mindfulness', start: '2026-10-16T08:00:00-05:00', end: '2026-10-16T08:10:00-05:00', date: day(16) }]);
   await db.query("INSERT INTO profile_assets (user_id, name, mime, data, updated_at) VALUES ($1, 'cutout.png', 'image/png', $2, 1)", [OWNER_ID, Buffer.from([1, 2, 3])]);

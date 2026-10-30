@@ -66,6 +66,8 @@ export const APPLE_METRICS = new Set([
   'breathing_disturbances',
   'caffeine_mg',
   'water_ml',
+  'resting_energy',
+  'hr_recovery',
 ]);
 
 /**
@@ -186,6 +188,9 @@ export function parseIngest(body: unknown): IngestPayload {
     const r = record(raw, p);
     const duration = num(r.duration_min, `${p}.duration_min`);
     if (duration < 0) fail(`${p}.duration_min`, 'must not be negative');
+    // Sent by builds since workout effort (iOS 18 and later); older ones leave it out.
+    const effort = optNum(r.effort, `${p}.effort`);
+    if (effort !== null && (effort < 1 || effort > 10)) fail(`${p}.effort`, 'expected a score from 1 to 10');
     return {
       id: text(r.id, `${p}.id`),
       source: SOURCE,
@@ -199,6 +204,7 @@ export function parseIngest(body: unknown): IngestPayload {
       avg_hr: optNum(r.avg_hr, `${p}.avg_hr`),
       max_hr: optNum(r.max_hr, `${p}.max_hr`),
       strain: optNum(r.strain, `${p}.strain`),
+      effort,
     };
   });
   const events = list(b, 'events').map((raw, i): EventRow => {

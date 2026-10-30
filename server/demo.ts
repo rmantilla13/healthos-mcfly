@@ -94,6 +94,9 @@ export async function seedDemo(db: Db, userId = OWNER_ID) {
     put(date, 'strain', strain);
     put(date, 'steps', steps);
     put(date, 'active_energy', clamp(steps * 0.042 + (workoutToday ? 260 : 0) + noise(60), 150, 1400));
+    // Without the random stream, so the rest of the demo stays as it was.
+    put(date, 'resting_energy', 1720 + (weight - 81.5) * 14 + 22 * Math.sin(i * 1.7));
+    if (workoutToday) put(date, 'hr_recovery', 24 + 5 * progress + 3 * Math.sin(i * 2.3));
     put(date, 'exercise_min', clamp((workoutToday ? 42 : 12) + noise(10), 0, 140));
     put(date, 'distance_km', steps * 0.00076);
     put(date, 'hr_avg', clamp(rhr + 16 + noise(3), 55, 95));
@@ -136,6 +139,8 @@ export async function seedDemo(db: Db, userId = OWNER_ID) {
         avg_hr: Math.round(k.hr + noise(6)),
         max_hr: Math.round(k.hr + 25 + noise(6)),
         strain: Math.round(clamp(strain - 3 + noise(1.5), 3, 18) * 10) / 10,
+        // From the day's strain, without the random stream, so the rest of the demo stays as it was.
+        effort: k.sport === 'Yoga' ? 3 : Math.round(clamp(strain / 2, 3, 9)),
       });
     }
   }
@@ -154,6 +159,7 @@ export async function seedDemo(db: Db, userId = OWNER_ID) {
     avg_hr: 102,
     max_hr: 118,
     strain: 4.8,
+    effort: null,
   });
 
   const hourly = demoHours(detail, today, daily, workouts);

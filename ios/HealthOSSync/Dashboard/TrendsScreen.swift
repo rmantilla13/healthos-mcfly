@@ -149,8 +149,8 @@ private struct VitalsTrends: View {
     @State private var tempHistory: Trends?
 
     var body: some View {
-        // 13 metrics; the server takes at most 20 per request.
-        TrendsLoader(metrics: ["resting_hr", "hrv_rmssd", "hrv_sdnn", "spo2", "resp_rate", "wrist_temp", "skin_temp", "body_temp", "recovery",
+        // 14 metrics; the server takes at most 20 per request.
+        TrendsLoader(metrics: ["resting_hr", "hrv_rmssd", "hrv_sdnn", "spo2", "resp_rate", "hr_recovery", "wrist_temp", "skin_temp", "body_temp", "recovery",
                                "blood_pressure_systolic", "blood_pressure_diastolic", "glucose", "breathing_disturbances"], days: days) { t in
             let has = { (m: String) in !(t[m]?.isEmpty ?? true) }
             let units = dashboard.units
@@ -163,6 +163,10 @@ private struct VitalsTrends: View {
             if has("hrv_sdnn") { TrendCard(title: "HRV (SDNN)", points: t["hrv_sdnn"]!, format: { "\(Fmt.number($0)) ms" }, note: "Apple Watch") }
             TrendCard(title: "Blood oxygen", points: t["spo2"] ?? [], format: { "\(Fmt.number($0, 1))%" }, color: Palette.series2)
             TrendCard(title: "Respiratory rate", points: t["resp_rate"] ?? [], format: { "\(Fmt.number($0, 1)) rpm" })
+            if has("hr_recovery") {
+                TrendCard(title: "Heart rate recovery", points: t["hr_recovery"]!, format: { "\(Fmt.number($0)) bpm" },
+                          note: "Apple Watch, drop 1 min after a workout", color: Palette.series3)
+            }
             if let tempHistory { TempDeviationCard(trends: tempHistory, days: days, end: dashboard.summary?.today ?? Day.today(), units: units) }
             if has("body_temp") { TrendCard(title: "Body temperature", points: t["body_temp"]!, format: temp) }
             if has("wrist_temp") { TrendCard(title: "Wrist temperature", points: t["wrist_temp"]!, format: temp, note: "Apple Watch, during sleep") }
@@ -264,7 +268,7 @@ private struct ActivityTrends: View {
     @State private var load: Trends?
 
     var body: some View {
-        TrendsLoader(metrics: ["steps", "strain", "active_energy", "exercise_min",
+        TrendsLoader(metrics: ["steps", "strain", "active_energy", "resting_energy", "exercise_min",
                                "walking_speed", "walking_steadiness", "walking_asymmetry", "flights", "stand_hours", "daylight_min"], days: days) { t in
             StepsCard(points: t["steps"] ?? [], days: days, goal: dashboard.stepGoal)
             if let load { WeeklyLoadCard(strain: load["strain"] ?? [], energy: load["active_energy"] ?? [], today: dashboard.summary?.today ?? Day.today()) }
@@ -272,6 +276,9 @@ private struct ActivityTrends: View {
                 TrendCard(title: "Day strain", points: t["strain"]!, format: { Fmt.number($0, 1) }, note: "WHOOP, 0–21", color: Palette.series2, zero: true)
             }
             TrendCard(title: "Active energy", points: t["active_energy"] ?? [], format: { "\(Fmt.number($0)) kcal" }, color: Palette.series2, zero: true)
+            if !(t["resting_energy"]?.isEmpty ?? true) {
+                TrendCard(title: "Resting energy", points: t["resting_energy"]!, format: { "\(Fmt.number($0)) kcal" }, note: "Apple Health, burned at rest")
+            }
             if !(t["exercise_min"]?.isEmpty ?? true) {
                 TrendCard(title: "Exercise minutes", points: t["exercise_min"]!, format: { "\(Fmt.number($0)) min" }, color: Palette.series3, zero: true)
             }
@@ -381,6 +388,7 @@ struct WorkoutListRow: View {
         if let d = workout.distanceM, d > 0 { parts.append(units.distance(d).text(2)) }
         if let hr = workout.avgHr { parts.append("\(Fmt.number(hr)) bpm avg") }
         if let s = workout.strain { parts.append("strain \(Fmt.number(s, 1))") }
+        if let e = workout.effort { parts.append("effort \(Fmt.number(e))/10") }
         return parts.joined(separator: " · ")
     }
 

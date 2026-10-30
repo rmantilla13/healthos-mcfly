@@ -50,10 +50,14 @@ const toGrams = (v: number, unit: string) => (unit === 'mg' ? v / 1000 : unit ==
 const QUANTITIES: Record<string, Quantity> = {
   HKQuantityTypeIdentifierStepCount: { metric: 'steps', agg: 'sum' },
   HKQuantityTypeIdentifierActiveEnergyBurned: { metric: 'active_energy', agg: 'sum', convert: toKcal },
+  // What the body uses at rest; iPhone and Watch both estimate it, so like active energy the day keeps one.
+  HKQuantityTypeIdentifierBasalEnergyBurned: { metric: 'resting_energy', agg: 'sum', convert: toKcal },
   HKQuantityTypeIdentifierAppleExerciseTime: { metric: 'exercise_min', agg: 'sum' },
   HKQuantityTypeIdentifierDistanceWalkingRunning: { metric: 'distance_km', agg: 'sum', convert: toKm },
   HKQuantityTypeIdentifierHeartRate: { metric: 'hr_avg', agg: 'avg' },
   HKQuantityTypeIdentifierRestingHeartRate: { metric: 'resting_hr', agg: 'avg' },
+  // The Watch's drop in heart rate one minute after a workout ends (Health's Cardio Recovery).
+  HKQuantityTypeIdentifierHeartRateRecoveryOneMinute: { metric: 'hr_recovery', agg: 'avg' },
   HKQuantityTypeIdentifierHeartRateVariabilitySDNN: { metric: 'hrv_sdnn', agg: 'avg' },
   // Newer Apple Watch software also records RMSSD. Kept apart from WHOOP's nightly RMSSD: the Watch's
   // short-window readings run far lower (about 6 ms vs 14 ms on the same day), so they don't share a line.
@@ -82,6 +86,15 @@ const QUANTITIES: Record<string, Quantity> = {
 
 /** An hour the Watch counted as stood (Idle is the other value), by name or as the raw value 0. */
 const STAND_HOUR = 'HKCategoryTypeIdentifierAppleStandHour';
+
+/**
+ * Workout effort (iOS 18), 1 to 10: the person's own rating, or the Watch's estimate. The export doesn't say which
+ * workout a score belongs to, so each goes to the workout its time overlaps most (see AppleAggregator.withEffort).
+ */
+const EFFORT_TYPES: Record<string, 'rated' | 'estimated'> = {
+  HKQuantityTypeIdentifierWorkoutEffortScore: 'rated',
+  HKQuantityTypeIdentifierEstimatedWorkoutEffortScore: 'estimated',
+};
 const stood = (v: string | undefined) => v === 'HKCategoryValueAppleStandHourStood' || v === '0';
 
 /**
@@ -404,6 +417,9 @@ export class AppleAggregator {
   private sleep = new Map<string, Map<string, SleepSegment[]>>();
   private mindful: EventRow[] = [];
   private workouts: WorkoutRow[] = [];
+  // Each workout's start and end instants, by id, for matching effort scores to it.
+  private workoutSpans = new Map<string, { start: number; end: number }>();
+  private efforts: { start: number; end: number; value: number; rated: boolean }[] = [];
   private openWorkout: { attrs: Record<string, string>; stats: Record<string, string>[] } | null = null;
   // A cycle record waits for its closing tag: a period's start and protection used are <MetadataEntry> children.
   private openCycle: { attrs: Record<string, string>; meta: Record<string, string> } | null = null;
@@ -439,8 +455,12 @@ export class AppleAggregator {
       this.openCycle = null;
     }
     if (tag.name === 'Workout' && this.openWorkout) {
-      const w = buildWorkout(this.openWorkout.attrs, this.openWorkout.stats, (st) => this.zoned(st));
-      if (w) this.workouts.push(w);
+      const { attrs, stats } = this.openWorkout;
+      const w = buildWorkout(attrs, stats, (st) => this.zoned(st));
+      if (w) {
+        this.workouts.push(w);
+        this.workoutSpans.set(w.id, { start: parseAppleDate(attrs.startDate).ms, end: parseAppleDate(attrs.endDate).ms });
+      }
       this.openWorkout = null;
     }
   }
@@ -457,6 +477,7 @@ export class AppleAggregator {
     }
     if (type === BASAL_TEMP) return this.basalTempRecord(a);
     if (type === STAND_HOUR) return this.standRecord(a);
+    if (Object.hasOwn(EFFORT_TYPES, type)) return this.effortRecord(a, EFFORT_TYPES[type] === 'rated');
     if (Object.hasOwn(NUTRITION_TYPES, type)) return this.nutritionRecord(a, NUTRITION_TYPES[type]);
 
     const q = QUANTITIES[type];
@@ -534,6 +555,34 @@ export class AppleAggregator {
     // Dated by start, like the quantities. Two watches can both log the same hour; it counts once.
     const start = parseAppleDate(a.startDate);
     getOr(this.standHours, localDate(start), () => new Set()).add(localHour(start));
+  }
+
+  private effortRecord(a: Record<string, string>, rated: boolean) {
+    const value = Number(a.value);
+    if (!a.startDate || !Number.isFinite(value) || value < 1 || value > 10) return;
+    const start = parseAppleDate(a.startDate).ms;
+    this.efforts.push({ start, end: a.endDate ? parseAppleDate(a.endDate).ms : start, value, rated });
+  }
+
+  /**
+   * Each score goes to the workout its time overlaps most (a score at the very end still touches it). A workout keeps
+   * the person's own rating over the Watch's estimate, and of two of a kind the one covering more of it.
+   */
+  private withEffort(): WorkoutRow[] {
+    const best = new Map<string, { value: number; rated: boolean; overlap: number }>();
+    for (const e of this.efforts) {
+      let id: string | null = null;
+      let overlap = -1;
+      for (const [wid, w] of this.workoutSpans) {
+        if (e.start > w.end || e.end < w.start) continue;
+        const o = Math.min(e.end, w.end) - Math.max(e.start, w.start);
+        if (o > overlap) [id, overlap] = [wid, o];
+      }
+      if (id === null) continue;
+      const kept = best.get(id);
+      if (!kept || (e.rated && !kept.rated) || (e.rated === kept.rated && overlap > kept.overlap)) best.set(id, { value: e.value, rated: e.rated, overlap });
+    }
+    return this.workouts.map((w) => ({ ...w, effort: best.get(w.id)?.value ?? null }));
   }
 
   private sleepRecord(a: Record<string, string>) {
@@ -707,7 +756,7 @@ export class AppleAggregator {
       const [date, nutrient, ...app] = k.split('|');
       return { date, nutrient: nutrient as Nutrient, source: SOURCE, app: app.join('|'), value };
     });
-    return { daily, hourly, workouts: this.workouts, events, cycle, sleepStages, nutrition };
+    return { daily, hourly, workouts: this.withEffort(), events, cycle, sleepStages, nutrition };
   }
 }
 
@@ -746,6 +795,8 @@ function buildWorkout(a: Record<string, string>, stats: Record<string, string>[]
     avg_hr: hr?.average ? Number(hr.average) : null,
     max_hr: hr?.maximum ? Number(hr.maximum) : null,
     strain: null,
+    // Set once the whole export is read (AppleAggregator.withEffort): a score can come before its workout.
+    effort: null,
   };
 }
 

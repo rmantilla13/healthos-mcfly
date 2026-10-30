@@ -161,7 +161,7 @@ export async function latestDataDate(scope: Scope, demo: boolean, today: string)
   return row?.d ?? null;
 }
 
-const WORKOUT_FIELDS = 'id, source, sport, start, "end", date, duration_min, energy_kcal, distance_m, avg_hr, max_hr, strain';
+const WORKOUT_FIELDS = 'id, source, sport, start, "end", date, duration_min, energy_kcal, distance_m, avg_hr, max_hr, strain, effort';
 
 export async function loadWorkouts(scope: Scope, demo: boolean, from: string, to: string): Promise<Workout[]> {
   return scope.db.query<Workout>(
@@ -353,6 +353,7 @@ export function mergeWorkouts(list: Workout[]): Workout[] {
       avg_hr: w.avg_hr ?? twin.avg_hr,
       max_hr: Math.max(Number(w.max_hr ?? 0), Number(twin.max_hr ?? 0)) || null,
       strain: twin.strain,
+      effort: w.effort ?? twin.effort,
     });
   }
   for (const x of whoop) if (!used.has(x.id)) out.push(x);

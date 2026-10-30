@@ -296,7 +296,7 @@ export function Vitals() {
   // Without the summary (it failed), the trends still show what they have.
   const charted = s ? !!s.latestDataDate : !!summaryError;
   const { data, loading } = useApi<Trends>(
-    charted && day.mode === 'range' ? `/trends?metrics=resting_hr,hrv_rmssd,hrv_sdnn,spo2,resp_rate,wrist_temp,skin_temp,body_temp,recovery&days=${days}` : null,
+    charted && day.mode === 'range' ? `/trends?metrics=resting_hr,hrv_rmssd,hrv_sdnn,spo2,resp_rate,hr_recovery,wrist_temp,skin_temp,body_temp,recovery&days=${days}` : null,
   );
   const t = data ?? {};
   const has = (m: string) => (t[m]?.length ?? 0) > 0;
@@ -350,6 +350,7 @@ export function Vitals() {
               {has('hrv_sdnn') && <Trend title="HRV (SDNN)" points={t.hrv_sdnn} format={(v) => `${fmt(v)} ms`} tickFormat={stepTicks()} unitNote="Apple Watch" />}
               <Trend title="Blood oxygen" points={t.spo2 ?? []} format={(v) => `${fmt(v, 1)}%`} tickFormat={stepTicks()} color="var(--series-2)" />
               <Trend title="Respiratory rate" points={t.resp_rate ?? []} format={(v) => `${fmt(v, 1)} rpm`} tickFormat={stepTicks(1)} />
+              {has('hr_recovery') && <Trend title="Heart rate recovery" points={t.hr_recovery} format={(v) => `${fmt(v)} bpm`} tickFormat={stepTicks()} unitNote="Apple Watch, drop 1 min after a workout" color="var(--series-3)" />}
               {has('body_temp') && <Trend title="Body temperature" points={t.body_temp} format={tf} tickFormat={(v) => fmt(temp(v, units).value, 1)} />}
               {has('wrist_temp') && <Trend title="Wrist temperature" points={t.wrist_temp} format={tf} tickFormat={(v) => fmt(temp(v, units).value, 1)} unitNote="Apple Watch, during sleep" />}
               {has('skin_temp') && <Trend title="Skin temperature" points={t.skin_temp} format={tf} tickFormat={(v) => fmt(temp(v, units).value, 1)} unitNote="WHOOP" />}
@@ -379,7 +380,7 @@ export function Activity({ stepGoal, title, sub = 'Movement from your iPhone and
   const day = useDay(range, 'steps,active_energy');
   const units = useUnits();
   const inRange = day.mode === 'range';
-  const { data, loading } = useApi<Trends>(inRange ? `/trends?metrics=steps,strain,active_energy,exercise_min&days=${days}` : null);
+  const { data, loading } = useApi<Trends>(inRange ? `/trends?metrics=steps,strain,active_energy,resting_energy,exercise_min&days=${days}` : null);
   const { data: ws } = useApi<Workout[]>(inRange ? `/workouts?days=${days}` : null);
   const t = data ?? {};
   const steps = weekly(t.steps ?? [], days);
@@ -438,6 +439,7 @@ export function Activity({ stepGoal, title, sub = 'Movement from your iPhone and
           <div className="grid-2">
             {(t.strain?.length ?? 0) > 0 && <Trend title="Day strain" points={t.strain} format={(v) => fmt(v, 1)} unitNote="WHOOP, 0–21" color="var(--series-2)" zero />}
             <Trend title="Active energy" points={t.active_energy ?? []} format={(v) => `${fmt(v)} kcal`} tickFormat={compact} color="var(--series-2)" zero />
+            {(t.resting_energy?.length ?? 0) > 0 && <Trend title="Resting energy" points={t.resting_energy} format={(v) => `${fmt(v)} kcal`} tickFormat={stepTicks()} unitNote="Apple Health, burned at rest" />}
             {(t.exercise_min?.length ?? 0) > 0 && <Trend title="Exercise minutes" points={t.exercise_min} format={(v) => `${fmt(v)} min`} tickFormat={(v) => fmt(v)} color="var(--series-3)" zero />}
           </div>
           <section className="card">
@@ -456,6 +458,7 @@ export function Activity({ stepGoal, title, sub = 'Movement from your iPhone and
                     <th>Distance</th>
                     <th>Avg HR</th>
                     <th>Strain</th>
+                    <th>Effort</th>
                     <th>Source</th>
                   </tr>
                 </thead>
@@ -471,13 +474,14 @@ export function Activity({ stepGoal, title, sub = 'Movement from your iPhone and
                         <td>{d ? `${fmt(d.value, 2)} ${d.unit}` : '—'}</td>
                         <td>{w.avg_hr ? `${fmt(w.avg_hr)} bpm` : '—'}</td>
                         <td>{w.strain ? fmt(w.strain, 1) : '—'}</td>
+                        <td>{w.effort ? `${fmt(w.effort)}/10` : '—'}</td>
                         <td className="muted">{({ apple: 'Apple Health', whoop: 'WHOOP', 'apple+whoop': 'Apple + WHOOP' } as Record<string, string>)[w.source] ?? 'Demo'}</td>
                       </tr>
                     );
                   })}
                   {ws?.length === 0 && (
                     <tr>
-                      <td colSpan={8} className="muted">
+                      <td colSpan={9} className="muted">
                         No workouts in this range.
                       </td>
                     </tr>

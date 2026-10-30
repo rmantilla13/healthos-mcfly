@@ -78,6 +78,21 @@ final class Health: @unchecked Sendable {
         try await Self.unlessUndetermined({ try await HKSampleQueryDescriptor(predicates: [predicate], sortDescriptors: []).result(for: store) }) ?? []
     }
 
+    /// The effort score of each workout in `window`, by its UUID (iOS 18): Health's most relevant one, which is the person's
+    /// own rating when there is one and the Watch's estimate otherwise. None before effort is asked about; any other error
+    /// fails the sync like a failed read, so the days go up again rather than being marked sent without their effort.
+    func efforts(in window: NSPredicate) async throws -> [UUID: Double] {
+        guard #available(iOS 18.0, *) else { return [:] }
+        let query = HKWorkoutEffortRelationshipQueryDescriptor(predicate: window, anchor: nil, option: .mostRelevant)
+        guard let result = try await Self.unlessUndetermined({ try await query.result(for: store) }) else { return [:] }
+        var out: [UUID: Double] = [:]
+        for r in result.relationships {
+            let score = r.samples?.lazy.compactMap { ($0 as? HKQuantitySample)?.quantity.doubleValue(for: .appleEffortScore()) }.first
+            if let score { out[r.workout.uuid] = score }
+        }
+        return out
+    }
+
     /// Runs a query, returning nil when the person hasn't been asked about that type yet, so one new type
     /// doesn't fail a whole background sync. Every other error still throws.
     static func unlessUndetermined<T>(_ query: () async throws -> T) async throws -> T? {
@@ -105,7 +120,8 @@ final class Health: @unchecked Sendable {
         agg.add(sleep: try await samples(.categorySample(type: HealthTypes.sleep, predicate: window)))
         agg.add(mindful: try await samples(.categorySample(type: HealthTypes.mindful, predicate: window)))
         agg.add(standHours: try await samples(.categorySample(type: HealthTypes.standHour, predicate: window)))
-        agg.add(workouts: try await samples(.workout(window)))
+        let workouts = try await samples(.workout(window))
+        agg.add(workouts: workouts, effort: workouts.isEmpty ? [:] : try await efforts(in: window))
         if agg.sawWhoopSteps { Config.sawWhoopSteps = true }
         var payload = agg.finish()
         if CycleTypes.active {
@@ -157,11 +173,12 @@ final class Health: @unchecked Sendable {
 
     /// Heart rate arrives every few minutes from a Watch: hourly wakes are plenty and save battery. Steps, energy,
     /// distance, flights, daylight, stand hours and walking metrics are hourly at most anyway. Everything else (sleep,
-    /// workouts, mindful, body) is rare, so immediate.
+    /// workouts, mindful, body, heart rate recovery) is rare, so immediate.
     static func deliveryFrequency(_ type: HKSampleType) -> HKUpdateFrequency {
         let hourly: Set<String> = [
             HKQuantityTypeIdentifier.heartRate.rawValue, HKQuantityTypeIdentifier.stepCount.rawValue,
-            HKQuantityTypeIdentifier.activeEnergyBurned.rawValue, HKQuantityTypeIdentifier.distanceWalkingRunning.rawValue,
+            HKQuantityTypeIdentifier.activeEnergyBurned.rawValue, HKQuantityTypeIdentifier.basalEnergyBurned.rawValue,
+            HKQuantityTypeIdentifier.distanceWalkingRunning.rawValue,
             HKQuantityTypeIdentifier.appleExerciseTime.rawValue, HKQuantityTypeIdentifier.respiratoryRate.rawValue,
             HKQuantityTypeIdentifier.flightsClimbed.rawValue, HKQuantityTypeIdentifier.timeInDaylight.rawValue,
             HKQuantityTypeIdentifier.walkingSpeed.rawValue, HKQuantityTypeIdentifier.appleWalkingSteadiness.rawValue,
