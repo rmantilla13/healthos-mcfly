@@ -1,18 +1,6 @@
 /* ---------- Journal (src/pages/Journal.tsx) ---------- */
-/* The composer in the Home card's look (a blush wash, the journal art on the right), then earlier check-ins by day,
+/* The composer in the Home card's look (a blush wash, the journal's orb on the right), then earlier check-ins by day,
    and the privacy line. Lines of writing are kept to a readable length however wide the page is. */
-:root {
-  --journal-art-opacity: 0.92;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    --journal-art-opacity: 0.42;
-  }
-}
-/* Forced dark (data-theme='dark'): the same values as the block above. Change both together. */
-:root[data-theme='dark'] {
-  --journal-art-opacity: 0.42;
-}
 
 .page.journal-page {
   gap: 18px;
@@ -40,18 +28,13 @@
   min-width: 0;
   max-width: 760px;
 }
-.journal-art {
+/* The orb (JournalOrb.tsx) beside the words, as tall as they are, a little smaller in a narrow window. */
+.journal-compose .journal-orb-area {
   flex: none;
-  align-self: flex-end;
-  width: 168px;
-  height: auto;
-  margin: -8px -6px -24px auto;
-  opacity: var(--journal-art-opacity);
-  /* Fades out at the edges, so the figure sits in the wash instead of on it (in dark mode too). */
-  -webkit-mask-image: radial-gradient(70% 62% at 50% 42%, #000 55%, transparent 100%);
-  mask-image: radial-gradient(70% 62% at 50% 42%, #000 55%, transparent 100%);
-  pointer-events: none;
-  user-select: none;
+  align-self: stretch;
+  width: clamp(150px, 26%, 200px);
+  min-height: 180px;
+  margin: -12px -10px -12px auto;
 }
 .journal-moods {
   display: flex;
@@ -235,7 +218,7 @@
   .card.journal-compose {
     padding: 18px 16px 18px;
   }
-  .journal-art {
+  .journal-compose .journal-orb-area {
     display: none;
   }
   /* All five fit on one line of a phone. */

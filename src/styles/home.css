@@ -231,7 +231,7 @@
   white-space: nowrap;
 }
 
-/* The journal card: its words on the left, the art bleeding off the right edge. */
+/* The journal card: its words on the left, the orb (JournalOrb.tsx) on the right, its glow running off the edge. */
 .home-journal {
   position: relative;
   display: flex;
@@ -239,21 +239,13 @@
   gap: 16px;
   overflow: hidden;
 }
-.home-journal-art {
+/* The orb's area: the card's right half, running a little past its edge. */
+.home-journal .journal-orb-area {
   position: absolute;
-  top: 50%;
-  right: -2%;
-  height: 112%;
-  width: auto;
-  max-width: 52%;
-  object-fit: contain;
-  transform: translateY(-50%);
-  pointer-events: none;
-  /* Fades into the card on the text side and at the bottom, so it reads as part of the card rather than a picture on it. */
-  -webkit-mask-image: linear-gradient(to right, transparent 0%, #000 28%), linear-gradient(to top, transparent 0%, #000 22%);
-  -webkit-mask-composite: source-in;
-  mask-image: linear-gradient(to right, transparent 0%, #000 28%), linear-gradient(to top, transparent 0%, #000 22%);
-  mask-composite: intersect;
+  top: 0;
+  right: -3%;
+  bottom: 0;
+  width: 50%;
 }
 .home-journal-text {
   position: relative;
@@ -296,20 +288,6 @@
   align-self: flex-start;
   margin-top: auto;
 }
-@media (prefers-color-scheme: dark) {
-  /* The stand-in art is drawn for a light card: a little dimmer on a dark one. */
-  :root:not([data-theme='light']) .home-journal-art {
-    filter: brightness(0.8);
-    opacity: 0.75;
-  }
-}
-/* Forced dark (data-theme='dark' on <html>): the same as the block above. Change both together. */
-/* The stand-in art is drawn for a light card: a little dimmer on a dark one. */
-:root[data-theme='dark'] .home-journal-art {
-  filter: brightness(0.8);
-  opacity: 0.75;
-}
-
 /* The optional widgets keep their look; the week so far reads as a paragraph card. */
 .home-week .week-summary {
   max-width: none;
@@ -357,8 +335,9 @@
   .home-journal-text {
     max-width: 66%;
   }
-  .home-journal-art {
-    max-width: 46%;
+  .home-journal .journal-orb-area {
+    right: -8%;
+    width: 48%;
   }
 }
 
