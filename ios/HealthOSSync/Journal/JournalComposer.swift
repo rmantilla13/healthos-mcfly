@@ -1,35 +1,48 @@
 import SwiftUI
 
 /// A new check-in (.journal-compose): "Today, Friday 9:41 PM", the five optional moods, the words, and Save check-in,
-/// on the blush wash. Where the web is wider than 640 (the medium band: the inner display upright) the journal art sits
+/// on the blush wash. Where the web is wider than 640 (the medium band: the inner display upright) the journal's orb sits
 /// on the right and the card is roomier; in the compact band (every iPhone, the outer display, a pane of the open Duo,
-/// Split View) it's the web's phone composer, without the art. The draft is the model's, in memory only.
+/// Split View) it's the web's phone composer, without the orb. The draft is the model's, in memory only.
 struct JournalComposer: View {
     let model: JournalModel
     var focused: FocusState<Bool>.Binding
     /// The person's time zone (settings.timeZone), for the line over the moods.
     let timeZone: String?
     @Environment(\.duoBand) private var band
+    /// The card's width inside its padding, for the orb's share of it.
+    @State private var inner: CGFloat = 600
 
     /// The web above 640 px.
     private var roomy: Bool { band >= .medium }
 
+    /// The orb's room beside the words (journal.css: clamp(150px, 26%, 200px) of the card's width inside its padding).
+    static func artWidth(_ inner: CGFloat) -> CGFloat { min(200, max(150, inner * 0.26)) }
+
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
-        HStack(alignment: .bottom, spacing: 24) {
+        let art = Self.artWidth(inner)
+        HStack(spacing: 24) {
             form
                 // .journal-compose-body's 760 (design §2.8): every Duo width undercuts it.
                 .frame(maxWidth: 760, alignment: .leading)
-            if roomy {
-                JournalArt()
-                    .padding(.top, -8)
-                    .padding(.trailing, -6)
-                    .padding(.bottom, -22)
-            }
+            if roomy { Color.clear.frame(width: art) }
         }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { inner = $0 }
         .padding(.horizontal, roomy ? 26 : 16)
         .padding(.vertical, roomy ? 22 : 18)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            // The orb in that room, as tall as the words and a little past them (margin: -12px -10px -12px auto), under
+            // the words and trimmed by the card, as the web's .card hides what runs over.
+            if roomy {
+                JournalArt(width: art)
+                    .padding(.vertical, 10)
+                    .padding(.trailing, 16)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+                    .clipShape(shape)
+            }
+        }
         .background { CardSurface(tint: .blush, shape: shape) }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(JournalWords.newCheckIn)
@@ -89,28 +102,22 @@ struct JournalComposer: View {
     }
 }
 
-/// The journal art (.journal-art): 168 wide at the composer's bottom right, fading out at its edges so the figure sits
-/// in the wash, dimmer in dark mode (--journal-art-opacity). Decoration only. The open Duo's leading pane shows it
-/// larger under the composer.
+/// The journal's art, its orb (JournalOrb, as .journal-orb-area): beside the composer where the web is wider than 640,
+/// and under the empty line on the open Duo's trailing side. The orb fits whichever of its room's width and height is
+/// less (88% of the width or 78% of the height); its glow runs past the room. Decoration only.
 struct JournalArt: View {
-    var width: CGFloat = 168
-    var maxHeight: CGFloat = .infinity
-    @Environment(\.colorScheme) private var scheme
+    var width: CGFloat = 200
+    /// nil: as tall as it's given.
+    var height: CGFloat? = nil
 
     var body: some View {
-        Image("JournalGut")
-            .resizable()
-            .scaledToFit()
-            // radial-gradient(70% 62% at 50% 42%, #000 55%, transparent 100%)
-            .mask {
-                EllipticalGradient(stops: [.init(color: .black, location: 0.55), .init(color: .clear, location: 1)],
-                                   center: UnitPoint(x: 0.5, y: 0.42), startRadiusFraction: 0, endRadiusFraction: 1.32)
-            }
-            .frame(width: maxHeight.isFinite ? nil : width)
-            .frame(maxWidth: width, maxHeight: maxHeight)
-            .opacity(scheme == .dark ? 0.42 : 0.92)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
+        GeometryReader { geo in
+            JournalOrb(diameter: min(geo.size.width * 0.88, geo.size.height * 0.78))
+                .position(x: geo.size.width / 2, y: geo.size.height / 2)
+        }
+        .frame(width: width, height: height)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }
 

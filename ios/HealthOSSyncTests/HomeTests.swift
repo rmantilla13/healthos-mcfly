@@ -308,7 +308,6 @@ final class HomeFigureCalloutTests: XCTestCase {
         XCTAssertGreaterThan(heart.label.y, man.spots[.breathing]!.label.y)
         XCTAssertEqual(man.asset, "DigitalMan")
         XCTAssertNotNil(UIImage(named: "DigitalMan"))
-        XCTAssertNotNil(UIImage(named: "JournalGut"))
     }
 
     /// A number as Figure.tsx writes it: 0.0 is "0.0", others without trailing zeros.
@@ -541,6 +540,11 @@ final class HomeOtherCardsTests: XCTestCase {
         XCTAssertEqual(phone.center.x, 362 * 0.84, accuracy: 0.001)
         XCTAssertEqual(phone.center.y, 118)
         XCTAssertEqual(JournalOrb.place(in: CGSize(width: 600, height: 236)).diameter, 236 * 0.78, accuracy: 0.001, "as tall as the card allows")
+        // Beside the Journal composer above 640: clamp(150px, 26%, 200px) of the card inside its padding.
+        XCTAssertTrue(try web("src/styles/journal.css").contains(".journal-compose .journal-orb-area {\n  flex: none;\n  align-self: stretch;\n  width: clamp(150px, 26%, 200px);"))
+        XCTAssertEqual(JournalComposer.artWidth(400), 150)
+        XCTAssertEqual(JournalComposer.artWidth(700), 182, accuracy: 0.001)
+        XCTAssertEqual(JournalComposer.artWidth(900), 200)
 
         // The loops: their lengths, and each blob's keyframes as the CSS writes them.
         typealias M = JournalOrbMotion

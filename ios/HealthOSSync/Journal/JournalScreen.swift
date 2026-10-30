@@ -120,7 +120,7 @@ private struct JournalContent: View {
                         DuoPanes(anchor: .secondary, leadScrolls: true) {
                             JournalRows {
                                 lead
-                                // The privacy line and Delete all under the composer, and the journal art (the web's,
+                                // The privacy line and Delete all under the composer, and the journal's orb (the web's,
                                 // beside its composer above 640) below them: the leading side used, not left empty.
                                 if !historyEmpty { privacyAndArt }
                             }
@@ -163,12 +163,12 @@ private struct JournalContent: View {
             .id(JournalRow.composer)
     }
 
-    /// The privacy line and Delete all, then the journal art, in whichever pane has the room.
+    /// The privacy line and Delete all, then the journal's orb, in whichever pane has the room.
     @ViewBuilder private var privacyAndArt: some View {
         JournalPrivacy(model: model)
             .id(JournalRow.privacy)
         // Kept to what's left of the pane at the default text sizes, so the side stays put.
-        JournalArt(width: 200, maxHeight: 160)
+        JournalArt(width: 200, height: 160)
             .frame(maxWidth: .infinity)
             .padding(.top, 4)
     }
