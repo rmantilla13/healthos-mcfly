@@ -3,7 +3,7 @@ import SwiftUI
 // The figure beside your vitals, in the perspective you chose (src/components/Figure.tsx): your own photo ('portrait',
 // OrganicHome.swift's PortraitFigure), the digital human ('digital', or a portrait without a photo yet: DigitalFigure.swift),
 // or none at all ('stats'). Each callout points at its place on the body with the latest reading, animated by it.
-// Home's set is blood oxygen and heart on the left, breathing on the right; Body shows the same.
+// Home's set is blood oxygen, breathing and heart, each label beside its own dot; Body shows the same.
 
 /// A callout's vital (Figure.tsx CalloutKey).
 enum CalloutKey: String, CaseIterable, Hashable {
@@ -209,8 +209,11 @@ struct CalloutMark: View {
 /// dot (styles.css .callout: 11px name, 18px value, 11px status).
 struct CalloutLabel: View {
     let text: CalloutText
-    /// The digital human's labels stay on one line, each on a soft plate in dark mode.
+    /// The digital human's labels stay on one line.
     var digital = false
+    /// On a soft halo of the page's colour (light) or a dark glass plate (dark), so a label over an arm, hair or the
+    /// photo stays readable: the digital human's always, the photo's too.
+    var backed = false
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
@@ -238,7 +241,17 @@ struct CalloutLabel: View {
         .fixedSize(horizontal: digital, vertical: true)
         // Beyond this the words no longer fit beside the figure; VoiceOver and the cards have them in full.
         .dynamicTypeSize(...DynamicTypeSize.xxLarge)
-        .modifier(LabelBacking(digital: digital, dark: scheme == .dark, solid: reduceTransparency))
+        .modifier(LabelBacking(digital: digital || backed, dark: scheme == .dark, solid: reduceTransparency))
+    }
+}
+
+/// A callout's leader line, on the figure and on a photo: ink-3 on a 3pt edge of the page's colour, so it reads over
+/// the page, the porcelain figure, skin and hair, in both themes (the web's single light line all but vanished on the
+/// light page beside a photo).
+enum CalloutLine {
+    static func stroke(_ line: Path, in ctx: inout GraphicsContext) {
+        ctx.stroke(line, with: .color(Palette.page.opacity(0.85)), style: StrokeStyle(lineWidth: 3, lineCap: .round))
+        ctx.stroke(line, with: .color(Palette.ink3), style: StrokeStyle(lineWidth: 1, lineCap: .round))
     }
 }
 

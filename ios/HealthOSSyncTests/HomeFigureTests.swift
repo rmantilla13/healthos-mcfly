@@ -250,7 +250,7 @@ final class ScrubVitalsFixTests: XCTestCase {
 
     /// A cut-out 3:4, the face high in the middle, the shoulders at 36%, and an outline: the head narrow above the
     /// shoulders, the body below them, with room for a label on either side.
-    private func photo(outline: Bool = true, shoulderY: Double? = 0.36) throws -> PhotoMeta {
+    private func photo(outline: Bool = true, shoulderY: Double? = 0.36, heartX: Double = 0.56) throws -> PhotoMeta {
         let rows = (0..<100).map { i -> [Double] in
             let y = (Double(i) + 0.5) / 100
             if y < 0.06 { return [1, 0] }
@@ -258,7 +258,7 @@ final class ScrubVitalsFixTests: XCTestCase {
             return [0.3, 0.7]
         }
         var json: [String: Any] = ["version": 1, "width": 900, "height": 1200, "face": [0.38, 0.06, 0.24, 0.24],
-                                   "dots": ["temp": [0.5, 0.1], "breathing": [0.5, 0.3], "heart": [0.56, 0.45]]]
+                                   "dots": ["temp": [0.5, 0.1], "breathing": [0.5, 0.3], "heart": [heartX, 0.45]]]
         if let shoulderY { json["shoulderY"] = shoulderY }
         if outline { json["outline"] = rows }
         return try JSONDecoder().decode(PhotoMeta.self, from: JSONSerialization.data(withJSONObject: json))
@@ -276,15 +276,49 @@ final class ScrubVitalsFixTests: XCTestCase {
         XCTAssertEqual(PhotoLabels.shoulderY(try photo(shoulderY: nil)), 0.324, accuracy: 1e-9)
     }
 
-    func testHomesLabelsGoBloodOxygenAndHeartLeftBreathingRightTopToBottom() throws {
+    /// Each label beside its own dot, so no line crosses the body: blood oxygen's on its shoulder (the left here), the
+    /// heart's on the chest's side (the right), and the middle's dots on the side with fewer, the right on a tie.
+    func testEachLabelGoesOnItsDotsSideTopToBottom() throws {
         let dots = try XCTUnwrap(PhotoLabels.dots(try photo()))
         let slots = PhotoLabels.slots(dots, callouts: CalloutKey.home)
         XCTAssertEqual(slots.map(\.key), [.breathing, .spo2, .heart], "by their dots, top to bottom")
-        XCTAssertEqual(slots.map(\.left), [false, true, true])
-        // Elsewhere (temperature, breathing, heart): breathing on the left, heart on the right.
+        XCTAssertEqual(slots.map(\.left), [false, true, false])
+        // Elsewhere (temperature, breathing, heart): the forehead's on the left, the empty side, then breathing right.
         let standard = PhotoLabels.slots(dots, callouts: CalloutKey.standard)
         XCTAssertEqual(standard.map(\.key), [.temp, .breathing, .heart])
-        XCTAssertEqual(standard.map(\.left), [true, true, false])
+        XCTAssertEqual(standard.map(\.left), [true, false, false])
+        // A heart on the photo's left (a mirrored selfie): its label goes left too, and blood oxygen's right.
+        let mirrored = try XCTUnwrap(PhotoLabels.dots(try photo(heartX: 0.44)))
+        let other = PhotoLabels.slots(mirrored, callouts: CalloutKey.home)
+        XCTAssertEqual(Dictionary(uniqueKeysWithValues: other.map { ($0.key, $0.left) }), [.heart: true, .spo2: false, .breathing: false])
+    }
+
+    /// In a figure wider than its photo (the open Duo's leading pane), the photo is centred, its dots and outline move
+    /// with it, and the labels use the page beside it: none covers the body, and each stays nearer its dot.
+    func testAWiderFigureGivesTheLabelsThePageBesideThePhoto() throws {
+        let photo = try photo()
+        let dots = try XCTUnwrap(PhotoLabels.dots(photo))
+        let (w, h) = (300.0, 300.0 * 4 / 3)
+        let frame = PhotoLabels.Frame(offset: 70, photoWidth: w, width: 440)
+        XCTAssertEqual(frame.x(0), 70.0 / 440, accuracy: 1e-9)
+        XCTAssertEqual(frame.x(1), 370.0 / 440, accuracy: 1e-9)
+        XCTAssertEqual(frame.outline([[1, 0]]), [[1, 0]], "an empty row stays empty")
+        let sizes: [CalloutKey: CGSize] = [.spo2: CGSize(width: 96, height: 56), .breathing: CGSize(width: 96, height: 56), .heart: CGSize(width: 96, height: 56)]
+        let slots = PhotoLabels.slots(dots, callouts: CalloutKey.home)
+        let inside = PhotoLabels.place(photo: photo, dots: dots, slots: slots, sizes: sizes, width: w, height: h)
+        let wide = PhotoLabels.place(outline: frame.outline(PhotoLabels.outline(photo)), dots: frame.dots(dots), slots: slots, sizes: sizes, width: 440, height: h)
+        let rows = frame.outline(PhotoLabels.outline(photo))
+        for p in wide {
+            let left = p.left ? p.x - p.w : p.x, right = p.left ? p.x : p.x + p.w
+            XCTAssertGreaterThanOrEqual(left, -1e-9)
+            XCTAssertLessThanOrEqual(right, 1 + 1e-9)
+            let span = Array(rows[Int((p.y * 100).rounded(.down))..<min(100, Int(((p.y + p.h) * 100).rounded(.up)))])
+            if p.left { XCTAssertLessThanOrEqual(right, (span.map { $0[0] }.min() ?? 1) + 1e-9, "\(p.key) clear of the body") }
+            else { XCTAssertGreaterThanOrEqual(left, (span.map { $0[1] }.max() ?? 0) - 1e-9, "\(p.key) clear of the body") }
+            let dotY = Double(try XCTUnwrap(dots[p.key]).y)
+            let before = try XCTUnwrap(inside.first { $0.key == p.key })
+            XCTAssertLessThanOrEqual(abs(p.y + p.h / 2 - dotY), abs(before.y + before.h / 2 - dotY) + 0.006, "\(p.key) no further from its dot")
+        }
     }
 
     /// No label covers the silhouette's outline on its rows, or another label on its side; all stay in the figure.

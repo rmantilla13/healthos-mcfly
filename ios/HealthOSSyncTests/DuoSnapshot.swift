@@ -238,15 +238,20 @@ enum DuoSnapshot {
     }
 
     /// Draws `view` as the Duo shows it in `state`, and writes `<name>-<state>-<light|dark>[-<size>].png` when asked.
-    /// Asserts only that something was drawn.
+    /// Asserts that something was drawn, and on the open Duo in landscape that the leading pane didn't have to scroll.
     @discardableResult
     static func draw(_ view: some View, as state: DuoState, dark: Bool = false, typeSize: DynamicTypeSize = .large, name: String,
                      file: StaticString = #filePath, line: UInt = #line) async throws -> UIImage {
+        DuoStillPaneLog.scrolled = 0
         let host = try await DuoHost(view, as: state, dark: dark, typeSize: typeSize)
         defer { host.close() }
         let image = host.image()
         write(image, name: name, state: state, dark: dark, typeSize: typeSize)
         XCTAssertEqual(image.size, state.size, "\(name) \(state)", file: file, line: line)
+        // The open Duo's leading pane stays put: what a page puts there fits it, short of the accessibility sizes.
+        if case .innerLandscape = state, !typeSize.isAccessibilitySize {
+            XCTAssertEqual(DuoStillPaneLog.scrolled, 0, "\(name) \(state): the leading pane scrolls at \(typeSize)", file: file, line: line)
+        }
         return image
     }
 
@@ -296,9 +301,10 @@ final class DuoKitTests: XCTestCase {
         XCTAssertEqual(offenders.count, 1, "\(offenders)")
     }
 
-    /// Page tabs that overflow the leading side scroll there (§2.4): a tab the row clips at the side's edge isn't on the
-    /// fold, because only what a sideways row shows counts. The review's two cases: AX3 with the bar trailing, and the
-    /// bar leading at default text; and the bar leading at AX3 with the fold active.
+    /// Page tabs too many for one row on the leading side take more rows there instead of scrolling (§2.4 had them
+    /// scroll, but a scrolled row leaves the next tab's frame on the fold), so every tab is in full view on the leading
+    /// side. The review's two cases: AX3 with the bar trailing, and the bar leading at default text; and the bar leading
+    /// at AX3 with the fold active.
     func testClippedPageTabsAreNotOnTheFold() async throws {
         let tabs = ["Overview", "Metabolism", "Heart", "Activity", "Composition", "Recovery"].map { PageTab(id: $0, label: $0) }
         let page = DuoPage { _ in
@@ -315,7 +321,14 @@ final class DuoKitTests: XCTestCase {
         for (state, size) in cases {
             let host = try await DuoHost(page, as: state, typeSize: size)
             defer { host.close() }
-            XCTAssertFalse(host.sidewaysScrollers().isEmpty, "the tabs overflow and scroll in \(state) at \(size)")
+            // Too many for one row on the leading side, they take more rows there rather than scrolling past the fold.
+            XCTAssertTrue(host.sidewaysScrollers().isEmpty, "the tabs wrap, not scroll, in \(state) at \(size)")
+            let band = try XCTUnwrap(DuoFoldAssertions.band(state))
+            let elements = try await host.elements()
+            for tab in tabs {
+                let pill = try XCTUnwrap(elements.first { $0.accessibilityLabel == tab.label }, "\(tab.label) in \(state) at \(size)")
+                XCTAssertLessThanOrEqual(pill.accessibilityFrame.maxX, band.lowerBound + 0.5, "\(tab.label) in \(state) at \(size)")
+            }
             try await DuoFoldAssertions.assertNothingTappableOnTheFold(in: host)
         }
     }

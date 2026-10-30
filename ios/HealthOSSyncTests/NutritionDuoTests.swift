@@ -211,19 +211,14 @@ final class NutritionDuoTests: XCTestCase {
     /// The conversation fills its pane on the open Duo: the leading pane doesn't scroll, the thread does inside it, and
     /// the composer sits at the pane's foot, clear of the fold.
     func testTheConversationIsPinnedInItsPane() async throws {
+        DuoStillPaneLog.scrolled = 0
         let host = try await DuoHost(try drawn(.today), as: .innerLandscape())
         defer { host.close() }
         let composer = try XCTUnwrap(Self.composer(in: host.window))
         let frame = composer.convert(composer.bounds, to: host.window)
         XCTAssertLessThan(frame.maxX, 475.5 - DuoFold.clearance, "the composer is on the leading side")
         XCTAssertGreaterThan(frame.maxY, host.window.bounds.height - 34 - 200, "the composer is at the pane's foot: \(frame)")
-        let panes = Self.scrollViews(in: host.window).filter {
-            let f = $0.convert($0.bounds, to: host.window)
-            return f.minX < 100 && f.height > 300 && !($0 is UITextView)
-        }
-        let pane = try XCTUnwrap(panes.max { $0.bounds.height < $1.bounds.height }, "the leading pane")
-        let room = pane.bounds.height - pane.adjustedContentInset.top - pane.adjustedContentInset.bottom
-        XCTAssertLessThanOrEqual(pane.contentSize.height, room + 1, "the leading pane has nothing to scroll")
+        XCTAssertEqual(DuoStillPaneLog.scrolled, 0, "the leading pane stays put: only the thread scrolls, inside its card")
     }
 
     /// The range views and the Log persist across every band change (P14): the view chosen stays, nothing is read

@@ -240,7 +240,9 @@ private struct ProfileLead: View {
                     }
                 }
             } else {
-                ProfileThisIPhone(confirmSample: $confirmSample, confirmReupload: $confirmReupload)
+                // Nobody's signed in: the avatar's place and the name's, with This iPhone's cards on the trailing side,
+                // which scrolls (this side doesn't).
+                ProfileIdentity()
             }
         }
         .padding(.vertical, 16)
@@ -321,6 +323,12 @@ private struct ProfileColumns: View {
                     .id(ProfileRowID.portraits)
                 VStack(alignment: .leading, spacing: 14) {
                     ProfilePaneHeading("This iPhone").padding(.top, 8)
+                    ProfileThisIPhoneGrid(confirmSample: $confirmSample, confirmReupload: $confirmReupload)
+                }
+                .id(ProfileRowID.iPhone)
+            } else {
+                VStack(alignment: .leading, spacing: 14) {
+                    ProfilePaneHeading("This iPhone")
                     ProfileThisIPhoneGrid(confirmSample: $confirmSample, confirmReupload: $confirmReupload)
                 }
                 .id(ProfileRowID.iPhone)

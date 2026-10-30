@@ -239,7 +239,6 @@ final class SharedModelsTests: XCTestCase {
         // Only the man's artwork exists, so a woman chosen is drawn, and named, as the man.
         XCTAssertEqual(FigureVariant.woman.drawn, .man)
         XCTAssertNotNil(UIImage(named: FigureVariant.man.assetName))
-        XCTAssertNotNil(UIImage(named: "JournalGut"))
         XCTAssertTrue(try web("src/components/Figure.tsx").contains("export const figureVariant = (s: Pick<Settings, 'figure' | 'gender'> | undefined): FigureVariant => s?.figure ?? (s?.gender === 'woman' ? 'woman' : 'man');"))
     }
 

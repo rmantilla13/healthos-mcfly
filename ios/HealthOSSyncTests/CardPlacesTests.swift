@@ -40,12 +40,15 @@ final class CardPlacesTests: XCTestCase {
     }
 
     func testSleepPlaces() {
-        XCTAssertEqual(Cards.ids(in: .sleep), ["sleep.total", "sleep.score", "sleep.efficiency", "sleep.stages"])
+        XCTAssertEqual(Cards.ids(in: .sleep), ["sleep.total", "sleep.score", "sleep.efficiency", "sleep.rhr", "sleep.stages", "sleep.insights", "sleep.timeline"])
     }
 
     func testBodyPlaces() {
-        // Nothing of the Body overview in the app yet.
-        XCTAssertTrue(Cards.all.filter { $0.page == .body }.allSatisfy { $0.place == nil })
+        // Every Body card is on the Body page's Overview, in the registry's order; nothing on its other tabs.
+        let body = Cards.all.filter { $0.page == .body }.map(\.id)
+        XCTAssertEqual(body.count, 14)
+        XCTAssertEqual(Cards.ids(in: CardPlace(.body, tab: "overview")), body)
+        XCTAssertTrue(body.allSatisfy { Cards.card($0)?.place?.label == "Body · Overview" })
         XCTAssertTrue(Cards.ids(in: CardPlace(.body)).isEmpty)
         XCTAssertTrue(Cards.ids(in: .bodyActivity).isEmpty)
     }

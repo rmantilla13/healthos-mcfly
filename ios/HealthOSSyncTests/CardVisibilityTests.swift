@@ -105,7 +105,7 @@ final class CardVisibilityTests: XCTestCase {
         // There the sleep score still hides sleep efficiency too, as before it had its card, and keeps that server's name.
         let d = try dashboard(hidden: ["sleep.score"], shown: nil)
         XCTAssertFalse(d.cardShown("sleep.efficiency"))
-        XCTAssertEqual(Cards.visible(Cards.ids(in: .sleep), hidden: d.cardsOff), ["sleep.total", "sleep.stages"])
+        XCTAssertEqual(Cards.visible(Cards.ids(in: .sleep), hidden: d.cardsOff), ["sleep.total", "sleep.rhr", "sleep.stages", "sleep.insights", "sleep.timeline"])
         XCTAssertTrue(try dashboard(hidden: [], shown: nil).cardShown("sleep.efficiency"))
         let score = try XCTUnwrap(Cards.card("sleep.score"))
         XCTAssertEqual(Cards.label(score, optionalCards: false), "Sleep score")
@@ -250,12 +250,12 @@ final class CardVisibilityTests: XCTestCase {
 
     func testSleepEfficiencyIsItsOwnCard() throws {
         let sleep = Cards.ids(in: .sleep)
-        XCTAssertEqual(Cards.visible(sleep, hidden: try dashboard(hidden: ["sleep.efficiency"], shown: []).cardsOff), ["sleep.total", "sleep.score", "sleep.stages"])
-        XCTAssertEqual(Cards.visible(sleep, hidden: try dashboard(hidden: ["sleep.score"], shown: []).cardsOff), ["sleep.total", "sleep.efficiency", "sleep.stages"])
+        XCTAssertEqual(Cards.visible(sleep, hidden: try dashboard(hidden: ["sleep.efficiency"], shown: []).cardsOff), ["sleep.total", "sleep.score", "sleep.rhr", "sleep.stages", "sleep.insights", "sleep.timeline"])
+        XCTAssertEqual(Cards.visible(sleep, hidden: try dashboard(hidden: ["sleep.score"], shown: []).cardsOff), ["sleep.total", "sleep.efficiency", "sleep.rhr", "sleep.stages", "sleep.insights", "sleep.timeline"])
         // Without WHOOP there's no performance card to show, so the rest hidden is all of them.
         let noPerformance = sleep.filter { $0 != "sleep.score" }
-        XCTAssertTrue(Cards.allHidden(noPerformance, hidden: ["sleep.total", "sleep.efficiency", "sleep.stages"]))
-        XCTAssertFalse(Cards.allHidden(sleep, hidden: ["sleep.total", "sleep.efficiency", "sleep.stages"]))
+        XCTAssertTrue(Cards.allHidden(noPerformance, hidden: ["sleep.total", "sleep.efficiency", "sleep.rhr", "sleep.stages", "sleep.insights", "sleep.timeline"]))
+        XCTAssertFalse(Cards.allHidden(sleep, hidden: ["sleep.total", "sleep.efficiency", "sleep.rhr", "sleep.stages", "sleep.insights", "sleep.timeline"]))
         XCTAssertFalse(Cards.allHidden([], hidden: []), "nothing to hide, so no note")
     }
 }

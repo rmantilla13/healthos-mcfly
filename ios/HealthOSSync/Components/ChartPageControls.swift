@@ -89,28 +89,43 @@ struct PageTabs: View {
     /// What the tabs are, for VoiceOver ("Sleep sections").
     let label: String
 
+    @Environment(\.duoFold) private var fold
+
     var body: some View {
-        // On a page split on the fold, the tabs keep to the leading side and scroll there when they don't fit
-        // (`duoOneSide`); elsewhere they're as they were.
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 4) {
-                ForEach(tabs) { tab in
-                    let on = tab.id == selection
-                    Button(tab.label) { selection = tab.id }
-                        .buttonStyle(.plain)
-                        .font(.app(size: 13, weight: .medium, relativeTo: .footnote))
-                        .foregroundStyle(on ? Palette.surface : Palette.ink2)
-                        .lineLimit(1)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 7)
-                        .background(on ? Palette.ink : .clear, in: Capsule())
-                        .accessibilityAddTraits(on ? .isSelected : [])
+        Group {
+            if fold.splits {
+                // On a page split on the fold, the tabs keep to the leading side (`duoOneSide`): one row where they
+                // fit, and at the largest text sizes more rows there, so no tab is hidden past the fold or cut off at it.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 4) { pills }.fixedSize()
+                    WrapLayout(spacing: 4, lineSpacing: 4) { pills }.fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                // Elsewhere they're as they were: one row that scrolls sideways when it doesn't fit.
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 4) { pills }
                 }
             }
         }
         .duoOneSide()
         .accessibilityElement(children: .contain)
         .accessibilityLabel(label)
+    }
+
+    private var pills: some View {
+        ForEach(tabs) { tab in
+            let on = tab.id == selection
+            Button(tab.label) { selection = tab.id }
+                .buttonStyle(.plain)
+                .font(.app(size: 13, weight: .medium, relativeTo: .footnote))
+                .foregroundStyle(on ? Palette.surface : Palette.ink2)
+                .lineLimit(1)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 7)
+                .background(on ? Palette.ink : .clear, in: Capsule())
+                .accessibilityAddTraits(on ? .isSelected : [])
+        }
     }
 }
 
