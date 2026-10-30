@@ -6176,6 +6176,221 @@ html:has(.palette[open]) {
   }
 }
 
+/* ---------- The journal's orb (JournalOrb.tsx: Home's journal card, the Journal composer) ---------- */
+/* The blush family, peach and rose into a lavender edge, never McFly's red. On a dark card its colours add up as light
+   (screen), so it glows. */
+:root {
+  --journal-orb-core: #fff2ec;
+  --journal-orb-mid: #f6bcc2;
+  --journal-orb-edge: #c6aef0;
+  --journal-orb-rose: rgba(244, 136, 176, 0.85);
+  --journal-orb-peach: rgba(255, 182, 128, 0.85);
+  --journal-orb-lilac: rgba(166, 140, 248, 0.8);
+  --journal-orb-glow: rgba(255, 247, 240, 0.95);
+  --journal-orb-blend: normal;
+  --journal-orb-rim: rgba(255, 255, 255, 0.55);
+  --journal-orb-shade: rgba(150, 86, 140, 0.28);
+  --journal-orb-shine: rgba(255, 255, 255, 0.85);
+  --journal-orb-halo: rgba(240, 164, 182, 0.42);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --journal-orb-core: #ffd0c4;
+    --journal-orb-mid: #c4608c;
+    --journal-orb-edge: #452c84;
+    --journal-orb-rose: rgba(255, 104, 158, 0.62);
+    --journal-orb-peach: rgba(255, 166, 116, 0.55);
+    --journal-orb-lilac: rgba(132, 102, 255, 0.85);
+    --journal-orb-glow: rgba(255, 224, 210, 0.5);
+    --journal-orb-blend: screen;
+    --journal-orb-rim: rgba(255, 186, 214, 0.5);
+    --journal-orb-shade: rgba(22, 8, 32, 0.4);
+    --journal-orb-shine: rgba(255, 240, 236, 0.65);
+    --journal-orb-halo: rgba(222, 104, 150, 0.34);
+  }
+}
+/* Forced dark (data-theme='dark' on <html>): the same as the block above. Change both together. */
+:root[data-theme='dark'] {
+  --journal-orb-core: #ffd0c4;
+  --journal-orb-mid: #c4608c;
+  --journal-orb-edge: #452c84;
+  --journal-orb-rose: rgba(255, 104, 158, 0.62);
+  --journal-orb-peach: rgba(255, 166, 116, 0.55);
+  --journal-orb-lilac: rgba(132, 102, 255, 0.85);
+  --journal-orb-glow: rgba(255, 224, 210, 0.5);
+  --journal-orb-blend: screen;
+  --journal-orb-rim: rgba(255, 186, 214, 0.5);
+  --journal-orb-shade: rgba(22, 8, 32, 0.4);
+  --journal-orb-shine: rgba(255, 240, 236, 0.65);
+  --journal-orb-halo: rgba(222, 104, 150, 0.34);
+}
+
+/* Where it sits is the page's (home.css, journal.css). Its area is a size container, so the orb fits whichever of its
+   width and height is less. */
+.journal-orb-area {
+  display: grid;
+  place-items: center;
+  container-type: size;
+  pointer-events: none;
+}
+.journal-orb {
+  --d: min(88cqw, 78cqh);
+  position: relative;
+  width: var(--d);
+  height: var(--d);
+}
+.journal-orb-halo {
+  position: absolute;
+  inset: -30%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, var(--journal-orb-halo) 0%, var(--journal-orb-halo) 52%, transparent 100%);
+}
+/* The glass ball: lit from inside, the colours swirling in it, then its shine, rim light and a little shade below on
+   top. Its very edge is feathered, so it sits in its glow rather than on the card. */
+.journal-orb-ball {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  isolation: isolate;
+  border-radius: 50%;
+  background: radial-gradient(circle at 42% 36%, var(--journal-orb-core) 0%, var(--journal-orb-mid) 38%, var(--journal-orb-edge) 92%);
+  -webkit-mask-image: radial-gradient(closest-side, #000 95%, transparent 100%);
+  mask-image: radial-gradient(closest-side, #000 95%, transparent 100%);
+}
+.journal-orb-ball::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background:
+    radial-gradient(24% 17% at 36% 22%, var(--journal-orb-shine) 0%, transparent 100%),
+    radial-gradient(30% 12% at 58% 88%, var(--journal-orb-rim) 0%, transparent 100%);
+  box-shadow:
+    inset 0 0 calc(var(--d) * 0.07) calc(var(--d) * 0.01) var(--journal-orb-rim),
+    inset 0 calc(var(--d) * -0.08) calc(var(--d) * 0.14) var(--journal-orb-shade);
+}
+.journal-orb-swirl {
+  position: absolute;
+  inset: -12%;
+}
+/* Soft-edged colour, each fading to nothing at its edge, so no blur filter is needed. */
+.journal-orb-blob {
+  position: absolute;
+  width: 58%;
+  height: 58%;
+  border-radius: 50%;
+  mix-blend-mode: var(--journal-orb-blend);
+}
+.journal-orb-blob[data-blob='rose'] {
+  top: 4%;
+  left: 2%;
+  background: radial-gradient(closest-side, var(--journal-orb-rose) 0%, transparent 100%);
+}
+.journal-orb-blob[data-blob='peach'] {
+  right: 2%;
+  bottom: 6%;
+  background: radial-gradient(closest-side, var(--journal-orb-peach) 0%, transparent 100%);
+}
+.journal-orb-blob[data-blob='lilac'] {
+  bottom: 2%;
+  left: 10%;
+  width: 62%;
+  height: 62%;
+  background: radial-gradient(closest-side, var(--journal-orb-lilac) 0%, transparent 100%);
+}
+.journal-orb-blob[data-blob='glow'] {
+  top: 16%;
+  right: 14%;
+  width: 40%;
+  height: 40%;
+  background: radial-gradient(closest-side, var(--journal-orb-glow) 0%, transparent 100%);
+}
+/* Slow and out of step: the glow breathes, the colours turn and each drifts on its own loop. Still under reduced motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .journal-orb {
+    animation: journal-orb-breathe 9s ease-in-out infinite;
+  }
+  .journal-orb-halo {
+    animation: journal-orb-halo 9s ease-in-out infinite;
+  }
+  .journal-orb-swirl {
+    animation: journal-orb-spin 48s linear infinite;
+  }
+  .journal-orb-blob[data-blob='rose'] {
+    animation: journal-orb-drift-a 17s ease-in-out infinite;
+  }
+  .journal-orb-blob[data-blob='peach'] {
+    animation: journal-orb-drift-b 13s ease-in-out infinite;
+  }
+  .journal-orb-blob[data-blob='lilac'] {
+    animation: journal-orb-drift-c 21s ease-in-out infinite;
+  }
+  .journal-orb-blob[data-blob='glow'] {
+    animation: journal-orb-drift-b 11s ease-in-out infinite reverse;
+  }
+}
+@keyframes journal-orb-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.035);
+  }
+}
+@keyframes journal-orb-halo {
+  0%,
+  100% {
+    opacity: 0.7;
+    transform: scale(0.95);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+}
+@keyframes journal-orb-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+@keyframes journal-orb-drift-a {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  33% {
+    transform: translate(22%, 14%) scale(1.12);
+  }
+  66% {
+    transform: translate(6%, 30%) scale(0.92);
+  }
+}
+@keyframes journal-orb-drift-b {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  40% {
+    transform: translate(-26%, -12%) scale(0.9);
+  }
+  70% {
+    transform: translate(-8%, -28%) scale(1.14);
+  }
+}
+@keyframes journal-orb-drift-c {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  30% {
+    transform: translate(18%, -20%) scale(1.1);
+  }
+  65% {
+    transform: translate(30%, -4%) scale(0.94);
+  }
+}
+
 /* "Ask McFly", floating at the bottom right of Home */
 .ask-pill {
   position: fixed;
