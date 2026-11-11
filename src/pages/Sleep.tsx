@@ -40,10 +40,11 @@ export function Sleep({ params, date, setDate }: { params: URLSearchParams; phot
 
 // ---------- Overview: one night ----------
 
-const SOURCE_NAME = { apple: 'Apple Health', whoop: 'WHOOP', fitbit: 'Fitbit' } as const;
+const SOURCE_NAME = { apple: 'Apple Health', whoop: 'WHOOP', noop: 'NOOP', fitbit: 'Fitbit' } as const;
 
-/** Some source that can record a night is set up: WHOOP, the iPhone app or an export, a Fitbit export, or the demo. */
-const hasSleepSource = (st: Status | undefined) => !!st && (st.demo || st.whoop.connected || !!st.apple.lastSync || !!st.apple.lastImport || !!st.fitbit?.lastImport);
+/** Some source that can record a night is set up: WHOOP, the iPhone app or an export, a NOOP or Fitbit export, or the demo. */
+const hasSleepSource = (st: Status | undefined) =>
+  !!st && (st.demo || st.whoop.connected || !!st.apple.lastSync || !!st.apple.lastImport || !!st.noop?.lastImport || !!st.fitbit?.lastImport);
 
 function Overview({ tabs, date, setDate }: { tabs: ReactNode; date: string | null; setDate: (d: string | null) => void }) {
   const q = date ? `?date=${date}` : '';
@@ -67,7 +68,8 @@ function Overview({ tabs, date, setDate }: { tabs: ReactNode; date: string | nul
     bare,
     label: nightLabel(night.date),
     demo: !!status?.demo,
-    whoop: !!status && (status.demo || status.whoop.connected || status.whoop.lastSync !== null),
+    // WHOOP, or its strap read by NOOP: either scores a night's sleep performance.
+    whoop: !!status && (status.demo || status.whoop.connected || status.whoop.lastSync !== null || !!status.noop?.lastImport),
   };
 
   return (
@@ -225,7 +227,10 @@ function Score({ title, tone, value, metric, c, foot }: { title: string; tone: V
 function PerformanceCard({ c }: { c: NightCtx }) {
   const v = c.night.performance ?? null;
   const title = 'Sleep performance';
-  if (v !== null) return <Score title={title} tone="green" value={v} metric="sleep_performance" c={c} foot="WHOOP: the sleep you got against the sleep you needed" />;
+  if (v !== null) {
+    const by = c.night.source === 'noop' ? "NOOP's estimate" : 'WHOOP';
+    return <Score title={title} tone="green" value={v} metric="sleep_performance" c={c} foot={`${by}: the sleep you got against the sleep you needed`} />;
+  }
   if (c.bare) {
     const sheet = sheetFor('sleep_performance');
     return <VitalCard title={title} tone="green" unit="%" value={null} metric={sheet} href={sheet ? undefined : tabHref('trends')} section="Sleep" variant="compact" />;
@@ -348,7 +353,9 @@ function StagesCard({ night }: { night: SleepNightDetail }) {
         <p className="card-note">
           {night.source === 'whoop'
             ? "WHOOP shares each stage's total, not when in the night it happened."
-            : night.source === 'fitbit'
+            : night.source === 'noop'
+              ? "NOOP's export has this night's stage totals, not when in the night each happened."
+              : night.source === 'fitbit'
               ? "The Fitbit export has this night's stage totals, not when in the night each happened."
               : daysBetween(night.date, night.today) <= RESENT_DAYS
               ? 'The stages through the night arrive once the healthOS iPhone app is updated and syncs.'
@@ -420,6 +427,7 @@ function TimelineCard({ night }: { night: SleepNightDetail }) {
             {night.inBedHours !== null && <Fact label="In bed" value={hoursMinutes(night.inBedHours)} />}
           </div>
           {night.source === 'whoop' && segs.length === 0 && <p className="card-note">From WHOOP's sleep record: when it started and ended.</p>}
+          {night.source === 'noop' && segs.length === 0 && <p className="card-note">From NOOP's sleep record: when it started and ended.</p>}
         </>
       ) : (
         <NoData text="No sleep recorded for this night." />

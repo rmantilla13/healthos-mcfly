@@ -6,6 +6,8 @@ import { addDays, todayLocal } from './dates.ts';
 
 // Which source wins when more than one has a value for the same day.
 // WHOOP is worn overnight so it leads on recovery-type metrics; the iPhone and Watch lead on movement and body.
+// A WHOOP strap read by NOOP (server/noop.ts) comes right after the WHOOP connection: it's the same strap, but most of
+// its numbers are NOOP's own estimates, so WHOOP's own win any day both have.
 // A Fitbit export comes after both: it's a one-off file, usually from before the person's current devices.
 const APPLE_FIRST = new Set(['steps', 'active_energy', 'exercise_min', 'distance_km', 'weight', 'body_fat', 'lean_mass', 'vo2max', 'hr_avg', 'hr_min', 'hr_max']);
 // What a person types in themselves (server/body.ts) beats a device's reading of the same day.
@@ -109,7 +111,7 @@ export async function readSettings(scope: Scope, hosted = false) {
 
 export async function hasRealData(scope: Scope) {
   const [row] = await scope.db.query<{ any: boolean }>(
-    "SELECT EXISTS (SELECT 1 FROM daily WHERE user_id = $1 AND source IN ('apple', 'whoop', 'fitbit', 'manual')) AS any",
+    "SELECT EXISTS (SELECT 1 FROM daily WHERE user_id = $1 AND source IN ('apple', 'whoop', 'noop', 'fitbit', 'manual')) AS any",
     [scope.userId],
   );
   return Boolean(row?.any);
@@ -121,13 +123,13 @@ export async function demoActive(scope: Scope, settings: Settings, hosted: boole
   return settings.demo === 'on' || (settings.demo === 'auto' && !(await hasRealData(scope)));
 }
 
-/** Every source whose rows a person sees: their devices, a Fitbit export, and what they added themselves. */
-export const sourceList = (demo: boolean) => (demo ? ['demo'] : ['apple', 'whoop', 'fitbit', 'manual']);
+/** Every source whose rows a person sees: their devices, a NOOP or Fitbit export, and what they added themselves. */
+export const sourceList = (demo: boolean) => (demo ? ['demo'] : ['apple', 'whoop', 'noop', 'fitbit', 'manual']);
 
 function sourcesFor(ctx: { demo: boolean }, metric: string): string[] {
   if (ctx.demo) return ['demo'];
-  if (MANUAL_FIRST.has(metric)) return ['manual', 'apple', 'whoop', 'fitbit'];
-  return APPLE_FIRST.has(metric) ? ['apple', 'whoop', 'fitbit'] : ['whoop', 'apple', 'fitbit'];
+  if (MANUAL_FIRST.has(metric)) return ['manual', 'apple', 'whoop', 'noop', 'fitbit'];
+  return APPLE_FIRST.has(metric) ? ['apple', 'whoop', 'noop', 'fitbit'] : ['whoop', 'noop', 'apple', 'fitbit'];
 }
 
 export async function loadDaily(scope: Scope, demo: boolean, from: string, to: string, metrics?: string[]): Promise<DailyIndex> {
@@ -248,7 +250,7 @@ export function valueOn(ctx: Snapshot, metric: string, date: string): { value: n
   }
   const how = decide(ctx, FOLLOWS[metric] ?? metric, date);
   if (how === 'mean') {
-    // The blend is Apple's and WHOOP's alone; a Fitbit value the same day doesn't join the average.
+    // The blend is Apple's and WHOOP's alone; a NOOP or Fitbit value the same day doesn't join the average.
     const both = present.filter((p) => p.source === 'apple' || p.source === 'whoop');
     return { value: both.reduce((t, p) => t + p.value, 0) / both.length, source: 'apple+whoop' };
   }
@@ -328,16 +330,19 @@ export function latest(ctx: Snapshot, metric: string, asOf: string, lookbackDays
  * (what you chose and what the Watch measured), plus WHOOP's strain.
  */
 export function mergeWorkouts(list: Workout[]): Workout[] {
-  const whoop = list.filter((w) => w.source === 'whoop');
   const used = new Set<string>();
   const overlaps = (a: Workout, b: Workout) => {
     const [as, ae, bs, be] = [Date.parse(a.start), Date.parse(a.end), Date.parse(b.start), Date.parse(b.end)];
     const overlap = Math.min(ae, be) - Math.max(as, bs);
     return Math.abs(as - bs) < 15 * 60_000 || overlap > 0.5 * Math.min(ae - as, be - bs);
   };
+  // The strap's sessions: WHOOP's own, then NOOP's (the same strap read on the phone) for any WHOOP doesn't have, since
+  // NOOP's export carries WHOOP history it imported too.
+  const fromWhoop = list.filter((w) => w.source === 'whoop');
+  const whoop = [...fromWhoop, ...list.filter((w) => w.source === 'noop' && !fromWhoop.some((x) => overlaps(w, x)))];
   const out: Workout[] = [];
   for (const w of list) {
-    if (w.source === 'whoop') continue;
+    if (w.source === 'whoop' || w.source === 'noop') continue;
     const twin = w.source === 'apple' ? whoop.find((x) => !used.has(x.id) && overlaps(w, x)) : undefined;
     if (!twin) {
       out.push(w);
@@ -346,7 +351,7 @@ export function mergeWorkouts(list: Workout[]): Workout[] {
     used.add(twin.id);
     out.push({
       ...w,
-      source: 'apple+whoop',
+      source: twin.source === 'noop' ? 'apple+noop' : 'apple+whoop',
       sport: /^other$/i.test(w.sport) ? twin.sport : w.sport,
       energy_kcal: w.energy_kcal ?? twin.energy_kcal,
       distance_m: w.distance_m ?? twin.distance_m,

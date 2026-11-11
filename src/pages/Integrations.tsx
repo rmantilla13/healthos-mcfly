@@ -1,6 +1,7 @@
-// Integrations: where readings come from. Three sources side by side (stacked on a phone): WHOOP (connected through
-// WHOOP's sign-in), a Fitbit / Google Health export read in this browser (FitbitImport.tsx), and Apple Health (the
-// iPhone app, or an export on the Mac). Then a note on what a reading is and, locally, the demo data. Your own settings
+// Integrations: where readings come from. Four sources, two by two (stacked on a phone): WHOOP (connected through
+// WHOOP's sign-in), a WHOOP strap read by the NOOP app, from NOOP's export read in this browser (NoopImport.tsx), a
+// Fitbit / Google Health export read in this browser (FitbitImport.tsx), and Apple Health (the iPhone app, or an export
+// on the Mac). Then a note on what a reading is and, locally, the demo data. Your own settings
 // are on Profile (src/pages/Profile.tsx).
 import '../styles/integrations.css';
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
@@ -10,6 +11,7 @@ import { PageIntro } from '../components/PageIntro.tsx';
 import { Sheet } from '../components/Sheet.tsx';
 import { copyText, fmt, fmtDate, notifyDataChanged, sendJson, uploadFile } from '../lib.ts';
 import { FitbitImport } from './FitbitImport.tsx';
+import { NoopImport } from './NoopImport.tsx';
 
 function ago(iso: string) {
   const mins = Math.round((Date.now() - Date.parse(iso)) / 60_000);
@@ -86,6 +88,7 @@ export function Integrations({ status, params, refresh, signedIn }: { status: St
 
       <div className="sources-grid">
         <WhoopCard status={status} refresh={refresh} />
+        <NoopCard status={status} refresh={refresh} />
         <FitbitCard status={status} refresh={refresh} />
         <AppleCard status={status} refresh={refresh} signedIn={signedIn} />
       </div>
@@ -211,6 +214,70 @@ function WhoopCard({ status, refresh }: { status: Status; refresh: () => void })
           <Icon name="alert" size={15} /> {error}
         </p>
       )}
+    </SourceCard>
+  );
+}
+
+// ---------- WHOOP strap with NOOP ----------
+
+function NoopCard({ status, refresh }: { status: Status; refresh: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // Missing from servers older than the NOOP import; there's nothing imported then.
+  const last = status.noop?.lastImport ?? null;
+
+  async function remove() {
+    if (!confirm('Remove all imported NOOP data from healthOS? NOOP, your strap and the export file are not affected.')) return;
+    setError(null);
+    try {
+      await sendJson('POST', '/noop/clear');
+      notifyDataChanged();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+    refresh();
+  }
+
+  return (
+    <SourceCard
+      tile="N"
+      title="WHOOP strap with NOOP"
+      chip={<Chip tone="sage">{last ? `Imported ${shortDay(last.importedAt)}` : 'File import available'}</Chip>}
+      actions={
+        <>
+          <button className="btn" onClick={() => setOpen(true)} aria-haspopup="dialog">
+            {last ? 'Import again' : 'Import NOOP export'}
+          </button>
+          {last && (
+            <button className="btn btn-quiet" onClick={remove}>
+              Remove NOOP data
+            </button>
+          )}
+        </>
+      }
+      foot={
+        <p className="source-foot">
+          <a href="https://github.com/ryanbr/noop" target="_blank" rel="noreferrer">
+            NOOP
+          </a>{' '}
+          reads the strap over Bluetooth, with no WHOOP account. Its scores are its own estimates.
+        </p>
+      }
+    >
+      <p>Import recovery, strain, sleep, HRV, resting heart rate and workouts from NOOP's CSV export.</p>
+      {last && (
+        <p className="source-state">
+          {fmt(last.days)} {last.days === 1 ? 'day' : 'days'}
+          {last.firstDate && ` · ${span(last.firstDate, last.lastDate)}`}
+          {last.workouts > 0 && ` · ${fmt(last.workouts)} ${last.workouts === 1 ? 'workout' : 'workouts'}`}
+        </p>
+      )}
+      {error && (
+        <p className="note-bad" role="alert">
+          <Icon name="alert" size={15} /> {error}
+        </p>
+      )}
+      {open && <NoopImport status={status} refresh={refresh} onClose={() => setOpen(false)} />}
     </SourceCard>
   );
 }

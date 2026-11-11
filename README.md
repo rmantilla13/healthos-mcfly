@@ -162,6 +162,17 @@ WHOOP data comes from the official [WHOOP API](https://developer.whoop.com) (v2)
 
 The first sync pulls the last year. After that it syncs every hour (a Vercel cron when hosted, a timer when local), and on demand. Each sync re-reads the last few days, because WHOOP rescores recent nights.
 
+### A WHOOP strap with NOOP (file import)
+
+[NOOP](https://github.com/ryanbr/noop) is an offline WHOOP companion app: it pairs with the strap over Bluetooth, with no WHOOP account or membership, and works out recovery, strain, HRV and sleep on the phone. To bring that into healthOS, in NOOP open **Settings → Backup & restore → Export CSV**, save the .zip (on iPhone, to Files), then choose it under **Integrations → WHOOP strap with NOOP → Import NOOP export**.
+
+- The zip is in WHOOP's own export layout (physiological_cycles.csv, sleeps.csv, workouts.csv) plus a Source column. It's read in the browser (`src/import/noop.ts`) and never uploaded: per-day readings, each night's start and end, and workouts go to `POST /api/noop/import` in chunks of whole days, stored as source `noop` (`server/noop.ts`). **Remove NOOP data** deletes them.
+- NOOP writes every time in UTC; nights are dated by the wake-up and workouts by their start, on the person's own clock (their Settings zone, else the browser's).
+- NOOP's export marks its own estimates "noop (APPROXIMATE)", and WHOOP history it imported "import". Both are stored as `noop`, and the Sleep page credits sleep performance to "NOOP's estimate".
+- Its skin temperature is left out: NOOP stores the change from your baseline, not a temperature. Journal entries are left out too.
+- A WHOOP data export (no Source column) is turned away with a pointer to **Connect WHOOP**; the WHOOP API brings that history already.
+- There's no automatic sync: NOOP's push export is Android-only and experimental. On iPhone, a NOOP build with the HealthKit entitlement also writes heart rate, HRV, resting heart rate, SpO₂, breathing rate, sleep and workouts into Apple Health, which the healthOS iPhone app syncs as Apple Health data; recovery and strain only come through this import.
+
 ## Profile photo and portraits
 
 Home and Body show you as your portrait, a digital human (`public/figures/digital-man.webp`; a `digital-woman.webp` dropped next to it is picked up, and each figure's callout points are in the `ART` table in `src/components/Figure.tsx`), or just the statistics, as chosen in onboarding or **Profile → Edit preferences**.
@@ -183,13 +194,13 @@ The cut-out, avatar and layout points are saved to the database, which is how th
 
 | Metric | Preferred source |
 |---|---|
-| Recovery, strain, HRV, resting HR, SpO₂, respiratory rate, sleep | WHOOP, then Apple |
-| Steps, active energy, workouts, weight, body fat, VO₂ max | Apple, then WHOOP |
+| Recovery, strain, HRV, resting HR, SpO₂, respiratory rate, sleep | WHOOP, then NOOP, then Apple |
+| Steps, active energy, workouts, weight, body fat, VO₂ max | Apple, then WHOOP, then NOOP |
 | Weight, body fat, lean mass you add yourself | Yours, then the devices |
 
-A Fitbit export comes after both devices for every metric.
+A Fitbit export comes after the devices for every metric. NOOP doesn't join the Apple and WHOOP average on SpO₂, breathing rate or sleep, and a NOOP workout that overlaps a WHOOP one gives way to it; one that overlaps an Apple Watch workout is merged into it, as WHOOP's is.
 
-WHOOP reports HRV as RMSSD and Apple Watch reports SDNN. The two aren't comparable, so the dashboard labels whichever one it's showing.
+WHOOP (and NOOP) report HRV as RMSSD and Apple Watch reports SDNN. The two aren't comparable, so the dashboard labels whichever one it's showing.
 
 ## Body measurements
 
@@ -228,7 +239,7 @@ Until two of the person's own cycles are complete, the estimate is in `earlyEsti
 |---|---|
 | `npm run dev` | App with hot reload on http://localhost:8787 |
 | `npm run build` then `npm start` | Production build |
-| `npm test` | Importer, iPhone ingest, WHOOP mapping, data blending, account isolation and Ask McFly tests |
+| `npm test` | Importer, iPhone ingest, WHOOP mapping, NOOP and Fitbit imports, data blending, account isolation and Ask McFly tests |
 | `npm run typecheck` | TypeScript check |
 | `npm run sync:whoop -- --full` | Re-sync a full year of WHOOP data from the terminal |
 | `npm run deploy` | Build for Vercel and deploy health.mcfly.bot |

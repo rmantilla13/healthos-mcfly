@@ -90,7 +90,8 @@ export async function sleepNight(scope: Scope, hosted: boolean, dateParam?: stri
   const segments = segmentsFrom(device, date);
   const inBed = at('sleep_in_bed', device, date);
 
-  const performance = at('sleep_performance', 'whoop', date) ?? at('sleep_performance', 'demo', date);
+  // WHOOP's sleep performance, or NOOP's estimate of it when the strap was read by NOOP that night.
+  const performance = at('sleep_performance', 'whoop', date) ?? at('sleep_performance', 'noop', date) ?? at('sleep_performance', 'demo', date);
   const asleep = hours?.value ?? null;
   // The night's efficiency as its sheet picks it (metricsheet.ts): a device's own figure (WHOOP, a Fitbit export), else
   // one device's time asleep over its own time in bed, never two devices' numbers mixed, WHOOP's first on a night both
@@ -103,7 +104,7 @@ export async function sleepNight(scope: Scope, hosted: boolean, dateParam?: stri
   return {
     date,
     today,
-    source: device === 'whoop' || device === 'fitbit' ? device : device ? 'apple' : null,
+    source: device === 'whoop' || device === 'noop' || device === 'fitbit' ? device : device ? 'apple' : null,
     fellAsleep: night?.start ?? null,
     wokeUp: night?.end ?? null,
     asleepHours: asleep === null ? null : round(asleep, 2),
