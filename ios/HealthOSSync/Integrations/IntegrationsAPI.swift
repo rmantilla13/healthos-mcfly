@@ -1,7 +1,8 @@
 import Foundation
 
 /// Integrations' requests (src/pages/Integrations.tsx). Every one of these routes is older than this branch except
-/// `/fitbit/*`, whose card shows only where the status names `fitbit` (an older server's status doesn't).
+/// `/fitbit/*` and `/noop/*`, whose cards show only where the status names `fitbit` or `noop` (an older server's
+/// status doesn't).
 extension APIClient {
     /// POST /api/whoop/sync {full: true}: "Re-sync full year". Answers with the status (the sync runs on the server).
     func whoopFullSync() async throws -> ServerStatus { try await sendJSON("POST", "/whoop/sync", ["full": true]) }
@@ -16,6 +17,12 @@ extension APIClient {
     /// POST /api/fitbit/clear: every Fitbit row goes, other sources stay. Answers {ok: true}, not the status.
     func clearFitbit() async throws {
         _ = try await request("/fitbit/clear", method: "POST", body: Data("{}".utf8))
+    }
+
+    /// POST /api/noop/clear: every NOOP row goes, with the last import and the strap's last sync; other sources stay.
+    /// Answers {ok: true}, not the status.
+    func clearNoop() async throws {
+        _ = try await request("/noop/clear", method: "POST", body: Data("{}".utf8))
     }
 
     private struct MintedToken: Decodable { let token: String }

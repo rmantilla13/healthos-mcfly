@@ -57,6 +57,8 @@ final class IntegrationsTests: XCTestCase {
             IntegrationsWords.whoopMemberOff, IntegrationsWords.whoopDeveloperApp, IntegrationsWords.whoopStepSignIn, IntegrationsWords.whoopStepRedirect,
             IntegrationsWords.whoopStepScopes, IntegrationsWords.whoopStepEnv, IntegrationsWords.whoopLastError(""), "developer.whoop.com",
             IntegrationsWords.fitbitTitle, IntegrationsWords.fitbitBody, IntegrationsWords.fitbitFoot, IntegrationsWords.fitbitRemoveAsk,
+            IntegrationsWords.noopTitle, IntegrationsWords.noopBody, IntegrationsWords.noopFoot, IntegrationsWords.noopRemoveAsk,
+            IntegrationsWords.noopLink, "Import NOOP export", "Remove NOOP data", "'workout' : 'workouts'",
             IntegrationsWords.appleTitle, IntegrationsWords.appleBody, IntegrationsWords.appleExportOnMac, IntegrationsWords.appleAdminImport,
             IntegrationsWords.appleRemoveAsk, IntegrationsWords.appleUploading, IntegrationsWords.appleReading(""), IntegrationsWords.appleSynced(""),
             IntegrationsWords.tokenSet, IntegrationsWords.noToken, IntegrationsWords.tokenScope, IntegrationsWords.tokenShownOnce,
@@ -73,7 +75,8 @@ final class IntegrationsTests: XCTestCase {
         for (value, title) in IntegrationsWords.demoModes {
             XCTAssertTrue(page.contains("'\(value)' ? '\(title)'") || page.contains(": '\(title)'"), title)
         }
-        XCTAssertTrue(page.contains("tile=\"W\"") && page.contains("tile=\"G\"") && page.contains("tile=\"⌘\""), "the tiles' letters")
+        XCTAssertTrue(page.contains("tile=\"W\"") && page.contains("tile=\"N\"") && page.contains("tile=\"G\"") && page.contains("tile=\"⌘\""),
+                      "the tiles' letters")
     }
 
     // MARK: Times and dates
@@ -150,6 +153,52 @@ final class IntegrationsTests: XCTestCase {
         XCTAssertTrue(IntegrationsRules.fitbitChip(some).text.hasPrefix("Imported "))
         XCTAssertTrue(IntegrationsRules.fitbitState(some)?.hasPrefix("1 day · ") == true)
         XCTAssertNil(try Self.status(#"{"hosted":true}"#).fitbit, "an older server's status has no fitbit, so the card doesn't show")
+    }
+
+    /// A WHOOP strap read by NOOP (Integrations.tsx NoopCard), with made-up figures: its chip, its line with the
+    /// workouts when there are some, and its card only where the status names it, after WHOOP's as on the web.
+    func testNoopShowsWhatWasImported() throws {
+        let none = try XCTUnwrap(try Self.status(#"{"noop":{"lastImport":null,"lastSync":null}}"#).noop)
+        XCTAssertEqual(IntegrationsRules.noopChip(none).text, "File import available")
+        XCTAssertNil(IntegrationsRules.noopState(none))
+        func noop(_ importJSON: String) throws -> ServerStatus.Noop {
+            try XCTUnwrap(try Self.status(#"{"noop":{"lastImport":\#(importJSON)}}"#).noop)
+        }
+        let span = try XCTUnwrap(IntegrationsWords.span("2026-09-01", "2026-10-20"))
+        let some = try noop(#"{"days":50,"firstDate":"2026-09-01","lastDate":"2026-10-20","metrics":["recovery"],"nights":47,"workouts":6,"importedAt":"2026-10-23T10:00:00Z"}"#)
+        XCTAssertTrue(IntegrationsRules.noopChip(some).text.hasPrefix("Imported "))
+        XCTAssertEqual(IntegrationsRules.noopState(some), "50 days · \(span) · 6 workouts")
+        let one = try noop(#"{"days":1,"firstDate":"2026-10-20","lastDate":"2026-10-20","metrics":[],"nights":1,"workouts":1,"importedAt":"2026-10-23T10:00:00Z"}"#)
+        XCTAssertTrue(IntegrationsRules.noopState(one)?.hasSuffix(" · 1 workout") == true)
+        let noWorkouts = try noop(#"{"days":3,"firstDate":null,"lastDate":null,"metrics":[],"nights":3,"workouts":0,"importedAt":"2026-10-23T10:00:00Z"}"#)
+        XCTAssertEqual(IntegrationsRules.noopState(noWorkouts), "3 days")
+
+        let both = try Self.status(#"{"whoop":{"configured":true},"noop":{"lastImport":null},"fitbit":{"lastImport":null}}"#)
+        XCTAssertEqual(IntegrationsCell.cells(both), [.whoop, .noop, .fitbit, .apple, .note])
+        XCTAssertEqual(IntegrationsCell.trailing(both), [.whoop, .noop, .fitbit, .note])
+        XCTAssertFalse(IntegrationsCell.cells(try Self.status(#"{"whoop":{"configured":true}}"#)).contains(.noop),
+                       "an older server's status has no noop, so the card doesn't show")
+        // Import goes to the website's Integrations, where Safari picks NOOP's .zip from Files.
+        XCTAssertTrue(IntegrationsWords.noopInSafari.contains("Safari") && IntegrationsWords.noopInSafari.contains("Files"))
+    }
+
+    /// Remove NOOP data: POST /api/noop/clear, then the status again; a refusal shows the server's words on the card.
+    func testRemovingNoopData() async throws {
+        let store = MemoryTokenStore()
+        let d = samSignedIn(store)
+        let m = IntegrationsModel()
+        let cleared = IntegrationsCounter()
+        m.requests = IntegrationsRequests(clearNoop: { _ in cleared.n += 1 })
+        await m.removeNoop(d)
+        XCTAssertEqual(cleared.n, 1)
+        XCTAssertNil(m.noopError)
+        XCTAssertFalse(m.isBusy(.noopRemove))
+
+        m.requests = IntegrationsRequests(clearNoop: { _ in throw APIClient.error(status: 500, message: "Something went wrong", path: "/noop/clear") })
+        await m.removeNoop(d)
+        XCTAssertEqual(m.noopError, "Server answered 500: Something went wrong")
+        m.forget()
+        XCTAssertNil(m.noopError, "another session sees none of it")
     }
 
     func testAppleChipAndWhenRemoveShows() throws {
@@ -472,7 +521,7 @@ final class IntegrationsDuoTests: XCTestCase {
     private static func iso(minutesAgo: Double) -> String { ISO8601DateFormatter().string(from: Date().addingTimeInterval(-minutesAgo * 60)) }
 
     static var memberStatus: String {
-        #"{"hosted":true,"demo":false,"user":{"id":"u-sam","email":"sam@example.test","name":"Sam","role":"member"},"settings":{"units":"metric","demo":"auto"},"apple":{"lastImport":null,"lastSync":{"syncedAt":"\#(iso(minutesAgo: 120))"},"job":{"state":"idle"},"iphoneToken":true},"whoop":{"configured":true,"connected":true,"redirectUri":"https://health.example.test/api/whoop/callback","syncing":false,"lastSync":"\#(iso(minutesAgo: 12))","lastError":null},"fitbit":{"lastImport":{"days":1204,"firstDate":"2021-03-02","lastDate":"2026-10-20","metrics":["hr_avg"],"importedAt":"2026-10-23T10:00:00.000Z"}}}"#
+        #"{"hosted":true,"demo":false,"user":{"id":"u-sam","email":"sam@example.test","name":"Sam","role":"member"},"settings":{"units":"metric","demo":"auto"},"apple":{"lastImport":null,"lastSync":{"syncedAt":"\#(iso(minutesAgo: 120))"},"job":{"state":"idle"},"iphoneToken":true},"whoop":{"configured":true,"connected":true,"redirectUri":"https://health.example.test/api/whoop/callback","syncing":false,"lastSync":"\#(iso(minutesAgo: 12))","lastError":null},"noop":{"lastImport":{"days":50,"firstDate":"2026-09-01","lastDate":"2026-10-20","metrics":["recovery","hrv_rmssd"],"nights":47,"workouts":6,"importedAt":"2026-10-22T09:00:00.000Z"},"lastSync":null},"fitbit":{"lastImport":{"days":1204,"firstDate":"2021-03-02","lastDate":"2026-10-20","metrics":["hr_avg"],"importedAt":"2026-10-23T10:00:00.000Z"}}}"#
     }
 
     static let ownerStatus = #"{"hosted":false,"demo":true,"user":{"id":"owner","email":null,"name":"Ricky","role":"admin"},"settings":{"demo":"auto"},"apple":{"lastImport":null,"lastSync":null,"job":{"state":"idle"},"iphoneToken":false},"whoop":{"configured":false,"connected":false,"redirectUri":"http://localhost:8801/api/whoop/callback","syncing":false,"lastSync":null,"lastError":null},"fitbit":{"lastImport":null}}"#
@@ -568,15 +617,17 @@ final class IntegrationsDuoTests: XCTestCase {
             }
             let fold = try XCTUnwrap(DuoFoldAssertions.band(state))
             let title = try frame(IntegrationsWords.title)
-            let whoop = try frame("WHOOP"), fitbit = try frame(IntegrationsWords.fitbitTitle)
+            let whoop = try frame("WHOOP"), noop = try frame(IntegrationsWords.noopTitle), fitbit = try frame(IntegrationsWords.fitbitTitle)
             let apple = try frame(IntegrationsWords.appleTitle), note = try frame(IntegrationsWords.noteTitle)
             XCTAssertLessThan(title.maxX, fold.lowerBound, "\(state)")
             XCTAssertLessThan(apple.maxX, fold.lowerBound, "\(state)")
             XCTAssertGreaterThan(apple.minY, title.maxY, "\(state)")
-            for card in [whoop, fitbit, note] { XCTAssertGreaterThan(card.minX, fold.upperBound, "\(state)") }
-            // Each across the side's two columns (Q5), so no button is cut short: WHOOP, then Fitbit, then the note.
+            for card in [whoop, noop, fitbit, note] { XCTAssertGreaterThan(card.minX, fold.upperBound, "\(state)") }
+            // Each across the side's two columns (Q5), so no button is cut short: WHOOP, NOOP, Fitbit, then the note.
+            XCTAssertEqual(whoop.minX, noop.minX, accuracy: 1, "\(state)")
             XCTAssertEqual(whoop.minX, fitbit.minX, accuracy: 1, "\(state)")
-            XCTAssertGreaterThan(fitbit.minY, whoop.maxY, "\(state)")
+            XCTAssertGreaterThan(noop.minY, whoop.maxY, "\(state)")
+            XCTAssertGreaterThan(fitbit.minY, noop.maxY, "\(state)")
             XCTAssertGreaterThan(note.minY, fitbit.maxY, "\(state)")
         }
         for state: DuoState in [.outer, .innerPortrait()] {
@@ -586,7 +637,8 @@ final class IntegrationsDuoTests: XCTestCase {
             let x = { (label: String) in elements.first { $0.accessibilityLabel == label }?.accessibilityFrame.minX ?? -1 }
             let y = { (label: String) in elements.first { $0.accessibilityLabel == label }?.accessibilityFrame.minY ?? .infinity }
             XCTAssertLessThan(y(IntegrationsWords.title), y("WHOOP"), "\(state)")
-            XCTAssertLessThan(y("WHOOP"), y(IntegrationsWords.fitbitTitle), "\(state)")
+            XCTAssertLessThan(y("WHOOP"), y(IntegrationsWords.noopTitle), "\(state)")
+            XCTAssertLessThan(y(IntegrationsWords.noopTitle), y(IntegrationsWords.fitbitTitle), "\(state)")
             XCTAssertLessThan(y(IntegrationsWords.fitbitTitle), y(IntegrationsWords.appleTitle), "\(state)")
             XCTAssertLessThan(y(IntegrationsWords.appleTitle), y(IntegrationsWords.noteTitle), "\(state)")
             XCTAssertEqual(x("WHOOP"), x(IntegrationsWords.fitbitTitle), accuracy: 1, "one column, \(state)")
@@ -615,12 +667,12 @@ final class IntegrationsDuoTests: XCTestCase {
         }
     }
 
-    /// The cells follow the status: a server that doesn't name WHOOP or Fitbit moves nothing else; Apple Watch /
+    /// The cells follow the status: a server that doesn't name WHOOP, NOOP or Fitbit moves nothing else; Apple Watch /
     /// Health leads the open Duo's leading side, the rest go on the trailing side.
     func testTheCellsHoldWhatTheStatusNames() throws {
         let all = try IntegrationsTests.status(Self.memberStatus)
-        XCTAssertEqual(IntegrationsCell.cells(all).map(\.rawValue), ["whoop", "fitbit", "apple", "note"])
-        XCTAssertEqual(IntegrationsCell.trailing(all).map(\.rawValue), ["whoop", "fitbit", "note"])
+        XCTAssertEqual(IntegrationsCell.cells(all).map(\.rawValue), ["whoop", "noop", "fitbit", "apple", "note"])
+        XCTAssertEqual(IntegrationsCell.trailing(all).map(\.rawValue), ["whoop", "noop", "fitbit", "note"])
         let owner = try IntegrationsTests.status(Self.ownerStatus)
         XCTAssertEqual(IntegrationsCell.trailing(owner).map(\.rawValue), ["whoop", "fitbit", "note", "demo"])
         let older = try IntegrationsTests.status(#"{"hosted":true,"apple":{"lastSync":null}}"#)

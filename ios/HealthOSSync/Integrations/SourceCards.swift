@@ -292,6 +292,53 @@ struct WhoopCard: View {
     }
 }
 
+// MARK: - WHOOP strap with NOOP
+
+/// A WHOOP strap read by the NOOP app (Integrations.tsx NoopCard). NOOP's export is a .zip read in the browser, so
+/// Import opens the website's Integrations in Safari, where Files offers the .zip NOOP saved; Remove works from here.
+struct NoopCard: View {
+    let noop: ServerStatus.Noop
+    @Bindable var model: IntegrationsModel
+    @Environment(Dashboard.self) private var dashboard
+
+    var body: some View {
+        let last = noop.lastImport
+        SourceCard(tile: "N", title: IntegrationsWords.noopTitle, chip: IntegrationsRules.noopChip(noop)) {
+            Text(IntegrationsWords.noopBody)
+            if let state = IntegrationsRules.noopState(noop) { SourceState(text: state) }
+            SourceState(text: IntegrationsWords.noopInSafari)
+            if let error = model.noopError { SourceProblem(text: error) }
+        } actions: {
+            Button(last != nil ? "Import again" : "Import NOOP export") { openImport() }
+                .buttonStyle(.quietPill)
+                .accessibilityHint("Opens healthOS in Safari")
+                .accessibilityIdentifier("integrations.noopImport")
+            if last != nil {
+                Button("Remove NOOP data") { model.asking = .removeNoop }
+                    .buttonStyle(IntegrationsQuietStyle())
+                    .disabled(model.isBusy(.noopRemove))
+                    .accessibilityIdentifier("integrations.noopRemove")
+                    // P10: on the button that opens it, its anchor at regular width.
+                    .confirmationDialog(IntegrationsWords.noopRemoveAsk, isPresented: model.isAsking(.removeNoop), titleVisibility: .visible) {
+                        Button("Remove NOOP data", role: .destructive) { Task { await model.removeNoop(dashboard) } }
+                        Button("Cancel", role: .cancel) {}
+                    }
+            }
+        } foot: {
+            // The web's foot, its link to NOOP opened in Safari.
+            Text(.init("[NOOP](\(IntegrationsWords.noopLink)) " + IntegrationsWords.noopFoot))
+                .font(.app(.caption)).foregroundStyle(Palette.ink3).tint(Palette.ink2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// Real Safari, as Connect WHOOP: the import needs the web's session, and Safari's file picker reaches Files.
+    private func openImport() {
+        guard let base = Config.serverURL(), let url = IntegrationsRules.connectURL(server: base) else { return }
+        UIApplication.shared.open(url)
+    }
+}
+
 // MARK: - Fitbit / Google Health
 
 struct FitbitCard: View {

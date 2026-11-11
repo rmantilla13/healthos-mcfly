@@ -51,6 +51,7 @@ struct IntegrationsRequests {
     var disconnect: (APIClient) async throws -> ServerStatus = { try await $0.whoopDisconnect() }
     var clearApple: (APIClient) async throws -> ServerStatus = { try await $0.clearAppleHealth() }
     var clearFitbit: (APIClient) async throws -> Void = { try await $0.clearFitbit() }
+    var clearNoop: (APIClient) async throws -> Void = { try await $0.clearNoop() }
     var mint: (APIClient) async throws -> String = { try await $0.mintIngestToken() }
     var revoke: (APIClient) async throws -> ServerStatus = { try await $0.revokeIngestToken() }
 }
@@ -61,7 +62,7 @@ struct IntegrationsRequests {
 @MainActor
 @Observable
 final class IntegrationsModel {
-    enum Work: Hashable { case whoop, fitbitRemove, appleRemove, token, demo }
+    enum Work: Hashable { case whoop, noopRemove, fitbitRemove, appleRemove, token, demo }
 
     /// The token just made, with the server it's for: shown once, in memory only.
     struct ShownToken: Equatable {
@@ -71,6 +72,7 @@ final class IntegrationsModel {
 
     private(set) var busy: Set<Work> = []
     var whoopError: String?
+    var noopError: String?
     var fitbitError: String?
     var appleError: String?
     var tokenError: String?
@@ -79,7 +81,7 @@ final class IntegrationsModel {
     /// The Fitbit import sheet (slice O's FitbitImportSheet).
     var fitbitOpen = false
     /// The question up now, if any: kept here, not in the card that asks, so a fold doesn't close it.
-    enum Question: Hashable { case removeFitbit, removeApple, newToken, revokeToken }
+    enum Question: Hashable { case removeNoop, removeFitbit, removeApple, newToken, revokeToken }
     var asking: Question?
     /// "Set up this iPhone" and "Set up a WHOOP developer app", opened in place.
     var phoneSetupOpen = false
@@ -109,6 +111,7 @@ final class IntegrationsModel {
     func forget() {
         busy = []
         whoopError = nil
+        noopError = nil
         fitbitError = nil
         appleError = nil
         tokenError = nil
@@ -164,6 +167,24 @@ final class IntegrationsModel {
         } catch {
             whoopError = error.localizedDescription
         }
+    }
+
+    // MARK: NOOP
+
+    func removeNoop(_ dashboard: Dashboard) async {
+        guard !isBusy(.noopRemove) else { return }
+        noopError = nil
+        busy.insert(.noopRemove)
+        defer { busy.remove(.noopRemove) }
+        do {
+            try await dashboard.fetchForThisSession(requests.clearNoop)
+        } catch is CancellationError {
+            return
+        } catch {
+            noopError = error.localizedDescription
+        }
+        // Gone or not, what the server has now (the web refreshes either way).
+        await dashboard.load()
     }
 
     // MARK: Fitbit

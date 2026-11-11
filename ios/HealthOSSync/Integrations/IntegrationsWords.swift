@@ -29,6 +29,16 @@ enum IntegrationsWords {
     static let whoopStepEnv = "Copy .env.example to .env, paste the client ID and secret, then restart npm run dev."
     static func whoopLastError(_ error: String) -> String { "Last sync failed: \(error)" }
 
+    // A WHOOP strap read by NOOP.
+    static let noopTitle = "WHOOP strap with NOOP"
+    static let noopBody = "Import recovery, strain, sleep, HRV, resting heart rate and workouts from NOOP's CSV export."
+    /// The web's foot, after its link: "[NOOP] reads the strap over Bluetooth, …".
+    static let noopFoot = "reads the strap over Bluetooth, with no WHOOP account. Its scores are its own estimates."
+    static let noopLink = "https://github.com/ryanbr/noop"
+    static let noopRemoveAsk = "Remove all imported NOOP data from healthOS? NOOP, your strap and the export file are not affected."
+    /// The iPhone's: the import runs on the website, which reads NOOP's .zip in the browser; Safari picks it from Files.
+    static let noopInSafari = "Importing opens healthOS in Safari: choose Import NOOP export there, then the .zip NOOP saved to Files."
+
     // Fitbit / Google Health.
     static let fitbitTitle = "Fitbit / Google Health"
     static let fitbitBody = "Import recorded heart rate, sleep, HRV, weight and body-fat measurements from your data export."
@@ -161,6 +171,21 @@ enum IntegrationsRules {
             (!hosted ? IntegrationsWords.whoopNotConfiguredLocal : admin ? IntegrationsWords.whoopNotConfiguredAdmin : IntegrationsWords.whoopNotConfiguredMember, false)
         default: nil
         }
+    }
+
+    // MARK: NOOP
+
+    static func noopChip(_ n: ServerStatus.Noop) -> Chip {
+        if let last = n.lastImport, let day = IntegrationsWords.shortDay(last.importedAt) { return Chip(text: "Imported \(day)", tone: .sage) }
+        return Chip(text: "File import available", tone: .sage)
+    }
+
+    /// "21 days · Oct 2026 – Nov 2026 · 4 workouts", the workouts only when there are some.
+    static func noopState(_ n: ServerStatus.Noop) -> String? {
+        guard let last = n.lastImport, let days = last.days else { return nil }
+        var line = IntegrationsWords.days(days) + (IntegrationsWords.span(last.firstDate, last.lastDate).map { " · \($0)" } ?? "")
+        if let w = last.workouts.map({ Int($0.rounded()) }), w > 0 { line += " · \(w.formatted()) \(w == 1 ? "workout" : "workouts")" }
+        return line
     }
 
     // MARK: Fitbit

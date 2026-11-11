@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The Integrations page (src/pages/Integrations.tsx), under More and in the account menu: "Bring your health
-/// together." with the WHOOP, Fitbit / Google Health and Apple Watch / Health cards, "Measured. Always clear." and, on a
+/// together." with the WHOOP, WHOOP strap with NOOP, Fitbit / Google Health and Apple Watch / Health cards, "Measured. Always clear." and, on a
 /// local server for its owner, the demo data. `query` is the web's (?whoop= after WHOOP's sign-in), applied again when
 /// the same link opens the page while it's up.
 ///
@@ -119,6 +119,8 @@ private struct IntegrationsContent: View {
         switch cell {
         case .whoop:
             if let whoop = status.whoop { WhoopCard(status: status, whoop: whoop, model: model) }
+        case .noop:
+            if let noop = status.noop { NoopCard(noop: noop, model: model) }
         case .fitbit:
             if let fitbit = status.fitbit { FitbitCard(fitbit: fitbit, model: model) }
         case .apple:
@@ -133,14 +135,15 @@ private struct IntegrationsContent: View {
 
 /// One card of Integrations, by a fixed id, so a source the server doesn't name moves nothing else.
 enum IntegrationsCell: String, Hashable {
-    case whoop, fitbit, apple, note, demo
+    case whoop, noop, fitbit, apple, note, demo
     var id: String { "integrations.\(rawValue)" }
 
     /// The web's order: the sources the status names, the note, then (a local server's owner) the demo card.
     static func cells(_ status: ServerStatus) -> [IntegrationsCell] {
         var cells: [IntegrationsCell] = []
         if status.whoop != nil { cells.append(.whoop) }
-        // Only where the status names it: a server older than the Fitbit import would answer its routes 404.
+        // Only where the status names them: a server older than the NOOP or Fitbit import would answer its routes 404.
+        if status.noop != nil { cells.append(.noop) }
         if status.fitbit != nil { cells.append(.fitbit) }
         cells.append(.apple)
         cells.append(.note)
