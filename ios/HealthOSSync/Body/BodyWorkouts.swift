@@ -183,7 +183,9 @@ enum BodyWorkoutMath {
         switch source {
         case "apple": "From Apple Health"
         case "whoop": "From WHOOP"
+        case "noop": "From NOOP"
         case "apple+whoop": "From Apple Health and WHOOP"
+        case "apple+noop": "From Apple Health and NOOP"
         case "fitbit": "From Fitbit"
         default: "From demo data"
         }

@@ -167,7 +167,7 @@ final class DayAggregator {
     /// The aggregation itself, kept free of HealthKit so tests can set the source.
     func add(points: [QuantityPoint], as q: QuantityMetric) {
         for p in points where p.source.counts(q.metric) {
-            if p.source.isReadDirectly { sawWhoopSteps = true }
+            if p.source.isWhoop { sawWhoopSteps = true }
             let value = p.value
             guard value.isFinite else { continue }
             let date = q.byWakeDay ? (p.end ?? p.start).localDate(shift: Day.rollover) : p.start.localDate()

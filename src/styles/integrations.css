@@ -1,10 +1,10 @@
-/* ---------- Integrations (src/pages/Integrations.tsx, FitbitImport.tsx) ----------
-   Three source cards side by side (stacked below 1080px), each a letter tile, its name and state chip, what it brings,
-   then its pills and a footnote pinned to the bottom so the three line up; a full-width note under them. Colours are
+/* ---------- Integrations (src/pages/Integrations.tsx, FitbitImport.tsx, NoopImport.tsx) ----------
+   Four source cards, two by two (stacked below 1080px), each a letter tile, its name and state chip, what it brings,
+   then its pills and a footnote pinned to the bottom so each row lines up; a full-width note under them. Colours are
    the shell's tokens only, so light, dark and forced dark need nothing here. */
 .sources-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
 }
 .source-card {
@@ -153,7 +153,16 @@
   color: var(--ink-2);
 }
 
-/* The Fitbit import sheet: what was found, the unit question, progress. */
+/* The Fitbit and NOOP import sheets: the steps, what was found, the unit question, progress. */
+.noop-steps {
+  display: grid;
+  gap: 6px;
+  padding-left: 20px;
+  list-style: decimal;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ink-2);
+}
 .fitbit-steps a {
   text-decoration: underline;
   text-underline-offset: 2px;

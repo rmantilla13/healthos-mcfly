@@ -164,7 +164,7 @@ function Dashboard({ signedIn }: { signedIn: boolean }) {
                   <ShellHeader page={page} date={date} setDate={setDate} reload={reload} account={account} />
                   {page === 'home' && status && noSources(status) && (
                     <a className="banner banner-start" href={href('integrations')}>
-                      <Icon name="integrations" size={16} /> Your dashboard fills in once you connect WHOOP or the healthOS iPhone app, or import a Fitbit export.
+                      <Icon name="integrations" size={16} /> Your dashboard fills in once you connect WHOOP or the healthOS iPhone app, or import a NOOP or Fitbit export.
                       <Icon name="chevron-right" size={16} />
                     </a>
                   )}
@@ -278,7 +278,7 @@ function FamilyOff({ signedIn }: { signedIn: boolean }) {
   );
 }
 
-const noSources = (s: Status) => !s.demo && !s.apple.lastImport && !s.apple.lastSync && !s.whoop.connected && !s.fitbit?.lastImport;
+const noSources = (s: Status) => !s.demo && !s.apple.lastImport && !s.apple.lastSync && !s.whoop.connected && !s.noop?.lastImport && !s.fitbit?.lastImport;
 
 function NotAllowed() {
   return (

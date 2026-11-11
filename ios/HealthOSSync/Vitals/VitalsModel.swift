@@ -37,11 +37,12 @@ enum VitalsWords {
         return readings.filter { $0 }.count
     }
 
-    /// Who measures HRV as RMSSD, for its trend's note (rmssdNote): WHOOP when it's connected, Fitbit when its last
-    /// export had it; WHOOP's alone when neither is known.
+    /// Who measures HRV as RMSSD, for its trend's note (rmssdNote): WHOOP when it's connected, NOOP or Fitbit when its
+    /// last export had it; WHOOP's alone when none is known.
     static func rmssdNote(_ status: ServerStatus?) -> String {
         var by: [String] = []
         if status?.whoop?.connected == true { by.append("WHOOP") }
+        if status?.noop?.lastImport?.metrics.contains("hrv_rmssd") == true { by.append("NOOP") }
         if status?.fitbit?.lastImport?.metrics.contains("hrv_rmssd") == true { by.append("Fitbit") }
         return "\(by.isEmpty ? "WHOOP" : by.joined(separator: " or ")), during sleep"
     }

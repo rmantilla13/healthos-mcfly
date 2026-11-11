@@ -54,7 +54,7 @@ struct SleepNightDetail: Decodable, Equatable {
 
     let date: String
     let today: String
-    /// "apple" | "whoop" | "fitbit"; nil when no device recorded the night.
+    /// "apple" | "whoop" | "noop" | "fitbit"; nil when no device recorded the night.
     let source: String?
     /// The first and last moment asleep (Apple), or the sleep record's start and end (WHOOP).
     let fellAsleep: String?

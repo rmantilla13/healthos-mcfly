@@ -139,7 +139,9 @@ async function memberTile(db: Db, hosted: boolean, userId: string, o: TileOpts):
   };
 
   const devices: FamilyDevice[] = [];
-  if (o.whoop) devices.push('whoop');
+  // A WHOOP strap read by NOOP is still a WHOOP strap: its export counts when it has readings in the window.
+  const noop = METRICS.some((m) => (daily.get(m)?.get('noop')?.size ?? 0) > 0);
+  if (o.whoop || noop) devices.push('whoop');
   const apple = (metric: string) => (daily.get(metric)?.get('apple')?.size ?? 0) > 0;
   if (apple('resting_hr') || apple('hrv_sdnn')) devices.push('watch');
   else if (METRICS.some(apple)) devices.push('iphone');

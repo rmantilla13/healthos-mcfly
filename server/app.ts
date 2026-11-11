@@ -15,6 +15,7 @@ import { aiRouter } from './ai/routes.ts';
 import { bodyRouter } from './body.ts';
 import { exportRouter } from './export.ts';
 import { fitbitRouter } from './fitbit.ts';
+import { noopIngestRouter, noopRouter } from './noop.ts';
 import { journalRouter } from './journal.ts';
 import { peersRouter } from './peers.ts';
 import { portraitsRouter } from './portraits.ts';
@@ -87,6 +88,7 @@ export function createApp({ db, hosted, ingestToken, mcflyClient = defaultClient
 
   // These authenticate themselves (bearer token, cron secret), so they come before the session gate.
   api.use(ingestRouter(db, ingestToken));
+  api.use(noopIngestRouter(db, ingestToken));
   api.get('/cron/whoop', async (req, res) => {
     if (!cronAuthorized(req)) return void res.status(401).json({ error: 'Unauthorized' });
     // Hourly housekeeping for nutrition: McFly's unsaved estimates go after a day (as privacy.html says), and foods
@@ -112,6 +114,7 @@ export function createApp({ db, hosted, ingestToken, mcflyClient = defaultClient
   // A portrait reference photo and a Fitbit export chunk are a few MB each: these routers parse their own bodies.
   api.use('/portraits', requireSession(db), portraitsRouter(db, hosted, aiFetch));
   api.use('/fitbit', requireSession(db), fitbitRouter(db, hosted));
+  api.use('/noop', requireSession(db), noopRouter(db));
 
   api.use(express.json());
   api.get('/auth/me', auth.me);
@@ -194,7 +197,7 @@ export function createApp({ db, hosted, ingestToken, mcflyClient = defaultClient
   async function status(res: Response): Promise<Status> {
     const scope = scopeOf(res);
     const user = currentUser(res);
-    const [settings, last, lastSync, photo, connected, sync, whoopLast, tokenRows, fitbitLast] = await Promise.all([
+    const [settings, last, lastSync, photo, connected, sync, whoopLast, tokenRows, fitbitLast, noopLast, noopSync] = await Promise.all([
       readSettings(scope, hosted),
       getUserSetting(db, scope.userId, 'apple_last_import'),
       getUserSetting(db, scope.userId, 'apple_last_sync'),
@@ -204,6 +207,8 @@ export function createApp({ db, hosted, ingestToken, mcflyClient = defaultClient
       getUserSetting(db, scope.userId, 'whoop_last_sync'),
       db.query<{ has: boolean }>('SELECT ingest_token_hash IS NOT NULL AS has FROM users WHERE id = $1', [scope.userId]),
       getUserSetting(db, scope.userId, 'fitbit_last_import'),
+      getUserSetting(db, scope.userId, 'noop_last_import'),
+      getUserSetting(db, scope.userId, 'noop_last_sync'),
     ]);
     const { demo } = await requestContext(scope, hosted);
     return {
@@ -227,6 +232,7 @@ export function createApp({ db, hosted, ingestToken, mcflyClient = defaultClient
         lastError: sync.lastError ?? null,
       },
       fitbit: { lastImport: fitbitLast ? JSON.parse(fitbitLast) : null },
+      noop: { lastImport: noopLast ? JSON.parse(noopLast) : null, lastSync: noopSync ? JSON.parse(noopSync) : null },
     };
   }
 

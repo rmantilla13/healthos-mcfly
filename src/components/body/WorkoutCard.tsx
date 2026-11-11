@@ -32,7 +32,7 @@ import { Icon, type IconName } from '../Icon.tsx';
 /** How far back to look for the latest workout and its sport's earlier sessions. */
 const DAYS = 90;
 const ACTIVITY = '#/body?tab=activity';
-const SOURCE: Record<string, string> = { apple: 'Apple Health', whoop: 'WHOOP', 'apple+whoop': 'Apple Health and WHOOP' };
+const SOURCE: Record<string, string> = { apple: 'Apple Health', whoop: 'WHOOP', noop: 'NOOP', 'apple+whoop': 'Apple Health and WHOOP', 'apple+noop': 'Apple Health and NOOP' };
 const KIND_ICON: Record<SportKind, IconName> = { run: 'steps', walk: 'steps', cycle: 'activity', swim: 'activity', strength: 'body', mind: 'spark', other: 'activity' };
 
 export function WorkoutCard({ s, date }: { s: Summary; date: string | null }) {

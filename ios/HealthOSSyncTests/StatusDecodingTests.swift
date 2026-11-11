@@ -26,6 +26,11 @@ final class StatusDecodingTests: XCTestCase {
                   "job": ["state": "parsing", "bytesRead": 10, "totalBytes": 100, "records": 4], "iphoneToken": true] as [String: Any],
         "whoop": ["configured": true, "connected": false, "redirectUri": "https://example.com/cb", "syncing": false, "lastSync": NSNull(), "lastError": NSNull()],
         "fitbit": ["lastImport": ["days": 30, "firstDate": "2026-09-01", "lastDate": "2026-09-30", "metrics": ["steps", "resting_hr"], "importedAt": "2026-10-01T10:00:00Z"]],
+        "noop": [
+            "lastImport": ["days": 21, "firstDate": "2026-10-01", "lastDate": "2026-10-21", "metrics": ["hrv_rmssd", "recovery", "sleep_hours"],
+                           "nights": 19, "workouts": 4, "importedAt": "2026-10-22T07:30:00Z"] as [String: Any],
+            "lastSync": ["syncedAt": "2026-10-23T06:45:00Z", "from": "2026-10-20", "to": "2026-10-23", "days": 4, "nights": 3, "workouts": 1] as [String: Any],
+        ],
     ]
 
     func testReadsTheNewFields() throws {
@@ -47,6 +52,17 @@ final class StatusDecodingTests: XCTestCase {
         XCTAssertEqual(s.apple?.job?.state, "parsing")
         XCTAssertEqual(s.apple?.lastSync?.syncedAt, "2026-10-24T08:00:00Z")
         XCTAssertEqual(s.fitbit?.lastImport?.metrics, ["steps", "resting_hr"])
+        let noop = try XCTUnwrap(s.noop?.lastImport)
+        XCTAssertEqual(noop.days, 21)
+        XCTAssertEqual(noop.firstDate, "2026-10-01")
+        XCTAssertEqual(noop.lastDate, "2026-10-21")
+        XCTAssertEqual(noop.metrics, ["hrv_rmssd", "recovery", "sleep_hours"])
+        XCTAssertEqual(noop.nights, 19)
+        XCTAssertEqual(noop.workouts, 4)
+        XCTAssertEqual(noop.importedAt, "2026-10-22T07:30:00Z")
+        XCTAssertEqual(s.noop?.lastSync?.syncedAt, "2026-10-23T06:45:00Z")
+        XCTAssertEqual(s.noop?.lastSync?.from, "2026-10-20")
+        XCTAssertEqual(s.noop?.lastSync?.nights, 3)
         XCTAssertEqual(s.photo?.shoulderY, 0.42)
         XCTAssertEqual(s.photo?.outline?.count, 2)
     }
@@ -93,6 +109,35 @@ final class StatusDecodingTests: XCTestCase {
         XCTAssertEqual(s.demo, false)
     }
 
+    /// NOOP's part of the status (shared/types.ts Status.noop): nothing imported yet, an import from before nights and
+    /// workouts were counted, and parts the app can't read, none of which costs the rest of the status.
+    func testNoopsStatusReadsPartByPart() throws {
+        var json = current
+        json["noop"] = ["lastImport": NSNull()]
+        var s = try status(json)
+        XCTAssertNotNil(s.noop)
+        XCTAssertNil(s.noop?.lastImport)
+        XCTAssertNil(s.noop?.lastSync, "lastSync is missing from servers before the strap sync")
+
+        json["noop"] = ["lastImport": ["days": 2, "metrics": ["steps"], "importedAt": "2026-10-22T07:30:00Z"] as [String: Any]]
+        s = try status(json)
+        XCTAssertEqual(s.noop?.lastImport?.days, 2)
+        XCTAssertNil(s.noop?.lastImport?.nights)
+        XCTAssertNil(s.noop?.lastImport?.workouts)
+
+        json["noop"] = ["lastImport": ["days": 2, "metrics": ["steps", 9] as [Any]] as [String: Any], "lastSync": ["syncedAt": "2026-10-23T06:45:00Z"]]
+        s = try status(json)
+        XCTAssertNil(s.noop?.lastImport, "an import without its date is no import")
+        XCTAssertEqual(s.noop?.lastSync?.syncedAt, "2026-10-23T06:45:00Z", "the sync stays")
+
+        json["noop"] = "lots"
+        s = try status(json)
+        XCTAssertNil(s.noop)
+        XCTAssertEqual(s.fitbit?.lastImport?.days, 30, "the rest of the status stays")
+        XCTAssertEqual(s.whoop?.configured, true)
+        XCTAssertEqual(s.settings?.name, "Sam")
+    }
+
     func testAnOlderServerLeavesTheNewFieldsNil() throws {
         let s = try status(["settings": ["name": "Sam", "units": "metric", "hiddenCards": []]])
         XCTAssertEqual(s.settings?.hiddenCards, [])
@@ -102,6 +147,7 @@ final class StatusDecodingTests: XCTestCase {
         XCTAssertNil(s.user)
         XCTAssertNil(s.apple)
         XCTAssertNil(s.fitbit)
+        XCTAssertNil(s.noop)
     }
 
     func testTheCacheKeepsTheNewSettings() throws {
@@ -114,6 +160,8 @@ final class StatusDecodingTests: XCTestCase {
         XCTAssertEqual(again.user?.id, "u1")
         XCTAssertEqual(again.apple?.iphoneToken, true)
         XCTAssertEqual(again.photo?.shoulderY, 0.42)
+        XCTAssertEqual(again.noop?.lastImport?.workouts, 4)
+        XCTAssertEqual(again.noop?.lastSync?.to, "2026-10-23")
 
         // An empty shown list stays empty, and a missing one stays missing: they mean different things.
         let empty = try status(["settings": ["hiddenCards": [], "shownCards": []]])

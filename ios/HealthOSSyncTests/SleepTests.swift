@@ -119,8 +119,32 @@ final class SleepTests: XCTestCase {
     func testStagesNotesBySourceAndAge() {
         XCTAssertEqual(SleepWords.stagesNote(source: "whoop", date: "2026-10-01", today: "2026-10-27"), SleepWords.whoopStages)
         XCTAssertEqual(SleepWords.stagesNote(source: "fitbit", date: "2026-10-01", today: "2026-10-27"), SleepWords.fitbitStages)
+        XCTAssertEqual(SleepWords.stagesNote(source: "noop", date: "2026-10-01", today: "2026-10-27"),
+                       "NOOP's export has this night's stage totals, not when in the night each happened.")
         XCTAssertEqual(SleepWords.stagesNote(source: "apple", date: "2026-09-27", today: "2026-10-27"), SleepWords.resentStages, "30 days: the iPhone sends it again")
         XCTAssertEqual(SleepWords.stagesNote(source: "apple", date: "2026-09-26", today: "2026-10-27"), SleepWords.oldStages)
+    }
+
+    /// A night from a WHOOP strap read by NOOP (made-up figures): named NOOP, its sleep performance NOOP's estimate, and a
+    /// NOOP export counts as a source that scores nights.
+    func testANoopNight() throws {
+        let night = try JSONDecoder().decode(SleepNightDetail.self, from: Data(#"""
+        {"date":"2026-10-26","today":"2026-10-27","source":"noop","fellAsleep":"2026-10-25T23:05:00-04:00","wokeUp":"2026-10-26T06:50:00-04:00",
+         "asleepHours":7.2,"performance":84,"stages":{"awake":0.4,"light":3.9,"deep":1.5,"rem":1.8},"segments":[],"insights":[]}
+        """#.utf8))
+        XCTAssertEqual(night.source, "noop")
+        XCTAssertEqual(SleepWords.performanceFoot(source: night.source), "NOOP's estimate: the sleep you got against the sleep you needed")
+        XCTAssertEqual(SleepWords.performanceFoot(source: "whoop"), "WHOOP: the sleep you got against the sleep you needed")
+        XCTAssertEqual(SleepWords.performanceFoot(source: "apple"), "WHOOP: the sleep you got against the sleep you needed", "the demo's, as before")
+        XCTAssertEqual(SleepWords.noopTimeline, "From NOOP's sleep record: when it started and ended.")
+
+        let noopOnly = #"{"hosted":false,"demo":false,"settings":{"name":"Sam","hiddenCards":[],"shownCards":[]},"whoop":{"configured":true,"connected":false,"lastSync":null},"apple":{"lastSync":null,"lastImport":null},"noop":{"lastImport":{"days":12,"firstDate":"2026-10-15","lastDate":"2026-10-26","metrics":["sleep_hours","sleep_performance"],"nights":11,"workouts":2,"importedAt":"2026-10-27T08:00:00Z"},"lastSync":null},"fitbit":{"lastImport":null}}"#
+        let c = SleepNightContext(night: night, status: try sleepStatus(noopOnly))
+        XCTAssertEqual(c.source, "NOOP")
+        XCTAssertTrue(c.whoop, "NOOP scores a night's sleep performance too")
+        XCTAssertFalse(c.bare)
+        XCTAssertTrue(SleepNightContext.hasSleepSource(try sleepStatus(noopOnly)))
+        XCTAssertFalse(SleepNightContext.hasSleepSource(try sleepStatus(sleepNewStatus)))
     }
 
     func testInsightRows() throws {
@@ -202,9 +226,11 @@ final class SleepTests: XCTestCase {
     func testTheWordsAreSleepTsx() throws {
         let web = try String(contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().appendingPathComponent("src/pages/Sleep.tsx"), encoding: .utf8)
-        let quoted = [SleepWords.title, SleepWords.sub, SleepWords.subNone, SleepWords.noNight, SleepWords.performanceFoot, SleepWords.efficiencyFoot,
+        let quoted = [SleepWords.title, SleepWords.sub, SleepWords.subNone, SleepWords.noNight, ": the sleep you got against the sleep you needed", "NOOP's estimate",
+                      SleepWords.efficiencyFoot,
                       SleepWords.whoopOnly, SleepWords.noWhoopNight, SleepWords.sleepChange, SleepWords.noStages, SleepWords.whoopStages,
-                      SleepWords.fitbitStages, SleepWords.resentStages, SleepWords.oldStages, SleepWords.insightsEmpty, SleepWords.whoopTimeline,
+                      SleepWords.noopStages, SleepWords.fitbitStages, SleepWords.resentStages, SleepWords.oldStages, SleepWords.insightsEmpty,
+                      SleepWords.whoopTimeline, SleepWords.noopTimeline,
                       SleepWords.noRestingHr, SleepWords.needNote, SleepWords.needTwoWeeks, SleepWords.debtNote, SleepWords.patternsEmpty,
                       SleepWords.patternsNote, "This needs a week of nights.", "Couldn't load your sleep: ", "Last night", "Night to ",
                       "An average night", "nights with stages", "average time asleep", "Sleep stages, weekly average", "Usual times",
