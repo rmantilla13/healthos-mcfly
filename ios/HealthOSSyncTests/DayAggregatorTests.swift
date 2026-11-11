@@ -321,6 +321,53 @@ final class DayAggregatorTests: XCTestCase {
         XCTAssertFalse(SampleSource(name: "Sam's Apple Watch", bundleIdentifier: "com.apple.health.81A5D1E0").isReadDirectly)
     }
 
+    func testNoopIsRecognizedByItsBundleIdOrWholeName() {
+        // NOOP's iPhone app, built under NOOP's own prefix or anyone else's: the whole last part of the ID is "noop".
+        XCTAssertTrue(SampleSource(name: "NOOP", bundleIdentifier: "com.noopapp.noop").isReadDirectly)
+        XCTAssertTrue(SampleSource(name: "NOOP", bundleIdentifier: "com.someone.noop").isNoop)
+        XCTAssertTrue(SampleSource(name: "Strap", bundleIdentifier: "com.NoopApp.NOOP").isNoop)
+        XCTAssertFalse(SampleSource(name: "NOOP", bundleIdentifier: "com.noopapp.noop").isWhoop)
+        // Sideloaded, with the signer's team ID after it: the name, whole.
+        XCTAssertTrue(SampleSource(name: "NOOP", bundleIdentifier: "com.noopapp.noop.ABCDE12345").isNoop)
+        XCTAssertTrue(SampleSource(name: " noop ", bundleIdentifier: "com.example.sleep").isNoop)
+        // Not its watch app (the Apple Watch's own sensor), however it was signed, or its widgets, or apps whose ID or
+        // name only starts or ends alike.
+        XCTAssertFalse(SampleSource(name: "NOOP", bundleIdentifier: "com.noopapp.noop.watch").isReadDirectly)
+        XCTAssertFalse(SampleSource(name: "NOOP", bundleIdentifier: "com.noopapp.noop.watch.ABCDE12345").isReadDirectly)
+        XCTAssertFalse(SampleSource(name: "NOOP", bundleIdentifier: "com.noopapp.noop.ABCDE12345.watch").isReadDirectly)
+        XCTAssertFalse(SampleSource(name: "NOOPWidgets", bundleIdentifier: "com.noopapp.noop.widgets").isReadDirectly)
+        XCTAssertFalse(SampleSource(name: "Snoop", bundleIdentifier: "com.example.snoop").isReadDirectly)
+        XCTAssertFalse(SampleSource(name: "Noopy", bundleIdentifier: "com.example.noopy").isReadDirectly)
+        XCTAssertFalse(SampleSource(name: "Noop Timer", bundleIdentifier: "com.example.nooptimer").isReadDirectly)
+        XCTAssertFalse(SampleSource(name: "NOOP Staging", bundleIdentifier: "com.noopapp.noop.staging").isReadDirectly)
+    }
+
+    func testNoopsCopiesInHealthAreIgnored() {
+        // Made-up readings. NOOP writes the strap's night, heart rate and nightly vitals into Health; healthOS reads
+        // NOOP directly, so these copies don't count, and they're not WHOOP's steps either.
+        let noop = SampleSource(name: "NOOP", bundleIdentifier: "com.noopapp.noop")
+        let watch = SampleSource(name: "Sam's Apple Watch", bundleIdentifier: "com.apple.health.watch")
+        let metric = { (name: String) in HealthTypes.quantities.first { $0.metric == name }! }
+        let agg = DayAggregator(dates: ["2026-10-15"])
+        agg.add(sleepRecords: [
+            SleepRecord(start: at("14 22:00"), end: at("15 07:00"), stage: .unspecified, source: noop),
+            SleepRecord(start: at("14 23:00"), end: at("15 06:00"), stage: .light, source: watch),
+        ])
+        agg.add(points: [point(7, 10, 60, watch), point(7, 50, 150, noop)], as: metric("hr_avg"))
+        agg.add(points: [point(6, 0, 47, noop), point(9, 0, 55, watch)], as: metric("resting_hr"))
+        agg.add(points: [point(3, 0, 88, noop)], as: metric("hrv_sdnn"))
+        agg.add(points: [point(3, 0, 95, noop)], as: metric("spo2"))
+        let rows = agg.finish()
+        let value = { (m: String) in rows.daily.first { $0.metric == m }?.value }
+        XCTAssertEqual(value("sleep_hours"), 7, "the Watch's night, not NOOP's 9h copy")
+        XCTAssertEqual(rows.events.first?.id, hashId("apple", "sleep", watch.name, "2026-10-15"))
+        XCTAssertEqual(value("resting_hr"), 55)
+        XCTAssertNil(value("hrv_sdnn"), "NOOP's RMSSD isn't read as the Watch's SDNN")
+        XCTAssertNil(value("spo2"))
+        XCTAssertEqual(rows.hourly?.first { $0.metric == "hr_max" }?.value, 60)
+        XCTAssertFalse(agg.sawWhoopSteps)
+    }
+
     func testIdsAndSportNamesMatchTheExportImporter() {
         // Expected values from server/apple/import.ts (hashId, sportName).
         XCTAssertEqual(hashId("apple", "sleep", "Watch", "2026-10-14"), "6b3a960ff96b21d5f3d6")

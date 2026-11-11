@@ -733,7 +733,7 @@ final class HomeChromeTests: XCTestCase {
     func testTheNoSourcesBannerIsAppTsxs() throws {
         let app = try web("src/App.tsx")
         XCTAssertTrue(app.contains(NoSourcesBanner.text))
-        XCTAssertTrue(app.contains("const noSources = (s: Status) => !s.demo && !s.apple.lastImport && !s.apple.lastSync && !s.whoop.connected && !s.fitbit?.lastImport;"))
+        XCTAssertTrue(app.contains("const noSources = (s: Status) => !s.demo && !s.apple.lastImport && !s.apple.lastSync && !s.whoop.connected && !s.noop?.lastImport && !s.fitbit?.lastImport;"))
         func status(_ json: String) throws -> ServerStatus { try decode(ServerStatus.self, json) }
         XCTAssertTrue(NoSourcesBanner.shows(try status(#"{"demo":false,"apple":{},"whoop":{"connected":false}}"#)))
         XCTAssertFalse(NoSourcesBanner.shows(try status(#"{"demo":true,"apple":{},"whoop":{"connected":false}}"#)), "demo data shows")
@@ -741,6 +741,9 @@ final class HomeChromeTests: XCTestCase {
         XCTAssertFalse(NoSourcesBanner.shows(try status(#"{"demo":false,"apple":{"lastImport":{"importedAt":"2026-10-19T08:00:00Z"}},"whoop":{}}"#)))
         XCTAssertFalse(NoSourcesBanner.shows(try status(#"{"demo":false,"apple":{},"whoop":{"connected":true}}"#)))
         XCTAssertFalse(NoSourcesBanner.shows(try status(#"{"demo":false,"apple":{},"whoop":{},"fitbit":{"lastImport":{"importedAt":"2026-10-19","metrics":[]}}}"#)))
+        XCTAssertFalse(NoSourcesBanner.shows(try status(#"{"demo":false,"apple":{},"whoop":{},"noop":{"lastImport":{"importedAt":"2026-10-19","metrics":[],"days":3,"nights":2,"workouts":0}}}"#)),
+                       "a NOOP export counts")
+        XCTAssertTrue(NoSourcesBanner.shows(try status(#"{"demo":false,"apple":{},"whoop":{},"noop":{"lastImport":null,"lastSync":null}}"#)))
         XCTAssertFalse(NoSourcesBanner.shows(try status("{}")), "a status that says nothing about sources says nothing")
         XCTAssertFalse(NoSourcesBanner.shows(nil))
         // The family note, once (App.tsx FamilyNotice).

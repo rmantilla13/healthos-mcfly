@@ -7,7 +7,7 @@ import path from 'node:path';
 import { Readable } from 'node:stream';
 import { type Db, OWNER_ID } from '../server/db.ts';
 import { openStore } from '../server/store.ts';
-import { importAppleHealth, parseStream, sportName } from '../server/apple/import.ts';
+import { fromDirectSource, importAppleHealth, parseStream, sportName } from '../server/apple/import.ts';
 
 const FIXTURE = path.join(import.meta.dirname, 'fixtures', 'export.xml');
 
@@ -210,6 +210,36 @@ test("WHOOP's own copies in Apple Health are skipped (WHOOP is read from its API
   assert.equal(v('hrv_rmssd_watch'), 42);
   assert.equal(workouts.length, 0);
   assert.equal(agg.skipped, 3);
+});
+
+test("NOOP's copies in Apple Health are skipped too (its export or the strap is read directly)", async () => {
+  // Made-up readings: NOOP writes the strap's resting heart rate, HRV (RMSSD, into the SDNN type), SpO2, sleep and
+  // workouts into Health; the Watch's own readings still count.
+  const xml = `<?xml version="1.0"?><HealthData>
+    <Record type="HKQuantityTypeIdentifierRestingHeartRate" sourceName="NOOP" unit="count/min" startDate="2026-10-13 00:00:00 -0700" endDate="2026-10-13 00:00:00 -0700" value="48"/>
+    <Record type="HKQuantityTypeIdentifierRestingHeartRate" sourceName="Sam’s Apple Watch" unit="count/min" startDate="2026-10-13 00:00:00 -0700" endDate="2026-10-13 23:59:00 -0700" value="56"/>
+    <Record type="HKQuantityTypeIdentifierHeartRateVariabilitySDNN" sourceName="NOOP" unit="ms" startDate="2026-10-13 03:00:00 -0700" endDate="2026-10-13 03:01:00 -0700" value="71"/>
+    <Record type="HKQuantityTypeIdentifierOxygenSaturation" sourceName=" noop " unit="%" startDate="2026-10-13 03:00:00 -0700" endDate="2026-10-13 03:01:00 -0700" value="0.96"/>
+    <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="NOOP" startDate="2026-10-12 22:00:00 -0700" endDate="2026-10-13 07:00:00 -0700" value="HKCategoryValueSleepAnalysisAsleepUnspecified"/>
+    <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Sam’s Apple Watch" startDate="2026-10-12 23:00:00 -0700" endDate="2026-10-13 06:00:00 -0700" value="HKCategoryValueSleepAnalysisAsleepCore"/>
+    <Workout workoutActivityType="HKWorkoutActivityTypeRunning" duration="30" durationUnit="min" sourceName="NOOP" startDate="2026-10-13 12:00:00 -0700" endDate="2026-10-13 12:30:00 -0700"/>
+  </HealthData>`;
+  const agg = await parseStream(Readable.from([Buffer.from(xml)]));
+  const { daily, workouts } = agg.finish();
+  const v = (m: string) => daily.find((d) => d.metric === m)?.value;
+  assert.equal(v('resting_hr'), 56, 'only the Watch reading counts');
+  assert.equal(v('sleep_hours'), 7, "the Watch's night, not NOOP's 9h copy");
+  assert.equal(v('hrv_sdnn'), undefined, "NOOP's RMSSD isn't read as the Watch's SDNN");
+  assert.equal(v('spo2'), undefined);
+  assert.equal(workouts.length, 0);
+  assert.equal(agg.skipped, 5);
+});
+
+test('the direct sources are matched by their whole name, not any app that starts the same', () => {
+  for (const name of ['WHOOP', 'whoop 4.0', 'NOOP', ' noop ', 'Noop']) assert.ok(fromDirectSource(name), name);
+  for (const name of ['Noop Timer', 'NOOP Staging', 'Snoop', 'NOOPy', 'Whoopsie Sleep', 'Sam’s Apple Watch', '', undefined]) {
+    assert.ok(!fromDirectSource(name), String(name));
+  }
 });
 
 // ---- blood pressure, glucose, mobility, daylight, stand hours, caffeine and water ----
