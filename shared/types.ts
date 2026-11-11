@@ -216,13 +216,16 @@ export type Status = {
   /** A Fitbit (Google Takeout) export read in the browser and sent here (server/fitbit.ts). Missing from older servers. */
   fitbit?: { lastImport: FitbitImportSummary | null };
   /** A WHOOP strap read by NOOP, from NOOP's CSV export read in the browser (server/noop.ts). Missing from older servers. */
-  noop?: { lastImport: NoopImportSummary | null };
+  noop?: { lastImport: NoopImportSummary | null; lastSync?: NoopSyncSummary | null };
 };
 
 export type FitbitImportSummary = { days: number; firstDate: string | null; lastDate: string | null; metrics: string[]; importedAt: string };
 
 /** Every NOOP day stored, as Integrations shows it, with how many nights and workouts came with them. */
 export type NoopImportSummary = FitbitImportSummary & { nights: number; workouts: number };
+
+/** The iPhone app's last sync straight from the strap (POST /api/noop/ingest): the window it replaced and what was in it. */
+export type NoopSyncSummary = { syncedAt: string; from: string; to: string; days: number; nights: number; workouts: number };
 
 /** POST /api/sync: the status, and whether a WHOOP sync was started by this call. */
 export type SyncResult = Status & { whoopStarted: boolean };

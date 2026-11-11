@@ -27,6 +27,8 @@ import type { CycleDay, NutritionDayIn } from '../../shared/types.ts';
 import { parseCycleDay, replaceCycleDays } from '../cycle/index.ts';
 import { NUTRIENTS, parseNutritionDay, replaceNutritionDays } from '../nutrition.ts';
 import { SOURCE } from './import.ts';
+// A cycle (noop.ts uses ingestAuth from here), safe because neither module uses the other while loading.
+import { noopIngestRouter } from '../noop.ts';
 
 /** Daily metrics the importer produces (server/apple/import.ts). Anything else is a client bug. */
 export const APPLE_METRICS = new Set([
@@ -363,14 +365,11 @@ async function tokenUser(db: Db, given: string, ownerToken: string | undefined):
 }
 
 /**
- * POST /apple/ingest. Always requires `Authorization: Bearer <token>`: a person's own token from Settings,
- * or the server-wide HEALTHOS_INGEST_TOKEN for the owner. Mounted on the server and, in LAN mode, on its
- * own listener (see lanIngestApp).
+ * Middleware: the account a request's `Authorization: Bearer <token>` belongs to, as res.locals.ingestUser; else 401.
+ * The token is a person's own from Settings, or the server-wide HEALTHOS_INGEST_TOKEN for the owner.
  */
-export function ingestRouter(db: Db, ownerToken: string | undefined) {
-  const router = express.Router();
-
-  const auth = async (req: Request, res: Response, next: NextFunction) => {
+export function ingestAuth(db: Db, ownerToken: string | undefined) {
+  return async (req: Request, res: Response, next: NextFunction) => {
     try {
       const m = /^Bearer (.+)$/.exec(req.headers.authorization ?? '');
       const userId = m ? await tokenUser(db, m[1].trim(), ownerToken) : null;
@@ -383,6 +382,15 @@ export function ingestRouter(db: Db, ownerToken: string | undefined) {
       next(err);
     }
   };
+}
+
+/**
+ * POST /apple/ingest. Always requires an ingest token (ingestAuth). Mounted on the server and, in LAN mode, on its
+ * own listener (see lanIngestApp).
+ */
+export function ingestRouter(db: Db, ownerToken: string | undefined) {
+  const router = express.Router();
+  const auth = ingestAuth(db, ownerToken);
 
   // A first sync sends years of history in chunks; each chunk can be well over express.json's 100 kB default.
   router.post('/apple/ingest', auth, express.json({ limit: '25mb' }), async (req, res) => {
@@ -415,6 +423,7 @@ export function lanIngestApp(db: Db, token: string) {
   const app = express();
   app.disable('x-powered-by');
   app.use('/api', ingestRouter(db, token));
+  app.use('/api', noopIngestRouter(db, token));
   app.use((_req, res) => void res.status(404).json({ error: 'Not found' }));
   return app;
 }

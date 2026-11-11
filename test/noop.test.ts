@@ -252,7 +252,7 @@ test('importing needs a signed-in person and the X-HealthOS header', async () =>
 test('a chunk is stored as NOOP: the day rows, one sleep record per night and the workouts', async () => {
   const res = await owner.post('/api/noop/import', chunk);
   assert.equal(res.status, 200);
-  assert.deepEqual(res.json, { ok: true, daily: 9, nights: 1, workouts: 1 });
+  assert.deepEqual(res.json, { ok: true, daily: 9, nights: 1, workouts: 1, dropped: 0 });
   assert.equal((await rows(OWNER_ID)).length, 9);
   const events = await rows(OWNER_ID, 'events');
   assert.deepEqual(events.map((e) => [e.id, e.kind, e.date]), [[`noop-sleep-${D1}`, 'sleep', D1]]);
@@ -358,9 +358,94 @@ test('finishing keeps the summary Integrations shows, of what is stored', async 
   assert.equal((await owner.post('/api/noop/import/finish', { days: 1, firstDate: null, lastDate: null, metrics: ['steps'] })).status, 400);
 });
 
+// ---------- straight from the strap: POST /api/noop/ingest ----------
+
+const bearer = (token: string) => ({ 'X-HealthOS': '1', Authorization: `Bearer ${token}` });
+let bobToken = '';
+
+const D3 = day(1);
+const strapNight = (date: string) => ({
+  date,
+  start: `${prev(date)}T23:00:00+00:00`,
+  end: `${date}T06:30:00+00:00`,
+  segments: [
+    { start: `${prev(date)}T23:00:00+00:00`, end: `${prev(date)}T23:20:00+00:00`, stage: 'awake' },
+    { start: `${prev(date)}T23:20:00+00:00`, end: `${date}T01:00:00+00:00`, stage: 'light' },
+    { start: `${date}T01:00:00+00:00`, end: `${date}T02:30:00+00:00`, stage: 'deep' },
+    { start: `${date}T02:30:00+00:00`, end: `${date}T06:30:00+00:00`, stage: 'rem' },
+  ],
+});
+const sync = (extra: Record<string, unknown> = {}) => ({
+  window: { from: D2, to: D3 },
+  daily: [
+    { date: D2, metric: 'recovery', value: 55 },
+    { date: D3, metric: 'recovery', value: 71 },
+    { date: D3, metric: 'sleep_hours', value: 7.1 },
+  ],
+  sleep: [strapNight(D3)],
+  workouts: [{ ...chunk.workouts[0], date: D2, start: `${D2}T17:30:00+00:00`, end: `${D2}T18:00:00+00:00`, sport: 'Cycling' }],
+  ...extra,
+});
+
+test('the iPhone app syncs the strap with its ingest token, not a session', async () => {
+  const anon = new Client();
+  assert.equal((await anon.post('/api/noop/ingest', sync())).status, 401);
+  assert.equal((await anon.call('POST', '/api/noop/ingest', sync(), bearer('wrong'))).status, 401);
+  bobToken = (await bob.post('/api/me/ingest-token')).json.token;
+  assert.ok(bobToken);
+  const res = await anon.call('POST', '/api/noop/ingest', sync(), bearer(bobToken));
+  assert.equal(res.status, 200);
+  assert.equal(res.json.days, 2);
+  assert.equal(res.json.nights, 1);
+  assert.equal(res.json.workouts, 1);
+  const status = (await bob.get('/api/status')).json.noop;
+  assert.deepEqual({ ...status.lastSync, syncedAt: typeof status.lastSync.syncedAt }, { syncedAt: 'string', from: D2, to: D3, days: 2, nights: 1, workouts: 1 });
+  assert.equal((await rows(bobId, 'sleep_stages')).length, 4, "the night's stages came too");
+  const n = (await bob.get(`/api/sleep/night?date=${D3}`)).json;
+  assert.equal(n.source, 'noop');
+  assert.deepEqual(n.segments.map((g: { stage: string }) => g.stage), ['awake', 'light', 'deep', 'rem']);
+});
+
+test("a sync replaces the strap's rows in its window, and only there", async () => {
+  // Bob's earlier export import of D2 (recovery 40) is inside the window; D1 isn't.
+  assert.equal((await bob.post('/api/noop/import', { daily: [{ date: D1, metric: 'recovery', value: 30 }] })).status, 200);
+  const anon = new Client();
+  // Rescored: D2 dropped its workout and recovery; D3's night lost its stages.
+  const again = sync({ daily: [{ date: D3, metric: 'recovery', value: 73 }], workouts: [], sleep: [{ ...strapNight(D3), segments: undefined }] });
+  assert.equal((await anon.call('POST', '/api/noop/ingest', again, bearer(bobToken))).status, 200);
+  const daily = await rows(bobId);
+  assert.deepEqual(
+    daily.map((r) => [r.date, r.metric, Number(r.value)]),
+    [
+      [D1, 'recovery', 30],
+      [D3, 'recovery', 73],
+    ],
+  );
+  assert.equal((await rows(bobId, 'workouts')).length, 0);
+  assert.equal((await rows(bobId, 'events')).length, 1);
+  assert.equal((await rows(bobId, 'sleep_stages')).length, 0);
+});
+
+test('a sync whose window is too long, or holds a record outside it, is refused whole', async () => {
+  const anon = new Client();
+  const bad: [string, unknown][] = [
+    ['no window', { daily: [] }],
+    ['backwards', { window: { from: D3, to: D2 }, daily: [] }],
+    ['over 31 days', { window: { from: day(40), to: D3 }, daily: [] }],
+    ['a day outside', { window: { from: D3, to: D3 }, daily: [{ date: D2, metric: 'recovery', value: 50 }] }],
+    ['a night outside', { window: { from: D2, to: D2 }, daily: [], sleep: [strapNight(D3)] }],
+    ['an unknown stage', { window: { from: D3, to: D3 }, daily: [], sleep: [{ ...strapNight(D3), segments: [{ ...strapNight(D3).segments[0], stage: 'in_bed' }] }] }],
+  ];
+  for (const [why, body] of bad) {
+    const res = await anon.call('POST', '/api/noop/ingest', body, bearer(bobToken));
+    assert.equal(res.status, 400, why);
+  }
+  assert.equal((await rows(bobId)).length, 2, 'nothing changed');
+});
+
 test("each person's import is their own; removing NOOP data leaves other sources and other people alone", async () => {
   assert.equal((await bob.post('/api/noop/import', { daily: [{ date: D2, metric: 'recovery', value: 40 }] })).status, 200);
-  assert.equal((await rows(bobId)).length, 1);
+  assert.equal((await rows(bobId)).length, 3);
   assert.equal((await bob.get('/api/status')).json.noop.lastImport, null);
 
   const res = await owner.post('/api/noop/clear');
@@ -369,5 +454,6 @@ test("each person's import is their own; removing NOOP data leaves other sources
   assert.equal((await owner.get('/api/status')).json.noop.lastImport, null);
   const others = await db.query("SELECT source FROM daily WHERE user_id = $1 AND source IN ('whoop', 'apple')", [OWNER_ID]);
   assert.equal(others.length, 3, "WHOOP's and Apple's days stay");
-  assert.equal((await rows(bobId)).length, 1, "Bob's stays");
+  assert.equal((await rows(bobId)).length, 3, "Bob's stays");
+  assert.ok((await bob.get('/api/status')).json.noop.lastSync, "and so does his last sync");
 });

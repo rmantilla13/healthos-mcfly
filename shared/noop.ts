@@ -1,8 +1,10 @@
-// A WHOOP strap read over Bluetooth by NOOP (github.com/ryanbr/noop), an offline WHOOP companion app. NOOP's
-// Settings → Backup & restore → Export CSV writes a zip in WHOOP's own export layout (physiological_cycles.csv,
-// sleeps.csv, workouts.csv), with a trailing Source column. The zip is read in the browser (src/import/noop.ts) and
-// sent here in chunks (POST /api/noop/import, server/noop.ts) as source 'noop'. Nothing else about the file leaves
-// the device.
+// A WHOOP strap read with NOOP's code (github.com/ryanbr/noop, an offline WHOOP companion), as source 'noop'. Two
+// ways in (server/noop.ts):
+// - the iPhone app reads the strap over Bluetooth itself, scores the days on the phone, and posts each sync to
+//   POST /api/noop/ingest with the person's ingest token: a window of days that replaces the strap's rows in it.
+// - NOOP's own Settings → Backup & restore → Export CSV zip (WHOOP's export layout plus a Source column), read in
+//   the browser (src/import/noop.ts) and sent in chunks to POST /api/noop/import, which only adds and updates.
+// Nothing else leaves the device.
 //
 // Most of NOOP's numbers are its own estimates, worked out on the phone from the strap's raw readings: its export marks
 // them "noop (APPROXIMATE)". Rows it imported from a WHOOP export are marked "import". Both are stored as 'noop', which
@@ -60,11 +62,20 @@ export const inNoopRange = (metric: NoopMetric, value: number) => Number.isFinit
 export const NOOP_FIRST_DATE = '2015-01-01';
 
 /** What one POST /api/noop/import may carry: under the server's 4 MB body limit, itself under Vercel's 4.5 MB. */
-export const NOOP_CHUNK = { bytes: 3_500_000, rows: 80_000, nights: 1_500, workouts: 2_000 } as const;
+export const NOOP_CHUNK = { bytes: 3_500_000, rows: 80_000, nights: 1_500, workouts: 2_000, stagesPerNight: 1_000 } as const;
+
+/** The most days one POST /api/noop/ingest may replace: a first sync sends its history window by window. */
+export const NOOP_INGEST_MAX_DAYS = 31;
+
+export const NOOP_STAGES = ['awake', 'rem', 'light', 'deep', 'asleep'] as const;
+export type NoopStage = (typeof NOOP_STAGES)[number];
 
 export type NoopDay = { date: string; metric: NoopMetric; value: number };
-/** A night by its wake date, with when it started and ended (local ISO with offset). */
-export type NoopNight = { date: string; start: string; end: string };
+/**
+ * A night by its wake date, with when it started and ended (local ISO with offset), and, from the strap itself, its
+ * stages through the night (a NOOP export has only the totals).
+ */
+export type NoopNight = { date: string; start: string; end: string; segments?: { start: string; end: string; stage: NoopStage }[] };
 export type NoopWorkout = {
   /** The local date it started on. */
   date: string;
@@ -80,6 +91,13 @@ export type NoopWorkout = {
 };
 
 export type NoopChunk = { daily: NoopDay[]; sleep?: NoopNight[]; workouts?: NoopWorkout[] };
+
+/**
+ * POST /api/noop/ingest: everything the phone scored for the local dates `from`..`to` (inclusive). The strap's rows in
+ * that window are replaced by these, so a night NOOP rescored or a workout it renamed leaves no stale copy behind.
+ * Every record's date must fall inside the window.
+ */
+export type NoopIngest = NoopChunk & { window: { from: string; to: string } };
 
 /** POST /api/noop/import/finish. */
 export type NoopFinish = { days: number; firstDate: string | null; lastDate: string | null; metrics: string[] };

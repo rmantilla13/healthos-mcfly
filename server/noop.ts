@@ -2,15 +2,32 @@
 // (src/import/noop.ts) and sent here in chunks as source 'noop' (shared/noop.ts). Only per-day readings, each night's
 // start and end, and workouts arrive. Mounted before the general JSON parser, since a chunk can be a few MB.
 //
-//   POST /import          one chunk of whole days: daily rows, nights and workouts are upserted, so importing a newer
+//   POST /ingest          from the iPhone app, which reads the strap itself (ingest token, not a session; mounted with
+//                         the Apple Health ingest): a window of days whose strap rows it replaces
+//   POST /import          one chunk of a NOOP export: daily rows, nights and workouts are upserted, so importing a newer
 //                         export updates the days it shares with an older one and keeps the rest
 //   POST /import/finish   the summary of every NOOP day stored, shown on Integrations (Status.noop.lastImport)
-//   POST /clear           every NOOP row and the summary go; other sources are untouched
+//   POST /clear           every NOOP row and both summaries go; other sources are untouched
 import express, { type NextFunction, type Request, type Response } from 'express';
-import { NOOP_CHUNK, NOOP_FIRST_DATE, NOOP_METRICS, NOOP_RANGES, type NoopMetric, inNoopRange } from '../shared/noop.ts';
-import type { NoopImportSummary } from '../shared/types.ts';
+import { NOOP_CHUNK, NOOP_FIRST_DATE, NOOP_INGEST_MAX_DAYS, NOOP_METRICS, NOOP_RANGES, NOOP_STAGES, type NoopMetric, inNoopRange } from '../shared/noop.ts';
+import type { NoopImportSummary, NoopSyncSummary } from '../shared/types.ts';
+import { ingestAuth } from './apple/ingest.ts';
 import { currentUser } from './auth.ts';
-import { type DailyRow, type Db, type EventRow, type WorkoutRow, bumpDataVersion, deleteSource, setUserSetting, upsertDaily, upsertEvents, upsertWorkouts } from './db.ts';
+import {
+  type DailyRow,
+  type Db,
+  type EventRow,
+  type Queryable,
+  type SleepStageRow,
+  type WorkoutRow,
+  bumpDataVersion,
+  deleteSource,
+  replaceSleepStages,
+  setUserSetting,
+  upsertDaily,
+  upsertEvents,
+  upsertWorkouts,
+} from './db.ts';
 
 export const NOOP = 'noop';
 
@@ -19,6 +36,7 @@ const MAX_SPAN_MS = 24 * 3_600_000;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/;
 const METRICS = new Set<string>(NOOP_METRICS);
+const STAGES = new Set<string>(NOOP_STAGES);
 
 class ChunkError extends Error {}
 
@@ -76,7 +94,8 @@ const slug = (s: string) =>
     .replace(/^-|-$/g, '')
     .slice(0, 40) || 'activity';
 
-export type ParsedNoopChunk = { daily: DailyRow[]; events: EventRow[]; workouts: WorkoutRow[] };
+/** `stages`: the nights that came with their stages, each replacing that night's strap stages. `dropped`: stretches left out. */
+export type ParsedNoopChunk = { daily: DailyRow[]; events: EventRow[]; workouts: WorkoutRow[]; stages: { date: string; segments: SleepStageRow[] }[]; dropped: number };
 
 /**
  * Checks a chunk (a NoopChunk, shared/noop.ts). A wrong shape, an unknown metric, a value no strap could record or a date
@@ -98,6 +117,8 @@ export function parseNoopChunk(body: unknown): ParsedNoopChunk {
   });
 
   const seen = new Set<string>();
+  const stages: ParsedNoopChunk['stages'] = [];
+  let dropped = 0;
   const events = list(b.sleep, 'sleep', NOOP_CHUNK.nights).map((raw, i): EventRow => {
     const p = `sleep[${i}]`;
     const n = record(raw, p);
@@ -105,6 +126,26 @@ export function parseNoopChunk(body: unknown): ParsedNoopChunk {
     if (seen.has(d)) fail(`${p}.date`, `${d} appears twice`);
     seen.add(d);
     const { start, end } = span(n.start, n.end, p);
+    if (n.segments !== undefined) {
+      // Stages from the strap: one that's merely bad (empty, longer than a night, overlapping the one before) is left
+      // out, as the Fitbit import and the iPhone ingest do.
+      const segments = list(n.segments, `${p}.segments`, NOOP_CHUNK.stagesPerNight)
+        .map((rawSeg, j) => {
+          const sp = `${p}.segments[${j}]`;
+          const g = record(rawSeg, sp);
+          if (typeof g.stage !== 'string' || !STAGES.has(g.stage)) fail(`${sp}.stage`, 'expected awake, rem, light, deep or asleep');
+          return { start: iso(g.start, `${sp}.start`), end: iso(g.end, `${sp}.end`), stage: g.stage };
+        })
+        .sort((x, y) => Date.parse(x.start) - Date.parse(y.start));
+      const kept: SleepStageRow[] = [];
+      for (const g of segments) {
+        const len = Date.parse(g.end) - Date.parse(g.start);
+        const prev = kept.at(-1);
+        if (len <= 0 || len > MAX_SPAN_MS || (prev && Date.parse(g.start) < Date.parse(prev.end))) dropped++;
+        else kept.push(g);
+      }
+      stages.push({ date: d, segments: kept });
+    }
     // One sleep record per night, by its wake date, so importing a newer export replaces it instead of adding one.
     return { id: `noop-sleep-${d}`, source: NOOP, kind: 'sleep', title: 'Sleep', start, end, date: d };
   });
@@ -132,17 +173,83 @@ export function parseNoopChunk(body: unknown): ParsedNoopChunk {
     };
   });
 
-  return { daily, events, workouts };
+  return { daily, events, workouts, stages, dropped };
+}
+
+async function writeChunk(q: Queryable, userId: string, c: ParsedNoopChunk) {
+  await upsertDaily(q, userId, c.daily);
+  await upsertEvents(q, userId, c.events);
+  await upsertWorkouts(q, userId, c.workouts);
+  await replaceSleepStages(q, userId, NOOP, c.stages);
 }
 
 /** Writes one checked chunk for this person, all or nothing. */
 export async function importNoopChunk(db: Db, userId: string, c: ParsedNoopChunk) {
-  await db.tx(async (q) => {
-    await upsertDaily(q, userId, c.daily);
-    await upsertEvents(q, userId, c.events);
-    await upsertWorkouts(q, userId, c.workouts);
-  });
+  await db.tx((q) => writeChunk(q, userId, c));
   if (c.daily.length || c.events.length || c.workouts.length) await bumpDataVersion(db, userId);
+}
+
+export type ParsedNoopIngest = ParsedNoopChunk & { from: string; to: string };
+
+/** Checks a POST /ingest body (a NoopIngest): a chunk plus the window of local dates it replaces, holding every record. */
+export function parseNoopIngest(body: unknown): ParsedNoopIngest {
+  const b = record(body, 'body');
+  const w = record(b.window, 'window');
+  const latest = latestDate();
+  const from = date(w.from, 'window.from', latest);
+  const to = date(w.to, 'window.to', latest);
+  const days = (Date.parse(to) - Date.parse(from)) / 86_400_000 + 1;
+  if (days < 1 || days > NOOP_INGEST_MAX_DAYS) fail('window', `expected from..to of 1 to ${NOOP_INGEST_MAX_DAYS} days`);
+  const c = parseNoopChunk(b);
+  const outside = [...c.daily, ...c.events, ...c.workouts].find((r) => r.date < from || r.date > to);
+  if (outside) fail('window', `${outside.date} is outside ${from}..${to}`);
+  return { ...c, from, to };
+}
+
+/**
+ * Replaces this person's strap rows in the window with the ones sent, all or nothing. NOOP rescores recent nights, and
+ * a workout's id carries its name, so adding without clearing would leave the old versions behind.
+ */
+export async function ingestNoop(db: Db, userId: string, p: ParsedNoopIngest): Promise<NoopSyncSummary> {
+  await db.tx(async (q) => {
+    for (const table of ['daily', 'events', 'workouts', 'sleep_stages']) {
+      await q.query(`DELETE FROM ${table} WHERE user_id = $1 AND source = $2 AND date BETWEEN $3 AND $4`, [userId, NOOP, p.from, p.to]);
+    }
+    await writeChunk(q, userId, p);
+  });
+  const summary: NoopSyncSummary = {
+    syncedAt: new Date().toISOString(),
+    from: p.from,
+    to: p.to,
+    days: new Set(p.daily.map((r) => r.date)).size,
+    nights: p.events.length,
+    workouts: p.workouts.length,
+  };
+  await setUserSetting(db, userId, 'noop_last_sync', JSON.stringify(summary));
+  await bumpDataVersion(db, userId);
+  return summary;
+}
+
+/** POST /noop/ingest, authenticated by the person's ingest token like the Apple Health one. Mounted before the session gate. */
+export function noopIngestRouter(db: Db, ownerToken: string | undefined) {
+  const router = express.Router();
+  router.post('/noop/ingest', ingestAuth(db, ownerToken), express.json({ limit: MAX_BODY }), async (req, res) => {
+    let parsed: ParsedNoopIngest;
+    try {
+      parsed = parseNoopIngest(req.body);
+    } catch (err) {
+      if (err instanceof ChunkError) return void res.status(400).json({ error: err.message });
+      throw err;
+    }
+    const summary = await ingestNoop(db, res.locals.ingestUser as string, parsed);
+    res.json({ ok: true, ...summary, dropped: parsed.dropped });
+  });
+  router.use((err: Error & { status?: number; type?: string }, _req: Request, res: Response, next: NextFunction) => {
+    if (err.type === 'entity.too.large') return void res.status(413).json({ error: 'Request too large' });
+    if (err.type === 'entity.parse.failed') return void res.status(400).json({ error: 'Body is not JSON' });
+    next(err);
+  });
+  return router;
 }
 
 function parseFinish(body: unknown) {
@@ -192,7 +299,7 @@ export function noopRouter(db: Db) {
       throw err;
     }
     await importNoopChunk(db, userOf(res), chunk);
-    res.json({ ok: true, daily: chunk.daily.length, nights: chunk.events.length, workouts: chunk.workouts.length });
+    res.json({ ok: true, daily: chunk.daily.length, nights: chunk.events.length, workouts: chunk.workouts.length, dropped: chunk.dropped });
   });
 
   router.post('/import/finish', json, async (req, res) => {
@@ -215,6 +322,7 @@ export function noopRouter(db: Db) {
     await db.tx(async (q) => {
       await deleteSource(q, userId, NOOP);
       await setUserSetting(q, userId, 'noop_last_import', null);
+      await setUserSetting(q, userId, 'noop_last_sync', null);
     });
     await bumpDataVersion(db, userId);
     res.json({ ok: true });
