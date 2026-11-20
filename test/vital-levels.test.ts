@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { addDays } from '../server/dates.ts';
 import { rangeStatus, vitalRange } from '../server/query.ts';
+import { SPO2_BANDS, spo2Band } from '../shared/metrics.ts';
 
 const D = '2026-10-19';
 /** 30 days of breathing alternating 13.9 and 14.1 (SD 0.1, so the band is its 0.5 minimum), then today's reading. */
@@ -35,4 +36,27 @@ test('the level is normal exactly when the status is, and the status matches ran
     assert.equal(r.level === 'normal', r.status === 'normal', String(value));
     assert.equal(r.status, rangeStatus(ctx(value), 'resp_rate', at(value), 0.5), String(value));
   }
+});
+
+test('blood oxygen has fixed bands: higher is better, 95 and up normal, under 95 slightly low, 92 or lower low', () => {
+  for (const [v, band] of [
+    [100, 'normal'],
+    [95, 'normal'],
+    [94.96, 'normal'], // reads "95.0%"
+    [94.9, 'slightly_low'],
+    [92.1, 'slightly_low'],
+    [92.04, 'low'], // reads "92.0%"
+    [92, 'low'],
+    [89.9, 'low'],
+    [80, 'low'],
+  ] as const)
+    assert.equal(spo2Band(v), band, `${v}`);
+  assert.deepEqual(
+    Object.values(SPO2_BANDS).map((b) => [b.text, b.level]),
+    [
+      ['Normal', 'normal'],
+      ['Slightly low', 'unusual'],
+      ['Low', 'off'],
+    ],
+  );
 });

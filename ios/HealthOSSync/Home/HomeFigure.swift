@@ -70,8 +70,16 @@ struct CalloutText: Equatable {
             (value, unit, spokenUnit) = (n.map { _ in Fmt.number(t.value, 1) }, t.unit, t.unit)
         }
         let name = key == .heart ? "Heart" : v?.label ?? CalloutKey.defaultName(key)
-        let level = VitalLevel.of(v, asOf: asOf)
-        let status = v?.latest == nil ? nil : VitalLevel.statusLine(v, asOf: asOf)
+        let level: VitalLevel, status: String?
+        if key == .spo2, let latest = v?.latest {
+            // Blood oxygen by its fixed bands, not the usual: higher is better (Figure.tsx levelOf, statusText).
+            let band = Spo2Band.of(latest.value)
+            level = latest.date == asOf ? band.level : .neutral
+            status = latest.date == asOf ? band.text : "\(band.text) · \(Fmt.day(latest.date))"
+        } else {
+            level = VitalLevel.of(v, asOf: asOf)
+            status = v?.latest == nil ? nil : VitalLevel.statusLine(v, asOf: asOf)
+        }
         let spoken = value.map { "\(name), \($0) \(spokenUnit)" + (status.map { ", \($0)" } ?? "") } ?? "\(name), no reading"
         let rate: Double? = switch key {
         case .heart: n.flatMap(Self.beats)

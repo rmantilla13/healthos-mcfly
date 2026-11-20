@@ -7,7 +7,7 @@
 // - The sentence is put together from those numbers, never by a model, and says nothing a number doesn't.
 // - Only the signed-in person's data, a fixed list of metrics, and nothing here logs a value.
 import express, { type NextFunction, type Request, type Response } from 'express';
-import { type MetricChange, type MetricFigure, type MetricKey, type MetricRange, type MetricSheet, type MetricStatus, METRIC_INFO, RANGE_DAYS, RANGE_WINDOW, isMetricKey, isMetricRange } from '../shared/metrics.ts';
+import { type MetricChange, type MetricFigure, type MetricKey, type MetricRange, type MetricSheet, type MetricStatus, METRIC_INFO, RANGE_DAYS, RANGE_WINDOW, SPO2_BANDS, isMetricKey, isMetricRange, spo2Band } from '../shared/metrics.ts';
 import type { DayData, DayMetric, Latest, Point, Settings, Summary } from '../shared/types.ts';
 import { currentUser } from './auth.ts';
 import { addDays } from './dates.ts';
@@ -173,7 +173,7 @@ const USUAL: Record<'low' | 'normal' | 'high', [MetricStatus, string]> = {
   normal: [{ text: 'Within your usual', position: 'within' }, 'is within your usual range'],
   high: [{ text: 'Above your usual', position: 'above' }, 'is above your usual range'],
 };
-/** Above the usual band, for a card that calls anything not below it "Normal" (blood oxygen). */
+/** At or above the usual, for HRV, where higher is better. */
 const AT_OR_ABOVE: [MetricStatus, string] = [{ text: 'At or above your usual', position: 'at_or_above' }, 'is at or above your usual range'];
 /**
  * The summary's HRV status. 'optimal' is any night at or above the mean of the 30 days before it (Body's words, not
@@ -200,12 +200,11 @@ function cardStatus(key: MetricKey, s: Summary, stepGoal: number): Found | null 
     case 'resp_rate':
       return usual(s.vitals.breathing.latest, s.vitals.breathing.status);
     case 'spo2': {
-      // The cards call anything not below the usual range "Normal": a high reading isn't singled out, so here it's
-      // "at or above" rather than "above", which the card's word can't seem to contradict.
+      // The cards' fixed bands, not the usual range: higher is better, and there's a status from the first reading.
       const l = s.spo2.latest;
-      const st = s.spo2.status;
-      if (!l || !st) return null;
-      return st === 'high' ? { status: AT_OR_ABOVE[0], phrase: AT_OR_ABOVE[1], latest: l } : usual(l, st);
+      if (!l) return null;
+      const { text, range } = SPO2_BANDS[spo2Band(l.value)];
+      return { status: { text: `${text}, ${range}`, position: 'band' }, phrase: `is ${text.toLowerCase()} (${range})`, latest: l };
     }
     case 'hrv':
       return s.hrv.latest && s.hrv.status ? { status: HRV[s.hrv.status][0], phrase: HRV[s.hrv.status][1], latest: s.hrv.latest } : null;

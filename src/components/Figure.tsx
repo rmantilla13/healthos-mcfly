@@ -3,6 +3,7 @@
 // (forehead or wrist, throat, shoulder, chest) with the latest reading, animated by it.
 import '../styles/figure.css';
 import { type CSSProperties, type Ref, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { SPO2_BANDS, spo2Band } from '../../shared/metrics.ts';
 import type { FigureVariant, Perspective, PhotoMeta, Settings, Summary, Vital } from '../../shared/types.ts';
 import { useWidth } from '../charts/core.tsx';
 import { fmt, fmtDate, temp, useUnits } from '../lib.ts';
@@ -52,18 +53,22 @@ const SILHOUETTE: Record<'forehead' | 'wrist' | 'shoulder', Callout[]> = {
 const atWrist = (v: Vital) => v.label === 'Wrist temp' || v.label === 'Skin temp';
 
 /**
- * How a callout is coloured: green within the person's usual, amber beyond it, red well beyond it. A reading older
- * than the figure's day stays neutral (its date shows instead), so last week's number never alarms today's figure.
+ * How a callout is coloured: green within the person's usual, amber beyond it, red well beyond it; blood oxygen by its
+ * fixed bands instead (SPO2_BANDS), as higher is better. A reading older than the figure's day stays neutral (its date
+ * shows instead), so last week's number never alarms today's figure.
  */
 type Level = 'normal' | 'unusual' | 'off' | 'none';
-function levelOf(v: Vital, asOf: string): Level {
-  if (!v.latest || v.latest.date !== asOf || !v.status) return 'none';
+function levelOf(k: CalloutKey, v: Vital, asOf: string): Level {
+  if (!v.latest || v.latest.date !== asOf) return 'none';
+  if (k === 'spo2') return SPO2_BANDS[spo2Band(v.latest.value)].level;
+  if (!v.status) return 'none';
   // Servers before levels: the status alone says normal or not.
   return v.level ?? (v.status === 'normal' ? 'normal' : 'unusual');
 }
 
 /** The words with the colour, so it never rests on colour alone. */
-function statusText(v: Vital) {
+function statusText(k: CalloutKey, v: Vital) {
+  if (k === 'spo2' && v.latest) return SPO2_BANDS[spo2Band(v.latest.value)].text;
   if (!v.status) return v.latest ? 'Building baseline' : 'No data';
   if (v.status === 'normal') return 'Normal';
   const up = v.status === 'high';
@@ -121,7 +126,7 @@ function CalloutLabel({
     );
   const d = display(k, v, units);
   const stale = v.latest && v.latest.date !== asOf;
-  const level = levelOf(v, asOf);
+  const level = levelOf(k, v, asOf);
   return (
     <div className={`callout callout-${side}${d.value === null ? ' is-empty' : ''}`} style={style} ref={innerRef}>
       <div className="callout-label">{k === 'heart' ? 'Heart' : v.label}</div>
@@ -137,9 +142,9 @@ function CalloutLabel({
       </div>
       {/* Nothing to compare without a reading, so no status line then. */}
       {v.latest && (
-        <div className="callout-status" title="From your latest night, compared with your own previous 30 days">
+        <div className="callout-status" title={k === 'spo2' ? 'From your latest night: normal is 95–100%, and 92% or lower is low' : 'From your latest night, compared with your own previous 30 days'}>
           {level !== 'none' && <i className="callout-level" data-level={level} aria-hidden="true" />}
-          {statusText(v)}
+          {statusText(k, v)}
           {stale ? ` · ${fmtDate(v.latest.date)}` : ''}
         </div>
       )}
@@ -174,7 +179,7 @@ function CalloutMark({ k, v, asOf, cx, cy, halo, dot, scrub }: { k: Key; v: Vita
   const scrubbed = k === 'heart' && !!scrub;
   const vars = liveVars(k, v, scrub);
   return (
-    <g className={`callout-mark mark-${k}${vars ? ' is-live' : ''}`} style={vars ?? undefined} data-level={scrubbed ? 'none' : levelOf(v, asOf)}>
+    <g className={`callout-mark mark-${k}${vars ? ' is-live' : ''}`} style={vars ?? undefined} data-level={scrubbed ? 'none' : levelOf(k, v, asOf)}>
       {k === 'temp' && vars && (
         <>
           <radialGradient id={glowId}>

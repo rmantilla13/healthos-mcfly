@@ -4,6 +4,7 @@
 import '../styles/body.css';
 import { type ReactNode, useId, useState } from 'react';
 import { BODY_METRICS, type BodyLatest, type BodyMetric } from '../../shared/body.ts';
+import { SPO2_BANDS, spo2Band } from '../../shared/metrics.ts';
 import type { DayData, Point, Status, Summary, Trends } from '../../shared/types.ts';
 import { cumulative, drawThrough, extent } from '../charts/day.ts';
 import { Gauge, MiniBars, MiniDots, MiniLine } from '../charts/Mini.tsx';
@@ -425,7 +426,7 @@ function BodyMetricsCard({ s, t }: { s: Summary; t: Trends }) {
       icon: 'heart',
       label: 'Blood oxygen',
       value: `${fmt(s.spo2.latest.value, s.spo2.latest.value % 1 ? 1 : 0)}%`,
-      status: s.spo2.status === 'low' ? 'Below your range' : s.spo2.status ? 'Normal' : null,
+      status: SPO2_BANDS[spo2Band(s.spo2.latest.value)].text,
       points: s.spo2.series,
       to: bodyHref('cardiovascular'),
       color: 'var(--series-2)',

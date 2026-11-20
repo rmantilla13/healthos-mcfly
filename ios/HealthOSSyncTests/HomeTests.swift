@@ -83,8 +83,7 @@ final class HomeSignalCardTests: XCTestCase {
 
         let spo2 = Signal.spo2(s)
         XCTAssertEqual(spo2.value, "96.5", "a decimal only when there is one")
-        XCTAssertEqual(spo2.status?.words, "Below your range")
-        XCTAssertNil(spo2.status?.level)
+        XCTAssertEqual(spo2.status, SignalStatus(words: "Normal", level: .normal), "its fixed band, not the summary's \"low\" against the usual")
         XCTAssertEqual(spo2.footLeft, "90")
         XCTAssertEqual(spo2.footRight, "100")
         XCTAssertEqual(spo2.chart, .spo2(s.spo2?.series ?? [], value: 96.5))
@@ -116,7 +115,7 @@ final class HomeSignalCardTests: XCTestCase {
         XCTAssertEqual(hrv.spoken, "HRV, 48 milliseconds, Optimal, \(Fmt.day("2026-10-18")), Apple Watch measures SDNN")
         XCTAssertEqual(sleep.spoken, "Sleep, 6.4 hours, Fair, This week's average 5% below last week's")
         XCTAssertEqual(recovery.spoken, "Recovery, 72 percent, High, 5 above the 30-day average")
-        XCTAssertEqual(spo2.spoken, "Blood oxygen, 96.5 percent, Below your range", "90 and 100 are the chart's")
+        XCTAssertEqual(spo2.spoken, "Blood oxygen, 96.5 percent, Normal", "90 and 100 are the chart's")
         XCTAssertEqual(Signal.spokenChange(-0.4), nil, "a change that shows as 0")
         XCTAssertEqual(Signal.spokenChange(3.6, unit: "%"), "4% above")
 
@@ -124,7 +123,7 @@ final class HomeSignalCardTests: XCTestCase {
         for title in ["This week's average vs last week's", "WHOOP and Fitbit measure RMSSD during sleep", "Apple Watch measures SDNN"] {
             XCTAssertTrue(tsx.contains(title), title)
         }
-        for words in ["Last 30 days", "Last 14 nights", "Below your range", "Building baseline", "vs 30-day avg", "% wk", "usual · ",
+        for words in ["Last 30 days", "Last 14 nights", "Building baseline", "vs 30-day avg", "% wk", "usual · ",
                       "Well above usual", "Well below usual", "Above usual", "Below usual", "Optimal", "Below baseline", "Moderate", "'Good'", "'Fair'", "'Short'"] {
             XCTAssertTrue(tsx.contains(words), words)
         }
@@ -229,12 +228,45 @@ final class HomeFigureCalloutTests: XCTestCase {
         XCTAssertEqual(breathing.status, "Normal · \(Fmt.day("2026-10-17"))")
         let spo2 = CalloutText.of(.spo2, vitals: s.vitals, asOf: today)
         XCTAssertEqual([spo2.name, spo2.value, spo2.unit], ["Blood oxygen", "96.5", "%"])
-        XCTAssertEqual(spo2.spoken, "Blood oxygen, 96.5 percent, Below usual")
+        XCTAssertEqual(spo2.spoken, "Blood oxygen, 96.5 percent, Normal", "its fixed band, not \"below usual\"")
+        XCTAssertEqual(spo2.level, .normal)
         XCTAssertNil(spo2.rate, "blood oxygen doesn't move")
         XCTAssertEqual(CalloutText.of(.temp, vitals: s.vitals, asOf: today, units: .imperial).unit, "°F")
         // Home's set (Home.tsx): blood oxygen, breathing and heart.
         XCTAssertTrue(try web("src/pages/Home.tsx").contains("callouts={['spo2', 'breathing', 'heart']}"))
         XCTAssertEqual(CalloutKey.home, [.spo2, .breathing, .heart])
+    }
+
+    func testBloodOxygenHasFixedBandsWhereHigherIsBetter() throws {
+        for (value, band) in [(100, Spo2Band.normal), (95, .normal), (94.96, .normal), (94.9, .slightlyLow), (92.1, .slightlyLow),
+                              (92.04, .low), (92, .low), (85, .low)] as [(Double, Spo2Band)] {
+            XCTAssertEqual(Spo2Band.of(value), band, "\(value)")
+        }
+        // The web's (shared/metrics.ts SPO2_BANDS, spo2Band).
+        let ts = try web("shared/metrics.ts")
+        XCTAssertTrue(ts.contains("return v >= 95 ? 'normal' : v > 92 ? 'slightly_low' : 'low';"))
+        for (band, line) in [(Spo2Band.normal, "normal: { text: 'Normal', range: '95–100%', level: 'normal' },"),
+                             (.slightlyLow, "slightly_low: { text: 'Slightly low', range: 'under 95%', level: 'unusual' },"),
+                             (.low, "low: { text: 'Low', range: '92% or lower', level: 'off' },")] {
+            XCTAssertTrue(ts.contains(line), line)
+            XCTAssertTrue(line.contains("text: '\(band.text)'"), band.text)
+        }
+        XCTAssertEqual([Spo2Band.normal, .slightlyLow, .low].map(\.level), [.normal, .unusual, .off])
+
+        // On the figure: the band's words and colour whatever the usual says (here "normal"); an older reading stays neutral.
+        func vitals(_ value: Double, date: String) throws -> Summary.Vitals? {
+            let json = fullSummary
+                .replacingOccurrences(of: #"{"label":"Blood oxygen","latest":{"date":"2026-10-19","value":96.5,"source":"apple"},"status":"low","level":"unusual"}"#,
+                                      with: #"{"label":"Blood oxygen","latest":{"date":"\#(date)","value":\#(value),"source":"apple"},"status":"normal","level":"normal"}"#)
+            XCTAssertNotEqual(json, fullSummary)
+            return try decode(Summary.self, json).vitals
+        }
+        let low = CalloutText.of(.spo2, vitals: try vitals(91, date: today), asOf: today)
+        XCTAssertEqual([low.status, low.spoken], ["Low", "Blood oxygen, 91 percent, Low"])
+        XCTAssertEqual(low.level, .off)
+        let older = CalloutText.of(.spo2, vitals: try vitals(93.5, date: "2026-10-17"), asOf: today)
+        XCTAssertEqual(older.status, "Slightly low · \(Fmt.day("2026-10-17"))")
+        XCTAssertEqual(older.level, .neutral, "an older reading never alarms today's figure")
     }
 
     func testAServerBeforeTheBloodOxygenCalloutShowsADashWithItsUnit() throws {

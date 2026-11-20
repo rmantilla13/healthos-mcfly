@@ -4,6 +4,7 @@
 // Without one, a card is the design's empty state; Recovery is WHOOP's, so an Apple-only person sees it empty (their
 // cardio fitness is on Body).
 import type { ReactNode } from 'react';
+import { SPO2_BANDS, spo2Band } from '../../../shared/metrics.ts';
 import type { Summary, Vital, VitalLevel } from '../../../shared/types.ts';
 import { MiniDots, MiniLine, RangeScale } from '../../charts/Mini.tsx';
 import { fmt, fmtDate, hoursMinutes, href } from '../../lib.ts';
@@ -70,6 +71,7 @@ export function RestingHrCard({ s, variant = 'home' }: CardProps) {
 
 export function Spo2Card({ s, variant = 'home' }: CardProps) {
   const l = s.spo2.latest;
+  const band = l && SPO2_BANDS[spo2Band(l.value)];
   return (
     <Signal
       variant={variant}
@@ -79,11 +81,13 @@ export function Spo2Card({ s, variant = 'home' }: CardProps) {
       metric="spo2"
       date={s.date}
       value={l ? fmt(l.value, l.value % 1 ? 1 : 0) : null}
-      // The card calls anything not below the usual range "Normal" (the sheet's status says "at or above" for a high one).
+      // Fixed bands, not the person's usual: higher is better, so a high reading is never flagged.
       status={
-        l && (
-          <span className="vital-status-line">
-            {s.spo2.status ? (s.spo2.status === 'low' ? 'Below your range' : 'Normal') : 'Building baseline'}
+        l &&
+        band && (
+          <span className="vital-status-line" title="Normal is 95–100%; 92% or lower is low">
+            <i className="callout-level" data-level={band.level} aria-hidden="true" />
+            {band.text}
             <Stale date={l.date} asOf={s.date} />
           </span>
         )
@@ -96,7 +100,17 @@ export function Spo2Card({ s, variant = 'home' }: CardProps) {
           variant,
           <>
             <MiniLine points={s.spo2.series} format={(x) => `${fmt(x, 1)}%`} domain={[90, 100]} color="var(--series-2)" height={44} label="Blood oxygen, last 30 days" />
-            <RangeScale value={l.value} min={90} max={100} label={`Blood oxygen ${fmt(l.value, 1)}% on a 90 to 100 scale`} />
+            <RangeScale
+              value={l.value}
+              min={90}
+              max={100}
+              label={`Blood oxygen ${fmt(l.value, 1)}%, ${band!.text.toLowerCase()}, on a 90 to 100 scale`}
+              zones={[
+                { to: 92, className: 'zone-critical' },
+                { to: 95, className: 'zone-warning' },
+                { to: 100, className: 'zone-good' },
+              ]}
+            />
           </>,
         )}
     </Signal>
