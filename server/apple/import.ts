@@ -326,11 +326,16 @@ const yes = (v: string | undefined) => v === '1' || v?.toLowerCase() === 'true';
 const no = (v: string | undefined) => v === '0' || v?.toLowerCase() === 'false';
 
 /**
- * Apps whose data healthOS reads from their own API. Their copies in Apple Health are skipped,
- * or they would count twice (WHOOP writes sleep, heart rate, SpO2 and workouts into Health).
+ * Apps whose data healthOS reads directly, not through Apple Health. Their copies in Apple Health are skipped, or
+ * they would count twice: WHOOP (read from its API) writes sleep, heart rate, SpO2 and workouts into Health, and NOOP
+ * (its export or the strap, server/noop.ts) writes heart rate, HRV, resting heart rate, SpO2, respiratory rate, sleep
+ * and workouts. NOOP's iPhone app is named "NOOP", matched whole so no other app whose name starts with it is. An
+ * export has only the name, so this also skips NOOP's watch app, which has the same name; the iPhone app tells the two
+ * apart by bundle ID (SampleSource.isNoop in ios/HealthOSSync/LocalTime.swift).
  */
 export function fromDirectSource(sourceName: string | undefined) {
-  return /^whoop\b/i.test((sourceName ?? '').trim());
+  const name = (sourceName ?? '').trim();
+  return /^whoop\b/i.test(name) || /^noop$/i.test(name);
 }
 
 /**
@@ -351,7 +356,7 @@ const KEPT_FROM_DIRECT = new Set(['HKQuantityTypeIdentifierStepCount']);
 export type ImportProgress = { bytesRead: number; totalBytes: number; records: number };
 export type ImportResult = {
   records: number;
-  /** Records skipped as another app's copy of data read directly (WHOOP). */
+  /** Records skipped as another app's copy of data read directly (WHOOP, NOOP). */
   skipped: number;
   days: number;
   workouts: number;
@@ -420,7 +425,7 @@ export class AppleAggregator {
       this.skipped++;
       return;
     }
-    // Not counted as skipped: that count is WHOOP's copies (see the import CLI).
+    // Not counted as skipped: that count is WHOOP's and NOOP's copies (see the import CLI).
     if (tag.name === 'Record' && fromHealthOSLog(a.sourceName, a.type)) {
       this.records++;
       return;

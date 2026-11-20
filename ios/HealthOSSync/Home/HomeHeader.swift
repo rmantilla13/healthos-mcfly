@@ -466,17 +466,18 @@ struct HomeBanner<Trailing: View>: View {
     }
 }
 
-/// Nothing connected yet (App.tsx noSources): no demo data, no Apple Health import or sync, no WHOOP and no Fitbit
-/// import. It links to Integrations.
+/// Nothing connected yet (App.tsx noSources): no demo data, no Apple Health import or sync, no WHOOP and no NOOP or
+/// Fitbit import. It links to Integrations.
 struct NoSourcesBanner: View {
     @Environment(Dashboard.self) private var dashboard
 
-    static let text = "Your dashboard fills in once you connect WHOOP or the healthOS iPhone app, or import a Fitbit export."
+    static let text = "Your dashboard fills in once you connect WHOOP or the healthOS iPhone app, or import a NOOP or Fitbit export."
 
     /// App.tsx noSources, on what the status says; a status that names neither Apple Health nor WHOOP says nothing.
     static func shows(_ s: ServerStatus?) -> Bool {
         guard let s, s.apple != nil || s.whoop != nil else { return false }
-        return s.demo != true && s.apple?.lastImport == nil && s.apple?.lastSync == nil && s.whoop?.connected != true && s.fitbit?.lastImport == nil
+        return s.demo != true && s.apple?.lastImport == nil && s.apple?.lastSync == nil && s.whoop?.connected != true
+            && s.noop?.lastImport == nil && s.fitbit?.lastImport == nil
     }
 
     var body: some View {

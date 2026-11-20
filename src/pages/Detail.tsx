@@ -272,11 +272,15 @@ const stepTicks =
     fmt(v, Math.max(least, stepDigits(step)));
 
 /**
- * Who measures HRV as RMSSD, for its trend's note: WHOOP, and Fitbit when its export had it (status.fitbit). WHOOP's
- * alone when neither is known yet, as before.
+ * Who measures HRV as RMSSD, for its trend's note: WHOOP, and NOOP or Fitbit when its export had it (status.noop,
+ * status.fitbit). WHOOP's alone when none is known yet, as before.
  */
 function rmssdNote(status: Status | undefined) {
-  const by = [status?.whoop.connected && 'WHOOP', status?.fitbit?.lastImport?.metrics.includes('hrv_rmssd') && 'Fitbit'].filter(Boolean);
+  const by = [
+    status?.whoop.connected && 'WHOOP',
+    status?.noop?.lastImport?.metrics.includes('hrv_rmssd') && 'NOOP',
+    status?.fitbit?.lastImport?.metrics.includes('hrv_rmssd') && 'Fitbit',
+  ].filter(Boolean);
   return `${by.length ? by.join(' or ') : 'WHOOP'}, during sleep`;
 }
 
@@ -471,7 +475,9 @@ export function Activity({ stepGoal, title, sub = 'Movement from your iPhone and
                         <td>{d ? `${fmt(d.value, 2)} ${d.unit}` : '—'}</td>
                         <td>{w.avg_hr ? `${fmt(w.avg_hr)} bpm` : '—'}</td>
                         <td>{w.strain ? fmt(w.strain, 1) : '—'}</td>
-                        <td className="muted">{({ apple: 'Apple Health', whoop: 'WHOOP', 'apple+whoop': 'Apple + WHOOP' } as Record<string, string>)[w.source] ?? 'Demo'}</td>
+                        <td className="muted">
+                          {({ apple: 'Apple Health', whoop: 'WHOOP', noop: 'NOOP', 'apple+whoop': 'Apple + WHOOP', 'apple+noop': 'Apple + NOOP' } as Record<string, string>)[w.source] ?? 'Demo'}
+                        </td>
                       </tr>
                     );
                   })}

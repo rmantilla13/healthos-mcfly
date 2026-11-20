@@ -391,7 +391,9 @@ struct WorkoutListRow: View {
         switch source {
         case "apple": "Apple Health"
         case "whoop": "WHOOP"
+        case "noop": "NOOP"
         case "apple+whoop": "Apple Health and WHOOP"
+        case "apple+noop": "Apple Health and NOOP"
         case "fitbit": "Fitbit"
         case "demo": "Demo"
         default: source

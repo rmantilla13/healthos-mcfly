@@ -149,11 +149,11 @@ struct SleepNightCard: View {
     @ViewBuilder private var performance: some View {
         let title = "Sleep performance"
         if let v = night.performance {
-            score(title: title, tint: .green, value: v, metric: .sleepPerformance, foot: SleepWords.performanceFoot)
+            score(title: title, tint: .green, value: v, metric: .sleepPerformance, foot: SleepWords.performanceFoot(source: night.source))
         } else if context.bare {
             empty(id: "sleep.score", title: title, tint: .green, unit: "%", metric: .sleepPerformance)
         } else if !context.whoop {
-            // Only WHOOP scores a night this way: say so, rather than wait for a reading that won't come.
+            // Only WHOOP (or NOOP reading its strap) scores a night this way: say so, rather than wait for a reading that won't come.
             noReading(title: title, tint: .green, unit: "%", notes: SleepWords.performanceNoReading, foot: SleepWords.whoopOnly, connect: true)
         } else {
             noReading(title: title, tint: .green, unit: "%", notes: night.asleepHours == nil ? [SleepWords.noNight] : [SleepWords.noWhoopNight],
@@ -402,8 +402,9 @@ struct SleepTimelineCard: View {
                     .accessibilityElement(children: .combine)
                 }
                 .padding(.top, 18)
-                if night.source == "whoop", segs.isEmpty {
-                    Text(SleepWords.whoopTimeline).font(.app(size: 12, relativeTo: .caption)).foregroundStyle(Palette.ink3)
+                if let note = night.source == "whoop" ? SleepWords.whoopTimeline : night.source == "noop" ? SleepWords.noopTimeline : nil,
+                   segs.isEmpty {
+                    Text(note).font(.app(size: 12, relativeTo: .caption)).foregroundStyle(Palette.ink3)
                         .fixedSize(horizontal: false, vertical: true).padding(.top, 10)
                 }
             } else {

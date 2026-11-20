@@ -39,7 +39,10 @@ enum SleepWords {
     }
 
     // The three cards.
-    static let performanceFoot = "WHOOP: the sleep you got against the sleep you needed"
+    /// Under a night's sleep performance: whose figure it is, WHOOP's or NOOP's estimate of it (Sleep.tsx PerformanceCard).
+    static func performanceFoot(source: String?) -> String {
+        "\(source == "noop" ? "NOOP's estimate" : "WHOOP"): the sleep you got against the sleep you needed"
+    }
     static let efficiencyFoot = "Time asleep as a share of time in bed"
     static let performanceNoReading = ["No reading yet", "Sleep performance comes from WHOOP"]
     static let whoopOnly = "WHOOP only"
@@ -50,11 +53,13 @@ enum SleepWords {
     // The night's cards.
     static let noStages = "No stages for this night. Apple Watch, WHOOP and Fitbit all record them."
     static let whoopStages = "WHOOP shares each stage's total, not when in the night it happened."
+    static let noopStages = "NOOP's export has this night's stage totals, not when in the night each happened."
     static let fitbitStages = "The Fitbit export has this night's stage totals, not when in the night each happened."
     static let resentStages = "The stages through the night arrive once the healthOS iPhone app is updated and syncs."
     static let oldStages = "The stages through the night aren't available for this night."
     static let insightsEmpty = "Insights appear after a week or two of nights."
     static let whoopTimeline = "From WHOOP's sleep record: when it started and ended."
+    static let noopTimeline = "From NOOP's sleep record: when it started and ended."
     static let noRestingHr = "No resting heart rate yet."
 
     // Coaching.
@@ -74,6 +79,7 @@ enum SleepWords {
     static func stagesNote(source: String?, date: String, today: String) -> String {
         switch source {
         case "whoop": whoopStages
+        case "noop": noopStages
         case "fitbit": fitbitStages
         default: Fmt.daysBetween(date, today) <= resentDays ? resentStages : oldStages
         }
@@ -318,13 +324,16 @@ struct SleepNightContext {
         bare = night.noNights && !Self.hasSleepSource(status)
         label = SleepWords.nightLabel(night.date, today: night.today)
         demo = status?.demo == true
-        whoop = status.map { $0.demo == true || $0.whoop?.connected == true || $0.whoop?.lastSync != nil } ?? false
+        // WHOOP, or its strap read by NOOP: either scores a night's sleep performance.
+        whoop = status.map { $0.demo == true || $0.whoop?.connected == true || $0.whoop?.lastSync != nil || $0.noop?.lastImport != nil } ?? false
     }
 
-    /// Some source that can record a night is set up: WHOOP, the iPhone app or an export, a Fitbit export, or the demo.
+    /// Some source that can record a night is set up: WHOOP, the iPhone app or an export, a NOOP or Fitbit export, or the
+    /// demo.
     static func hasSleepSource(_ status: ServerStatus?) -> Bool {
         guard let s = status else { return false }
-        return s.demo == true || s.whoop?.connected == true || s.apple?.lastSync != nil || s.apple?.lastImport != nil || s.fitbit?.lastImport != nil
+        return s.demo == true || s.whoop?.connected == true || s.apple?.lastSync != nil || s.apple?.lastImport != nil
+            || s.noop?.lastImport != nil || s.fitbit?.lastImport != nil
     }
 
     /// The device in words for the Sleep card's foot (Sleep.tsx SOURCE_NAME), "Demo data" while demo data shows.
@@ -333,6 +342,7 @@ struct SleepNightContext {
         switch night.source {
         case "apple": return "Apple Health"
         case "whoop": return "WHOOP"
+        case "noop": return "NOOP"
         case "fitbit": return "Fitbit"
         default: return nil
         }

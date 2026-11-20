@@ -214,7 +214,7 @@ enum Glucose {
 /// The sheet's own words (MetricSheet.tsx).
 enum SheetWords {
     /// Where values came from (SOURCE).
-    static let sources: [String: String] = ["apple": "Apple Health", "whoop": "WHOOP", "fitbit": "Fitbit", "manual": "Added by you", "demo": "Demo data"]
+    static let sources: [String: String] = ["apple": "Apple Health", "whoop": "WHOOP", "noop": "NOOP", "fitbit": "Fitbit", "manual": "Added by you", "demo": "Demo data"]
 
     /// What one day's value is, where it isn't simply the day's reading (DAY_NOTE).
     static let dayNotes: [MetricKey: String] = [
@@ -239,8 +239,8 @@ enum SheetWords {
         .recovery: "Recovery comes from WHOOP.",
         .strain: "Day strain comes from WHOOP.",
         .vo2max: "Cardio fitness comes from Apple Watch, after outdoor walks and runs.",
-        .sleepPerformance: "Sleep performance comes from WHOOP.",
-        .sleepEfficiency: "Sleep efficiency comes from WHOOP or Fitbit, or from Apple Watch nights that record time in bed.",
+        .sleepPerformance: "Sleep performance comes from WHOOP, or NOOP's estimate of it.",
+        .sleepEfficiency: "Sleep efficiency comes from WHOOP, NOOP or Fitbit, or from Apple Watch nights that record time in bed.",
     ]
 
     /// Metrics a person can type in themselves (Body): a never-measured one says how (OWN_ENTRIES).

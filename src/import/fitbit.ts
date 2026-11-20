@@ -117,8 +117,8 @@ export function zoneOffsets(timeZone: string): (ms: number) => number {
 const pad = (n: number) => String(n).padStart(2, '0');
 const offsetText = (min: number) => `${min < 0 ? '-' : '+'}${pad(Math.floor(Math.abs(min) / 60))}:${pad(Math.abs(min) % 60)}`;
 /** An instant as local ISO with its offset: 2024-03-20T22:04:00-07:00. */
-const isoAt = (ms: number, offMin: number) => new Date(ms + offMin * 60_000).toISOString().slice(0, 19) + offsetText(offMin);
-const dateAt = (ms: number, offMin: number) => new Date(ms + offMin * 60_000).toISOString().slice(0, 10);
+export const isoAt = (ms: number, offMin: number) => new Date(ms + offMin * 60_000).toISOString().slice(0, 19) + offsetText(offMin);
+export const dateAt = (ms: number, offMin: number) => new Date(ms + offMin * 60_000).toISOString().slice(0, 10);
 const validDate = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d) && new Date(Date.parse(d + 'T00:00:00Z')).toISOString().slice(0, 10) === d;
 
 /** "MM/DD/YY HH:MM:SS" (or just the date) as wall-clock parts' UTC milliseconds. */

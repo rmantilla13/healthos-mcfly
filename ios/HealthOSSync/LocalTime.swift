@@ -84,15 +84,32 @@ struct SampleSource: Equatable {
     let name: String
     let bundleIdentifier: String
 
-    /// A source healthOS reads directly from its own API (WHOOP). WHOOP also writes sleep, heart rate,
-    /// SpO2 and workouts into Apple Health, and counting those copies too would double them.
-    /// Same rule as fromDirectSource in server/apple/import.ts, plus the bundle ID.
-    var isReadDirectly: Bool {
+    /// A source healthOS reads directly, not through Apple Health: WHOOP (its API) or NOOP (its export, or the strap).
+    /// Both write their readings into Apple Health too, and counting those copies as well would double them.
+    var isReadDirectly: Bool { isWhoop || isNoop }
+
+    /// WHOOP's own app. Same rule as fromDirectSource in server/apple/import.ts (/^whoop\b/i on the name), plus the
+    /// bundle ID.
+    var isWhoop: Bool {
         bundleIdentifier.lowercased().contains("whoop")
             || name.trimmingCharacters(in: .whitespaces).range(of: #"^whoop\b"#, options: [.regularExpression, .caseInsensitive]) != nil
     }
 
-    /// Whether this source's records of `metric` count. WHOOP's are skipped (healthOS reads WHOOP's API), except
-    /// steps: WHOOP's step count competes with the iPhone and Watch for a day's best single source, like the importer.
+    /// NOOP's iPhone app (github.com/ryanbr/noop), which reads a WHOOP strap over Bluetooth and writes heart rate, HRV
+    /// (its RMSSD, into the SDNN type), resting heart rate, SpO2, respiratory rate, sleep and workouts into Health.
+    /// Its bundle ID is `<prefix>.noop` under whichever team built it (com.noopapp.noop for NOOP's own builds), matched
+    /// as a whole last part; or, as sideloading tools add their team ID after it, any app named exactly "NOOP".
+    /// Except NOOP's watch app, also named "NOOP" (`<prefix>.noop.watch`): what it records comes from the Apple Watch's
+    /// own sensor, not the strap. The export importer has only the name to go on (fromDirectSource).
+    var isNoop: Bool {
+        let id = bundleIdentifier.lowercased()
+        if id.hasSuffix(".noop") { return true }
+        let named = name.trimmingCharacters(in: .whitespaces).caseInsensitiveCompare("NOOP") == .orderedSame
+        return named && !id.split(separator: ".").contains("watch")
+    }
+
+    /// Whether this source's records of `metric` count. WHOOP's and NOOP's are skipped (healthOS reads them directly),
+    /// except steps: WHOOP's step count competes with the iPhone and Watch for a day's best single source, like the
+    /// importer. NOOP doesn't write steps.
     func counts(_ metric: String) -> Bool { !isReadDirectly || metric == "steps" }
 }

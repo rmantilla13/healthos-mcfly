@@ -149,12 +149,13 @@ struct BodyLatestValue: Codable, Equatable {
     let value: Double
     let source: String
 
-    /// "Added by you", "Apple Health", "WHOOP", "Fitbit", "Demo data" (SOURCE_NAME); nil for one this build doesn't know.
+    /// "Added by you", "Apple Health", "WHOOP", "NOOP", "Fitbit", "Demo data" (SOURCE_NAME); nil for one this build doesn't know.
     var sourceName: String? {
         switch source {
         case "manual": "Added by you"
         case "apple": "Apple Health"
         case "whoop": "WHOOP"
+        case "noop": "NOOP"
         case "fitbit": "Fitbit"
         case "demo": "Demo data"
         default: nil

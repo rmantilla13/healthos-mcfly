@@ -90,7 +90,7 @@ const tickFormatter = (sheet: { key: MetricKey; digits: number }) => {
   return (v: number, step?: number) => fmt(v, Math.max(sheet.digits && Math.abs(v) < 100 ? 1 : 0, stepDigits(step)));
 };
 
-const SOURCE: Record<string, string> = { apple: 'Apple Health', whoop: 'WHOOP', fitbit: 'Fitbit', manual: 'Added by you', demo: 'Demo data' };
+const SOURCE: Record<string, string> = { apple: 'Apple Health', whoop: 'WHOOP', noop: 'NOOP', fitbit: 'Fitbit', manual: 'Added by you', demo: 'Demo data' };
 
 /** What one day's value is, where it isn't simply the day's reading. */
 const DAY_NOTE: Partial<Record<MetricKey, string>> = {
@@ -133,8 +133,8 @@ const EMPTY: Partial<Record<MetricKey, string>> = {
   recovery: 'Recovery comes from WHOOP.',
   strain: 'Day strain comes from WHOOP.',
   vo2max: 'Cardio fitness comes from Apple Watch, after outdoor walks and runs.',
-  sleep_performance: 'Sleep performance comes from WHOOP.',
-  sleep_efficiency: 'Sleep efficiency comes from WHOOP or Fitbit, or from Apple Watch nights that record time in bed.',
+  sleep_performance: "Sleep performance comes from WHOOP, or NOOP's estimate of it.",
+  sleep_efficiency: 'Sleep efficiency comes from WHOOP, NOOP or Fitbit, or from Apple Watch nights that record time in bed.',
 };
 /** Metrics a person can type in themselves (Body): a never-measured one says how, under the general line. */
 const OWN_ENTRIES = new Set<MetricKey>(['weight', 'body_fat', 'lean_mass']);

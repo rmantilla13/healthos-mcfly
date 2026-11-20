@@ -92,11 +92,25 @@ final class BodyTests: XCTestCase {
         XCTAssertNil(latest[.leanMass])
         XCTAssertEqual(BodyLatestValue(date: "x", value: 1, source: "manual").sourceName, "Added by you")
         XCTAssertNil(BodyLatestValue(date: "x", value: 1, source: "new").sourceName)
+        XCTAssertEqual(BodyLatestValue(date: "x", value: 1, source: "noop").sourceName, "NOOP")
     }
 
     func testWorkoutsNameFitbit() {
         XCTAssertEqual(WorkoutListRow.sourceName("fitbit"), "Fitbit")
         XCTAssertEqual(WorkoutListRow.sourceName("apple+whoop"), "Apple Health and WHOOP")
+    }
+
+    /// A WHOOP strap read by NOOP, alone or matched with an Apple Health workout (server/query.ts mergeWorkouts),
+    /// in WorkoutCard.tsx's words.
+    func testWorkoutsNameNoop() throws {
+        XCTAssertEqual(WorkoutListRow.sourceName("noop"), "NOOP")
+        XCTAssertEqual(WorkoutListRow.sourceName("apple+noop"), "Apple Health and NOOP")
+        XCTAssertEqual(BodyWorkoutMath.from("noop"), "From NOOP")
+        XCTAssertEqual(BodyWorkoutMath.from("apple+noop"), "From Apple Health and NOOP")
+        let card = try String(contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("src/components/body/WorkoutCard.tsx"), encoding: .utf8)
+        XCTAssertTrue(card.contains("noop: 'NOOP'"))
+        XCTAssertTrue(card.contains("'apple+noop': 'Apple Health and NOOP'"))
     }
 
     // MARK: The tabs

@@ -96,9 +96,11 @@ final class VitalsTests: XCTestCase {
         try JSONDecoder().decode(T.self, from: Data(json.utf8))
     }
 
-    private func status(whoop: Bool, fitbitMetrics: [String]?) throws -> ServerStatus {
-        let fitbit = fitbitMetrics.map { #","fitbit":{"lastImport":{"days":30,"firstDate":"2026-09-01","lastDate":"2026-09-30","metrics":\#(String(decoding: try! JSONSerialization.data(withJSONObject: $0), as: UTF8.self)),"importedAt":"2026-10-01T10:00:00Z"}}"# } ?? ""
-        return try decode(ServerStatus.self, #"{"hosted":false,"whoop":{"configured":true,"connected":\#(whoop)}\#(fitbit)}"#)
+    private func status(whoop: Bool, fitbitMetrics: [String]?, noopMetrics: [String]? = nil) throws -> ServerStatus {
+        let list = { (m: [String]) in String(decoding: try! JSONSerialization.data(withJSONObject: m), as: UTF8.self) }
+        let fitbit = fitbitMetrics.map { #","fitbit":{"lastImport":{"days":30,"firstDate":"2026-09-01","lastDate":"2026-09-30","metrics":\#(list($0)),"importedAt":"2026-10-01T10:00:00Z"}}"# } ?? ""
+        let noop = noopMetrics.map { #","noop":{"lastImport":{"days":12,"firstDate":"2026-10-01","lastDate":"2026-10-12","metrics":\#(list($0)),"nights":11,"workouts":3,"importedAt":"2026-10-13T09:00:00Z"},"lastSync":null}"# } ?? ""
+        return try decode(ServerStatus.self, #"{"hosted":false,"whoop":{"configured":true,"connected":\#(whoop)}\#(fitbit)\#(noop)}"#)
     }
 
     private func points(_ values: [Double], from day: String = "2026-10-01") -> [Point] {
@@ -142,6 +144,12 @@ final class VitalsTests: XCTestCase {
         XCTAssertEqual(VitalsWords.rmssdNote(try status(whoop: true, fitbitMetrics: ["hrv_rmssd"])), "WHOOP or Fitbit, during sleep")
         XCTAssertEqual(VitalsWords.rmssdNote(try status(whoop: true, fitbitMetrics: ["steps"])), "WHOOP, during sleep",
                        "a Fitbit export without RMSSD doesn't count")
+        // A WHOOP strap read by NOOP (Detail.tsx rmssdNote): between WHOOP and Fitbit.
+        XCTAssertEqual(VitalsWords.rmssdNote(try status(whoop: false, fitbitMetrics: nil, noopMetrics: ["hrv_rmssd", "recovery"])), "NOOP, during sleep")
+        XCTAssertEqual(VitalsWords.rmssdNote(try status(whoop: true, fitbitMetrics: ["hrv_rmssd"], noopMetrics: ["hrv_rmssd"])),
+                       "WHOOP or NOOP or Fitbit, during sleep")
+        XCTAssertEqual(VitalsWords.rmssdNote(try status(whoop: false, fitbitMetrics: nil, noopMetrics: ["strain"])), "WHOOP, during sleep",
+                       "a NOOP export without RMSSD doesn't count")
     }
 
     // MARK: Signals

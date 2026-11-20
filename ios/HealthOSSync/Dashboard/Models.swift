@@ -824,7 +824,13 @@ struct ServerStatus: Codable {
 
     struct Apple: Codable {
         struct Sync: Codable { let syncedAt: String }
-        struct Import: Codable { let importedAt: String }
+        /// An export's import (shared/types.ts): its records and the days it spans are nil from older servers.
+        struct Import: Codable {
+            let importedAt: String
+            let records: Double?
+            let firstDate: String?
+            let lastDate: String?
+        }
         /// The Mac's export import while it runs (shared/types.ts ImportJob).
         struct Job: Codable {
             /// "idle" | "uploading" | "parsing" | "done" | "error"
@@ -854,6 +860,32 @@ struct ServerStatus: Codable {
         @Lossy var lastImport: Import?
     }
 
+    /// A WHOOP strap read by the NOOP app (server/noop.ts): NOOP's CSV export read in the browser, and syncs straight
+    /// from the strap. nil from servers older than the NOOP import.
+    struct Noop: Codable {
+        /// Every NOOP day stored, as Integrations shows it (shared/types.ts NoopImportSummary).
+        struct Import: Codable {
+            let days: Double?
+            let firstDate: String?
+            let lastDate: String?
+            @LossyArray var metrics: [String]
+            let nights: Double?
+            let workouts: Double?
+            let importedAt: String
+        }
+        /// The last sync straight from the strap: the window it replaced and what was in it (NoopSyncSummary).
+        struct Sync: Codable {
+            let syncedAt: String
+            let from: String?
+            let to: String?
+            let days: Double?
+            let nights: Double?
+            let workouts: Double?
+        }
+        @Lossy var lastImport: Import?
+        @Lossy var lastSync: Sync?
+    }
+
     struct Whoop: Codable {
         let configured: Bool?
         let connected: Bool?
@@ -876,6 +908,7 @@ struct ServerStatus: Codable {
     @Lossy var settings: Settings?
     @Lossy var apple: Apple?
     @Lossy var whoop: Whoop?
+    @Lossy var noop: Noop?
     @Lossy var fitbit: Fitbit?
 }
 
