@@ -25,7 +25,7 @@ import { duration } from '../src/lib.ts';
 
 const workout = (o: Partial<Workout> & { id: string; start: string; duration_min: number }): Workout => {
   const end = o.end ?? new Date(Date.parse(o.start) + o.duration_min * 60_000).toISOString().replace('.000Z', 'Z');
-  return { source: 'apple', sport: 'Running', date: o.start.slice(0, 10), energy_kcal: null, distance_m: null, avg_hr: null, max_hr: null, strain: null, ...o, end };
+  return { source: 'apple', sport: 'Running', date: o.start.slice(0, 10), energy_kcal: null, distance_m: null, avg_hr: null, max_hr: null, strain: null, effort: null, ...o, end };
 };
 const ids = (list: { id: string }[]) => list.map((w) => w.id);
 const ids2 = (list: { id: string }[]) => ids(list).join(' ');

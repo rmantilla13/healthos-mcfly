@@ -76,9 +76,9 @@ test('metrics that differ in kind are never averaged', () => {
 });
 
 test('the same session from both devices becomes one workout', () => {
-  const base = { date: '2026-10-14', energy_kcal: null, distance_m: null, avg_hr: null, max_hr: null, strain: null };
+  const base = { date: '2026-10-14', energy_kcal: null, distance_m: null, avg_hr: null, max_hr: null, strain: null, effort: null };
   const list: Workout[] = [
-    { ...base, id: 'a1', source: 'apple', sport: 'Running', start: '2026-10-14T07:00:00-05:00', end: '2026-10-14T07:40:00-05:00', duration_min: 40, energy_kcal: 410, distance_m: 6200, avg_hr: 150, max_hr: 171 },
+    { ...base, id: 'a1', source: 'apple', sport: 'Running', start: '2026-10-14T07:00:00-05:00', end: '2026-10-14T07:40:00-05:00', duration_min: 40, energy_kcal: 410, distance_m: 6200, avg_hr: 150, max_hr: 171, effort: 6 },
     { ...base, id: 'w1', source: 'whoop', sport: 'Running', start: '2026-10-14T07:02:00-05:00', end: '2026-10-14T07:39:00-05:00', duration_min: 37, energy_kcal: 450, max_hr: 174, strain: 12.3 },
     { ...base, id: 'w2', source: 'whoop', sport: 'Weightlifting', start: '2026-10-14T18:00:00-05:00', end: '2026-10-14T18:45:00-05:00', duration_min: 45, strain: 9.1 },
   ];
@@ -90,6 +90,7 @@ test('the same session from both devices becomes one workout', () => {
   assert.equal(run.distance_m, 6200);
   assert.equal(run.strain, 12.3);
   assert.equal(run.max_hr, 174);
+  assert.equal(run.effort, 6, "Apple Health's effort score, which WHOOP doesn't have");
   assert.ok(merged.some((w) => w.id === 'w2' && w.source === 'whoop'));
 });
 

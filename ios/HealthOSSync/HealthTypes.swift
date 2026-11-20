@@ -37,10 +37,14 @@ enum HealthTypes {
     private static let baseQuantities: [QuantityMetric] = [
         .init(identifier: .stepCount, metric: "steps", aggregation: .sum, unit: .count()),
         .init(identifier: .activeEnergyBurned, metric: "active_energy", aggregation: .sum, unit: .kilocalorie()),
+        // What the body uses at rest; iPhone and Watch both estimate it, so like active energy the day keeps one.
+        .init(identifier: .basalEnergyBurned, metric: "resting_energy", aggregation: .sum, unit: .kilocalorie()),
         .init(identifier: .appleExerciseTime, metric: "exercise_min", aggregation: .sum, unit: .minute()),
         .init(identifier: .distanceWalkingRunning, metric: "distance_km", aggregation: .sum, unit: .meterUnit(with: .kilo)),
         .init(identifier: .heartRate, metric: "hr_avg", aggregation: .avg, unit: bpm),
         .init(identifier: .restingHeartRate, metric: "resting_hr", aggregation: .avg, unit: bpm),
+        // The Watch's drop in heart rate one minute after a workout ends (Health's Cardio Recovery).
+        .init(identifier: .heartRateRecoveryOneMinute, metric: "hr_recovery", aggregation: .avg, unit: bpm),
         .init(identifier: .heartRateVariabilitySDNN, metric: "hrv_sdnn", aggregation: .avg, unit: .secondUnit(with: .milli)),
         .init(identifier: .oxygenSaturation, metric: "spo2", aggregation: .avg, unit: .percent(), scale: 100),
         .init(identifier: .respiratoryRate, metric: "resp_rate", aggregation: .avg, unit: bpm),
@@ -69,12 +73,19 @@ enum HealthTypes {
     static let workout = HKWorkoutType.workoutType()
     /// The Watch's hourly "stood / didn't" record; a day's stand hours are the hours stood.
     static let standHour = HKCategoryType(.appleStandHour)
+    /// A workout's effort (iOS 18): the person's rating and the Watch's estimate. Read with the workout they belong to
+    /// (Health.efforts), never as daily metrics; watched so a rating given after the workout sends its day again.
+    /// Read only: never in SampleData.shareTypes, since apps can't write the estimate.
+    static var effort: [HKSampleType] {
+        guard #available(iOS 18.0, *) else { return [] }
+        return [HKQuantityType(.workoutEffortScore), HKQuantityType(.estimatedWorkoutEffortScore)]
+    }
 
     /// Cycle types join only once cycle tracking is on (and the server stores cycle days), food types only while
     /// Nutrition is on (and the server takes food).
     static var sampleTypes: [HKSampleType] { sampleTypes(food: NutritionTypes.current) }
     static func sampleTypes(food: [Nutrient]) -> [HKSampleType] {
-        quantities.map(\.type) + [sleep, mindful, workout, standHour] + (CycleTypes.active ? CycleTypes.all : []) + food.map(\.type)
+        quantities.map(\.type) + [sleep, mindful, workout, standHour] + effort + (CycleTypes.active ? CycleTypes.all : []) + food.map(\.type)
     }
     static var readTypes: Set<HKObjectType> { Set(sampleTypes) }
 
@@ -97,7 +108,7 @@ enum HealthTypes {
     private static let names: [String: String] = [
         "blood_pressure_systolic": "blood pressure (systolic)", "blood_pressure_diastolic": "blood pressure (diastolic)",
         "glucose": "blood glucose", "daylight_min": "time in daylight", "flights": "flights climbed",
-        "caffeine_mg": "caffeine", "water_ml": "water",
+        "caffeine_mg": "caffeine", "water_ml": "water", "hr_recovery": "heart rate recovery",
     ]
 
     static func label(_ type: HKSampleType) -> String {
@@ -106,6 +117,7 @@ enum HealthTypes {
         if type == mindful { return "mindfulness" }
         if type == standHour { return "stand hours" }
         if type == workout { return "workouts" }
+        if effort.contains(type) { return "workout effort" }
         if CycleTypes.all.contains(type) { return "cycle" }
         if let n = NutritionTypes.nutrient(of: type) { return n.label }
         return "health data"

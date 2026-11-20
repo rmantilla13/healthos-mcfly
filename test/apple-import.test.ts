@@ -268,6 +268,38 @@ test('caffeine and water add up across apps; flights and daylight keep one devic
   assert.equal(v.daylight_min, 30);
 });
 
+test('resting energy keeps one device like active energy; heart rate recovery averages the day', async () => {
+  const v = await dailyOf([
+    sample('BasalEnergyBurned', 'Watch', '08:00:00', 900, 'kcal'),
+    sample('BasalEnergyBurned', 'Watch', '20:00:00', 3347.2, 'kJ'),
+    sample('BasalEnergyBurned', 'iPhone', '08:00:00', 1500, 'kcal'),
+    sample('HeartRateRecoveryOneMinute', 'Watch', '07:30:00', 24, 'count/min'),
+    sample('HeartRateRecoveryOneMinute', 'Watch', '18:30:00', 30, 'count/min'),
+  ]);
+  assert.equal(v.resting_energy, 1700, '900 kcal and 800 kcal (3347.2 kJ) from the Watch, not the iPhone added on');
+  assert.equal(v.hr_recovery, 27);
+});
+
+test("each workout gets the effort score its time overlaps, the person's own rating before the Watch's estimate", async () => {
+  const run = (start: string, end: string, type = 'Running') =>
+    `<Workout workoutActivityType="HKWorkoutActivityType${type}" duration="30" durationUnit="min" sourceName="Watch" startDate="2026-10-13 ${start} -0700" endDate="2026-10-13 ${end} -0700"/>`;
+  const effort = (kind: 'WorkoutEffortScore' | 'EstimatedWorkoutEffortScore', start: string, end: string, value: number) =>
+    `<Record type="HKQuantityTypeIdentifier${kind}" sourceName="Watch" unit="appleEffortScore" startDate="2026-10-13 ${start} -0700" endDate="2026-10-13 ${end} -0700" value="${value}"/>`;
+  const xml = `<?xml version="1.0"?><HealthData>
+    ${effort('EstimatedWorkoutEffortScore', '07:00:00', '07:30:00', 5.4)}
+    ${effort('WorkoutEffortScore', '07:00:00', '07:30:00', 8)}
+    ${run('07:00:00', '07:30:00')}
+    ${run('12:00:00', '12:30:00', 'Yoga')}
+    ${effort('EstimatedWorkoutEffortScore', '12:30:00', '12:30:00', 3)}
+    ${run('18:00:00', '18:30:00', 'Cycling')}
+    ${effort('WorkoutEffortScore', '20:00:00', '20:10:00', 6)}
+    ${effort('WorkoutEffortScore', '07:00:00', '07:30:00', 11)}
+  </HealthData>`;
+  const { workouts } = (await parseStream(Readable.from([Buffer.from(xml)]))).finish();
+  const by = Object.fromEntries(workouts.map((w) => [w.sport, w.effort]));
+  assert.deepEqual(by, { Running: 8, Yoga: 3, Cycling: null }, 'the rating beats the estimate; a score at the end still counts; one out of range or matching nothing is dropped');
+});
+
 test('stand hours count each local hour once across watches, and idle hours not at all', async () => {
   const hour = (source: string, h: number, value: string) =>
     `<Record type="HKCategoryTypeIdentifierAppleStandHour" sourceName="${source}" startDate="2026-10-13 ${String(h).padStart(2, '0')}:00:00 -0700" endDate="2026-10-13 ${String(h + 1).padStart(2, '0')}:00:00 -0700" value="${value}"/>`;

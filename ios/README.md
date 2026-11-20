@@ -190,7 +190,7 @@ The shared rules for the Duo's two displays (the design is `duo/design.md` in th
 
 ## Apple Health sync
 
-- **Reads** steps, active energy, exercise minutes, walking + running distance, heart rate, resting HR, HRV (SDNN), blood oxygen, respiratory rate, sleeping wrist temperature, body temperature, weight, body fat, lean mass, VO₂ max, sleep stages, mindful sessions and workouts.
+- **Reads** steps, active and resting energy, exercise minutes, walking + running distance, heart rate, resting HR, heart rate recovery (the drop a minute after a workout), HRV (SDNN), blood oxygen, respiratory rate, sleeping wrist temperature, body temperature, weight, body fat, lean mass, VO₂ max, sleep stages, mindful sessions and workouts, with each workout's effort score on iOS 18 and later (Health's most relevant one: your own rating, else the Watch's estimate; `Health.efforts`).
 - **Finds what changed** with one HealthKit anchored query per type. Only the local days touched by new samples are re-read.
 - **Aggregates on the phone** into the same per-day rows as `server/apple/import.ts`:
   - Sum metrics keep the best single source per day.

@@ -338,6 +338,14 @@ export const MIGRATIONS: { id: number; name: string; statements: string[] }[] = 
       "CREATE UNIQUE INDEX IF NOT EXISTS portraits_one_pending ON portraits (user_id) WHERE kind = 'generated' AND status = 'pending'",
     ],
   },
+  {
+    id: 17,
+    name: "Workouts: Apple Health's effort score",
+    statements: [
+      // 1 to 10: the person's own rating of a workout, else the Watch's estimate (iOS 18). Null for WHOOP and older rows.
+      'ALTER TABLE workouts ADD COLUMN effort DOUBLE PRECISION',
+    ],
+  },
 ];
 
 async function migrate(db: Db) {

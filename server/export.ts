@@ -92,7 +92,7 @@ const LISTS: Record<string, RowList | Record<string, RowList>> = {
   },
   workouts: {
     table: 'workouts',
-    cols: 'id, source, sport, start, "end", date, duration_min AS "durationMin", energy_kcal AS "energyKcal", distance_m AS "distanceM", avg_hr AS "avgHr", max_hr AS "maxHr", strain',
+    cols: 'id, source, sport, start, "end", date, duration_min AS "durationMin", energy_kcal AS "energyKcal", distance_m AS "distanceM", avg_hr AS "avgHr", max_hr AS "maxHr", strain, effort',
     where: NOT_DEMO,
     order: 'start, id',
   },

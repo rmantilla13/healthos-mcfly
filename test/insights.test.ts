@@ -210,6 +210,7 @@ const workout = (date: string, endsAt: string): Workout => ({
   avg_hr: null,
   max_hr: null,
   strain: null,
+  effort: null,
 });
 
 /** ±amp, alternating every four days, so each group's mean stays (all but) exactly its set value. */

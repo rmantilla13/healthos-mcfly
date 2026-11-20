@@ -25,6 +25,8 @@ export type WorkoutRow = {
   avg_hr: number | null;
   max_hr: number | null;
   strain: number | null;
+  /** Apple Health's effort score, 1 to 10: the person's rating, else the Watch's estimate. */
+  effort: number | null;
 };
 
 /** One local hour of one metric: a sum (steps, active_energy) or a reading (hr_avg, hr_min, hr_max). */
@@ -66,7 +68,7 @@ export async function upsertDaily(q: Queryable, userId: string, rows: DailyRow[]
   );
 }
 
-const WORKOUT_COLS = ['id', 'source', 'sport', 'start', 'end', 'date', 'duration_min', 'energy_kcal', 'distance_m', 'avg_hr', 'max_hr', 'strain'] as const;
+const WORKOUT_COLS = ['id', 'source', 'sport', 'start', 'end', 'date', 'duration_min', 'energy_kcal', 'distance_m', 'avg_hr', 'max_hr', 'strain', 'effort'] as const;
 
 export async function upsertWorkouts(q: Queryable, userId: string, rows: WorkoutRow[]) {
   const unique = new Map(rows.map((w) => [w.id, w]));

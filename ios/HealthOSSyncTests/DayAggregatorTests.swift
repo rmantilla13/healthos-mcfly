@@ -407,6 +407,7 @@ final class DayAggregatorTests: XCTestCase {
     private let newMetrics = [
         "blood_pressure_systolic", "blood_pressure_diastolic", "glucose", "walking_speed", "walking_steadiness",
         "walking_asymmetry", "daylight_min", "flights", "stand_hours", "breathing_disturbances", "caffeine_mg", "water_ml",
+        "resting_energy", "hr_recovery",
     ]
     private var serverMetrics: [String] { (SyncState.legacyMetrics.union(newMetrics)).sorted() }
 
@@ -447,6 +448,8 @@ final class DayAggregatorTests: XCTestCase {
             ("flights", [sample("flights", 3, .count(), "15 08:00"), sample("flights", 4, .count(), "15 18:00")]),
             ("caffeine_mg", [sample("caffeine_mg", 0.095, .gram(), "15 08:00"), sample("caffeine_mg", 64, .gramUnit(with: .milli), "15 14:30")]),
             ("water_ml", [sample("water_ml", 0.5, .liter(), "15 09:00"), sample("water_ml", 250, .literUnit(with: .milli), "15 13:00")]),
+            ("resting_energy", [sample("resting_energy", 900, .kilocalorie(), "15 08:00"), sample("resting_energy", 3_347.2, .jouleUnit(with: .kilo), "15 20:00")]),
+            ("hr_recovery", [sample("hr_recovery", 24, HealthTypes.bpm, "15 07:30"), sample("hr_recovery", 30, HealthTypes.bpm, "15 18:30")]),
         ]
         for (name, list) in samples { agg.add(list, as: metric(name)) }
         let p = agg.finish()
@@ -460,6 +463,8 @@ final class DayAggregatorTests: XCTestCase {
         XCTAssertEqual(daily(p, "flights"), 7)
         XCTAssertEqual(daily(p, "caffeine_mg")!, 159, accuracy: 0.0001)
         XCTAssertEqual(daily(p, "water_ml")!, 750, accuracy: 0.0001)
+        XCTAssertEqual(daily(p, "resting_energy")!, 1_700, accuracy: 0.0001) // kJ becomes kcal
+        XCTAssertEqual(daily(p, "hr_recovery"), 27)
         XCTAssertNil(p.hourly, "none of these has hours for the Day view")
 
         if #available(iOS 18.0, *) {
@@ -545,6 +550,34 @@ final class DayAggregatorTests: XCTestCase {
         XCTAssertEqual(Health.days(of: night), ["2026-10-14", "2026-10-15"])
     }
 
+    func testAWorkoutCarriesItsEffortScore() throws {
+        let run = HKWorkout(activityType: .running, start: at("15 07:00").date, end: at("15 07:30").date)
+        let yoga = HKWorkout(activityType: .yoga, start: at("15 12:00").date, end: at("15 12:30").date)
+        let walk = HKWorkout(activityType: .walking, start: at("15 18:00").date, end: at("15 18:30").date)
+        let agg = DayAggregator(dates: ["2026-10-15"])
+        agg.add(workouts: [run, yoga, walk], effort: [run.uuid: 8, yoga.uuid: 12])
+        let rows = agg.finish().workouts
+        let effort = { (w: HKWorkout) in rows.first { $0.id == "hk-" + w.uuid.uuidString.lowercased() }?.effort }
+        XCTAssertEqual(rows.count, 3)
+        XCTAssertEqual(effort(run), 8)
+        XCTAssertNil(effort(yoga), "outside 1 to 10, which the server would refuse")
+        XCTAssertNil(effort(walk))
+        // Left out of the JSON when there's none, as servers before workout effort expect.
+        let json = try XCTUnwrap(String(data: JSONEncoder().encode(rows), encoding: .utf8))
+        XCTAssertEqual(json.components(separatedBy: "\"effort\"").count - 1, 1, json)
+    }
+
+    func testEffortIsReadWithWorkoutsButNeverWrittenOrADailyMetric() throws {
+        guard #available(iOS 18.0, *) else { throw XCTSkip("Workout effort is iOS 18 and later") }
+        let effort = Set(HealthTypes.effort.map(\.identifier))
+        XCTAssertEqual(effort, [HKQuantityTypeIdentifier.workoutEffortScore.rawValue, HKQuantityTypeIdentifier.estimatedWorkoutEffortScore.rawValue])
+        XCTAssertTrue(effort.isSubset(of: Set(HealthTypes.readTypes.map(\.identifier))))
+        XCTAssertTrue(effort.isSubset(of: Set(HealthTypes.observedTypes.map(\.identifier))), "a rating given later sends its day again")
+        XCTAssertTrue(effort.isDisjoint(with: Set(SampleData.shareTypes.map(\.identifier))))
+        XCTAssertTrue(effort.isDisjoint(with: Set(HealthTypes.quantities.map(\.identifier.rawValue))))
+        XCTAssertEqual(HealthTypes.label(HealthTypes.effort[0]), "workout effort")
+    }
+
     func testWhoopsCopiesOfTheNewTypesAreSkipped() {
         let whoop = SampleSource(name: "WHOOP", bundleIdentifier: "com.whoop.iphone")
         let agg = DayAggregator(dates: ["2026-10-15"])
@@ -563,14 +596,16 @@ final class DayAggregatorTests: XCTestCase {
         XCTAssertEqual(HealthTypes.label(metric("daylight_min").type), "time in daylight")
         XCTAssertEqual(HealthTypes.label(metric("caffeine_mg").type), "caffeine")
         XCTAssertEqual(HealthTypes.label(metric("walking_speed").type), "walking speed")
+        XCTAssertEqual(HealthTypes.label(metric("resting_energy").type), "resting energy")
+        XCTAssertEqual(HealthTypes.label(metric("hr_recovery").type), "heart rate recovery")
         XCTAssertEqual(HealthTypes.label(HealthTypes.workout), "workouts")
         for type in HealthTypes.sampleTypes(food: NutritionTypes.all) where type != HealthTypes.workout {
             XCTAssertNotEqual(HealthTypes.label(type), "workouts", type.identifier)
         }
-        let walking = ["daylight_min", "flights", "walking_speed", "walking_steadiness", "walking_asymmetry"]
-        let hourly: [HKSampleType] = [HealthTypes.standHour] + walking.map { metric($0).type as HKSampleType }
+        let frequent = ["daylight_min", "flights", "walking_speed", "walking_steadiness", "walking_asymmetry", "resting_energy"]
+        let hourly: [HKSampleType] = [HealthTypes.standHour] + frequent.map { metric($0).type as HKSampleType }
         for type in hourly { XCTAssertEqual(Health.deliveryFrequency(type), .hourly, type.identifier) }
-        for name in ["glucose", "blood_pressure_systolic", "caffeine_mg", "water_ml"] {
+        for name in ["glucose", "blood_pressure_systolic", "caffeine_mg", "water_ml", "hr_recovery"] {
             XCTAssertEqual(Health.deliveryFrequency(metric(name).type), .immediate, name)
         }
     }
@@ -588,6 +623,12 @@ final class DayAggregatorTests: XCTestCase {
         for name in ["blood_pressure_systolic", "blood_pressure_diastolic", "glucose", "caffeine_mg", "water_ml", "flights"] {
             XCTAssertTrue(share.contains(metric(name).type.identifier), name)
         }
+    }
+
+    func testHealthAcceptsEveryTypeTheAppAsksToWrite() async throws {
+        // Asked to share a type apps can't write (Apple's exercise minutes, say), HealthKit raises an exception that ends
+        // the app, naming the type. The app asks for these at every sync, so a new read type mustn't land here unwritable.
+        _ = try await Health.shared.store.statusForAuthorizationRequest(toShare: SampleData.shareTypes, read: HealthTypes.readTypes)
     }
     #endif
 
