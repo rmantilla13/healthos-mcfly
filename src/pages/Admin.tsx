@@ -426,9 +426,12 @@ function PlatformSettingsCard({ data, act }: { data: AdminOverview; act: Act }) 
       <section className="card settings">
         <h2>Ask McFly</h2>
         {data.mcfly.configured ? (
-          <p className="muted">Each person can ask McFly about their own data. It reads only that person's data, and their questions aren't stored.</p>
+          <p className="muted">
+            Each person can ask McFly about their own data. It reads only that person's data, and their questions aren't stored.{' '}
+            {data.mcfly.auth === 'federation' ? 'Signs in to Claude with Workload Identity Federation (no stored key).' : 'Signs in to Claude with ANTHROPIC_API_KEY.'}
+          </p>
         ) : (
-          <p className="muted">Not set up. Add ANTHROPIC_API_KEY (from the Claude Console) to the Vercel project, then redeploy.</p>
+          <p className="muted">Not set up. Connect the Vercel project to Claude with Workload Identity Federation (see the README), or add ANTHROPIC_API_KEY, then redeploy.</p>
         )}
         <label>
           <span>Model</span>

@@ -217,7 +217,7 @@ export function McFly({ me }: { me: SessionUser }) {
             {me.role === 'admin'
               ? unavailable === 'off'
                 ? 'Set a daily question limit above 0 in Admin → Settings.'
-                : 'Add ANTHROPIC_API_KEY (from the Claude Console) to the Vercel project, then redeploy.'
+                : 'Connect the Vercel project to Claude with Workload Identity Federation (see the README), or add ANTHROPIC_API_KEY, then redeploy.'
               : byok
                 ? unavailable === 'off'
                   ? 'The shared assistant is off right now.'

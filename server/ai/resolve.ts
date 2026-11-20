@@ -1,5 +1,5 @@
 // Which AI a person's request uses: their own key for that provider when they've stored one (server/ai/keys.ts), and
-// otherwise the server's shared Claude key (ANTHROPIC_API_KEY), exactly as before personal keys existed. Everything
+// otherwise the server's shared Claude client (federation or ANTHROPIC_API_KEY, server/ai/sharedClaude.ts), as before personal keys existed. Everything
 // that calls a model (Ask McFly, meal estimates, lab report reading, voice notes, portraits) asks here.
 // - Ask McFly: the provider the person chose (Profile → Chatbot) while its key is stored, else shared Claude.
 // - Meal estimates: their OpenAI key, then their Claude key, then shared Claude. Never the server's OPENAI_API_KEY, so

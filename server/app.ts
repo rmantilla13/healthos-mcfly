@@ -12,6 +12,7 @@ import { PEER_MIN_AGE } from '../shared/peers.ts';
 import type { ImportJob, NutritionTargets, Settings, Status } from '../shared/types.ts';
 import { adminRouter } from './admin.ts';
 import { aiRouter } from './ai/routes.ts';
+import { noteOidcToken } from './ai/sharedClaude.ts';
 import { bodyRouter } from './body.ts';
 import { exportRouter } from './export.ts';
 import { fitbitRouter } from './fitbit.ts';
@@ -48,7 +49,7 @@ export type AppOptions = {
   hosted: boolean;
   /** The server-wide iPhone ingest token from before multi-user (HEALTHOS_INGEST_TOKEN); it maps to the owner. */
   ingestToken?: string;
-  /** Ask McFly's Claude client (tests pass a fake). Defaults to one from ANTHROPIC_API_KEY. */
+  /** Ask McFly's Claude client (tests pass a fake). Defaults to the shared one: federation, else ANTHROPIC_API_KEY. */
   mcflyClient?: () => McflyClient | null;
   /** The food databases' fetch (tests pass a fake, so no test calls USDA or Open Food Facts). */
   foodFetch?: FetchFn;
@@ -62,6 +63,9 @@ export function createApp({ db, hosted, ingestToken, mcflyClient = defaultClient
   app.set('trust proxy', hosted);
 
   app.use((req, res, next) => {
+    // On Vercel every request carries the project's OIDC token; the shared Claude client trades it for a Claude
+    // token (Workload Identity Federation, server/ai/sharedClaude.ts).
+    if (hosted) noteOidcToken(req.headers['x-vercel-oidc-token']);
     // Locally the server only listens on localhost: reject other Host headers (DNS rebinding).
     if (!hosted) {
       const host = (req.headers.host ?? '').replace(/:\d+$/, '');

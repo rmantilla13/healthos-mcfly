@@ -10,6 +10,7 @@ import type { Digest, DigestReply, McflyStatus, McflyVisual, NutritionNumbers, P
 import { platformSettings } from './admin.ts';
 import { AiError, type AiFetch, PROVIDER_LABEL, type ToolResult } from './ai/provider.ts';
 import { type AiRoute, chatFor, noteOwnUse } from './ai/resolve.ts';
+import { sharedClaude, sharedClaudeAuth } from './ai/sharedClaude.ts';
 import { currentUser } from './auth.ts';
 import { cycleView } from './cycle/index.ts';
 import { labsView } from './labs.ts';
@@ -835,7 +836,12 @@ const overLimit = (route: AiRoute, limit: number) =>
 export function failureWords(route: AiRoute, err: unknown) {
   const kind = err instanceof AiError ? err.kind : null;
   const who = route.source === 'own' ? PROVIDER_LABEL[route.provider] : null;
-  if (kind === 'auth') return who ? `Your ${who} key isn't working. Check it in your Profile → Chatbot.` : "McFly's API key isn't working. The admin needs to check ANTHROPIC_API_KEY.";
+  if (kind === 'auth')
+    return who
+      ? `Your ${who} key isn't working. Check it in your Profile → Chatbot.`
+      : sharedClaudeAuth() === 'federation'
+        ? "McFly can't sign in to Claude. The admin needs to check the federation rule in the Claude Console."
+        : "McFly's API key isn't working. The admin needs to check ANTHROPIC_API_KEY.";
   if (kind === 'quota') return who ? `Your ${who} account is out of credit.` : "McFly's Claude account is out of credit. Ask the admin to top it up.";
   if (kind === 'rate' || kind === 'server') return 'McFly is busy right now. Try again in a minute.';
   if (kind === 'bad_request') return "McFly couldn't take that request. Start a new chat and try again.";
@@ -925,7 +931,8 @@ export type McflyOptions = {
   aiFetch?: AiFetch;
 };
 
-export const defaultClient = () => (process.env.ANTHROPIC_API_KEY ? new Anthropic() : null);
+/** The shared Claude client: Workload Identity Federation when its rule is set, else ANTHROPIC_API_KEY (server/ai/sharedClaude.ts). */
+export const defaultClient = (): McflyClient | null => sharedClaude();
 
 export function mcflyRouter(db: Db, { hosted, client = defaultClient, aiFetch }: McflyOptions) {
   const router = express.Router();

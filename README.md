@@ -94,17 +94,30 @@ Ask McFly (`#/mcfly`, or the pill on Home) is a chat assistant for questions abo
   - The server keeps no conversation. The browser holds the chat in session storage and sends it as plain text with each question.
   - healthOS stores only daily counts of questions and tokens per person (`mcfly_usage`). Admins see those counts, never the questions.
   - Questions, data and answers are never logged.
-- **Setup:** create an API key in the Claude Console and add it to the Vercel project as `ANTHROPIC_API_KEY`. Then redeploy:
+- **Setup (hosted): Workload Identity Federation, no stored key.** The hosted app signs in to Claude with the OIDC token Vercel gives every function request, which the SDK trades for a short-lived Claude token (`server/ai/sharedClaude.ts`). What's in the Claude Console (**Settings → Workload identity**), set up 2026-11-19:
+  1. **Issuer** `vercel-rickymantilla` (`fdis_01CDXyCxXq9B6TEV5xC3P1BW`), shared with the other Vercel projects: issuer URL `https://oidc.vercel.com/rickymantilla` (the team uses Vercel's *team* issuer mode), JWKS by discovery, max token lifetime 12h. It must stay at **2h or more**: Vercel production tokens live 2 hours, and a lower maximum turns every exchange down with a bare `401 Authentication failed`.
+  2. **Service account** `healthos` (`svac_01FN3wNwLkWyyXVSqK5bhK4E`), Developer role, Default workspace.
+  3. **Rule** `healthos-production` (`fdrl_015BQJ4B6iZ9kpqAQaZNzvcE`):
+     - subject exactly `owner:rickymantilla:project:healthos:environment:production`;
+     - claim `project_id` = `prj_PHpEXrGE8AC13ufYb8kc3i0rvtkk`;
+     - audience `https://vercel.com/rickymantilla`. Without it the Console expects `https://api.anthropic.com`, which Vercel's default token doesn't carry.
+     - Default workspace (where the old key billed), `workspace:developer`, 1-hour tokens.
+     - Preview and local tokens don't match, on purpose. Renaming the team or project changes the subject, so update the rule if you do.
+  4. In Vercel (production), set like this. None of these values is a secret:
 
 ```bash
-vercel env add ANTHROPIC_API_KEY production
+vercel env add ANTHROPIC_FEDERATION_RULE_ID production   # fdrl_015BQJ4B6iZ9kpqAQaZNzvcE
+vercel env add ANTHROPIC_ORGANIZATION_ID production      # the organization's UUID (Console → Settings → Organization)
+vercel env add ANTHROPIC_SERVICE_ACCOUNT_ID production   # svac_01FN3wNwLkWyyXVSqK5bhK4E (optional)
 ```
 
-  Without the key, the page says McFly isn't set up yet. Locally, put the key in `.env`.
+  5. Redeploy and ask McFly something. **Admin → Settings → Ask McFly** says which sign-in it uses. A refused exchange logs `claude federation: 401 ...`; the reason is in the Console under **Workload identity → Authentication history**. A rule that covers more than one workspace also needs `ANTHROPIC_WORKSPACE_ID`.
+  6. Once it works, remove `ANTHROPIC_API_KEY` from Vercel and delete that key in the Console. Federation already wins when both are set. Rolling back means a fresh API key in `ANTHROPIC_API_KEY` plus removing the federation variables, then a redeploy (the key that was there expired on 2026-11-15).
+- **Setup (local or without federation):** put an API key from the Claude Console in `.env` as `ANTHROPIC_API_KEY` (or `vercel env add ANTHROPIC_API_KEY production`). Without either, the page says McFly isn't set up yet.
 
 ### Your own AI keys (optional)
 
-Set `HEALTHOS_DATA_KEY` (generate it once with `openssl rand -hex 32`) to let people connect their own OpenAI, Claude or Gemini key under **Profile → Chatbot** and **Profile → OpenAI · Nutrition & portraits**. Keys are checked with the provider, then stored encrypted with it (AES-256-GCM, bound to the account, `server/ai/keys.ts`); the browser only ever sees the last 4 characters. Unset, nobody can store a key and everyone uses `ANTHROPIC_API_KEY` as before.
+Set `HEALTHOS_DATA_KEY` (generate it once with `openssl rand -hex 32`) to let people connect their own OpenAI, Claude or Gemini key under **Profile → Chatbot** and **Profile → OpenAI · Nutrition & portraits**. Keys are checked with the provider, then stored encrypted with it (AES-256-GCM, bound to the account, `server/ai/keys.ts`); the browser only ever sees the last 4 characters. Unset, nobody can store a key and everyone uses the shared Claude client (federation or `ANTHROPIC_API_KEY`) as before.
 
 - **Routing** (`server/ai/resolve.ts`): Ask McFly uses the provider the person chose when its key is stored, else the shared Claude key. Meal estimates use their own OpenAI key, else their own Claude key, else the shared key. Lab report reading uses their own Claude key, else the shared key. Voice notes (`POST /api/ai/transcribe`) and portraits need an OpenAI key: their own, or the server's optional `OPENAI_API_KEY`, which is never used for estimates. On the server's key, voice notes are limited to `VOICE_NOTES_PER_DAY` (40) a person a day (`mcfly_usage.voice_notes`, by UTC date, given back when OpenAI fails); on a person's own key they aren't counted, and they never count as McFly questions.
 - **Limits:** the admin's daily limit applies only to the shared key. Questions on a person's own key are counted apart (`mcfly_usage.own_*`, up to 200 a day across chat, estimates and the digest) and never appear in the admin's cost view.

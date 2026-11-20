@@ -4,6 +4,7 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import { HttpError, type Role, countActiveAdmins, createLink, currentUser, formatCode, getUser, normalizeEmail, requireAdmin } from './auth.ts';
 import { NUTRITION_CARDS, cleanHiddenCards, readHiddenCards, readShownCards, storedHiddenCards, withCardShown, withCardToggled, withoutNutritionCards } from '../shared/cards.ts';
 import { MODEL_ID } from './ai/provider.ts';
+import { sharedClaudeAuth } from './ai/sharedClaude.ts';
 import { type Db, bumpDataVersion, deleteUserData, getSettings, getUserSetting, setSetting, setUserSetting } from './db.ts';
 import * as whoop from './whoop.ts';
 
@@ -126,7 +127,7 @@ export function adminRouter(db: Db) {
         })),
         settings: platform,
         whoop: { configured: whoop.isConfigured(), redirectUri: whoop.whoopConfig().redirectUri },
-        mcfly: { configured: Boolean(process.env.ANTHROPIC_API_KEY) },
+        mcfly: { configured: sharedClaudeAuth() !== null, auth: sharedClaudeAuth() },
       });
     }),
   );

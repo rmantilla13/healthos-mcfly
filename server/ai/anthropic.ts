@@ -3,6 +3,7 @@
 // server-side fallback beta, prompt caching, pause_turn, refusals, and re-issuing a round whose streamed tool input
 // wasn't parseable JSON.
 import Anthropic from '@anthropic-ai/sdk';
+import { WorkloadIdentityError } from '@anthropic-ai/sdk/lib/credentials/types';
 import type { McflyClient } from '../mcfly.ts';
 import { AiError, type ChatProviderApi, type ChatSession, type Reply, type Usage, kindOf } from './provider.ts';
 
@@ -13,10 +14,18 @@ type BetaToolUseBlock = Anthropic.Beta.BetaToolUseBlock;
 type BetaToolResultBlockParam = Anthropic.Beta.BetaToolResultBlockParam;
 type BetaContentBlockParam = Anthropic.Beta.BetaContentBlockParam;
 
-/** An SDK error as a kind; anything else (an abort, a bug) as it was. A 400 about the credit balance is out of credit. */
+/**
+ * An SDK error as a kind; anything else (an abort, a bug) as it was. A 400 about the credit balance is out of credit.
+ * A failed federation token exchange (the shared client, server/ai/sharedClaude.ts) is a sign-in problem unless the
+ * token endpoint was rate limited or down.
+ */
 export function anthropicError(err: unknown): unknown {
   if (err instanceof Anthropic.APIUserAbortError) return err;
   if (err instanceof Anthropic.APIConnectionError) return new AiError('network');
+  if (err instanceof WorkloadIdentityError) {
+    const status = err.statusCode ?? undefined;
+    return new AiError(status === 429 ? 'rate' : status !== undefined && status >= 500 ? 'server' : 'auth', status);
+  }
   if (err instanceof Anthropic.APIError && typeof err.status === 'number') return new AiError(kindOf(err.status, err.status === 400 && /credit balance/i.test(err.message)), err.status);
   return err;
 }

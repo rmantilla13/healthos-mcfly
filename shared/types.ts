@@ -291,7 +291,8 @@ export type AdminOverview = {
   invites: AdminInvite[];
   settings: PlatformSettings;
   whoop: { configured: boolean; redirectUri: string };
-  mcfly: { configured: boolean };
+  /** auth: how the shared Claude client signs in (Workload Identity Federation or ANTHROPIC_API_KEY), null when unset. */
+  mcfly: { configured: boolean; auth: 'federation' | 'api_key' | null };
 };
 
 // ---------- Ask McFly ----------
